@@ -1,5 +1,5 @@
 import React from 'react';
-import { TRAFFIC_VALIDATION } from './validationSummary';
+import { TRAFFIC_VALIDATION } from './trafficValidation';
 
 /** Compact table of the recorded TAG M3.1 results (docs/ENGINEERING_VALIDATION.md §5.0). */
 export const ValidationSummary: React.FC = () => (

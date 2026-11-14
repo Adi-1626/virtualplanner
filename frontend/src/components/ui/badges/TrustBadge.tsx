@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { OctagonX, TriangleAlert, CircleCheck } from 'lucide-react';
 import { TRUST_COLOR, TRUST_HELP, TRUST_LABEL, type Trust } from './honesty';
-import { TRAFFIC_VALIDATION } from './validationSummary';
+import { TRAFFIC_VALIDATION } from './trafficValidation';
 import { ValidationSummary } from './ValidationSummary';
 import { AnchoredPopover } from '../AnchoredPopover';
 

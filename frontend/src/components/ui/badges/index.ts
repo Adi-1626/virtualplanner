@@ -4,4 +4,4 @@ export { DataStatus, type DataStatusValue } from './DataStatus';
 export { ModelTrustPill } from './ModelTrustPill';
 export { ValidationSummary } from './ValidationSummary';
 export * from './honesty';
-export { TRAFFIC_VALIDATION, FAILS_VALIDATION_LABEL } from './validationSummary';
+export { TRAFFIC_VALIDATION, FAILS_VALIDATION_LABEL } from './trafficValidation';
