@@ -294,3 +294,28 @@ def test_staleness_reads_human_ist_dates():
     from datasets.quality import _parse_date
     assert _parse_date("Mon 2026-11-02 2:51 AM IST (UTC+05:30)").date().isoformat() == "2026-11-02"
     assert _parse_date("2008").year == 2008 and _parse_date(None) is None
+
+
+def test_checksum_ignores_withdrawn_files_but_still_fails_missing_ones(root):
+    """A file deliberately deleted (role 'withdrawn', e.g. licence terms) keeps its provenance row but is not expected on
+    disk; a missing file with any other role still fails. SYNTHETIC files only."""
+    from database.connection import SessionLocal
+    from datasets import quality, registry
+    d = os.path.join(root, "raw", "withdraw_src", "2026-11-13")
+    sha = _w(os.path.join(d, "manifest.json"), {"files": []})
+    gone = os.path.join(d, "deleted_picture.png")          # never written: deleted on purpose
+    did = f"withdraw_test_{uuid.uuid4().hex[:6]}"
+    with SessionLocal() as db:
+        registry.ensure_dataset(db, did, title="SYNTHETIC withdraw test")
+        v = registry.add_version(db, did, origin="test", accuracy_statement="", licence_text="SYNTHETIC", licence_url="",
+                                 http_json="{}", stats_json="{}", files=[
+                                     {"path": os.path.join(d, "manifest.json"), "sha256": sha, "role": "manifest"},
+                                     {"path": gone, "sha256": "0" * 64, "role": quality.WITHDRAWN_ROLE}])
+        c = {x["check"]: x for x in quality.run_checks(db, v)}["checksum"]
+        assert c["status"] == "pass" and "1 withdrawn" in c["detail"], c
+        f = db.query(quality.DsFileEntity).filter_by(version_id=v.id, role=quality.WITHDRAWN_ROLE).one()
+        f.role = "raw"
+        db.flush()
+        c = {x["check"]: x for x in quality.run_checks(db, v)}["checksum"]
+        assert c["status"] == "fail" and gone in c["detail"], c
+        db.rollback()

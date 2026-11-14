@@ -23,6 +23,7 @@ from .vocab import PUNE_BBOX, data_root
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GEOJSON_MAX_BYTES = 50 * 1024 * 1024
 HASH_MAX_BYTES = 2 * 1024 ** 3
+WITHDRAWN_ROLE = "withdrawn"  # ds_files.role of a file deliberately deleted; row kept as provenance only
 
 
 # registry paths whose real location the app reads from an environment variable
@@ -164,6 +165,10 @@ def run_checks(db: Session, v: DsDatasetVersionEntity, *, hash_files: bool = Tru
                         "nothing stored locally (streamed or catalogue-only)" if v.retrieved_at is None else "no files registered"))
     else:
         missing, bad, ok, skipped = [], [], [], []
+        # role "withdrawn": the file was deliberately deleted (e.g. licence terms) and its row is kept only as provenance
+        # (path, sha256, url of what was fetched). It is not expected on disk, so it neither fails nor passes the check.
+        withdrawn = [f.path for f in files if f.role == WITHDRAWN_ROLE]
+        files = [f for f in files if f.role != WITHDRAWN_ROLE]
         for f in files:
             p = resolve_path(f.path)
             if not os.path.exists(p):
@@ -178,10 +183,14 @@ def run_checks(db: Session, v: DsDatasetVersionEntity, *, hash_files: bool = Tru
         elif missing:
             out.append(_add(db, v.id, "checksum", "fail", f"file not present at the recorded path: {', '.join(missing)}"))
         elif skipped and not ok:
-            out.append(_add(db, v.id, "checksum", "unknown", f"present, not hashed (no recorded sha256 or too large): {', '.join(skipped)}"))
+            out.append(_add(db, v.id, "checksum", "unknown", f"present, not hashed (no recorded sha256 or too large): {', '.join(skipped)}"
+                            + (f"; {len(withdrawn)} withdrawn file(s) not expected on disk" if withdrawn else "")))
+        elif not files:
+            out.append(_add(db, v.id, "checksum", "not_applicable", f"all {len(withdrawn)} registered file(s) withdrawn; nothing expected on disk"))
         else:
             out.append(_add(db, v.id, "checksum", "pass", f"{len(ok)} file(s) present, sha256 matches"
-                            + (f"; {len(skipped)} not hashed" if skipped else "")))
+                            + (f"; {len(skipped)} not hashed" if skipped else "")
+                            + (f"; {len(withdrawn)} withdrawn file(s) not expected on disk" if withdrawn else "")))
 
     # geometry validity + duplicates
     geo = _geometry_checks(db, v, ds, files)

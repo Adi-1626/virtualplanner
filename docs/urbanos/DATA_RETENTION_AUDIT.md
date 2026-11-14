@@ -295,7 +295,7 @@ DB copies > 50 MB and their sha256 (none of the twincity.db copies is identical 
 | `web/downloads/pune_refs/*` (CMP 2008/2018 reports, papers), `web/downloads/vp/nicmar.pdf`, `work/um-odme-scratch/arai.pdf` | UNKNOWN / publisher copyright (zenodo.pdf: CC BY 4.0) | **HIGH** for the PDFs | Reference copies only; never redistribute. |
 | Cesium ion imagery / world terrain | Cesium ion ToS – streaming only | n/a (nothing stored) | Never cache/export. |
 
-## 10. Proposed cleanup plan (NOT executed)
+## 10. Proposed cleanup plan (Phase A EXECUTED 2026-11-14 with 8 exclusions, see §11; Phase B NOT executed)
 
 Run from any directory. Each step lists bytes reclaimed. Re-run `sha256sum` checks before deleting duplicates if anything changed since this audit.
 
@@ -495,6 +495,164 @@ rm -rf -- "/workspace/work/vt-final"   # 436 B
 Keep: everything under `urbanos-data/raw`, all active derived versions, elevation v1 (until v3 promoted) and v3, repo `backend/data/**`, `backend/twincity.db`, `twincity.db.bak-2026-11-14-pre-dem-v3`, `uos-dem-compare/`, OpenCity CKAN PDFs, Mendeley zip/docs, reference PDFs.
 
 **Total reclaimable: 9,497,822,491 B (8.8 GiB)** — 4.6 GiB immediately, 4.3 GiB after preconditions.
+
+## 11. Execution record — blockers and Phase A (2026-11-14)
+
+### 11.1 Blockers (§2)
+1. **feasibility_layers.db** — present at `backend/data/osm/feasibility_layers.db`, sha256 `21924cea867eba0f89db2feabe1e092ce045a34bd1f66ec1e633b8f7f5be3f8e`, matches registry `dsv_40ea7de6978d`; checksum check passes. Gitignored (built artefact).
+2. **Bhuvan rows** — the 10 `dsv_1b5801795ebe` PNG rows are now role `withdrawn` (path, sha256 and source URL kept; review note appended) by `datasets/tools/resolve_retention_blockers.py --apply`. `quality.py` treats `withdrawn` files as not expected on disk; any other missing file still fails. New test in `tests/test_datasets.py`.
+3. **Tree-index processing.json — accepted provenance exception, not hidden.** The active row `dsv_d48ce2056959` matches the file on disk (1,301 B, sha `15c313cc…`). The superseded row `dsv_cd7786f3f943` records the earlier 1,253 B file (`fff04376…`), which the re-run overwrote in place; that byte stream no longer exists anywhere. `trees_index.sqlite` is byte-identical across both runs and the re-run records `output_unchanged_from_previous_run: true`. The superseded run's `ds_processing_runs` commit (`3b8b1e11`) differs from the file's commit (`5a2c2e0c`). Registry scans therefore report **1 expected mismatch** on this superseded row.
+4. **Duplicate rows** — each pending re-registration was activated through `registry.review_version`; the older rows are `superseded` (kept, not deleted). Data files identical; `data_class` change follows `classification_overrides.json` (commit af7064e). Version counts: active 76, pending_review 1 (elevation v2), superseded 6.
+DB backup before the repair: `/workspace/work/twincity.db.bak-2026-11-14-pre-blockers`.
+
+### 11.2 Re-audit (before deletion)
+- A1: 98/98 staging files re-hashed equal to their kept raw copy; 96 OpenCity raw manifest files verified, 0 bad.
+- A2: 115/115 unzipped Mendeley files matched `traffic.zip` members by name and size; `traffic.zip` kept.
+- A4: `uos-wt-qa2`, `uos-wt-qa3` have no uncommitted or untracked work (only ignored caches; `frontend/node_modules` is a symlink to the main checkout, unlinked first so its target was untouched).
+- No running process had any candidate open (`/proc` scan).
+- Reference scan (git grep + docs + registry): **8 directories were cited by documentation and were removed from Phase A** (moved to Phase B / keep):
+
+| Path | Bytes | Why kept |
+|---|---:|---|
+| `/workspace/work/uos-qa` | 137,845 | named as the run behind docs/urbanos/URBANOS_VERIFICATION.md (its build/tsc/oxlint/vitest logs) |
+| `/workspace/work/urbanos/tools-e2e` | 14,591,506 | cited in docs/urbanos/DESIGN_TOOLS_AND_HONESTY.md (BROWSER-VERIFIED harness) |
+| `/workspace/work/vp-sev-e2e` | 91,834,090 | cited in docs/OVERHAUL.md (§ browser verification; out/ JSON path quoted at line 1740) |
+| `/workspace/work/vp-sev2-e2e` | 95,249,369 | cited in docs/OVERHAUL.md |
+| `/workspace/work/vp-shots` | 227,220,642 | cited in docs/ROAD_ANALYSIS.md (road-analysis probes, e2e script, screenshots) |
+| `/workspace/work/vp-wt-day-e2e` | 63,510,819 | cited in docs/OVERHAUL.md |
+| `/workspace/work/vp-wt-merged-e2e` | 63,550,687 | cited in docs/OVERHAUL.md |
+| `/workspace/work/vp-wt-verify-e2e` | 63,517,182 | cited in docs/OVERHAUL.md |
+
+`/workspace/work/prof` matched only the word "prof" in code, not the path, so it stayed in Phase A.
+
+### 11.3 Executed (dry run = execution: 120 entries, 6,562 files, 4,308,313,242 B = 4.012 GiB, 0 errors)
+Per step: A1 1,513,687,252 B; A2 1,812,118,340 B; A3 5,609 B; A4 23,365,932 B; A5 959,136,109 B. Measured with `du -sb`: `/workspace/web/downloads` 3,426,324,551 → 100,513,350 B; `/workspace/work` 21,467,829,367 → 20,485,194,046 B. Filesystem-level `df` did not drop immediately (JuiceFS reclaims asynchronously).
+
+| Step | Path | Files | Bytes |
+|---|---|---:|---:|
+| A1 | `/workspace/web/downloads/cc44fea1-9b26-434d-845b-bae31e4b3c3b-b9dfc0a6.csv` | 1 | 81,840,451 |
+| A1 | `/workspace/web/downloads/bf2cf429-a2cc-432d-8877-c1bd8a81ea43-89c5d4dc.csv` | 1 | 78,803,302 |
+| A1 | `/workspace/web/downloads/be079045-316a-4778-9bb8-3574120978c6-b5f00ce3.csv` | 1 | 78,481,091 |
+| A1 | `/workspace/web/downloads/9d4847bb-7779-4edd-95bb-127a9c90e3b6 (1)-ebd3c7c7.csv` | 1 | 77,191,225 |
+| A1 | `/workspace/web/downloads/9d4847bb-7779-4edd-95bb-127a9c90e3b6-d9024938.csv` | 1 | 77,191,225 |
+| A1 | `/workspace/web/downloads/3733b659-d5a0-4cba-9591-9c72dcd297c6-ec62ebb3.csv` | 1 | 77,167,851 |
+| A1 | `/workspace/web/downloads/f80bd708-7746-4e09-8f91-62dc55d31d34-dcbec09e.csv` | 1 | 76,962,528 |
+| A1 | `/workspace/web/downloads/5490ebe1-a81b-4abb-a712-3da3992754bf-d0f0a7e0.csv` | 1 | 76,868,702 |
+| A1 | `/workspace/web/downloads/0a20a244-1731-4f44-addc-56cd4a10d3bf-ea4e150c.csv` | 1 | 76,808,237 |
+| A1 | `/workspace/web/downloads/a804de00-6e6f-41ae-aeef-769ef2db1f83-51c79d06.csv` | 1 | 76,752,424 |
+| A1 | `/workspace/web/downloads/8c560da7-be95-4fc3-8ed6-a1b1d0b87512-b41a6015.csv` | 1 | 76,693,181 |
+| A1 | `/workspace/web/downloads/28abdbf7-726c-475e-ad1d-b25819fbf74a-2149194f.csv` | 1 | 76,673,781 |
+| A1 | `/workspace/web/downloads/d33ee2b8-b206-422c-8006-b1d99b3fe494-aa6a97e5.csv` | 1 | 76,235,171 |
+| A1 | `/workspace/web/downloads/8052c6c0-c1a3-455e-a8d1-e7e2c5938472-3272e8e5.csv` | 1 | 76,011,238 |
+| A1 | `/workspace/web/downloads/d3ab6046-986a-4aaa-8595-722089f99784-be92ed21.csv` | 1 | 75,905,977 |
+| A1 | `/workspace/web/downloads/db5b5bcb-20f4-42df-89ee-85dee72446da (1)-d6d69fd4.csv` | 1 | 75,709,757 |
+| A1 | `/workspace/web/downloads/db5b5bcb-20f4-42df-89ee-85dee72446da-5e16ef21.csv` | 1 | 75,709,757 |
+| A1 | `/workspace/web/downloads/ca24d160-8b76-4215-bd66-61082476acd9-a135bb1e.csv` | 1 | 75,641,050 |
+| A1 | `/workspace/web/downloads/4390b641-12ad-4438-bc6b-c938ea7ae5de-2f2ce66b.kmz` | 1 | 22,184,109 |
+| A1 | `/workspace/web/downloads/pune-katraj-dairy-mpcb-2024-25-aec5830b.csv` | 1 | 12,392,945 |
+| A1 | `/workspace/web/downloads/pmc_swd_chambers-0332a087.kml` | 1 | 11,797,881 |
+| A1 | `/workspace/web/downloads/pune-bhumkar-nagar-iitm-2024-25-83057006.csv` | 1 | 11,151,401 |
+| A1 | `/workspace/web/downloads/pune-karve-road-mpcb-2024-25-a1e5e020.csv` | 1 | 10,104,589 |
+| A1 | `/workspace/web/downloads/pmc_sewage_pipeline-891222be.kmz` | 1 | 8,233,433 |
+| A1 | `/workspace/web/downloads/20c62d61-11e7-4eee-8200-6dc0c3fe640b-c098b02e.kml` | 1 | 6,758,124 |
+| A1 | `/workspace/web/downloads/pune-bhosari-iitm-2024-25-319a10fe.csv` | 1 | 5,533,047 |
+| A1 | `/workspace/web/downloads/46c96db4-af62-4b84-a479-5a0279a8f44a-8f4f916c.kml` | 1 | 5,065,991 |
+| A1 | `/workspace/web/downloads/pune-hadapsar-iitm-2024-25-9e060051.csv` | 1 | 4,356,470 |
+| A1 | `/workspace/web/downloads/a76a14a9-07ce-4a36-bba5-8f8c12351c6b-1cb96444.kmz` | 1 | 3,947,453 |
+| A1 | `/workspace/web/downloads/9bb3235e-e9db-485d-b303-68ef8fd6bcd7-48f763f3.kmz` | 1 | 3,937,838 |
+| A1 | `/workspace/web/downloads/pune-alandi-iitm-2024-25-a60d67f9.csv` | 1 | 3,833,770 |
+| A1 | `/workspace/web/downloads/58e49c60-4e2b-4238-9a3e-173d4abccbca-64552637.csv` | 1 | 2,904,344 |
+| A1 | `/workspace/web/downloads/pmc_swd_utlitiy_chambers-f8bd3a1d.kml` | 1 | 2,774,676 |
+| A1 | `/workspace/web/downloads/3f7228b1-092e-4c66-a62f-6895cf33fbcd-e66b1db1.kml` | 1 | 2,761,475 |
+| A1 | `/workspace/web/downloads/pune-dhankawadi-iitm-2025-b2d3dd7b.csv` | 1 | 2,596,505 |
+| A1 | `/workspace/web/downloads/06209242-c2c6-40f7-b70c-db0783cb7ccd-a20049c0.kml` | 1 | 1,019,386 |
+| A1 | `/workspace/web/downloads/a97cdf95-402a-461b-8bd6-3eb55103ee91-d802e07a.kml` | 1 | 983,023 |
+| A1 | `/workspace/web/downloads/74e8e3f7-d96a-4574-842b-e2d77c1db4fc-9b780151.csv` | 1 | 615,249 |
+| A1 | `/workspace/web/downloads/bbbd1d45-23fd-442c-8b1d-6fc48a1064a0-8db3f3b5.kml` | 1 | 461,901 |
+| A1 | `/workspace/web/downloads/b26b0ee3-60a3-4f1a-a45c-94b24fb9434a-3ce612b7.kml` | 1 | 278,633 |
+| A1 | `/workspace/web/downloads/f1d88eea-0aab-4d8c-8c23-2acc84c1bd6a-9af9d9bc.kml` | 1 | 271,656 |
+| A1 | `/workspace/web/downloads/905dfc93-7e5e-4821-b6ef-86b4f49f14b1-6195c2da.csv` | 1 | 269,210 |
+| A1 | `/workspace/web/downloads/f421cdb4-57de-42ad-bd16-0bfd54e79cae-145ef487.csv` | 1 | 221,666 |
+| A1 | `/workspace/web/downloads/24b7649d-0039-4dee-872a-621fa2b129d2-6f709a4b.kml` | 1 | 218,820 |
+| A1 | `/workspace/web/downloads/611403c6-d9cf-4736-b33d-0626965ae50d-80144b72.csv` | 1 | 218,697 |
+| A1 | `/workspace/web/downloads/b7a3f392-238c-4c55-a3ed-0c13fd4aaa0a-b2a8c644.kml` | 1 | 191,370 |
+| A1 | `/workspace/web/downloads/882111ee-f944-4bff-b796-7baf97cf55a6-9cfc0ec3.kml` | 1 | 183,463 |
+| A1 | `/workspace/web/downloads/697e0d85-930c-4990-972f-1ad9eac2db05-30035000.csv` | 1 | 145,157 |
+| A1 | `/workspace/web/downloads/fbf99e33-887b-4a97-8861-fe44d24cb48a-563e6438.csv` | 1 | 136,965 |
+| A1 | `/workspace/web/downloads/10d58630-44a1-49a5-a168-e0b4a7368081-8ac05bdd.csv` | 1 | 136,960 |
+| A1 | `/workspace/web/downloads/c91c0878-b4f9-419f-8d7c-97eb6c7a9083-0570a5df.csv` | 1 | 115,593 |
+| A1 | `/workspace/web/downloads/pmc_cremation_grounds-c67f1b98.kml` | 1 | 113,694 |
+| A1 | `/workspace/web/downloads/3db44ac9-ef90-41c4-b915-ff751de81679-2f232a97.csv` | 1 | 108,982 |
+| A1 | `/workspace/web/downloads/a9407013-dba4-48fe-afda-bb951f4f3cfe-81bfb8a8.csv` | 1 | 105,994 |
+| A1 | `/workspace/web/downloads/7ac0c4c7-01a3-4311-8617-41a0b1cf03d9-a7598052.csv` | 1 | 101,861 |
+| A1 | `/workspace/web/downloads/6c9be432-4a82-4661-972f-e4ac9be0d252-23e5fcd5.csv` | 1 | 101,772 |
+| A1 | `/workspace/web/downloads/117354a8-7bea-4ebe-9aa4-560fcb877aa6-c04791a0.csv` | 1 | 93,804 |
+| A1 | `/workspace/web/downloads/5ec1c512-c3f1-4ef6-81eb-4a5147241377-d21b0aec.csv` | 1 | 93,649 |
+| A1 | `/workspace/web/downloads/b408de88-b9f0-48ad-af37-d6554088fb8d-ff35119e.kml` | 1 | 90,934 |
+| A1 | `/workspace/web/downloads/b0d9ef1f-14d7-4c93-a498-3ffb7c86737c-db3ed5dc.kml` | 1 | 70,784 |
+| A1 | `/workspace/web/downloads/3121d40a-a37e-4936-86ce-c1872bf9446c-ea90f628.kml` | 1 | 36,987 |
+| A1 | `/workspace/web/downloads/9beb555b-b3b8-4f3b-947c-b33ba33615a5-9ff76158.kml` | 1 | 35,788 |
+| A1 | `/workspace/web/downloads/1384de7a-99ea-4d61-8cdb-bee9f5554551-9aa7ef7e.csv` | 1 | 33,572 |
+| A1 | `/workspace/web/downloads/fcaa315c-2d63-42ad-81b6-07e7c02debf4-c7f65c24.csv` | 1 | 28,504 |
+| A1 | `/workspace/web/downloads/bce229f1-23a9-4805-acd0-e21a6c72691b-04d23913.csv` | 1 | 27,570 |
+| A1 | `/workspace/web/downloads/932cbc17-1ef0-4c1c-ada6-fa63221b4459-95dd1aee.csv` | 1 | 25,482 |
+| A1 | `/workspace/web/downloads/6a6d0a58-9d4e-442b-a473-9ce40c271cae-a28543d9.csv` | 1 | 21,781 |
+| A1 | `/workspace/web/downloads/2ca165f9-5e5b-4bd0-8a5d-f4e4ad40744c-8b51eaba.csv` | 1 | 18,686 |
+| A1 | `/workspace/web/downloads/edd85f6d-6b53-47ed-8221-8e2ca22c4eee-fa318f3c.csv` | 1 | 15,875 |
+| A1 | `/workspace/web/downloads/d185bb0c-2307-4a7d-9106-11cd61570165-4d2c6025.kml` | 1 | 12,990 |
+| A1 | `/workspace/web/downloads/aa1addf9-77d6-4990-b65c-20f0439fa1f5-6dcbdae6.csv` | 1 | 12,796 |
+| A1 | `/workspace/web/downloads/aa134345-e92d-4eab-9485-416b48e576cc-4258f417.csv` | 1 | 10,727 |
+| A1 | `/workspace/web/downloads/d8a3e772-2d5d-4e19-bbb0-fe04915c96aa-3a1d1677.csv` | 1 | 10,486 |
+| A1 | `/workspace/web/downloads/ca9dc822-ba6d-49da-8f19-bb504a4c2fbd-cceee89c.csv` | 1 | 10,057 |
+| A1 | `/workspace/web/downloads/1ae309d5-fd61-49d3-a57c-200519791ec8-50871bf8.csv` | 1 | 7,722 |
+| A1 | `/workspace/web/downloads/17f84424-1769-45a2-84d5-76f0089f7e3a-82d9074f.kml` | 1 | 7,618 |
+| A1 | `/workspace/web/downloads/6e3b9e85-8e0f-4c9f-8ae3-378b63b29aab-d1a2ec18.csv` | 1 | 5,509 |
+| A1 | `/workspace/web/downloads/76785b37-893d-4c11-ac39-ad4dfb5e2db8-0c7c85eb.csv` | 1 | 4,958 |
+| A1 | `/workspace/web/downloads/56d3f45a-73d8-42b1-8b49-6360a393dc83-3549ae58.csv` | 1 | 3,610 |
+| A1 | `/workspace/web/downloads/422ee293-5102-4e9b-94bb-53716e7640cb-1a077bec.csv` | 1 | 3,594 |
+| A1 | `/workspace/web/downloads/26eb7645-7ab7-4940-a8bb-e9ce0e76042e-5ba96c05.csv` | 1 | 3,399 |
+| A1 | `/workspace/web/downloads/b04cc181-c7b2-4082-aace-817be8f4cc98-69a930a3.csv` | 1 | 2,883 |
+| A1 | `/workspace/web/downloads/6a9f1d50-db92-4cfa-9da4-e8b335bf7b63-f8d90693.csv` | 1 | 2,688 |
+| A1 | `/workspace/web/downloads/bdba1205-b27e-4ffe-bfa2-24fcf5d5d453-959a964c.csv` | 1 | 2,346 |
+| A1 | `/workspace/web/downloads/be6efc3d-d549-4073-a582-8c87d6b0df7d-14850f29.csv` | 1 | 1,387 |
+| A1 | `/workspace/web/downloads/bbec3f00-e6cf-45bf-88fa-3808c4737ba0-65594f9a.csv` | 1 | 1,366 |
+| A1 | `/workspace/web/downloads/ad3c3c8a-6df0-4297-86cc-5db40b7ac3f9-430191bf.csv` | 1 | 1,107 |
+| A1 | `/workspace/web/downloads/a7f9edd5-8709-4022-bae6-8197274886e5-a78e812a.csv` | 1 | 1,041 |
+| A1 | `/workspace/web/downloads/6ef882ea-3421-4937-999a-a0ced5023db5-f12b0752.csv` | 1 | 1,027 |
+| A1 | `/workspace/web/downloads/5148c621-ba7f-4b98-bc6c-66aedbefa059-11913fca.csv` | 1 | 958 |
+| A1 | `/workspace/web/downloads/634d3dd6-9f05-41b0-90fc-296fe724b18d-fbf3dc7b.csv` | 1 | 958 |
+| A1 | `/workspace/web/downloads/d27e7726-1321-426a-9cb3-8a20d9707cc9-ddef1dd6.csv` | 1 | 881 |
+| A1 | `/workspace/web/downloads/8ac18a93-8941-4afa-8db2-a9b972ad78c2-0872c9cb.csv` | 1 | 633 |
+| A1 | `/workspace/web/downloads/f973a508-9638-4a9d-9277-5c2f8edf94aa-4d81b75e.csv` | 1 | 553 |
+| A1 | `/workspace/web/downloads/ce0ec751-8caa-4aa5-a2a4-d1746c9a2d6a-8cebeb47.csv` | 1 | 513 |
+| A1 | `/workspace/web/downloads/e0eb81c3-901e-4126-a5b5-3d216672bfd4-ec2d574d.csv` | 1 | 386 |
+| A1 | `/workspace/web/downloads/6e691ac8-99d4-4f1f-aab6-2d08f828b4c8-b7d3653e.csv` | 1 | 350 |
+| A1 | `/workspace/web/downloads/83e4a2e3-9e6c-4714-b1fe-933293d8f622-0b62e5c7.csv` | 1 | 242 |
+| A2 | `/workspace/web/downloads/pune_mendeley/traffic` | 115 | 1,812,118,340 |
+| A3 | `/workspace/web/downloads/pune_refs/iisc14.pdf` | 1 | 165 |
+| A3 | `/workspace/web/downloads/pune_refs/pdfcoffee.html` | 1 | 5,444 |
+| A4 | `/workspace/work/uos-wt-qa2` | 750 | 11,664,452 |
+| A4 | `/workspace/work/uos-wt-qa3` | 755 | 11,701,480 |
+| A5 | `/workspace/work/coep2-scratch` | 420 | 63,384,488 |
+| A5 | `/workspace/work/prof` | 1 | 2,488,425 |
+| A5 | `/workspace/work/um-suite` | 87 | 199,098 |
+| A5 | `/workspace/work/uos-terrain-e2e` | 405 | 65,148,234 |
+| A5 | `/workspace/work/uos-wt-vt-logs` | 100 | 208,443 |
+| A5 | `/workspace/work/vp-conn` | 15 | 89,861,831 |
+| A5 | `/workspace/work/vp-final2-logs` | 4 | 131,733 |
+| A5 | `/workspace/work/vp-int-logs` | 154 | 373,221 |
+| A5 | `/workspace/work/vp-junc3` | 506 | 384,226,864 |
+| A5 | `/workspace/work/vp-logs` | 14 | 163,790 |
+| A5 | `/workspace/work/vp-shiv-e2e` | 1230 | 91,957,043 |
+| A5 | `/workspace/work/vp-shiv-scratch` | 61 | 6,723,272 |
+| A5 | `/workspace/work/vp-wt-final-e2e` | 95 | 98,419,755 |
+| A5 | `/workspace/work/vp-wt-recompute-e2e` | 843 | 77,371,204 |
+| A5 | `/workspace/work/vp-wt-scope-e2e` | 837 | 77,459,785 |
+| A5 | `/workspace/work/vp-wt-sim-scratch` | 69 | 1,018,487 |
+| A5 | `/workspace/work/vt-final` | 1 | 436 |
+
+### 11.4 Post-cleanup verification
+Raw manifests 229 files verified, 0 bad (10 Bhuvan deliberately deleted). DB `integrity_check` ok. ds_files 438: 427 verified, 10 withdrawn, 0 missing, 1 mismatch (the §11.1.3 exception). `provenance_check`: 172 match, 1 unregistered input (`osm_index.db` for buildings_comparison/v1, pre-existing). pytest 258 passed; vitest 772 passed / 7 skipped; tsc 0; oxlint 0 errors (8 warnings); production build ok. Live API: 101 datasets list, every detail endpoint 200, bhuvan / tree index / feasibility checksum `pass`, terrain v3 point and profile OK.
 
 ## Appendix A — OpenCity staging duplicates (web/downloads → raw)
 
