@@ -54,6 +54,8 @@ export const HoverTooltip: React.FC = () => {
     canvas.addEventListener('pointerdown', down);
     window.addEventListener('pointerup', up);
     canvas.addEventListener('pointerleave', leave);
+    // the camera moved (wheel zoom, fly-to, keyboard): the tooltip no longer points at what is under the cursor
+    const offCam = v.camera.changed.addEventListener(() => setTip(null));
     const run = () => {
       pending = null;
       if (!pos || dragging || v.isDestroyed()) return;
@@ -85,6 +87,7 @@ export const HoverTooltip: React.FC = () => {
     return () => {
       if (pending !== null) window.clearTimeout(pending);
       handler.destroy();
+      offCam();
       canvas.removeEventListener('pointerdown', down);
       window.removeEventListener('pointerup', up);
       canvas.removeEventListener('pointerleave', leave);
