@@ -39,9 +39,18 @@ export const EVIDENCE_ALPHA: Record<string, number> = { 'QL-A': 1, 'QL-B': 0.9, 
 /** Depth of the cutaway floor below the ground (m): below the deepest proposed tunnel drawn so far (~30 m). */
 export const CUTAWAY_DEPTH_M = 45;
 
-const KIND_COLOR: Record<UndergroundAlignmentKind, string> = {
+/** Proposed / existing alignment colour by kind (legend: legendPalette.ts imports it). */
+export const KIND_COLOR: Record<UndergroundAlignmentKind, string> = {
   bored_tunnel: '#f59e0b', underground_metro: '#a855f7', cut_and_cover: '#f97316', utility_trunk: '#22d3ee', storm_drain: '#22c55e',
 };
+/** OSM metro with no mapped depth: dashed plan line (tunnel) and dashed outline (station). */
+export const METRO_PLAN_COLOR = '#a855f7';
+/** Spans whose depth is UNKNOWN, drawn dashed grey on the surface (alignments, utilities, boreholes without depth). */
+export const UNKNOWN_DEPTH_COLOR = '#94a3b8';
+/** Boreholes with a final depth. */
+export const BOREHOLE_COLOR = '#eab308';
+/** Selected drawn utility's plan trace and selected alignment's outline (Color.WHITE). */
+export const SELECTED_COLOR = '#ffffff';
 const ALPHA: Record<Certainty, number> = { measured: 0.95, estimated: 0.8, hypothetical: 0.55, unknown: 0.35 };
 
 function circleShape(r: number, n = 20): Cartesian2[] {
@@ -172,7 +181,7 @@ export class UndergroundRenderer {
         id: nextId(`unk${k}`), name: `${a.name} (depth UNKNOWN)`,
         polyline: {
           positions: span.map(i => scenePoint(a.coordinates[i][0], a.coordinates[i][1], 0)), width: 3, clampToGround: true,
-          material: new PolylineDashMaterialProperty({ color: Color.fromCssColorString('#94a3b8'), dashLength: 8 }),
+          material: new PolylineDashMaterialProperty({ color: Color.fromCssColorString(UNKNOWN_DEPTH_COLOR), dashLength: 8 }),
         },
       });
     });
@@ -253,7 +262,7 @@ export class UndergroundRenderer {
         ents.add({
           id: nextId(`unk${i}`), name: `${u.name || 'Utility'} (depth UNKNOWN: drawn on the surface)`,
           polyline: { positions: [i - 1, i].map(j => scenePoint(u.coordinates[j][0], u.coordinates[j][1], 0)), width: 3, clampToGround: true,
-            material: new PolylineDashMaterialProperty({ color: Color.fromCssColorString('#94a3b8'), dashLength: 8 }) },
+            material: new PolylineDashMaterialProperty({ color: Color.fromCssColorString(UNKNOWN_DEPTH_COLOR), dashLength: 8 }) },
         });
       }
     }
@@ -271,7 +280,7 @@ export class UndergroundRenderer {
     // the removal and the visualizer keeps drawing the OLD entity (the white selected highlight never showed)
     ents.removeAll();
     ents.suspendEvents();
-    const purple = Color.fromCssColorString('#a855f7');
+    const purple = Color.fromCssColorString(METRO_PLAN_COLOR);
     const label = (text: string, offsetY = -14, maxM = 6000) => ({
       text, font: '12px sans-serif', fillColor: Color.WHITE, showBackground: true, backgroundColor: Color.fromCssColorString('#3b0764').withAlpha(0.8),
       // Not ground-clamped (scenePoint is already on the ground): a clamped label keeps whatever height a coarse
@@ -343,7 +352,7 @@ export class UndergroundRenderer {
           id: `rec:${r.id}`, name: `Borehole ${r.external_id}`,
           polyline: {
             positions: [scenePoint(x, y, 0), scenePoint(x, y, -(depth ?? 1))], width: 4,
-            material: depth === null ? new PolylineDashMaterialProperty({ color: Color.fromCssColorString('#94a3b8') }) : Color.fromCssColorString('#eab308'),
+            material: depth === null ? new PolylineDashMaterialProperty({ color: Color.fromCssColorString(UNKNOWN_DEPTH_COLOR) }) : Color.fromCssColorString(BOREHOLE_COLOR),
           },
         });
       } else if (g.type === 'LineString') {

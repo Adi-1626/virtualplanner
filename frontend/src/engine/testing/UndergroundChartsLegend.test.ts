@@ -13,6 +13,7 @@ import { UndergroundLegend } from '../../components/underground/UndergroundLegen
 import { ALIGNMENT_KIND_COLOR, LEGEND_COLOR } from '../../components/underground/legendPalette';
 import { Disclosure } from '../../components/ui/Disclosure';
 import { RECORD_COLOR, UTILITY_COLOR } from '../underground/UndergroundRenderer';
+import * as R from '../underground/UndergroundRenderer';
 import { HIGHLIGHT_CSS } from '../../components/underground/conflictHighlight';
 
 const WIN_DEM_ERR = String.raw`No elevation_copdem30 DEM under C:\Users\adity\Desktop\VirtualPlanner\backend\data\urbanos\derived - run python -m datasets.pipelines.elevation`;
@@ -157,13 +158,15 @@ describe('Underground legend', () => {
     expect(rendered).toMatch(/<details[^>]*open=""[^>]*data-testid="ug-legend-disclosure"|<details[^>]*data-testid="ug-legend-disclosure"[^>]*open=""/);
     expect(rendered).toContain('data-testid="ug-legend"');
   });
-  it('legend palette matches the literals UndergroundRenderer.ts draws with (drift guard)', () => {
+  it('legend palette is the renderer\'s own exported colours (drift guard)', () => {
     const src = readFileSync(resolve(__dirname, '../underground/UndergroundRenderer.ts'), 'utf8');
-    const kind = /const KIND_COLOR[^=]*=\s*\{([^}]*)\}/.exec(src)?.[1] ?? '';
-    for (const [k, c] of Object.entries(ALIGNMENT_KIND_COLOR)) expect(kind).toContain(`${k}: '${c}'`);
-    expect(src).toContain(`const purple = Color.fromCssColorString('${LEGEND_COLOR.metroPlanOnly}')`);
-    expect(src).toContain(`Color.fromCssColorString('${LEGEND_COLOR.unknownDepth}')`);
-    expect(src).toContain(`Color.fromCssColorString('${LEGEND_COLOR.borehole}')`);
+    expect(ALIGNMENT_KIND_COLOR).toBe(R.KIND_COLOR);
+    expect(LEGEND_COLOR).toMatchObject({ metroPlanOnly: R.METRO_PLAN_COLOR, unknownDepth: R.UNKNOWN_DEPTH_COLOR, borehole: R.BOREHOLE_COLOR });
+    // the renderer draws with the constants, not with copies of their literals
+    expect(src).toContain('const purple = Color.fromCssColorString(METRO_PLAN_COLOR)');
+    expect(src).toContain('Color.fromCssColorString(UNKNOWN_DEPTH_COLOR)');
+    expect(src).toContain('Color.fromCssColorString(BOREHOLE_COLOR)');
+    expect(R.SELECTED_COLOR).toBe('#ffffff');
     expect(src).toMatch(/selected \? Color\.WHITE/);
   });
 });
