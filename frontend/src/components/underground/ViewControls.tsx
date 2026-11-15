@@ -1,19 +1,68 @@
 import React, { useEffect, useState } from 'react';
+import { ArrowUpToLine, Eye } from 'lucide-react';
+import { Cartesian3, Math as CMath } from 'cesium';
 import { undergroundView } from '../../engine/underground/UndergroundView';
 import type { UndergroundAlignmentObject } from '../../engine/objects/types';
 import { alignmentsRect } from '../../engine/underground/viewRect';
+import { engineInstance } from '../../engine/TwinCityEngine';
+import { groundAt } from '../../engine/terrain/groundHeight';
+import { useUndergroundStore } from './undergroundStore';
 
-/** Ground opacity, X-ray, and "limit to alignments" (Cesium globe translucency). Real controls on the globe. */
+type Box = [number, number, number, number];
+
+/** Camera height above (+) / below (−) the scene ground, refreshed when the camera moves (throttled). */
+function useCameraDepth(): number | null {
+  const [h, setH] = useState<number | null>(null);
+  useEffect(() => {
+    const v = engineInstance.getViewer?.();
+    if (!v) return;
+    let last = 0;
+    const read = () => {
+      const now = performance.now();
+      if (now - last < 150) return;
+      last = now;
+      const c = v.camera.positionCartographic;
+      setH(c.height - groundAt(CMath.toDegrees(c.longitude), CMath.toDegrees(c.latitude)));
+    };
+    read();
+    v.camera.percentageChanged = 0.01;
+    const off1 = v.camera.changed.addEventListener(read);
+    const off2 = v.camera.moveEnd.addEventListener(() => { last = 0; read(); });
+    return () => { off1(); off2(); };
+  }, []);
+  return h;
+}
+
+const centreOf = (b: Box): [number, number] => [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2];
+
+function flyTo(lon: number, lat: number, h: number, pitchDeg: number, backM: number) {
+  const v = engineInstance.getViewer?.();
+  if (!v) return;
+  const dLat = backM / 110574;
+  v.camera.flyTo({
+    destination: Cartesian3.fromDegrees(lon, lat - dLat, h + groundAt(lon, lat)),
+    orientation: { heading: 0, pitch: CMath.toRadians(pitchDeg), roll: 0 }, duration: 1.2,
+  });
+}
+
+/**
+ * Cutaway controls (research Top-12 #9): ground see-through limited to the work area by default (surface context kept
+ * everywhere else), X-ray, a camera depth readout, "look from below" and "back to surface".
+ */
 export const ViewControls: React.FC<{ alignments: UndergroundAlignmentObject[] }> = ({ alignments }) => {
   const [s, setS] = useState(undergroundView.getSettings());
   const [active, setActive] = useState(undergroundView.isActive());
-  const [limit, setLimit] = useState(s.rectangleDeg !== null);
+  const [everywhere, setEverywhere] = useState(false);
   useEffect(() => undergroundView.onChange(() => { setS(undergroundView.getSettings()); setActive(undergroundView.isActive()); }), []);
-  const rect = alignmentsRect(alignments);
-  const rectKey = rect?.join(',') ?? '';
-  // Keep the limited area following the alignments
-  useEffect(() => { if (limit) undergroundView.update({ rectangleDeg: rect }); }, [limit, rectKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const recordsArea = useUndergroundStore(st => st.recordsArea);
+  const area: Box | null = alignmentsRect(alignments) ?? recordsArea;
+  const areaKey = area?.map(v => v.toFixed(5)).join(',') ?? '';
+  // The see-through ground follows the work area (alignments, else the area the records are listed for)
+  useEffect(() => { if (active) undergroundView.update({ rectangleDeg: everywhere ? null : area }); }, [everywhere, areaKey, active]); // eslint-disable-line react-hooks/exhaustive-deps
+  const camH = useCameraDepth();
+  const below = camH !== null && camH < 0;
   const pct = Math.round(s.groundOpacity * 100);
+  const centre = area ? centreOf(area) : null;
   return (
     <div className="flex flex-col gap-2" data-testid="ug-view-controls">
       <label className="flex items-center gap-3 text-label text-text-2">
@@ -23,15 +72,33 @@ export const ViewControls: React.FC<{ alignments: UndergroundAlignmentObject[] }
         <span className="w-10 text-right tabular-nums text-text-1" data-testid="ug-ground-opacity-value">{pct}%</span>
       </label>
       <div className="flex flex-wrap gap-x-4 gap-y-1">
-        <label className="flex items-center gap-2 text-label text-text-2 min-h-8">
+        <label className="flex items-center gap-2 text-label text-text-2 min-h-8" title="Buried objects drawn through the ground everywhere">
           <input type="checkbox" checked={s.xray} data-testid="ug-xray" onChange={e => undergroundView.update({ xray: e.target.checked })} disabled={!active} /> X-ray
         </label>
-        <label className="flex items-center gap-2 text-label text-text-2 min-h-8" title={rect ? 'Only the ground around the alignments is see-through' : 'Draw an alignment first'}>
-          <input type="checkbox" checked={limit} data-testid="ug-limit-rect" disabled={!active || !rect}
-            onChange={e => { setLimit(e.target.checked); undergroundView.update({ rectangleDeg: e.target.checked ? rect : null }); }} /> Only around alignments
+        <label className="flex items-center gap-2 text-label text-text-2 min-h-8" title={area ? 'Off = only the work area is see-through; the rest of the city stays solid' : 'No work area yet: the whole ground is see-through'}>
+          <input type="checkbox" checked={everywhere || !area} data-testid="ug-see-through-everywhere" disabled={!active || !area}
+            onChange={e => setEverywhere(e.target.checked)} /> See-through everywhere
         </label>
       </div>
-      <p className="text-meta text-text-3">{active ? 'Camera may go below ground here (collision off). Leaving Underground restores the normal view.' : 'Map not ready.'}</p>
+      <p className="text-meta text-text-2" data-testid="ug-view-area">
+        {!active ? 'Map not ready.' : area && !everywhere ? `Ground is see-through only around ${alignments.length ? 'your alignments' : 'the listed records'} (${pct}% opaque); the surface stays aligned above.` : 'Ground is see-through everywhere.'}
+      </p>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className={`text-label tabular-nums ${below ? 'text-warn' : 'text-text-2'}`} data-testid="ug-camera-depth">
+          {camH === null ? 'Camera height —' : below ? `Camera ${Math.abs(camH).toFixed(0)} m below ground` : `Camera ${camH >= 1000 ? `${(camH / 1000).toFixed(1)} km` : `${camH.toFixed(0)} m`} above ground`}
+        </span>
+        <span className="flex-1" />
+        <button type="button" className="uos-btn uos-btn-sm" disabled={!active || !centre} data-testid="ug-look-below"
+          title="Put the camera 8 m below ground, looking along the work area"
+          onClick={() => centre && flyTo(centre[0], centre[1], -8, 2, 220)}><Eye size={12} aria-hidden /> Look from below</button>
+        <button type="button" className={`uos-btn uos-btn-sm ${below ? 'uos-btn-primary' : ''}`} disabled={!active} data-testid="ug-back-to-surface"
+          onClick={() => {
+            const v = engineInstance.getViewer?.();
+            const c = v?.camera.positionCartographic;
+            const [lon, lat] = centre ?? (c ? [CMath.toDegrees(c.longitude), CMath.toDegrees(c.latitude)] : [0, 0]);
+            flyTo(lon, lat, 420, -38, 520);
+          }}><ArrowUpToLine size={12} aria-hidden /> Back to surface</button>
+      </div>
     </div>
   );
 };

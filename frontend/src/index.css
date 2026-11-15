@@ -260,6 +260,7 @@ button.uos-row:hover { background: var(--surface-2); }
 .uos-btn:hover { background: var(--surface-3); }
 .uos-btn:disabled { opacity: .5; cursor: not-allowed; }
 .uos-btn-sm { height: 30px; padding: 0 10px; }
+.uos-btn-primary { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, var(--surface-2)); }
 .uos-link { color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .uos-banner-fail { display: flex; gap: var(--sp-2); padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--fail); background: color-mix(in srgb, var(--fail) 10%, var(--surface-1)); color: var(--text-1); font-size: var(--fs-label); }
 .uos-banner-fail svg { color: var(--fail); }
