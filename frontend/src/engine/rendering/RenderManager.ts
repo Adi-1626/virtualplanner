@@ -50,7 +50,18 @@ export class RenderManager {
   public getObjectOpacity(objId: string): number {
     const obj = this.allObjects.get(objId);
     if (!obj) return 1;
-    return this.layerOpacity.get(this.resolveLayer(obj.layerId)) ?? 1;
+    const layer = this.layerOpacity.get(this.resolveLayer(obj.layerId)) ?? 1;
+    const cap = this.typeOpacityCap.get(obj.type);
+    return cap === undefined ? layer : Math.min(layer, cap);
+  }
+
+  /** Temporary opacity cap per object type (Underground X-ray fades buildings); null removes it. Rebuilds the
+   * buildings' loaded tiles only when the cap changes. Does not touch the layer opacities the user set. */
+  private typeOpacityCap = new Map<string, number>();
+  public setTypeOpacityCap(type: 'building', cap: number | null): void {
+    if ((this.typeOpacityCap.get(type) ?? null) === cap) return;
+    if (cap === null) this.typeOpacityCap.delete(type); else this.typeOpacityCap.set(type, cap);
+    this.buildingRenderer?.refreshAll();
   }
 
   /**

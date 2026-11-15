@@ -49,20 +49,21 @@ function flyTo(lon: number, lat: number, h: number, pitchDeg: number, backM: num
 }
 
 /**
- * Cutaway controls (research Top-12 #9): ground see-through limited to the work area by default (surface context kept
- * everywhere else), X-ray, a camera depth readout, "look from below" and "back to surface".
+ * Cutaway controls (research Top-12 #9): ground see-through everywhere by default, or a cutaway window (dark pit) around
+ * the work area with the rest of the city solid; X-ray; a camera depth readout; "look from below" and "back to surface".
  */
 export const ViewControls: React.FC<{ alignments: UndergroundAlignmentObject[]; utilities?: UtilityObject[] }> = ({ alignments, utilities = [] }) => {
   const [s, setS] = useState(undergroundView.getSettings());
   const [active, setActive] = useState(undergroundView.isActive());
-  const [everywhere, setEverywhere] = useState(false);
   useEffect(() => undergroundView.onChange(() => { setS(undergroundView.getSettings()); setActive(undergroundView.isActive()); }), []);
   const recordsArea = useUndergroundStore(st => st.recordsArea);
   // Proposed alignments AND utilities are inside the see-through area (a pipe outside it was hidden under opaque ground)
   const area: Box | null = alignmentsRect([...alignments, ...utilities]) ?? recordsArea;
   const areaKey = area?.map(v => v.toFixed(5)).join(',') ?? '';
-  // The see-through ground follows the work area (alignments, else the area the records are listed for)
-  useEffect(() => { if (active) undergroundView.update({ rectangleDeg: everywhere ? null : area }); }, [everywhere, areaKey, active]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The cutaway window follows the work area (alignments, else the area the records are listed for); it is used when
+  // "See-through everywhere" is off (on by default)
+  useEffect(() => { if (active) undergroundView.update({ rectangleDeg: area }); }, [areaKey, active]); // eslint-disable-line react-hooks/exhaustive-deps
+  const everywhere = s.seeThroughEverywhere;
   const camH = useCameraDepth();
   const ground = sceneGroundLabel();
   const below = camH !== null && camH < 0;
@@ -77,16 +78,16 @@ export const ViewControls: React.FC<{ alignments: UndergroundAlignmentObject[]; 
         <span className="w-10 text-right tabular-nums text-text-1" data-testid="ug-ground-opacity-value">{pct}%</span>
       </label>
       <div className="flex flex-wrap gap-x-4 gap-y-1">
-        <label className="flex items-center gap-2 text-label text-text-2 min-h-8" title="Buried objects drawn through the ground everywhere">
+        <label className="flex items-center gap-2 text-label text-text-2 min-h-8" title="Buried pipes, tunnels and records drawn through solid ground everywhere; surface buildings fade to faint outlines">
           <input type="checkbox" checked={s.xray} data-testid="ug-xray" onChange={e => undergroundView.update({ xray: e.target.checked })} disabled={!active} /> X-ray
         </label>
-        <label className="flex items-center gap-2 text-label text-text-2 min-h-8" title={area ? 'Off = only the work area is see-through; the rest of the city stays solid' : 'No work area yet: the whole ground is see-through'}>
+        <label className="flex items-center gap-2 text-label text-text-2 min-h-8" title={area ? 'Off = a cutaway window around the work area only; the rest of the city stays solid' : 'No work area yet: the whole ground is see-through'}>
           <input type="checkbox" checked={everywhere || !area} data-testid="ug-see-through-everywhere" disabled={!active || !area}
-            onChange={e => setEverywhere(e.target.checked)} /> See-through everywhere
+            onChange={e => undergroundView.update({ seeThroughEverywhere: e.target.checked })} /> See-through everywhere
         </label>
       </div>
       <p className="text-meta text-text-2" data-testid="ug-view-area">
-        {!active ? 'Map not ready.' : area && !everywhere ? `Ground is see-through only around ${alignments.length || utilities.length ? 'your drawn objects' : 'the listed records'} (${pct}% opaque); the surface stays aligned above.` : 'Ground is see-through everywhere.'}
+        {!active ? 'Map not ready.' : area && !everywhere ? `Cutaway window around ${alignments.length || utilities.length ? 'your drawn objects' : 'the listed records'} (ground ${pct}% opaque); the rest of the city stays solid.` : `Ground is see-through everywhere (${pct}% opaque).`}{active && s.xray ? ' X-ray: buried objects drawn through solid ground, buildings faded.' : ''}
       </p>
       <p className="text-meta text-text-3" data-testid="ug-ground-3d" title={ground.long}>{ground.short} · Profile: DSM ground. Same depth below ground at every point in both; only the ground shape differs.</p>
       <div className="flex items-center gap-2 flex-wrap">

@@ -10,9 +10,10 @@
  * The first entity of an alignment carries the object's id, so clicking it selects the object like any other.
  */
 import {
-  Cartesian2, Color, ColorMaterialProperty, CornerType, CustomDataSource, DistanceDisplayCondition, PolylineDashMaterialProperty, type Entity, type Viewer,
+  Cartesian2, Cartesian3, Color, Rectangle, ColorMaterialProperty, CornerType, CustomDataSource, DistanceDisplayCondition, PolylineDashMaterialProperty, type Entity, type Viewer,
 } from 'cesium';
-import { scenePoint } from '../terrain/groundHeight';
+import { groundAt, scenePoint } from '../terrain/groundHeight';
+import { SUBSURFACE_BACKDROP_CSS } from './UndergroundView';
 import type { Certainty } from '../objects/certainty';
 import type { MetroLineObject, MetroStationObject, UndergroundAlignmentKind, UndergroundAlignmentObject, UtilityObject, UtilityType } from '../objects/types';
 import { METRO_STATION_LABEL, METRO_TUNNEL_LABEL } from './metroLevel';
@@ -33,6 +34,9 @@ export const UTILITY_COLOR: Record<UtilityType, string> = {
 /** Minimum on-screen width (px) of a buried utility line, so a 150 mm pipe can be found from 1 km up. */
 export const UTILITY_MIN_PX = 3;
 export const EVIDENCE_ALPHA: Record<string, number> = { 'QL-A': 1, 'QL-B': 0.9, 'QL-C': 0.75, 'QL-D': 0.6, UNKNOWN: 0.5 };
+
+/** Depth of the cutaway floor below the ground (m): below the deepest proposed tunnel drawn so far (~30 m). */
+export const CUTAWAY_DEPTH_M = 45;
 
 const KIND_COLOR: Record<UndergroundAlignmentKind, string> = {
   bored_tunnel: '#f59e0b', underground_metro: '#a855f7', cut_and_cover: '#f97316', utility_trunk: '#22d3ee', storm_drain: '#22c55e',
@@ -72,6 +76,8 @@ export class UndergroundRenderer {
   private recordsDs: CustomDataSource | null = null;
   private utilDs: CustomDataSource | null = null;
   private metroDs: CustomDataSource | null = null;
+  private cutawayDs: CustomDataSource | null = null;
+  private cutawayKey = '';
 
   attach(viewer: Viewer | null) {
     if (!viewer || this.viewer === viewer) return;
@@ -80,6 +86,8 @@ export class UndergroundRenderer {
     this.recordsDs = new CustomDataSource('subsurface-records');
     this.utilDs = new CustomDataSource('underground-utilities');
     this.metroDs = new CustomDataSource('metro-plan-only');
+    this.cutawayDs = new CustomDataSource('underground-cutaway');
+    void viewer.dataSources.add(this.cutawayDs);
     void viewer.dataSources.add(this.utilDs);
     void viewer.dataSources.add(this.metroDs);
     void viewer.dataSources.add(this.ds);
@@ -87,6 +95,37 @@ export class UndergroundRenderer {
   }
 
   isAttached() { return !!this.viewer && !this.viewer.isDestroyed(); }
+
+  /**
+   * Cutaway pit under the see-through window (local mode): a dark floor CUTAWAY_DEPTH_M below the ground and four dark
+   * walls up to the ground, so what is seen through the window is a clean subsurface box (never the far side of the
+   * Earth or the sky), plus a light rim at ground level marking the window. Null = no pit (see-through everywhere, opaque
+   * ground, or X-ray — the pit is depth-tested against the ground and X-ray turns that test off).
+   */
+  renderCutaway(rectDeg: [number, number, number, number] | null, floorDepthM = CUTAWAY_DEPTH_M) {
+    if (!this.cutawayDs || !this.isAttached()) return;
+    const key = rectDeg ? `${rectDeg.map(v => v.toFixed(5)).join(',')}@${floorDepthM}` : '';
+    if (key === this.cutawayKey) return;
+    this.cutawayKey = key;
+    const ents = this.cutawayDs.entities;
+    ents.removeAll();
+    if (rectDeg) {
+      const [w, so, e, n] = rectDeg;
+      const ring: [number, number][] = [[w, so], [e, so], [e, n], [w, n], [w, so]];
+      const top = ring.map(([lon, lat]) => groundAt(lon, lat) - 0.2);
+      const floorH = Math.min(...top) - Math.max(CUTAWAY_DEPTH_M, floorDepthM);
+      const dark = Color.fromCssColorString(SUBSURFACE_BACKDROP_CSS);
+      ents.suspendEvents();
+      ents.add({ id: 'ug:cutaway:floor', name: 'Cutaway floor', rectangle: { coordinates: Rectangle.fromDegrees(w, so, e, n), height: floorH, material: dark } });
+      ents.add({ id: 'ug:cutaway:walls', name: 'Cutaway walls', wall: {
+        positions: ring.map(([lon, lat], i) => Cartesian3.fromDegrees(lon, lat, top[i])), minimumHeights: ring.map(() => floorH), maximumHeights: top,
+        material: Color.fromCssColorString('#1e293b'),
+      } });
+      ents.add({ id: 'ug:cutaway:rim', name: 'Cutaway window edge', polyline: { positions: ring.map(([lon, lat]) => scenePoint(lon, lat, 0.3)), width: 2, material: Color.fromCssColorString('#cbd5e1').withAlpha(0.7) } });
+      ents.resumeEvents();
+    }
+    this.viewer?.scene.requestRender();
+  }
 
   renderAlignments(alignments: UndergroundAlignmentObject[], selectedId: string | null) {
     if (!this.ds || !this.isAttached()) return;
