@@ -92,7 +92,7 @@ export const ViewControls: React.FC<{ alignments: UndergroundAlignmentObject[] }
         <span className="flex-1" />
         <button type="button" className="uos-btn uos-btn-sm" disabled={!active || !centre} data-testid="ug-look-below"
           title="Put the camera 8 m below ground, looking along the work area"
-          onClick={() => centre && flyTo(centre[0], centre[1], -8, 2, 220)}><Eye size={12} aria-hidden /> Look from below</button>
+          onClick={() => centre && flyTo(centre[0], centre[1], -8, -4, 260)}><Eye size={12} aria-hidden /> Look from below</button>
         <button type="button" className={`uos-btn uos-btn-sm ${below ? 'uos-btn-primary' : ''}`} disabled={!active} data-testid="ug-back-to-surface"
           onClick={() => {
             const v = engineInstance.getViewer?.();
