@@ -86,4 +86,20 @@ describe('base imagery notice on the map', () => {
     next.fail({});
     expect(states.at(-1)).toBe('No base imagery: no response. City data is unaffected.');
   });
+
+  it('takes a failed base layer out (the globe waits for it forever) and turns ground atmosphere off until another base is added', async () => {
+    const { dropFailedBaseLayer } = await import('../../lib/baseImageryErrors');
+    const first = layer(true); const t = coll(first); const removed: unknown[] = [];
+    const globe = { showGroundAtmosphere: true };
+    dropFailedBaseLayer({ ...t.c, remove: (l: unknown) => { removed.push(l); return true; } } as never, globe);
+    first.fail({ statusCode: 401 });
+    expect(removed).toEqual([first]);
+    expect(globe.showGroundAtmosphere).toBe(false);
+    t.add(layer(false));                 // an overlay: nothing changes
+    expect(globe.showGroundAtmosphere).toBe(false);
+    t.add(layer(true));                  // the picker added another base layer
+    expect(globe.showGroundAtmosphere).toBe(true);
+    first.fail({ statusCode: 401 });     // late error of the replaced layer: ignored
+    expect(removed.length).toBe(1);
+  });
 });
