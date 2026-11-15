@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   STATUS_ORDER, STATUS_TEXT, SCREENING_BANNER, countsByStatus, focusBounds, forObject, groupBySeverity, highlightTargets, isStale,
-  keyNumbers, pathsOf, plainSummary,
+  keyNumbers, pathsOf, plainSummary, screenedAsProposed,
 } from '../../components/underground/conflictClasses';
 import { gapCountText, groupGaps } from '../../components/underground/screeningGroups';
 import { sideBLabel } from '../../lib/planningProjects';
@@ -106,5 +106,18 @@ describe('underground screening helpers', () => {
     expect(gapCountText(gs[1])).toBe('1 object');
     expect(gs[2].label).toBe('PMC sewer network: vertical clearance not checkable');   // older result without gap_group
     for (const g of gs) for (const w of ['safe', 'feasible', 'passed', 'compliant']) expect(g.label.toLowerCase()).not.toContain(w);
+  });
+});
+
+describe('which drawn objects the screening checks as proposals (mirrors backend classify_objects)', () => {
+  it('recorded lifecycle wins, else alternative membership', () => {
+    expect(screenedAsProposed({ type: 'utility', scenarioId: 'base', status: 'proposed' }, 'alt')).toBe(true);
+    expect(screenedAsProposed({ type: 'utility', scenarioId: 'alt', status: 'existing' }, 'alt')).toBe(false);
+    expect(screenedAsProposed({ type: 'utility', scenarioId: 'alt', status: 'abandoned' }, 'alt')).toBe(false);
+    expect(screenedAsProposed({ type: 'utility', scenarioId: 'alt', status: 'conceptual' }, 'alt')).toBe(true);
+    expect(screenedAsProposed({ type: 'utility', scenarioId: 'base' }, 'alt')).toBe(false);
+    expect(screenedAsProposed({ type: 'utility', scenarioId: 'base', status: 'unknown' }, 'base')).toBe(true);
+    expect(screenedAsProposed({ type: 'underground_alignment', scenarioId: 'alt', lifecycle: 'existing' }, 'alt')).toBe(false);
+    expect(screenedAsProposed({ type: 'metro_line', scenarioId: 'alt' }, 'alt')).toBe(false);
   });
 });

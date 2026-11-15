@@ -12,6 +12,20 @@ export const CLASS_TEXT: Record<ConflictClass, { label: string; color: string; h
 
 // ── underground screening (docs/urbanos/UNDERGROUND_CHECKS.md) ──────────────────────────────────────────────────────
 
+/**
+ * Whether the screening engine checks this drawn object as a proposal (same rule as backend screening.classify_objects):
+ * the recorded lifecycle wins (utility `status`, alignment `lifecycle`: proposed / conceptual → proposal; existing /
+ * abandoned → existing obstacle); without one, objects of the active alternative are proposals, and in the base city
+ * every drawn alignment / utility is.
+ */
+export function screenedAsProposed(o: { type: string; scenarioId?: string; status?: string; lifecycle?: string }, activeScenarioId: string): boolean {
+  if (o.type !== 'underground_alignment' && o.type !== 'utility') return false;
+  const lc = o.type === 'utility' ? o.status : o.lifecycle;
+  if (lc === 'proposed' || lc === 'conceptual') return true;
+  if (lc === 'existing' || lc === 'abandoned') return false;
+  return activeScenarioId === 'base' || (o.scenarioId ?? 'base') === activeScenarioId;
+}
+
 export const SCREENING_BANNER = 'Automated screening — not an engineering assessment';
 
 /** Most severe first. 'verified' is set only by a person recording field evidence. No green anywhere. */
