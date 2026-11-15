@@ -2,11 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { ArrowUpToLine, Eye } from 'lucide-react';
 import { Cartesian3, Math as CMath } from 'cesium';
 import { undergroundView } from '../../engine/underground/UndergroundView';
-import type { UndergroundAlignmentObject } from '../../engine/objects/types';
+import type { UndergroundAlignmentObject, UtilityObject } from '../../engine/objects/types';
 import { alignmentsRect } from '../../engine/underground/viewRect';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { groundAt } from '../../engine/terrain/groundHeight';
 import { useUndergroundStore } from './undergroundStore';
+import { sceneGroundLabel } from '../../engine/underground/groundModels';
 
 type Box = [number, number, number, number];
 
@@ -51,17 +52,19 @@ function flyTo(lon: number, lat: number, h: number, pitchDeg: number, backM: num
  * Cutaway controls (research Top-12 #9): ground see-through limited to the work area by default (surface context kept
  * everywhere else), X-ray, a camera depth readout, "look from below" and "back to surface".
  */
-export const ViewControls: React.FC<{ alignments: UndergroundAlignmentObject[] }> = ({ alignments }) => {
+export const ViewControls: React.FC<{ alignments: UndergroundAlignmentObject[]; utilities?: UtilityObject[] }> = ({ alignments, utilities = [] }) => {
   const [s, setS] = useState(undergroundView.getSettings());
   const [active, setActive] = useState(undergroundView.isActive());
   const [everywhere, setEverywhere] = useState(false);
   useEffect(() => undergroundView.onChange(() => { setS(undergroundView.getSettings()); setActive(undergroundView.isActive()); }), []);
   const recordsArea = useUndergroundStore(st => st.recordsArea);
-  const area: Box | null = alignmentsRect(alignments) ?? recordsArea;
+  // Proposed alignments AND utilities are inside the see-through area (a pipe outside it was hidden under opaque ground)
+  const area: Box | null = alignmentsRect([...alignments, ...utilities]) ?? recordsArea;
   const areaKey = area?.map(v => v.toFixed(5)).join(',') ?? '';
   // The see-through ground follows the work area (alignments, else the area the records are listed for)
   useEffect(() => { if (active) undergroundView.update({ rectangleDeg: everywhere ? null : area }); }, [everywhere, areaKey, active]); // eslint-disable-line react-hooks/exhaustive-deps
   const camH = useCameraDepth();
+  const ground = sceneGroundLabel();
   const below = camH !== null && camH < 0;
   const pct = Math.round(s.groundOpacity * 100);
   const centre = area ? centreOf(area) : null;
@@ -83,8 +86,9 @@ export const ViewControls: React.FC<{ alignments: UndergroundAlignmentObject[] }
         </label>
       </div>
       <p className="text-meta text-text-2" data-testid="ug-view-area">
-        {!active ? 'Map not ready.' : area && !everywhere ? `Ground is see-through only around ${alignments.length ? 'your alignments' : 'the listed records'} (${pct}% opaque); the surface stays aligned above.` : 'Ground is see-through everywhere.'}
+        {!active ? 'Map not ready.' : area && !everywhere ? `Ground is see-through only around ${alignments.length || utilities.length ? 'your drawn objects' : 'the listed records'} (${pct}% opaque); the surface stays aligned above.` : 'Ground is see-through everywhere.'}
       </p>
+      <p className="text-meta text-text-3" data-testid="ug-ground-3d" title={ground.long}>{ground.long}</p>
       <div className="flex items-center gap-2 flex-wrap">
         <span className={`text-label tabular-nums ${below ? 'text-warn' : 'text-text-2'}`} data-testid="ug-camera-depth">
           {camH === null ? 'Camera height —' : below ? `Camera ${Math.abs(camH).toFixed(0)} m below ground` : `Camera ${camH >= 1000 ? `${(camH / 1000).toFixed(1)} km` : `${camH.toFixed(0)} m`} above ground`}

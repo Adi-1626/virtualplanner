@@ -1,4 +1,5 @@
 import { profileKindLabel } from '../../engine/underground/utilityModel';
+import { sceneGroundLabel } from '../../engine/underground/groundModels';
 import React, { useMemo } from 'react';
 import type { CityObject, UndergroundAlignmentObject } from '../../engine/objects/types';
 import { ALIGNMENT_KIND_LABEL, chainages } from '../../engine/underground/alignmentGeometry';
@@ -44,6 +45,7 @@ export const ElevationProfileSvg: React.FC<{ a: UndergroundAlignmentObject; othe
         <span>{L.crossings.length} model crossing{L.crossings.length === 1 ? '' : 's'} · {evidenceNote ? <span data-testid="ug-profile-evidence-note">{evidenceNote}</span> : `${L.sewers.length} PMC sewer crossing${L.sewers.length === 1 ? '' : 's'}`}</span>
         <span>Vertical scale exaggerated; click to set the cross-section chainage</span>
       </div>
+      <div className="text-meta text-text-3" data-testid="ug-ground-profile">Ground in this view: Copernicus GLO-30 {ds.surface} {ds.version}, m EGM2008. {sceneGroundLabel().short} — the 3D view draws the same depth below its ground at each point.</div>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxHeight: H, minWidth: 560 }} role="img" data-testid="ug-profile-elevation"
         aria-label={`Long-section of ${a.name} on elevation (m, EGM2008) with DSM ground line`}
         onClick={e => {

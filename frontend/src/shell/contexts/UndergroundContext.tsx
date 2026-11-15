@@ -177,7 +177,7 @@ export const UndergroundContext: React.FC = () => {
   const recordsRef = useRef<HTMLDivElement>(null);
   const checkRef = useRef<HTMLDivElement>(null);
   // The records follow the work area: re-list when the alignments' extent changes
-  const rectKey = alignmentsRect(alignments, 250)?.map(v => v.toFixed(4)).join(',') ?? '';
+  const rectKey = alignmentsRect([...alignments, ...utils], 250)?.map(v => v.toFixed(4)).join(',') ?? '';
   const first = useRef(true);
   useEffect(() => { if (first.current) { first.current = false; return; } void reload(); }, [rectKey, reload]);
   const drawing = mode === 'draw_underground' || mode === 'draw_utility';
@@ -224,7 +224,7 @@ export const UndergroundContext: React.FC = () => {
       )}
       {!drawing && alignments.length === 0 && utils.length === 0 && <GetStarted onLook={look} />}
       <PanelSection title="View">
-        <ViewControls alignments={alignments} />
+        <ViewControls alignments={alignments} utilities={utils} />
         <Disclosure summary="Legend"><Legend /></Disclosure>
       </PanelSection>
       <PanelSection title="Proposed alignments" aside={`${alignments.length}`}>
@@ -280,7 +280,7 @@ export const UndergroundContext: React.FC = () => {
         )}
       </PanelSection>
       <Disclosure>
-        <p className="text-label text-text-2">Depth = metres below ground, positive down. In the 3D view ground is the scene ground; in the Profile and the editor it is the Copernicus GLO-30 DSM v3 (m EGM2008; a surface model that includes roofs and trees, ±2–4 m, screening only), so "below ground" can be measured from a rooftop. Where the DSM does not cover a point its ground is UNKNOWN. Geology between boreholes, settlement, structural adequacy and engineering clearances are not modelled. PMC sewer levels are published design values without a stated vertical datum (QL-D).</p>
+        <p className="text-label text-text-2">Depth = metres below ground, positive down. In the 3D view ground is the scene ground (flat when no terrain service is available; each buried object is drawn at its typed depth below it at every point); in the Profile and the editor it is the Copernicus GLO-30 DSM v3 (m EGM2008; a surface model that includes roofs and trees, ±2–4 m, screening only), so "below ground" can be measured from a rooftop. Where the DSM does not cover a point its ground is UNKNOWN. Geology between boreholes, settlement, structural adequacy and engineering clearances are not modelled. PMC sewer levels are published design values without a stated vertical datum (QL-D).</p>
       </Disclosure>
     </div>
   );

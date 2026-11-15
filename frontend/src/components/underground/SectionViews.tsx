@@ -75,7 +75,7 @@ export const ProfileSvg: React.FC<{ a: UndergroundAlignmentObject; others: reado
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-text-2">
         <span className="text-text-1 font-medium">{a.name} · {profileKindLabel(a, ALIGNMENT_KIND_LABEL)}</span>
         <span>Length {Math.round(L.profile.lengthM)} m</span>
-        <span>Deepest known {fmtM(L.profile.maxKnownDepthM)}</span>
+        <span>Deepest known ({L.profile.maxKnownDepthRef}) {fmtM(L.profile.maxKnownDepthM)} below ground</span>
         {L.profile.unknownDepthCount > 0 && <span className="text-unknown" data-testid="ug-profile-unknown-count">{L.profile.unknownDepthCount} vertex depth{L.profile.unknownDepthCount > 1 ? 's' : ''} UNKNOWN</span>}
         <span>{L.crossings.length} crossing{L.crossings.length === 1 ? '' : 's'} with model objects</span>
         <span>Vertical scale exaggerated; click to set the cross-section chainage</span>

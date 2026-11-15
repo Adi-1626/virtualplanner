@@ -14,6 +14,7 @@ import type {
   CityObject, UndergroundAlignmentKind, UndergroundAlignmentObject, UndergroundSection, UndergroundVertexDepth,
 } from '../objects/types';
 import { STATUS_LABEL, ZREF_LABEL, utilityExtentAt, utilityZ } from './utilityModel';
+import { isUnmappedMetroTunnel } from './metroLevel';
 export const ALIGNMENT_KIND_LABEL: Record<UndergroundAlignmentKind, string> = {
   bored_tunnel: 'Bored tunnel',
   underground_metro: 'Underground metro',
@@ -98,7 +99,10 @@ export interface AlignmentProfile {
   /** Gradient of each segment in % (Δcrown / Δchainage, + = falling with chainage, i.e. getting deeper); null if a depth is unknown. */
   gradientsPct: (number | null)[];
   sectionHeightM: number | null;
+  /** Deepest known depth: to the invert where the section height is known, else to the crown (see maxKnownDepthRef). */
   maxKnownDepthM: number | null;
+  /** Which part of the section maxKnownDepthM is to. */
+  maxKnownDepthRef: 'invert' | 'crown';
   unknownDepthCount: number;
 }
 
@@ -125,6 +129,7 @@ export function alignmentProfile(a: UndergroundAlignmentObject): AlignmentProfil
     gradientsPct,
     sectionHeightM: h,
     maxKnownDepthM: known.length ? Math.max(...known) : null,
+    maxKnownDepthRef: h !== null ? 'invert' : 'crown',
     unknownDepthCount: vertices.filter(v => v.crownDepthM === null).length,
   };
 }
@@ -182,7 +187,7 @@ export function verticalExtentOf(o: CityObject, otherChainageM = 0): VerticalExt
       return { topDepthM: 0, bottomDepthM: null, certainty: 'unknown', note: 'At-grade road: pavement / structure depth UNKNOWN' };
     case 'metro_line':
       // OSM tunnel=yes / layer<0 is imported with a −6 m placeholder: the real tunnel depth is not published (UNKNOWN)
-      if (ok(o.elevation) && o.elevation < 0) {
+      if (isUnmappedMetroTunnel(o as CityObject)) {
         return { topDepthM: null, bottomDepthM: null, certainty: 'unknown', note: 'Existing metro tunnel (OSM tunnel=yes, plan position only): crown/invert depth UNKNOWN — no official levels; ask Maha-Metro' };
       }
       return { topDepthM: ok(o.elevation) ? -o.elevation : null, bottomDepthM: null, certainty: 'unknown', note: 'Elevated structure: pier foundation depth UNKNOWN (not in the model)' };
@@ -400,9 +405,10 @@ export function alignmentElementPayload(a: UndergroundAlignmentObject): Alignmen
  * One line for an alignment in a list: kind, plan length, deepest known depth (invert where the section is known), how many vertex depths are
  * unknown. Value and unit are joined by a no-break space so a narrow panel never wraps "21.0" away from its "m".
  */
-export function alignmentRowSummary(kindLabel: string, p: Pick<AlignmentProfile, 'lengthM' | 'maxKnownDepthM' | 'unknownDepthCount'>): string {
+export function alignmentRowSummary(kindLabel: string, p: Pick<AlignmentProfile, 'lengthM' | 'maxKnownDepthM' | 'unknownDepthCount'> & { maxKnownDepthRef?: 'invert' | 'crown' }): string {
   const nb = '\u00a0';
-  const deepest = p.maxKnownDepthM === null ? 'Unknown' : `${p.maxKnownDepthM.toFixed(1)}${nb}m`;
+  const ref = p.maxKnownDepthRef ?? 'invert';
+  const deepest = p.maxKnownDepthM === null ? 'deepest Unknown' : `deepest ${ref} ${p.maxKnownDepthM.toFixed(1)}${nb}m below ground${ref === 'crown' ? ' (section size unknown)' : ''}`;
   const unknown = p.unknownDepthCount ? ` · ${p.unknownDepthCount}${nb}vertex depth${p.unknownDepthCount === 1 ? '' : 's'} unknown` : '';
-  return `${kindLabel} · ${Math.round(p.lengthM).toLocaleString('en-IN')}${nb}m · deepest ${deepest}${unknown}`;
+  return `${kindLabel} · ${Math.round(p.lengthM).toLocaleString('en-IN')}${nb}m · ${deepest}${unknown}`;
 }

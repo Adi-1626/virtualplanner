@@ -79,8 +79,9 @@ const LayerRow: React.FC<{ l: LayerSummary }> = ({ l }) => (
         {l.inArea > 0 && (
           <div className="text-meta text-text-2">
             {qlText(l.qualityLevels) && <span title="ASCE 38 quality level: QL-D = from records only, position and depth not verified">{qlText(l.qualityLevels)} · </span>}
-            depth known for {l.withDepth.toLocaleString('en-IN')} of {l.inArea.toLocaleString('en-IN')}
-            {l.key === 'sewer' && ' (published design levels, vertical datum not stated)'}
+            {l.key === 'sewer'
+              ? <>levels published (no datum) for {l.withDepth.toLocaleString('en-IN')} of {l.inArea.toLocaleString('en-IN')}: design depths below manhole top, vertical datum not stated, not verified</>
+              : <>depth recorded for {l.withDepth.toLocaleString('en-IN')} of {l.inArea.toLocaleString('en-IN')}</>}
           </div>
         )}
         {l.inArea === 0 && <div className="text-meta text-text-2">None recorded in this area — coverage of the dataset is not stated, so this is UNKNOWN, not "none".</div>}
