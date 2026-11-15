@@ -18,7 +18,7 @@ const cell: React.CSSProperties = { padding: '4px 3px' };
 const num = (s: string): number | null => (s.trim() === '' ? null : Number(s));
 const f2 = (v: number | null) => (v === null ? 'Unknown' : `${v.toFixed(2)} m`);
 
-export const UTILITY_TYPE_OPTIONS: { value: UtilityType; label: string }[] = [
+const UTILITY_TYPE_OPTIONS: { value: UtilityType; label: string }[] = [
   { value: 'water', label: 'Water' }, { value: 'sewage', label: 'Sewer' }, { value: 'electricity', label: 'Electrical' }, { value: 'gas', label: 'Gas' }, { value: 'fiber', label: 'Fibre / telecom' },
 ];
 const STATUS_OPTIONS: UtilityStatus[] = ['proposed', 'conceptual', 'existing', 'abandoned'];
@@ -26,7 +26,7 @@ const EVIDENCE_OPTIONS: UtilityEvidence[] = ['user-drawn', 'QL-D', 'QL-C', 'QL-B
 const ZREF_OPTIONS: UtilityZRef[] = ['top', 'centre', 'invert'];
 
 /** Applies a utility edit with Undo (history.recordUpdate + ObjectManager.update: copy-on-write in a proposal). */
-export function commitUtility(before: UtilityObject, after: UtilityObject, what: string, coalesceKey?: string) {
+function commitUtility(before: UtilityObject, after: UtilityObject, what: string, coalesceKey?: string) {
   engineInstance.history.recordUpdate(before, after, `${what} — ${before.name || before.id}`, coalesceKey);
   const { id: _id, type: _type, ...updates } = after;
   void _id; void _type;
