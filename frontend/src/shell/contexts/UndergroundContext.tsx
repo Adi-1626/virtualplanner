@@ -14,7 +14,7 @@ import { STATUS_LABEL, utilitySummary } from '../../engine/underground/utilityMo
 
 const topText = (s: ReturnType<typeof utilitySummary>) => (s.minTopM === null ? 'Unknown' : s.minTopM === s.maxTopM ? `${s.minTopM.toFixed(2)} m` : `${s.minTopM.toFixed(2)}–${(s.maxTopM as number).toFixed(2)} m`);
 import { ALIGNMENT_KIND_LABEL, alignmentProfile, alignmentRowSummary, worstCertainty } from '../../engine/underground/alignmentGeometry';
-import { useActiveAlignment } from '../../components/underground/common';
+import { useActiveAlignment, useSelectedId } from '../../components/underground/common';
 import { useUndergroundStore } from '../../components/underground/undergroundStore';
 import { AlignmentEditor } from '../../components/underground/AlignmentForms';
 import { ViewControls } from '../../components/underground/ViewControls';
@@ -173,6 +173,8 @@ const Legend: React.FC = () => (
 export const UndergroundContext: React.FC = () => {
   const utils = useEngineObjects(isUtility);
   const { alignments, active } = useActiveAlignment();
+  const selectedId = useSelectedId();
+  const selectedUtil = utils.find(u => u.id === selectedId) ?? null;
   const mode = useEditingMode();
   const hist = useHistoryState();
   const { reload } = useSubsurfaceRecords();
@@ -242,7 +244,11 @@ export const UndergroundContext: React.FC = () => {
           <ConflictCheck a={active} />
         </PanelSection>
       </div>
-      {active && (
+      {selectedUtil ? (
+        <PanelSection title={`Selected · ${selectedUtil.name || 'Utility'}`}>
+          <p className="text-label text-text-2" data-testid="ug-utility-selected-note">A drawn utility is selected: edit its depths, status and evidence in the inspector on the right. The Profile and Cross-section below show this utility. Select an alignment to edit it here.</p>
+        </PanelSection>
+      ) : active && (
         <PanelSection title={`Edit · ${active.name}`}>
           <AlignmentEditor key={active.id} a={active} />
         </PanelSection>

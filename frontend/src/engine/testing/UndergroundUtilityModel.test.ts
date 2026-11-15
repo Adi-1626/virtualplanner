@@ -43,6 +43,17 @@ describe('utility Z model', () => {
     expect(utilitySummary(u).minTopM).toBeNull();
   });
 
+  it('changing the evidence relabels depths that carry the old evidence\'s usual certainty (QL-C existing → Estimated), keeps hand-set ones and defaults', () => {
+    let u = withUtilityZ(legacy(), { depths: [{ depthM: 1.5, certainty: 'hypothetical' }, { depthM: 2, certainty: 'measured' }, { depthM: 1, certainty: 'hypothetical', isDefault: true }] });
+    expect(u.evidence).toBe('user-drawn');
+    u = withUtilityZ(u, { status: 'existing', evidence: 'QL-C' });
+    expect(u.depths!.map(d => d.certainty)).toEqual(['estimated', 'measured', 'hypothetical']);
+    u = withUtilityZ(u, { evidence: 'QL-A' });
+    expect(u.depths!.map(d => d.certainty)).toEqual(['measured', 'measured', 'hypothetical']);
+    u = withUtilityZ(u, { evidence: 'QL-A' });   // no change of evidence → nothing relabelled
+    expect(u.depths![0].certainty).toBe('measured');
+  });
+
   it('editing a vertex clears its default flag and stale elevation; type change only moves defaults', () => {
     let u = withUtilityZ(legacy(), { depths: initialUtilityDepths(3, 'water', null, 'hypothetical') });
     u = withUtilityGroundReference(u, [560, 561, null], 'DSM test');

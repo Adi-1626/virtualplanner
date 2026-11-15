@@ -67,20 +67,26 @@ export const MetroLineEditor: React.FC<{ m: MetroLineObject; onUpdate: Update }>
         <Row k="Plan length" v={`${fmtInt(planLengthM(m.coordinates))} m`} testId="metro-length" />
         <Row k="Stations on it" v={stations} />
       </div>
-      <div className="flex flex-col gap-0.5">
-        <label className={lbl} style={labelStyle} htmlFor="metro-tracks">Tracks</label>
-        <select id="metro-tracks" data-testid="metro-tracks" value={m.trackCount === 1 ? 1 : 2} onChange={e => onUpdate('trackCount', Number(e.target.value))} className={inputCls} style={inputStyle}>
-          <option value={1}>Single track</option>
-          <option value={2}>Double track</option>
-        </select>
-      </div>
-      <Slider id="metro-deck" testId="metro-deck" label="Deck width" unit="m" min={4} max={12} step={0.5} value={m.deckWidth || 8} onChange={v => onUpdate('deckWidth', v)} />
       {isUnmappedMetroTunnel(m as CityObject) ? (
-        <p className="text-[11px] flex items-center gap-1.5 flex-wrap" style={note} data-testid="metro-tunnel-note">
-          <CertaintyBadge certainty="unknown" /> {METRO_TUNNEL_LABEL}{m.tags?.tunnel ? ' (OpenStreetMap tunnel=yes)' : ''}: plan position only. No official levels are published, so it is drawn as a dashed line on the surface, not at a guessed depth. Anything within 20 m of it needs a Maha-Metro NOC (UDCPR 14.2.1.7); the conflict check screens that in plan.
-        </p>
+        <>
+          <div className={card} style={cardStyle} data-testid="metro-tunnel-readonly">
+            <Row k="Tracks" v={m.tags?.tracks ? `${m.tags.tracks} (OpenStreetMap)` : 'Not mapped'} testId="metro-tracks-readonly" />
+            <Row k="Tunnel width" v="Not mapped" />
+          </div>
+          <p className="text-[11px] flex items-center gap-1.5 flex-wrap" style={note} data-testid="metro-tunnel-note">
+            <CertaintyBadge certainty="unknown" /> {METRO_TUNNEL_LABEL}{m.tags?.tunnel ? ' (OpenStreetMap tunnel=yes)' : ''}: plan position only. No official levels are published, so it is drawn as a dashed line on the surface, not at a guessed depth. Anything within 20 m of it needs a Maha-Metro NOC (UDCPR 14.2.1.7); the conflict check screens that in plan. An imported record: its tracks and width are not editable here.
+          </p>
+        </>
       ) : (
         <>
+          <div className="flex flex-col gap-0.5">
+            <label className={lbl} style={labelStyle} htmlFor="metro-tracks">Tracks</label>
+            <select id="metro-tracks" data-testid="metro-tracks" value={m.trackCount === 1 ? 1 : 2} onChange={e => onUpdate('trackCount', Number(e.target.value))} className={inputCls} style={inputStyle}>
+              <option value={1}>Single track</option>
+              <option value={2}>Double track</option>
+            </select>
+          </div>
+          <Slider id="metro-deck" testId="metro-deck" label="Deck width" unit="m" min={4} max={12} step={0.5} value={m.deckWidth || 8} onChange={v => onUpdate('deckWidth', v)} />
           <Slider id="metro-elev" testId="metro-elevation" label="Track height" unit="m" min={6} max={24} step={1} value={m.elevation} onChange={v => onUpdate('elevation', v)} />
           <Slider id="metro-piers" label="Pier spacing" unit="m" min={15} max={60} step={5} value={m.pierSpacing || 30} onChange={v => onUpdate('pierSpacing', v)} />
           <p className="text-[11px] flex items-center gap-1.5 flex-wrap" style={note}><CertaintyBadge certainty="hypothetical" /> Design values; drawn in 3D as set. Stations placed within {STATION_TRACK_SNAP_METERS} m sit on this track.</p>

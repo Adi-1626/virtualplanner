@@ -95,6 +95,11 @@ export function bottomDepthFrom(depthM: number | null, zRef: UtilityZRef, diamet
   return Math.round((depthM + (zRef === 'centre' ? diameterM / 2 : diameterM)) * 1000) / 1000;
 }
 
+/** The depth certainty an evidence level usually gives (QL-A exposed = Measured; records / designation = Estimated; a drawing = Hypothetical). */
+export const EVIDENCE_DEPTH_CERTAINTY: Record<UtilityEvidence, Certainty> = {
+  'QL-A': 'measured', 'QL-B': 'estimated', 'QL-C': 'estimated', 'QL-D': 'estimated', 'user-drawn': 'hypothetical', unknown: 'hypothetical',
+};
+
 export interface UtilityZ {
   zRef: UtilityZRef;
   status: UtilityStatus;
@@ -148,8 +153,14 @@ export function withUtilityZ(u: UtilityObject, z: Partial<Pick<UtilityZ, 'zRef' 
   const diameterMm = 'diameterMm' in z ? (ok(z.diameterMm) && (z.diameterMm as number) > 0 ? z.diameterMm as number : null) : (u.diameterMm ?? null);
   const dia = diameterMm !== null ? diameterMm / 1000 : null;
   const src = z.depths ?? cur.depths;
+  // A change of evidence relabels the depths that still carry the old evidence's usual certainty (an existing QL-C
+  // pipe's depths are Estimated, not Hypothetical); a certainty set by hand to something else, and defaults, are kept
+  const relabel = !z.depths && z.evidence !== undefined && z.evidence !== cur.evidence
+    ? (d: UtilityVertexDepth): Certainty => (!d.isDefault && d.certainty === EVIDENCE_DEPTH_CERTAINTY[cur.evidence] ? EVIDENCE_DEPTH_CERTAINTY[z.evidence as UtilityEvidence] : d.certainty)
+    : (d: UtilityVertexDepth): Certainty => d.certainty;
   const depths: UtilityVertexDepth[] = u.coordinates.map((_, i) => {
-    const d = src[i] ?? { depthM: null, certainty: 'unknown' as Certainty };
+    const s0 = src[i];
+    const d = s0 ? { ...s0, certainty: relabel(s0) } : { depthM: null, certainty: 'unknown' as Certainty };
     // A default is the typical cover to the TOP of the pipe: re-expressed for the stated reference (needs the diameter
     // for centre / invert; without it the top stays Unknown below)
     const depthM = d.isDefault ? defaultDepthFor(u.utilityType, zRef, dia) : cleanUtilityDepth(d.depthM);

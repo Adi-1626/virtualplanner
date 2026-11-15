@@ -27,7 +27,7 @@ const isAlignmentObj = (o: CityObject): o is UndergroundAlignmentObject => isAli
 /** Underground alignments in the active alternative (re-renders on object / alternative changes). */
 export const useAlignments = () => useEngineObjects(isAlignmentObj);
 
-function useSelectedId(): string | null {
+export function useSelectedId(): string | null {
   const [id, setId] = useState<string | null>(() => engineInstance.selection.getSelection()[0] ?? null);
   useEffect(() => engineInstance.selection.onChange?.(() => setId(engineInstance.selection.getSelection()[0] ?? null)) as (() => void) | undefined, []);
   return id;

@@ -122,8 +122,10 @@ async function load(id: string): Promise<void> {
     const fc = await infraApi.features(id, bbox);
     if (seq.get(id) !== n || !sources.has(id)) return;
     const ds = sources.get(id)!;
-    ds.entities.suspendEvents();
+    // clear BEFORE suspending: re-adding a removed entity's id while events are suspended cancels the removal, and
+    // the visualizer keeps drawing the old entity (same Cesium pattern fixed in UndergroundRenderer)
     clearDrawn(id);
+    ds.entities.suspendEvents();
     draw(ds, fc);
     ds.entities.resumeEvents();
     v.scene.requestRender();
