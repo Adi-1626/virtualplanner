@@ -12,14 +12,18 @@ Scope of this file's sections written by the study-area work (branch `dr-studyar
 - **Off really means nothing is created**: the point collection is removed and destroyed (`TrafficNetworkVisualizer.clear()`), and no network is requested while the layer is off.
 - **On is cheap**: one `PointPrimitiveCollection` (a single draw call) instead of entities; only real junctions are drawn (T, X, 5+ arms, roundabout entries, dead ends) — plain link nodes (two pieces joined end to end, which were the green majority) and the arrow edges are no longer drawn. Arms are counted as distinct neighbouring nodes, so a side road joining the middle of another road is now a T (the old count by road id called it a 2-way link). Points shrink with distance and are hidden above 9 km.
 
-**Measured** (same machine, same data copy of `twincity.db`: 20,732 objects, Explore, top-down view over Karve Road at 2.5 km; headless Chromium + SwiftShader software GL on a shared 2-CPU box, so absolute frame times are pessimistic and noisy — compare before/after only):
+**Measured, merged build** (`079eee9` = refinement `d64238c` + QA fixes; QA run 2026-11-15). Same data copy of `twincity.db` (20,732 objects), backend with the local OSM index, Explore, one fixed top-down camera over Karve Road (73.835, 18.508) at 2,500 m, 1440×900, one browser session, off → on → off back to back, nothing else of the QA run active (another agent's browser was running on the same 2-CPU box). Metric: wall time of one explicit `viewer.render()` (scene update + render commands), 80 renders per state, 20 ms apart; headless Chromium's `requestAnimationFrame` delivers no frames, so Cesium's own loop cannot be timed there.
 
-| State | Entities in data sources | Point primitives | Mean frame time | FPS |
-|---|---|---|---|---|
-| Before, layer off | 0 | 0 | 86.5 ms | 11.6 |
-| Before, layer on (the user's state) | 90,736 | 0 | 202.8 ms | 4.9 |
-| After, layer off (default) | _see below_ | | | |
-| After, layer on | | | | |
+| State | Point primitives | Data-source entities | Viewer entities | Scene primitives | Median render | p95 | Max |
+|---|---|---|---|---|---|---|---|
+| Layer off (default on load) | 0 | 0 | 15 | 221 | 6.1 ms | 12.0 ms | 1,955 ms |
+| Layer on | 24,905 (one collection) | 0 | 20 | 223 | 5.7 ms | 11.9 ms | 2,907 ms |
+| Layer off again | 0 | 0 | 20 | 222 | 4.1 ms | 7.9 ms | 11 ms |
+
+- Off really removes the points: 24,905 → 0 point primitives, and the scene primitive count returns to the off value ±1 (the network's collection). The old layer drew 90,736 entities in data sources for the same network (earlier measurement, entity count only).
+- Medians do not differ in a way this set-up can resolve (5.7 vs 6.1 vs 4.1 ms). The few very long renders (max column) are tile / primitive uploads in the first renders after a change, not steady-state cost.
+- **Headless render time is not real-browser render time.** SwiftShader is software GL on a shared 2-CPU box, and `render()` returns when commands are issued, not when a GPU has drawn the frame. Use these numbers to compare states on this machine only, not as FPS a user will see.
+- **Base build `b5df4d1`** (`dist-base`, same backend and data): **not measured.** Its first explicit `render()` after load returned in 56 ms, but the next renders (tile settling, with its 1,337 saved-area ground polygons and entities) did not return within 60 s; the page stayed unresponsive for >9 minutes and the run was stopped. The earlier frame-interval figures for the base build (86.5 ms off / 202.8 ms on) were taken with a different metric before `d64238c` and are not comparable with the table above.
 
 ## Study Area
 
@@ -48,7 +52,30 @@ Order used by the Study area import (and by signal loading):
 `/api/osm/status` now always includes `buildCommand`, `reason` (when there is no index) and the proxy's status (endpoints, cache entries, budget used). Policy note: the Overpass manual lists "an app … relying on the public instances as backend" as problematic, so the local index stays the primary source and Overpass is the occasional fallback.
 
 ## Known limits
-- _filled in at the end of the work_
+Seen in the QA run of the merged build (2026-11-15, worktree `dr-wt-qa`, screenshots `/workspace/work/urbanos/shots/design/qa-*.png`):
+- **Fresh clone verified with a stand-in only.** The sandbox cannot reach the public Overpass servers, so the fresh-clone test used a local stand-in (`qa_fake_overpass.py`) that answers the same QL from the Pune OSM extract. Behaviour against overpass.private.coffee / overpass-api.de themselves (latency, real 429s, answer size limits) is not tested.
+- **Busy servers block retries for the Retry-After time.** After a 429 the proxy refuses every request until the server's Retry-After has passed (60 s if none is given); Try again within that time shows "All Overpass servers asked us to wait. Try again in N s." and does not reach the server. In the test (Retry-After 20 s) the first Try again after the stand-in recovered failed with that message and the second, 25 s later, loaded the area.
+- **A failed load still shows "Buildings 0" and "Metro none mapped"** in the summary card (counted from the objects already in the project), while Signals says "load data to count". The 0 is not a measured absence.
+- **Road-tool snap labels show in the Study area tool** ("T-Junction with Residential Road", "Snap to Residential Road Start" next to the cursor) although a study area does not snap to roads.
+- **The 401 of the refused Cesium ion imagery request is still logged** in the console (one "Failed to load resource … 401" and one `net::ERR_FAILED` per load); the map itself draws without imagery and says so.
+- **Proxy errors show as 502 in the console.** When Overpass fails, every category's `/api/osm/overpass` call answers 502 by design (`{detail:{upstream:true}}`); the browser logs each one ("Failed to load resource … 502"). No other 5xx and no backend traceback occurred in any QA step.
+- A test harness note, not a product issue: the sandbox has an HTTP proxy in its environment, so the backend had to be started with `NO_PROXY=127.0.0.1,localhost` to reach a stand-in on localhost; without it `requests` sent the call to the proxy (HTTP 404). A user's PC with a system proxy and a custom local `TWINCITY_OVERPASS_ENDPOINTS` would need the same.
+- Headless render timings (see Points layer) are not real-browser frame rates.
+
+## QA of the merged build (2026-11-15)
+
+Build: worktree `dr-wt-qa` at `079eee9` (refinement `d64238c` + `4c901eb`), `vite build` served statically, backend on a copy of `twincity.db`, Chromium headless 1440×900, real mouse clicks (Playwright `page.mouse`). External requests fetched by the harness, not by Chromium.
+
+| Check | Result |
+|---|---|
+| Fresh clone: no OSM index, no feasibility-layers file, fresh DB copy, empty Overpass cache, proxy → stand-in | `/api/osm/status` `available:false` with `reason` and `buildCommand`. Source line: "No local index · live OpenStreetMap (Overpass), cached by the backend. Faster: python -m osm.build_index" |
+| Swargate rectangle (73.8548, 18.4985 → 73.8610, 18.5035), 2 clicks on the canvas | Loaded through `/api/osm/overpass` (4 calls, `X-Overpass-Cache: miss`), each category "OpenStreetMap via Overpass (live, now cached)": 103 roads (already in the project, kept), 149 buildings, 7 metro, 6 signals. Summary 0.4 km², 9.9 km roads, 86 junctions (estimated), 6 signals, 149 buildings, metro 1.4 km / 1 station. Attribution in the summary ("© OpenStreetMap contributors (ODbL)") and on the map. Amber outline drawn |
+| Stand-in down (HTTP 500), new rectangle at Shivajinagar | Error banner "Could not load data: … HTTP 500", the index-build hint, Try again. The per-category list no longer repeats the banner (fixed, `4c901eb`) |
+| Try again, stand-in busy (429, Retry-After 20) | Error "… busy (HTTP 429)"; the other three categories were refused by the proxy without calling the server |
+| Try again, stand-in back | Immediately: "All Overpass servers asked us to wait. Try again in 13 s." After 25 s: loaded, 125 new objects (118 buildings, 7 signals, metro 1.2 km / 2 stations) |
+| Karve Rd–Nal Stop polygon, 6 clicks (5 + double-click), selection cleared, camera fitted so the polygon is centred in the map area not covered by the panel or the drawing hint | Every click reached the canvas; points 1→5, the double-click added the 6th and finished. Saved boundary = the 6 clicked points + closure, exact. Loaded from the local index: 258 roads kept, 641 buildings, 5 metro, 13 signals. Summary 0.9 km², 23.3 km roads (251 pieces), 213 junctions (6 on roundabouts), 13 signals, 641 buildings, metro 3.8 km / 2 stations. Full amber outline on the map (`qa-karve-summary.png`). The same test failed before (2 of 6 points) only because the polygon was wider than the free map, so clicks landed off the canvas or on the panel |
+| Selecting a saved study area | Opened an empty inspector ("Back" only) over a quarter of the map. Fixed in `4c901eb`: a selected study area opens no properties panel; its summary is in the Study area panel |
+| Console / backend | Console: the ion 401 and `net::ERR_FAILED` on every load; 12 × 502 from the proxy, all during the down / busy steps. Backend: no 5xx other than those 502s, no traceback |
 
 
 Scope of this file's sections:
