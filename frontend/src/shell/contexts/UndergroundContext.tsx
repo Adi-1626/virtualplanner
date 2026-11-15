@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Cable, CircleHelp, FlaskConical, Redo2, Search, TrainFrontTunnel, Undo2 } from 'lucide-react';
+import { Cable, CircleHelp, FlaskConical, Redo2, Search, ShieldQuestion, TrainFrontTunnel, Undo2 } from 'lucide-react';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import type { CityObject, UtilityObject } from '../../engine/objects/types';
 import { PanelSection } from '../../components/ui/Panel';
@@ -126,7 +126,7 @@ const DRAW_HINT: Partial<Record<EditingMode, string>> = {
 /** First-time entry: what this workspace is for, as three actions (UNDERGROUND_AUDIT F3). */
 const GetStarted: React.FC<{ onLook: () => void }> = ({ onLook }) => (
   <div className="uos-card flex flex-col gap-2" data-testid="ug-get-started">
-    <p className="text-body text-text-1">Check what is already underground here, then sketch a proposal and inspect its depth.</p>
+    <p className="text-body text-text-1">1 · See what is already recorded underground here. 2 · Sketch a proposed tunnel or utility and set its depth. 3 · Check it for conflicts.</p>
     <div className="flex flex-col gap-1.5">
       <button type="button" className="uos-btn justify-start" data-testid="ug-start-look" onClick={onLook}>
         <Search size={14} aria-hidden /> See existing records in this view
@@ -170,6 +170,7 @@ export const UndergroundContext: React.FC = () => {
   const hist = useHistoryState();
   const { reload } = useSubsurfaceRecords();
   const recordsRef = useRef<HTMLDivElement>(null);
+  const checkRef = useRef<HTMLDivElement>(null);
   // The records follow the work area: re-list when the alignments' extent changes
   const rectKey = alignmentsRect(alignments, 250)?.map(v => v.toFixed(4)).join(',') ?? '';
   const first = useRef(true);
@@ -199,7 +200,13 @@ export const UndergroundContext: React.FC = () => {
       <div className="flex items-center gap-1.5" data-testid="ug-history">
         <button type="button" className="uos-btn uos-btn-sm" disabled={!hist.undo} onClick={() => engineInstance.history.undo()} data-testid="ug-undo" title="Undo (Ctrl+Z)"><Undo2 size={14} aria-hidden /> Undo</button>
         <button type="button" className="uos-btn uos-btn-sm" disabled={!hist.redo} onClick={() => engineInstance.history.redo()} data-testid="ug-redo" title="Redo (Ctrl+Y)"><Redo2 size={14} aria-hidden /> Redo</button>
-        <span className="text-meta text-text-3 ml-auto">Changes save automatically</span>
+        <span className="flex-1" />
+        {(alignments.length > 0 || utils.length > 0) && (
+          <button type="button" className="uos-btn uos-btn-sm uos-btn-primary" data-testid="ug-goto-check" title="Screen your proposed objects against existing records, metro and buildings"
+            onClick={() => checkRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+            <ShieldQuestion size={14} aria-hidden /> Check conflicts
+          </button>
+        )}
       </div>
       {drawing && (
         <PanelSection title={mode === 'draw_underground' ? 'Drawing a proposed alignment' : 'Laying a proposed utility'}>
@@ -223,14 +230,14 @@ export const UndergroundContext: React.FC = () => {
           </button>
         )}
       </PanelSection>
+      <div ref={checkRef} data-testid="ug-check-section">
+        <PanelSection title="Check for conflicts">
+          <ConflictCheck a={active} />
+        </PanelSection>
+      </div>
       {active && (
         <PanelSection title={`Edit · ${active.name}`}>
           <AlignmentEditor key={active.id} a={active} />
-        </PanelSection>
-      )}
-      {active && (
-        <PanelSection title="Conflict check">
-          <ConflictCheck key={active.id} a={active} />
         </PanelSection>
       )}
       <div ref={recordsRef}>
