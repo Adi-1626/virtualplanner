@@ -1079,6 +1079,7 @@ def screen(db, scenario_id: str, objects: Optional[list[dict]] = None, focus_ids
     findings.sort(key=lambda f: (SEVERITY[f["status"]], f["proposed"]["name"], f.pop("_sort", 0.0)))
     for f in findings:
         f.pop("_sort", None)
+    geometries = _hoist_geometries(findings)
     counts = {s: sum(1 for f in findings if f["status"] == s) for s in STATUSES}
     layers = _layers_report(rec, metro_meta, bld_meta, wc_meta, existing_design, cfg)
     worst = next((s for s in STATUSES if counts[s]), None)
@@ -1090,11 +1091,23 @@ def screen(db, scenario_id: str, objects: Optional[list[dict]] = None, focus_ids
                     "proposed_checked": [a.public(with_geometry=False) | {"checklist": checklists[a.id]} for a in targets], "skipped": skipped,
                     "existing_assets_read": sum(read.values()), "not_checked": _run_not_checked(layers),
                     "status_meaning": {s: {"label": STATUS_LABEL[s], "meaning": STATUS_MEANING[s]} for s in STATUSES}},
-        "layers": layers, "findings": findings, "rules_table": C.rules_table(cfg),
+        "layers": layers, "findings": findings, "geometries": geometries, "rules_table": C.rules_table(cfg),
         "config": {k: cfg[k] for k in ("version", "tolerance", "buildings", "groundwater", "boreholes", "screening_radius_m",
                                        "unknown_width_allowance_m", "ground_note", "ladder")},
         "timings_ms": {**timings, "total": round((time.perf_counter() - t0) * 1000), "records_cached_load_ms": rec.get("load_ms")},
     }
+
+
+def _hoist_geometries(findings: list[dict]) -> dict:
+    """Asset geometries (lon/lat GeoJSON) once per asset id, out of the findings (a long alignment would otherwise be
+    repeated in every one of its findings)."""
+    out: dict[str, dict] = {}
+    for f in findings:
+        for a in [f.get("proposed"), f.get("other")] + list(f.get("buildings") or []):
+            if a and "geometry" in a:
+                g = a.pop("geometry")
+                out.setdefault(a["id"], g)
+    return out
 
 
 def _merge_same_line(findings: list[dict]) -> list[dict]:
