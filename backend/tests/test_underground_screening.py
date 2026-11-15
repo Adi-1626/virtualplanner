@@ -319,3 +319,150 @@ def test_short_dataset_name():
     assert S.short_dataset_name("PMC storm-water drains, labelled rows only (OpenCity mirror) — QL-D records") == "PMC storm-water drains"
     assert S.short_dataset_name("PMC sewer network (OpenCity mirror) — QL-D records") == "PMC sewer network"
     assert S.short_dataset_name(None) == "Unnamed dataset"
+
+
+# ── per-point Z model of drawn utilities (frontend engine/underground/utilityModel.ts) ───────────────────────────────
+
+def zutil(oid, coords, utype, depths, dia_mm, sid="alt", zref="top", status=None, evidence=None, **p):
+    """A utility as the Z model stores it: depths = list of (depthM, certainty[, isDefault]); topDepthM derived like the
+    frontend (omitted for centre / invert so the backend derivation is exercised)."""
+    ds = []
+    for d in depths:
+        dm, cert = d[0], d[1]
+        e = {"depthM": dm, "certainty": cert if dm is not None else "unknown"}
+        if zref == "top":
+            e["topDepthM"] = dm
+        if len(d) > 2 and d[2]:
+            e["isDefault"] = True
+        ds.append(e)
+    props = {"utilityType": utype, "diameterMm": dia_mm, "zRef": zref, "depths": ds, "depth": 0, "depthCertainty": "unknown", **p}
+    if status:
+        props["status"] = status
+    if evidence:
+        props["evidence"] = evidence
+    return {"id": oid, "type": "utility", "name": oid, "scenarioId": sid, "coordinates": coords, "properties": props}
+
+
+def _poly(*xs):
+    k = 1 / 105000.0
+    return [[LON + x * k, LAT, 0] for x in xs]
+
+
+def test_per_point_depth_is_interpolated_at_the_crossing_not_the_shallowest():
+    # proposed sewer dives 1.0 -> 6.0 m (top); existing QL-A water main 1.0-1.3 m crosses at x=80 where the sewer top is ~5 m
+    s = asset(zutil("s", _poly(0, 100), "sewage", [(1.0, "estimated"), (6.0, "estimated")], 300))
+    w = asset(zutil("w", _line(80, -20, 80, 20), "water", [(1.0, "measured"), (1.0, "measured")], 300, sid="base",
+                    status="existing", evidence="QL-A"), "existing")
+    assert s.meta["z_model"] == "per-point" and s.quality == "design"
+    crown, _ = s.envelope(70, 90)
+    assert crown == pytest.approx(4.5, abs=0.1)              # interpolated along the line, not 1.0
+    r = S.evaluate_pair(s, w, CFG)
+    assert r and r.get("clear")                               # one-depth (shallowest 1.0 m) reading would overlap the main
+    # the same sewer at a constant 1.0 m (legacy single depth) does conflict
+    legacy = asset(util("s2", _poly(0, 100), "sewage", 1.0, 300))
+    assert legacy.meta["z_model"] == "legacy"
+    assert S.evaluate_pair(legacy, w, CFG)["status"] == "potential_conflict"
+
+
+def test_unknown_vertex_is_not_interpolated_across():
+    u = asset(zutil("u", _poly(0, 50, 100), "water", [(1.0, "estimated"), (None, "unknown"), (1.0, "estimated")], 200))
+    assert u.envelope(60, 70)[0] is None                      # next to the unknown vertex: UNKNOWN
+    assert u.envelope()[0] is None
+    f, _ = S.cover_check(u, CFG)
+    assert f["status"] == "insufficient_data" or any("no depth" in x for x in f["found"])
+
+
+def test_centre_and_invert_reference_give_top_and_bottom_of_pipe():
+    inv = asset(zutil("i", _poly(0, 50), "sewage", [(3.0, "estimated"), (3.0, "estimated")], 600, zref="invert"))
+    assert inv.envelope() == (pytest.approx(2.4), pytest.approx(3.0))
+    cen = asset(zutil("c", _poly(0, 50), "sewage", [(3.0, "estimated"), (3.0, "estimated")], 600, zref="centre"))
+    assert cen.envelope() == (pytest.approx(2.7), pytest.approx(3.3))
+    nodia = asset(zutil("n", _poly(0, 50), "sewage", [(3.0, "estimated"), (3.0, "estimated")], None, zref="invert"))
+    assert nodia.envelope() == (None, pytest.approx(3.0))     # bottom known, top needs the diameter
+
+
+def test_status_decides_the_side_with_membership_fallback():
+    objs = [zutil("prop_in_base", _poly(0, 50), "water", [(1.0, "estimated")] * 2, 200, sid="base", status="proposed"),
+            zutil("concept", _poly(0, 50), "water", [(1.0, "estimated")] * 2, 200, sid="alt", status="conceptual"),
+            zutil("exist_in_alt", _poly(0, 50), "water", [(1.0, "estimated")] * 2, 200, sid="alt", status="existing"),
+            zutil("abandoned", _poly(0, 50), "sewage", [(2.0, "estimated")] * 2, 200, sid="alt", status="abandoned"),
+            util("legacy_base", _poly(0, 50), "water", 1.0, 200, sid="base"),
+            util("legacy_alt", _poly(0, 50), "water", 1.0, 200, sid="alt"),
+            zutil("unknown_base", _poly(0, 50), "water", [(1.0, "estimated")] * 2, 200, sid="base", status="unknown"),
+            {**align("tun_exist", _poly(0, 50), "bored_tunnel", [10, 10], 6.0, sid="alt"),
+             "properties": {**align("x", _poly(0, 50), "bored_tunnel", [10, 10], 6.0)["properties"], "lifecycle": "existing"}}]
+    prop, exist, _ = S.classify_objects(objs, "alt")
+    assert {a.id for a in prop} == {"prop_in_base", "concept", "legacy_alt"}
+    assert {a.id for a in exist} == {"exist_in_alt", "abandoned", "legacy_base", "unknown_base", "tun_exist"}
+    ab = next(a for a in exist if a.id == "abandoned")
+    assert ab.status == "existing" and ab.meta["lifecycle"] == "abandoned" and "abandoned in place" in ab.kind_label
+    # checking the base city: status existing stays an obstacle, legacy objects are proposals
+    prop_b, exist_b, _ = S.classify_objects(objs, "base")
+    assert "exist_in_alt" in {a.id for a in exist_b} and "legacy_base" in {a.id for a in prop_b}
+
+
+@pytest.mark.parametrize("status,evidence,quality,v_checkable", [
+    ("existing", "QL-A", "QL-A", True),
+    ("existing", "QL-B", "QL-B", False),
+    ("existing", "QL-D", "QL-D", False),
+    ("abandoned", "QL-C", "QL-C", False),
+    ("existing", "user-drawn", "user-drawn", False),       # hand-drawn existing: no survey -> treated as QL-D
+    ("existing", "unknown", "UNKNOWN", False),
+    ("proposed", "user-drawn", "design", True),            # a drawn proposal IS the design intent: no widening
+    ("conceptual", None, "design", True),
+])
+def test_evidence_quality_level_sets_positional_uncertainty(status, evidence, quality, v_checkable):
+    side = "proposed" if status in ("proposed", "conceptual") else "existing"
+    a = asset(zutil("u", _poly(0, 50), "water", [(1.0, "estimated")] * 2, 200, sid="base", status=status, evidence=evidence), side)
+    assert a.quality == quality
+    h, v = a.tolerance(CFG)
+    assert (v is not None) == v_checkable
+    if quality == "design":
+        assert h == 0.0 and v == 0.0
+
+
+def test_existing_user_drawn_with_measured_depths_and_ql_on_a_proposal():
+    m = asset(zutil("m", _poly(0, 50), "water", [(1.0, "measured")] * 2, 200, sid="base", status="existing", evidence="user-drawn"), "existing")
+    assert m.quality == "user-drawn (measured)"
+    mixed = asset(zutil("x", _poly(0, 50), "water", [(1.0, "measured"), (1.2, "estimated")], 200, sid="base", status="existing"), "existing")
+    assert mixed.quality == "user-drawn"                      # not every depth used is measured
+    p = asset(zutil("p", _poly(0, 50), "water", [(1.0, "estimated")] * 2, 200, status="proposed", evidence="QL-B"))
+    assert p.quality == "design" and "design intent" in p.meta["evidence_note"]
+
+
+def test_abandoned_pipe_is_an_existing_obstacle():
+    w = asset(zutil("w", _line(0, -20, 0, 20), "water", [(1.0, "estimated")] * 2, 300, status="proposed"))
+    ab = asset(zutil("ab", _line(-20, 0, 20, 0), "sewage", [(1.5, "measured")] * 2, 300, sid="base", status="abandoned", evidence="QL-A"), "existing")
+    f = S.evaluate_pair(w, ab, CFG)
+    assert f["status"] == "potential_conflict"                # 1.0-1.3 vs 1.5-1.8: gap 0.2 < 1.0 + 0.03
+    assert any("abandoned in place" in x for x in f["found"]) and "abandoned (existing obstacle)" in f["checked"]
+    assert any("removed or filled" in x for x in f["not_checked"])
+    assert f["other"]["lifecycle"] == "abandoned"
+
+
+def test_typical_cover_default_is_named_where_it_is_used():
+    w = asset(zutil("w", _line(0, -20, 0, 20), "water", [(1.0, "hypothetical", True)] * 2, 300, status="proposed"))
+    s = asset(zutil("s", _line(-20, 0, 20, 0), "sewage", [(1.9, "measured")] * 2, 300, sid="base", status="existing", evidence="QL-A"), "existing")
+    f = S.evaluate_pair(w, s, CFG)
+    assert any("typical-cover default" in x for x in f["found"])
+    assert w.certainty == "hypothetical" and w.public()["default_depth_points"] == 2
+    # a default only at the far end of a long line is not mentioned at a crossing near the start
+    long = asset(zutil("l", _poly(0, 200, 400), "water", [(1.0, "estimated"), (1.0, "estimated"), (1.0, "hypothetical", True)], 300))
+    assert S.defaults_used(long, 10, 20) is False and S.defaults_used(long, 300, 310) is True
+    shallow = asset(zutil("g", _poly(0, 50), "gas", [(0.8, "hypothetical", True)] * 2, 100, status="proposed"))
+    cf, _ = S.cover_check(shallow, CFG)
+    assert cf["status"] == "potential_conflict" and any("typical-cover default" in x for x in cf["found"])
+
+
+def test_run_with_z_model_objects_keeps_wording_rules(client):
+    objs = [zutil("P", _line(0, -20, 0, 20), "water", [(1.0, "estimated"), (1.0, "hypothetical", True)], 300, status="proposed"),
+            zutil("A", _line(-20, 0, 20, 0), "sewage", [(1.5, "measured")] * 2, 300, sid="alt", status="abandoned", evidence="QL-A"),
+            zutil("E", _line(30, -20, 30, 20), "sewage", [(2.0, "measured")] * 2, 300, sid="base", status="existing", evidence="QL-C")]
+    run = _screen(client, objs)
+    ids = {p["id"] for p in run["summary"]["proposed_checked"]}
+    assert ids == {"P"}                                       # abandoned / existing are never checked as proposals
+    pa = [f for f in run["findings"] if (f.get("other") or {}).get("id") == "A"]
+    assert pa and pa[0]["status"] == "potential_conflict"
+    txt = json.dumps(run).lower()
+    for w in FORBIDDEN:
+        assert w not in txt.replace("not an engineering assessment or approval", ""), w

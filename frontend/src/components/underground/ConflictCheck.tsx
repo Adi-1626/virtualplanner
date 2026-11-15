@@ -14,7 +14,7 @@ import { useUndergroundStore } from './undergroundStore';
 import { useScreeningStore } from './screeningStore';
 import {
   CATEGORY_LABEL, CLASS_TEXT, DIM_LABEL, RULE_TYPE_LABEL, SCREENING_BANNER, STATUS_TEXT, countsByStatus, forObject, groupBySeverity,
-  highlightTargets, isStale, keyNumbers, plainSummary,
+  highlightTargets, isStale, keyNumbers, plainSummary, screenedAsProposed,
 } from './conflictClasses';
 import { clearConflictHighlight, showConflictHighlight } from './conflictHighlight';
 import { gapCountText, groupGaps, type GapGroup } from './screeningGroups';
@@ -227,7 +227,7 @@ export const ConflictCheck: React.FC<{ a?: UndergroundAlignmentObject | null }> 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sid, hasEntry]);
   const run = entry?.run ?? null;
-  const proposedCount = visible.filter(o => (o.type === 'underground_alignment' || o.type === 'utility') && (sid === 'base' || o.scenarioId === sid)).length;
+  const proposedCount = visible.filter(o => screenedAsProposed(o as { type: string; scenarioId?: string; status?: string; lifecycle?: string }, sid)).length;
 
   const screeningBody = (): ScreeningObject[] => visible.map(o => engineInstance.objects.schemaOf(o) as ScreeningObject);
 
@@ -272,7 +272,7 @@ export const ConflictCheck: React.FC<{ a?: UndergroundAlignmentObject | null }> 
       <button type="button" className="uos-btn self-start" onClick={() => void check()} disabled={busy || proposedCount === 0} data-testid="ug-check-conflicts">
         <ShieldQuestion size={14} aria-hidden /> {busy ? 'Checking…' : restoring && !run ? 'Loading last check…' : run ? 'Check again' : `Check ${proposedCount} proposed object${proposedCount === 1 ? '' : 's'}`}
       </button>
-      {proposedCount === 0 && <p className="text-meta text-text-2">Draw an underground alignment or a utility in this alternative to check it.</p>}
+      {proposedCount === 0 && <p className="text-meta text-text-2">Nothing to check: draw a proposed underground alignment or utility (objects marked existing or abandoned are what proposals are checked against).</p>}
       {err && <p className="text-label text-fail" role="alert">The check could not run: {err}</p>}
       {run && (
         <div className="flex flex-col gap-2" data-testid="ug-conflict-results">

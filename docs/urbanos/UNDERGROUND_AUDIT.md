@@ -4,7 +4,7 @@ Branch `ug-audit` (from `underground-mode` = bacff72). Scope of the fixes in thi
 renderer, profile / section and alignment editor UI. Conflict-check logic (backend/coordination/*, ConflictCheck.tsx,
 conflictClasses.ts) belongs to another work stream and is only described here.
 
-Research input: /workspace/work/underground-research/UNDERGROUND_RESEARCH.md (§2 data model and Z rules, §5 UX, Top 12).
+Research input: [UNDERGROUND_RESEARCH.md](UNDERGROUND_RESEARCH.md) (§2 data model and Z rules, §5 UX, Top 12).
 
 ## 1. Inventory (as found at bacff72)
 

@@ -58,22 +58,39 @@ Flat list sorted by class (max 100), plan distance / vertical gap / certainty, t
 
 ## 2. Redesign (implemented, commits on `ug-checks`)
 
-Rules aligned with `/workspace/work/underground-research/UNDERGROUND_RESEARCH.md` §3 (checks C1–C22), §4 (statuses,
+Rules aligned with [UNDERGROUND_RESEARCH.md](UNDERGROUND_RESEARCH.md) §3 (checks C1–C22), §4 (statuses,
 wording) and Top 12. Code: `backend/coordination/screening_config.py` (rules table, the only place values live),
 `backend/coordination/screening.py` (engine), `POST /api/coordination/underground/screen`, UI
 `frontend/src/components/underground/{ConflictCheck.tsx, conflictClasses.ts, conflictHighlight.ts, screeningStore.ts}`.
 
 ### 2.1 Inputs (UNIT-TESTED)
-- **Proposed**: every `underground_alignment` (tunnel, underground metro, cut-and-cover, trunk, storm drain) and `utility`
-  of the active alternative, sent by the UI as Design holds them (unsaved edits included) or read from the database
-  (`objects` omitted: baseline + the alternative's own objects, its modifies and deletes applied). In the baseline itself
-  every drawn alignment / utility counts as proposed. Proposed × proposed pairs are checked once.
-- **Existing**: Design-drawn baseline objects (utilities, alignments, elevated `metro_line`, `metro_station`; quality
-  "user-drawn"); utility records (PMC sewer 44,482 + storm drains 9,187 = 53,669 with geometry, plus anything imported);
-  OSM metro (tunnel / viaduct / unknown-level lines, stations); building footprints (infra index, foundation proxy);
-  PMC nallas + rivers; NWDP groundwater wells (3 km); imported boreholes (500 m).
-- Depth model: crown from the typed depth, invert = crown + section height / diameter. A utility whose `depthCertainty`
-  is `unknown` (drawing placeholder) has depth UNKNOWN.
+- **Which side a drawn object is on**: the lifecycle the user recorded wins — utility `status`, alignment `lifecycle`.
+  *proposed* and *conceptual* are checked as proposals wherever they are drawn (a proposal drawn on the base city is
+  checked in every alternative); *existing* and *abandoned* (in place) are existing obstacles and are never checked as
+  proposals. When no lifecycle is recorded (older objects, `unknown`), alternative membership decides: objects of the
+  active alternative are proposed, baseline objects existing; in the baseline itself every drawn alignment / utility
+  counts as proposed. Objects are sent by the UI as Design holds them (unsaved edits included) or read from the database
+  (`objects` omitted: baseline + the alternative's own objects, its modifies and deletes applied). Proposed × proposed
+  pairs are checked once.
+- **Existing**: Design-drawn existing / abandoned objects (utilities, alignments, elevated `metro_line`,
+  `metro_station`); utility records (PMC sewer 44,482 + storm drains 9,187 = 53,669 with geometry, plus anything
+  imported); OSM metro (tunnel / viaduct / unknown-level lines, stations); building footprints (infra index, foundation
+  proxy); PMC nallas + rivers; NWDP groundwater wells (3 km); imported boreholes (500 m).
+- Depth model, alignments: crown per vertex, invert = crown + section height / diameter.
+- Depth model, drawn utilities (Z model of `engine/underground/utilityModel.ts`, UNIT-TESTED): per vertex, top of pipe =
+  `topDepthM` (derived from `depthM`, the object's `zRef` top / centre / invert and the diameter when absent), bottom =
+  top + diameter (or `depthM` itself for an invert reference). Between vertices the depth is interpolated along the line,
+  and a pair uses only the stretch of each line near the other (as for alignments) — never one depth for the whole line.
+  A vertex with no depth is UNKNOWN and is never interpolated across. A typical-cover default (`isDefault`) is used as a
+  hypothetical value and named in the finding wherever the vertices used are defaults. Older utilities without `depths`
+  keep the legacy reading: one `depth` (top of pipe) for the whole line; `depthCertainty` `unknown` = depth UNKNOWN.
+- Evidence → positional uncertainty: an existing / abandoned utility with evidence QL-A..QL-D takes that quality
+  level's tolerance (table below). *User-drawn* existing utilities have no survey behind them: tolerance "user-drawn"
+  (QL-D-like, level not usable unless every depth used is marked measured). A **proposal** (proposed / conceptual) is
+  screened as design intent: *user-drawn* adds no position uncertainty (tolerance 0) — a deliberate choice, since the drawn
+  line is what is being proposed; a QL recorded on a proposal is ignored and noted in the finding.
+- Abandoned in place: an existing obstacle (the finding says so and lists "whether it has been removed or filled" under
+  not checked).
 
 ### 2.2 Statuses (UNIT-TESTED)
 Only **Potential conflict · Requires investigation · Insufficient data · Verified**. The engine assigns the first three;
@@ -204,7 +221,15 @@ show "check again".
   banner, Design utility included, proposed × proposed once, data gaps, forbidden words); missing depth + skipped objects;
   empty alternative; QL-A record → potential conflict → person verification → Verified → design edit → re-verify; objects
   read from the DB; `run_detection` sees a Design-drawn gas main (`design_object`).
-- `frontend/src/engine/testing/UndergroundScreening.test.ts` (7): statuses / banner / no green / no forbidden words, counts
+- Drawn-utility Z model (SYNTHETIC, 2026-11-15): per-point top-of-pipe depth interpolated at the crossing (a line diving
+  1 → 6 m clears a QL-A main at ~4.5 m where the one-depth reading would conflict); Unknown vertex not interpolated across;
+  centre / invert reference → top and bottom of pipe (top Unknown without a diameter); status decides the side with the
+  membership fallback (base proposal checked in an alternative, existing / abandoned in an alternative are obstacles,
+  alignment `lifecycle` existing); evidence → tolerance (QL-A..D, user-drawn existing, unknown, proposals = design);
+  measured user-drawn only when every depth used is measured; QL on a proposal ignored and noted; abandoned pipe =
+  existing obstacle with its own found / not-checked lines; typical-cover defaults named only where the vertices used are
+  defaults (pairs and cover); whole run with Z-model objects keeps the wording rules.
+- `frontend/src/engine/testing/UndergroundScreening.test.ts` (7) + `screenedAsProposed` (same proposed / existing rule as the engine, used for the button count): statuses / banner / no green / no forbidden words, counts
   and grouping, plain summary, key numbers, highlight targets and focus box, staleness, `sideBLabel` for `design_object`.
 - Regression: `test_coordination.py`, `test_infra_data.py`, `test_terrain.py` pass with and without the real data dirs.
 

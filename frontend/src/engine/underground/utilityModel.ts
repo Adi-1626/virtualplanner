@@ -10,10 +10,11 @@
  * - null = UNKNOWN; never 0, never interpolated across.
  * - A depth taken from the typical-cover table below is a DEFAULT (isDefault), shown as "default — adjust", never as
  *   measured. Its certainty is 'hypothetical'.
- * - Legacy fields `depth` / `depthCertainty` are DERIVED here on every write and kept for the screening engine
- *   (backend/coordination/screening.py reads `depth` as the top-of-pipe depth of the whole line and `depthCertainty`
- *   'unknown' as "no depth"): depth = shallowest known top-of-pipe depth, depthCertainty = worst certainty among the
- *   vertices that give it ('unknown' when none does).
+ * - Legacy fields `depth` / `depthCertainty` are DERIVED here on every write and kept for older readers: depth =
+ *   shallowest known top-of-pipe depth, depthCertainty = worst certainty among the vertices that give it ('unknown' when
+ *   none does). The screening engine (backend/coordination/screening.py utility_z) reads the per-vertex `depths`
+ *   (topDepthM, zRef, isDefault), `status` and `evidence`, and falls back to `depth` / `depthCertainty` only for objects
+ *   saved without `depths`.
  * - Saved utilities without the new fields are migrated on read (`utilityZ`): depthCertainty 'unknown' → depth
  *   UNKNOWN; a legacy depth without certainty → hypothetical in a proposal, unknown on the base city (the same reading
  *   the screening engine already used); zRef → top; status → proposed in an alternative, unknown on the base city;
