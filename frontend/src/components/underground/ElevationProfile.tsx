@@ -7,7 +7,7 @@ import { scale } from '../../engine/underground/sectionLayout';
 import { layoutElevationProfile, mapUtmChainage } from '../../engine/underground/terrainProfile';
 import type { SubsurfaceEvidence, TerrainProfile } from '../../lib/terrainApi';
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
-import { fmtM } from './common';
+import { fmtDepth, fmtM } from './common';
 import { useUndergroundStore } from './undergroundStore';
 
 const W = 880, H = 200;
@@ -98,7 +98,7 @@ export const ElevationProfileSvg: React.FC<{ a: UndergroundAlignmentObject; othe
           const yt = c.groundM === null ? L.box.top : scale(L.y, c.groundM - (top ?? 0));
           return (
             <g key={`x${i}`} data-testid="ug-profile-crossing">
-              <title>{`${TYPE_LABEL[c.objectType] ?? c.objectType}: ${c.name} at ch ${Math.round(c.chainageM)} m — top ${fmtM(top)}, bottom ${fmtM(bot)} below ground (${c.extent.certainty}). ${c.extent.note}`}</title>
+              <title>{`${TYPE_LABEL[c.objectType] ?? c.objectType}: ${c.name} at ch ${Math.round(c.chainageM)} m — top ${fmtDepth(top)}, bottom ${fmtDepth(bot)} (${c.extent.certainty}). ${c.extent.note}`}</title>
               {bot !== null && top !== null && c.groundM !== null
                 ? <rect x={x - 3} y={yt} width={6} height={Math.max(2, scale(L.y, c.groundM - bot) - yt)} fill={C.cross} fillOpacity={0.8} />
                 : <line x1={x} x2={x} y1={yt} y2={bottomY} stroke={C.cross} strokeWidth={1.5} strokeDasharray="1 4" />}

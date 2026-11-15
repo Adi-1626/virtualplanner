@@ -68,3 +68,6 @@ export function commitAlignment(before: UndergroundAlignmentObject, after: Under
 }
 
 export const fmtM = (v: number | null | undefined, digits = 1) => (v === null || v === undefined || !Number.isFinite(v) ? 'Unknown' : `${v.toFixed(digits)} m`);
+/** A depth below ground for hover text: negative = above ground (a building's roof), 0 = at ground, null = Unknown. */
+export const fmtDepth = (v: number | null | undefined) => (v === null || v === undefined || !Number.isFinite(v) ? 'Unknown'
+  : v < 0 ? `${fmtM(-v)} above ground` : v === 0 ? 'at ground' : `${fmtM(v)} below ground`);

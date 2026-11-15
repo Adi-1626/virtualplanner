@@ -91,8 +91,10 @@ export class UndergroundRenderer {
   renderAlignments(alignments: UndergroundAlignmentObject[], selectedId: string | null) {
     if (!this.ds || !this.isAttached()) return;
     const ents = this.ds.entities;
-    ents.suspendEvents();
+    // removeAll BEFORE suspendEvents: while events are suspended, re-adding an entity with a removed entity's id cancels
+    // the removal and the visualizer keeps drawing the OLD entity (the white selected highlight never showed)
     ents.removeAll();
+    ents.suspendEvents();
     for (const a of alignments) this.addAlignment(ents, a, a.id === selectedId);
     ents.resumeEvents();
     this.viewer?.scene.requestRender();
@@ -157,8 +159,10 @@ export class UndergroundRenderer {
   renderUtilities(utils: UtilityObject[], selectedId: string | null) {
     if (!this.utilDs || !this.isAttached()) return;
     const ents = this.utilDs.entities;
-    ents.suspendEvents();
+    // removeAll BEFORE suspendEvents: while events are suspended, re-adding an entity with a removed entity's id cancels
+    // the removal and the visualizer keeps drawing the OLD entity (the white selected highlight never showed)
     ents.removeAll();
+    ents.suspendEvents();
     for (const u of utils) this.addUtility(ents, u, u.id === selectedId);
     ents.resumeEvents();
     this.viewer?.scene.requestRender();
@@ -223,8 +227,10 @@ export class UndergroundRenderer {
   renderMetroPlanOnly(lines: MetroLineObject[], stations: { s: MetroStationObject; heading: number; inferred: boolean }[]) {
     if (!this.metroDs || !this.isAttached()) return;
     const ents = this.metroDs.entities;
-    ents.suspendEvents();
+    // removeAll BEFORE suspendEvents: while events are suspended, re-adding an entity with a removed entity's id cancels
+    // the removal and the visualizer keeps drawing the OLD entity (the white selected highlight never showed)
     ents.removeAll();
+    ents.suspendEvents();
     const purple = Color.fromCssColorString('#a855f7');
     const label = (text: string) => ({
       text, font: '12px sans-serif', fillColor: Color.WHITE, showBackground: true, backgroundColor: Color.fromCssColorString('#3b0764').withAlpha(0.8),
@@ -268,8 +274,10 @@ export class UndergroundRenderer {
   renderRecords(records: SubsurfaceRecord[]) {
     if (!this.recordsDs || !this.isAttached()) return;
     const ents = this.recordsDs.entities;
-    ents.suspendEvents();
+    // removeAll BEFORE suspendEvents: while events are suspended, re-adding an entity with a removed entity's id cancels
+    // the removal and the visualizer keeps drawing the OLD entity (the white selected highlight never showed)
     ents.removeAll();
+    ents.suspendEvents();
     for (const r of records) {
       const g = r.geometry;
       if (!g) continue;

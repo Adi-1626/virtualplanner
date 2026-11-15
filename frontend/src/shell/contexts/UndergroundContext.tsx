@@ -151,9 +151,11 @@ const GetStarted: React.FC<{ onLook: () => void }> = ({ onLook }) => (
 const Legend: React.FC = () => (
   <div className="flex flex-col gap-1 text-meta text-text-2" data-testid="ug-legend">
     <div className="flex flex-wrap gap-x-3 gap-y-1">
-      <span className="inline-flex items-center gap-1.5"><svg width="22" height="6" aria-hidden><line x1="0" y1="3" x2="22" y2="3" stroke="currentColor" strokeWidth="3" /></svg>Existing (records)</span>
+      <span className="inline-flex items-center gap-1.5"><svg width="22" height="6" aria-hidden><line x1="0" y1="3" x2="22" y2="3" stroke="currentColor" strokeWidth="3" /></svg>Existing</span>
       <span className="inline-flex items-center gap-1.5"><svg width="22" height="6" aria-hidden><line x1="0" y1="3" x2="22" y2="3" stroke="currentColor" strokeWidth="3" strokeDasharray="6 3" /></svg>Proposed</span>
       <span className="inline-flex items-center gap-1.5"><svg width="22" height="6" aria-hidden><line x1="0" y1="3" x2="22" y2="3" stroke="currentColor" strokeWidth="3" strokeDasharray="1.5 3" /></svg>Conceptual</span>
+      <span className="inline-flex items-center gap-1.5" data-testid="ug-legend-abandoned"><svg width="22" height="6" aria-hidden><line x1="0" y1="3" x2="22" y2="3" stroke="currentColor" strokeWidth="3" strokeDasharray="12 3" /></svg>Abandoned in place</span>
+      <span className="inline-flex items-center gap-1.5"><svg width="22" height="6" aria-hidden><line x1="0" y1="3" x2="22" y2="3" stroke="#a855f7" strokeWidth="3" strokeDasharray="6 3" /></svg>Metro, depth not mapped (plan only)</span>
     </div>
     <div className="flex flex-wrap gap-x-3 gap-y-1">
       {(['sewer', 'storm_drain', 'water', 'power', 'gas', 'telecom'] as const).map(k => (
@@ -277,6 +279,11 @@ export const UndergroundContext: React.FC = () => {
               );
             })}
           </ul>
+        )}
+        {utils.length > 0 && !drawing && (
+          <button type="button" className="uos-btn uos-btn-sm self-start" onClick={() => engineInstance.editing.setMode('draw_utility')} data-testid="underground-draw-utility">
+            <Cable size={14} aria-hidden /> Lay another pipe or cable
+          </button>
         )}
       </PanelSection>
       <Disclosure>

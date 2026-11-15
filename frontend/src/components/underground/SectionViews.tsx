@@ -7,7 +7,7 @@ import { layoutProfile, layoutSection, scale } from '../../engine/underground/se
 import { EmptyState } from '../ui/EmptyState';
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
 import { useEngineObjects } from '../../shell/useEngineObjects';
-import { fmtM, useActiveSubject } from './common';
+import { fmtDepth, fmtM, useActiveSubject } from './common';
 import { profileKindLabel } from '../../engine/underground/utilityModel';
 import { useUndergroundStore } from './undergroundStore';
 import { ElevationProfileSvg } from './ElevationProfile';
@@ -122,7 +122,7 @@ export const ProfileSvg: React.FC<{ a: UndergroundAlignmentObject; others: reado
           const yt = top === null ? y0 : Math.max(L.box.top, scale(L.y, top));
           return (
             <g key={`x${i}`} data-testid="ug-profile-crossing">
-              <title>{`${TYPE_LABEL[c.objectType] ?? c.objectType}: ${c.name} at ch ${Math.round(c.chainageM)} m — top ${fmtM(top)}, bottom ${fmtM(bot)} (${c.extent.certainty}). ${c.extent.note}`}</title>
+              <title>{`${TYPE_LABEL[c.objectType] ?? c.objectType}: ${c.name} at ch ${Math.round(c.chainageM)} m — top ${fmtDepth(top)}, bottom ${fmtDepth(bot)} (${c.extent.certainty}). ${c.extent.note}`}</title>
               {bot !== null && top !== null
                 ? <rect x={x - 3} y={yt} width={6} height={Math.max(2, scale(L.y, bot) - yt)} fill={C.cross} fillOpacity={0.8} />
                 : <line x1={x} x2={x} y1={yt} y2={bottomY} stroke={C.cross} strokeWidth={2} strokeDasharray="1 4" />}
@@ -221,7 +221,7 @@ export const CrossSectionSvg: React.FC<{ a: UndergroundAlignmentObject; others: 
           const halfW = it.widthM !== null ? Math.abs(scale(L.x, it.widthM / 2) - scale(L.x, 0)) : 2;
           return (
             <g key={i} data-testid="ug-section-item">
-              <title>{`${TYPE_LABEL[it.objectType] ?? it.objectType}: ${it.name} at ${it.offsetM.toFixed(1)} m — top ${fmtM(top)}, bottom ${fmtM(bot)}, width ${fmtM(it.widthM)} (${it.extent.certainty}). ${it.extent.note}`}</title>
+              <title>{`${TYPE_LABEL[it.objectType] ?? it.objectType}: ${it.name} at ${it.offsetM.toFixed(1)} m — top ${fmtDepth(top)}, bottom ${fmtDepth(bot)}, width ${fmtM(it.widthM)} (${it.extent.certainty}). ${it.extent.note}`}</title>
               {bot !== null && top !== null
                 ? <rect x={x - halfW} y={yt} width={halfW * 2} height={Math.max(2, scale(L.y, bot) - yt)} fill={C.cross} fillOpacity={0.7} />
                 : <>
