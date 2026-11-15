@@ -212,6 +212,8 @@ export const PropertiesPanel: React.FC = () => {
         // The type picks the layer it is drawn on (Layers panel: water, electric, sewage, gas, fibre)
         uUpdates.utilityType = value as UtilityType;
         uUpdates.layerId = utilityLayerId(value as UtilityType);
+        // Utility layers start hidden: show the new one, or the line vanishes as its type changes
+        if (!engineInstance.layers.isVisible(uUpdates.layerId)) engineInstance.layers.setVisibility(uUpdates.layerId, true);
       } else if (field === 'name') {
         uUpdates.name = value;
       }
