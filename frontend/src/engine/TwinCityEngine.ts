@@ -18,10 +18,11 @@ import {
   EllipsoidTerrainProvider,
   createWorldTerrainAsync,
   sampleTerrainMostDetailed,
-  type TerrainProvider
+  type TerrainProvider,
+  type Cartesian3
 } from 'cesium';
 import { TerrainHeightField, cellsFor, type GroundSampler } from './terrain/TerrainHeightField';
-import { setGroundField, getGroundField, modelHeight, scenePoint } from './terrain/groundHeight';
+import { setGroundField, getGroundField, scenePoint } from './terrain/groundHeight';
 import { cesiumIonToken } from '../lib/cesiumToken';
 import { ObjectManager } from './objects/ObjectManager';
 import type { CityObject, RoadObject, ZoneObject, GatewayObject, BuildingObject } from './objects/types';
@@ -498,6 +499,28 @@ export class TwinCityEngine {
     return this.viewer ? this.viewer.scene.primitives.length : 0;
   }
 
+  /**
+   * The ground point under a screen position, in model coordinates ([lng, lat, 0]: model heights never include the
+   * ground, and every drawing tool draws on it). Without terrain the scene's ground is the ellipsoid, so the ray is
+   * intersected with it exactly: globe.pick hits the rendered tile mesh instead, whose coarse tiles sit up to kilometres
+   * below the ellipsoid (a road drawn from 3 km up was stored at -3075 m and never snapped), and which is not rendered
+   * at all while the base imagery fails to load (every click then did nothing). With terrain on, the terrain mesh is
+   * picked, falling back to the ellipsoid.
+   */
+  public pickGround(position: Cartesian2): [number, number, number] | null {
+    if (!this.viewer) return null;
+    const scene = this.viewer.scene;
+    let cart: Cartesian3 | undefined;
+    if (this.terrainEnabled) {
+      const ray = this.viewer.camera.getPickRay(position);
+      cart = ray ? scene.globe.pick(ray, scene) : undefined;
+    }
+    cart ??= this.viewer.camera.pickEllipsoid(position, scene.globe.ellipsoid);
+    if (!cart) return null;
+    const c = Cartographic.fromCartesian(cart);
+    return [CesiumMath.toDegrees(c.longitude), CesiumMath.toDegrees(c.latitude), 0];
+  }
+
   private setupInteraction() {
     if (!this.viewer) return;
 
@@ -540,15 +563,9 @@ export class TwinCityEngine {
     handler.setInputAction((movement: { endPosition: Cartesian2 }) => {
       if (!this.viewer) return;
 
-      const ray = this.viewer.camera.getPickRay(movement.endPosition);
-      if (!ray) return;
-      const position = this.viewer.scene.globe.pick(ray, this.viewer.scene);
-      if (!position) return;
-
-      const cartographic = Cartographic.fromCartesian(position);
-      const lng = CesiumMath.toDegrees(cartographic.longitude);
-      const lat = CesiumMath.toDegrees(cartographic.latitude);
-      const alt = modelHeight(lng, lat, cartographic.height);
+      const ground = this.pickGround(movement.endPosition);
+      if (!ground) return;
+      const [lng, lat, alt] = ground;
 
       if (this.draggingPointIdx !== null || this.draggingZonePointIdx !== null) {
         if (this.draggingPointIdx !== null) {
@@ -627,15 +644,10 @@ export class TwinCityEngine {
       const pickedObject = this.viewer.scene.pick(click.position);
 
       // Draw mode path
-      const ray = this.viewer.camera.getPickRay(click.position);
-      if (!ray) return;
-      const position = this.viewer.scene.globe.pick(ray, this.viewer.scene);
+      const ground = this.pickGround(click.position);
 
-      if (position) {
-        const cartographic = Cartographic.fromCartesian(position);
-        const lng = CesiumMath.toDegrees(cartographic.longitude);
-        const lat = CesiumMath.toDegrees(cartographic.latitude);
-        const alt = modelHeight(lng, lat, cartographic.height);
+      if (ground) {
+        const [lng, lat, alt] = ground;
 
         const editMode = this.editing.getMode();
         const pickedId = defined(pickedObject) && typeof pickedObject.id?.id === 'string' ? pickedObject.id.id as string : '';
@@ -1071,15 +1083,17 @@ export class TwinCityEngine {
   }
 
   /** Finishes the in-progress multi-point drawing (used by the Enter shortcut). */
-  public finishDrawing() {
+  public finishDrawing(): boolean {
     const mode = this.editing.getMode();
-    if (mode === 'select' || mode === 'import_osm' || this.editing.isSingleClickMode(mode)) return;
+    if (mode === 'select' || mode === 'import_osm' || this.editing.isSingleClickMode(mode)) return false;
     try {
       this.editing.finalizeDrawing(this.scenarios.getActiveScenarioId());
       this.clearSnapPreview();
       this.reportUncertainCrossings();
+      return true;
     } catch (err: any) {
       (window as any).showToast?.(err.message || "Failed to finalize drawing.", "error");
+      return false;
     }
   }
 
