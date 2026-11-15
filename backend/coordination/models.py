@@ -35,7 +35,7 @@ RULE_BASES = ("cited_permission_distance", "user_entered")
 QUALITY_LEVELS = ("QL-A", "QL-B", "QL-C", "QL-D")
 ENV_DOMAINS = ("flood", "groundwater", "soil", "geology", "air", "noise", "heat", "vegetation", "water", "heritage",
                "drainage", "seismic", "terrain", "metro", "railway")
-ENGINE_VERSION = "coordination-engine 1.1 (2026-11-13: + building footprints index, PMC sewer / storm-drain records)"
+ENGINE_VERSION = "coordination-engine 1.2 (2026-11-15: + objects drawn in Design; 1.1: building footprints, PMC sewer / storm-drain records)"
 
 
 def _now() -> datetime.datetime:
@@ -216,6 +216,26 @@ class EnvironmentLayerEntity(Base):
     updated_at = Column(DateTime, default=_now, onupdate=_now)
 
 
+class UndergroundVerificationEntity(Base):
+    """Field evidence a PERSON recorded for one underground screening finding (pair key). The only way a finding becomes
+    'Verified': it applies while the fingerprint (both assets' geometry, size, depths) is unchanged. Insert-only."""
+    __tablename__ = "underground_verifications"
+
+    id = Column(String, primary_key=True)
+    pair_key = Column(String, nullable=False, index=True)       # proposed id | other id | category
+    fingerprint = Column(String, nullable=False)
+    method = Column(String, nullable=False)                     # VERIFICATION_METHODS
+    evidence = Column(Text, nullable=False)                     # what was seen / reference to the record
+    measured_horizontal_m = Column(Float, nullable=True)
+    measured_vertical_m = Column(Float, nullable=True)
+    note = Column(Text, nullable=False, default="")
+    verified_by = Column(String, nullable=False)
+    created_at = Column(DateTime, default=_now)
+
+
+VERIFICATION_METHODS = ("trial_pit", "vacuum_excavation", "survey_of_exposed_asset")   # QL-A evidence only
+
+
 # ── audit registration (planning.audit tracks entities by class name; additive) ─────────────────────────────────────
 def _register_audit() -> None:
     from planning import audit
@@ -227,9 +247,10 @@ def _register_audit() -> None:
         "SubsurfaceDatasetEntity": ("subsurface_dataset", "project", "project_id", "name", ("imported_by",)),
         "SubsurfaceRecordEntity": ("subsurface_record", "subsurface_dataset", "dataset_id", "external_id", ()),
         "EnvironmentLayerEntity": ("environment_layer", None, None, "name", ("created_by",)),
+        "UndergroundVerificationEntity": ("underground_verification", None, None, "pair_key", ("verified_by",)),
     })
     for t in ("proposal_element", "clearance_rule", "coordination_run", "coordination_conflict", "subsurface_dataset",
-              "subsurface_record", "environment_layer"):
+              "subsurface_record", "environment_layer", "underground_verification"):
         if t not in audit.TRACKED_TYPES:
             audit.TRACKED_TYPES.append(t)
 

@@ -285,6 +285,43 @@ def building_segments(boxes: list[tuple]) -> tuple[list[G.Segment], Optional[dic
                   "excluded": "ML footprints that agree with OSM (represented by the OSM footprint)"}
 
 
+DESIGN_KIND = {"tunnel": "tunnel", "metro_tunnel": "metro_tunnel", "storm": "drainage", "sewer": "pipeline", "water": "pipeline",
+               "gas": "pipeline", "power": "utility", "telecom": "utility", "utility": "utility", "metro_viaduct": "metro_viaduct",
+               "metro_station": "metro_station"}
+
+
+def design_object_segments(db: Session, scenario_ids: set, exclude_ids: set, exclude_markers: list[str]) -> list[G.Segment]:
+    """Objects drawn in Design (underground alignments, utilities, elevated metro lines / stations) in the baseline and
+    in the scenarios the project's elements belong to, as side-B segments (layer `design_object`). Objects registered
+    as one of the project's own elements (element_ref or the Underground conflict-check provenance marker) are skipped.
+    Depths: crown/invert from the drawn profile and section (screening.design_asset); a utility whose depth certainty is
+    'unknown' (drawing placeholder) has depth UNKNOWN."""
+    from . import screening as SCR
+    out: list[G.Segment] = []
+    for sid in sorted(scenario_ids | {"base"}):
+        for o in SCR.objects_from_db(db, sid):
+            if o["id"] in exclude_ids or any(f"alignment {o['id']} " in m for m in exclude_markers):
+                continue
+            if sid != "base" and o.get("scenarioId") == "base":
+                continue   # baseline objects are read once, under 'base'
+            a = SCR.design_asset(o, "existing" if o.get("scenarioId") == "base" else "proposed")
+            if a is None:
+                continue
+            prof = [{"chainage_m": ch, "z_max_m": None if c is None else -c, "z_min_m": None if i is None else -i} for ch, c, i in a.profile]
+            g = SCR._lonlat(a.geom)
+            crowns = [c for _, c, _ in a.profile]
+            inverts = [i for _, _, i in a.profile]
+            z_max = None if any(c is None for c in crowns) else -min(crowns)
+            z_min = None if any(i is None for i in inverts) else -max(inverts)
+            cert = "unknown" if (z_max is None and z_min is None) else ("estimated" if a.certainty == "measured" else a.certainty)
+            out += G.segments_for(f"design:{o['id']}", DESIGN_KIND.get(a.cls, "other"), g,
+                                  width_m=None if a.half_width is None else 2 * a.half_width, z_min=z_min, z_max=z_max, certainty=cert,
+                                  profile=prof if (g.get("type") == "LineString" and len(prof) > 2) else None,
+                                  meta={"layer": "design_object", "object_id": o["id"], "name": o.get("name"), "scenario_id": o.get("scenarioId"),
+                                        "design_type": o.get("type"), "status": a.status, "quality_level": a.quality})
+    return out
+
+
 def subsurface_hash(db: Session) -> str:
     return _sha([[d.id, d.file_sha256, d.record_count] for d in db.query(SubsurfaceDatasetEntity).order_by(SubsurfaceDatasetEntity.id)])
 
@@ -340,9 +377,12 @@ def run_detection(db: Session, project_id: str, run_by: str, screening_radius_m:
     util_segs, util_ds = utility_segments(db, qbox) if qbox else ([], [])
     metro_segs, metro_meta = osm_metro_segments(boxes) if boxes else ([], None)
     bld_segs, bld_meta = building_segments(boxes)
+    design_segs = design_object_segments(db, {e.scenario_id for e in own if e.scenario_id}, {e.element_ref for e in own if e.element_ref},
+                                         [e.provenance or "" for e in own])
 
     layers = {
         "project_element": other_segs,
+        "design_object": design_segs,
         "baseline_road": base_segs,
         "osm_metro": metro_segs,
         "subsurface_utility": util_segs,
@@ -399,6 +439,7 @@ def run_detection(db: Session, project_id: str, run_by: str, screening_radius_m:
             lo1, la1 = G.from_utm(max(xs[2::4]), max(xs[3::4]))
             e_box = (lo0, la0, lo1, la1)
         cov = {
+            "design_object": (True, "objects drawn in Design (baseline + this project's alternatives); none within the screening radius"),
             "baseline_road": (bool(base_segs) and G.box_inside(e_box, base_cov), f"baseline roads; coverage: {base_cov_src}"),
             "osm_metro": (bool(metro_meta and metro_meta.get("available")) and G.box_inside(e_box, metro_meta.get("bbox")),
                           "OSM metro (local index; depth UNKNOWN)" if metro_meta and metro_meta.get("available") else "OSM metro index not available"),
