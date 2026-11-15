@@ -128,12 +128,16 @@ export interface ScreeningFinding {
   measurements: Record<string, number | boolean | null | (number | null)[]>;
   location: [number, number]; proposed: ScreeningAsset; other: ScreeningAsset | null; buildings?: ScreeningAsset[];
   merged_pieces?: number;
+  /** Insufficient data only: the shared reason (one dataset / network / missing input) these findings are grouped under. */
+  gap_group?: { key: string; label: string; unit: string };
   verification?: { id: string; verified_by: string; method: string; evidence: string; recorded_at: string | null; stale?: boolean };
 }
 export interface ScreeningChecklistItem { check: string; result: 'flagged' | 'nothing found in the available data' | 'not checked'; detail: string }
 export interface ScreeningLayer { id: string; name: string; used: boolean; quality_level?: string; records?: number; datum?: string; coverage?: string }
 export interface ScreeningRun {
   engine_version: string; config_version: string; scenario_id: string; generated_at: string; banner: string; disclaimer: string;
+  /** Set when the run was saved (every full check): reopening the alternative shows it. */
+  run_id?: string; saved_at?: string; inputs_hash?: string;
   summary: {
     counts: Record<ScreeningStatus, number>; worst_status: ScreeningStatus | null; headline: string;
     proposed_checked: (ScreeningAsset & { checklist: ScreeningChecklistItem[] })[]; skipped: { id: string; name: string; reason: string }[];
@@ -203,6 +207,19 @@ export const coordinationApi = {
   // underground screening (read-only; verifications are recorded by a person)
   screenUnderground: (body: { scenario_id: string; objects?: ScreeningObject[]; focus_ids?: string[] }) =>
     call<ScreeningRun>('POST', '/underground/screen', body),
+  /** Last saved screening of the alternative; stale when the objects sent now (or the records / engine) differ from the run's. */
+  latestScreening: (body: { scenario_id: string; objects?: ScreeningObject[] }) =>
+    call<{ run: ScreeningRun | null; stale?: boolean; stale_reasons?: string[] }>('POST', '/underground/runs/latest', body),
+  /** Screening report (re-runs the check on these objects): PDF / DOCX / CSV as a Blob plus the server's file name. */
+  screeningReport: async (body: { scenario_id: string; objects?: ScreeningObject[] }, format: 'pdf' | 'docx' | 'csv'): Promise<{ blob: Blob; filename: string; findings: number }> => {
+    const res = await fetch(`${API_BASE}/api/coordination/underground/screen/report?format=${format}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+    const cd = res.headers.get('Content-Disposition') ?? '';
+    const filename = /filename="([^"]+)"/.exec(cd)?.[1] ?? `underground-screening.${format}`;
+    return { blob: await res.blob(), filename, findings: Number(res.headers.get('X-Findings') ?? 0) };
+  },
   recordVerification: (body: VerificationInput) => call<{ id: string; pair_key: string; created_at: string }>('POST', '/underground/verifications', body),
   // environment
   environmentLayers: () => call<{ layers: EnvironmentLayer[]; note: string }>('GET', '/environment-layers'),

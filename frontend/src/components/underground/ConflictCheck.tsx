@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ChevronDown, ChevronRight, FolderKanban, MapPin, ShieldQuestion } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, FileDown, FolderKanban, MapPin, ShieldQuestion } from 'lucide-react';
 import { coordinationApi, type ConflictClass, type ScreeningFinding, type ScreeningObject, type ScreeningRun, type ScreeningStatus } from '../../lib/coordinationApi';
 import { planningApi, type Project } from '../../engine/planning/planningApi';
 import type { CityObject, UndergroundAlignmentObject } from '../../engine/objects/types';
@@ -17,6 +17,7 @@ import {
   highlightTargets, isStale, keyNumbers, plainSummary,
 } from './conflictClasses';
 import { clearConflictHighlight, showConflictHighlight } from './conflictHighlight';
+import { gapCountText, groupGaps, type GapGroup } from './screeningGroups';
 
 const SCREENED_TYPES = new Set(['underground_alignment', 'utility', 'metro_line', 'metro_station']);
 const isScreened = (o: CityObject) => SCREENED_TYPES.has(o.type);
@@ -134,8 +135,32 @@ const FindingRow: React.FC<{ f: ScreeningFinding; run: ScreeningRun; selected: b
   );
 };
 
+/** One reason why findings can't be judged (a dataset, a network, a missing input); the findings behind it on expand. */
+const GapGroupRow: React.FC<{ g: GapGroup; run: ScreeningRun; selectedId: string | null; onSelect: (f: ScreeningFinding | null) => void }> = ({ g, run, selectedId, onSelect }) => {
+  const [open, setOpen] = useState(() => g.findings.some(f => f.id === selectedId));
+  const [shown, setShown] = useState(PAGE);
+  return (
+    <li className="uos-card text-meta" data-testid="ug-gap-group" data-key={g.key}>
+      <button type="button" className="w-full text-left flex items-start gap-2" aria-expanded={open} onClick={() => setOpen(!open)} data-testid="ug-gap-group-open">
+        {open ? <ChevronDown size={14} className="mt-0.5 shrink-0" aria-hidden /> : <ChevronRight size={14} className="mt-0.5 shrink-0" aria-hidden />}
+        <span className="min-w-0 flex-1">
+          <span className="block text-text-1 break-words">{g.label}</span>
+          <span className="block text-text-2" data-testid="ug-gap-group-count">{gapCountText(g)}</span>
+        </span>
+      </button>
+      {open && (
+        <div className="mt-1.5 pl-3">
+          <ul className="space-y-1">{g.findings.slice(0, shown).map(f => <FindingRow key={f.id} f={f} run={run} selected={selectedId === f.id} onSelect={onSelect} />)}</ul>
+          {g.findings.length > shown && <button type="button" className="uos-btn uos-btn-sm mt-1" onClick={() => setShown(shown + PAGE)}>Show {Math.min(PAGE, g.findings.length - shown)} more of {g.findings.length - shown}</button>}
+        </div>
+      )}
+    </li>
+  );
+};
+
 const Group: React.FC<{ status: ScreeningStatus; findings: ScreeningFinding[]; run: ScreeningRun; selectedId: string | null; onSelect: (f: ScreeningFinding | null) => void }> = ({ status, findings, run, selectedId, onSelect }) => {
-  const [open, setOpen] = useState(status !== 'insufficient_data' || findings.length <= 6);
+  const gaps = useMemo(() => (status === 'insufficient_data' ? groupGaps(findings) : null), [status, findings]);
+  const [open, setOpen] = useState(status !== 'insufficient_data' || (gaps?.length ?? 0) <= 8);
   const [shown, setShown] = useState(PAGE);
   return (
     <section data-testid={`ug-group-${status}`}>
@@ -144,7 +169,13 @@ const Group: React.FC<{ status: ScreeningStatus; findings: ScreeningFinding[]; r
         <StatusBadge status={status} count={findings.length} />
         <span className="text-meta text-text-3 min-w-0 truncate">{STATUS_TEXT[status].hint}</span>
       </button>
-      {open && (
+      {open && gaps && (
+        <>
+          <p className="text-[11px] mb-1" style={note}>Grouped by what is missing. Open a line to see each place.</p>
+          <ul className="space-y-1" data-testid="ug-gap-groups">{gaps.map(g => <GapGroupRow key={g.key} g={g} run={run} selectedId={selectedId} onSelect={onSelect} />)}</ul>
+        </>
+      )}
+      {open && !gaps && (
         <>
           <ul className="space-y-1">{findings.slice(0, shown).map(f => <FindingRow key={f.id} f={f} run={run} selected={selectedId === f.id} onSelect={onSelect} />)}</ul>
           {findings.length > shown && <button type="button" className="uos-btn uos-btn-sm mt-1" onClick={() => setShown(shown + PAGE)}>Show {Math.min(PAGE, findings.length - shown)} more of {findings.length - shown}</button>}
@@ -174,14 +205,37 @@ export const ConflictCheck: React.FC<{ a?: UndergroundAlignmentObject | null }> 
   const [statusFilter, setStatusFilter] = useState<ScreeningStatus | null>(null);
 
   useEffect(() => () => clearConflictHighlight(), []);
+  // Reopening: no result in this session for the alternative → show its last saved run, marked stale if objects changed since.
+  const [restoring, setRestoring] = useState(false);
+  const hasEntry = !!entry;
+  useEffect(() => {
+    if (hasEntry) return;
+    let live = true;
+    setRestoring(true);
+    const objs = visible.map(o => engineInstance.objects.schemaOf(o) as ScreeningObject);
+    coordinationApi.latestScreening({ scenario_id: sid, objects: objs })
+      .then(r => {
+        if (!live || !r.run) return;
+        const cur = useScreeningStore.getState().runs[sid];
+        if (cur) return;                                            // a check finished meanwhile
+        setRun(sid, r.run, { restored: true, stale: !!r.stale, staleReasons: r.stale_reasons ?? [], comparedAt: new Date().toISOString() }, r.run.saved_at ?? r.run.generated_at);
+      })
+      .catch(() => { /* no saved run reachable: the panel simply starts empty */ })
+      .finally(() => { if (live) setRestoring(false); });
+    return () => { live = false; };
+    // visible is read once per alternative: staleness after that is tracked by isStale on edits
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sid, hasEntry]);
   const run = entry?.run ?? null;
   const proposedCount = visible.filter(o => (o.type === 'underground_alignment' || o.type === 'utility') && (sid === 'base' || o.scenarioId === sid)).length;
+
+  const screeningBody = (): ScreeningObject[] => visible.map(o => engineInstance.objects.schemaOf(o) as ScreeningObject);
 
   const check = async () => {
     setBusy(true); setErr(null);
     clearConflictHighlight();
     try {
-      const body: ScreeningObject[] = visible.map(o => engineInstance.objects.schemaOf(o) as ScreeningObject);
+      const body = screeningBody();
       const r = await coordinationApi.screenUnderground({ scenario_id: sid, objects: body });
       setRun(sid, r);
       setScope(a && r.summary.proposed_checked.some(p => p.id === a.id) ? a.id : null);
@@ -202,7 +256,8 @@ export const ConflictCheck: React.FC<{ a?: UndergroundAlignmentObject | null }> 
   const counts = countsByStatus(scoped);
   const filtered = statusFilter ? scoped.filter(f => f.status === statusFilter) : scoped;
   const groups = groupBySeverity(filtered, a?.id);
-  const stale = entry ? isStale(entry.at, visible) : false;
+  const origin = entry?.origin;
+  const stale = entry ? (origin?.stale ?? false) || isStale(origin?.comparedAt ?? entry.at, visible) : false;
   const objChecklist = run?.summary.proposed_checked.find(p => p.id === scope);
 
   return (
@@ -215,13 +270,22 @@ export const ConflictCheck: React.FC<{ a?: UndergroundAlignmentObject | null }> 
         objects drawn in Design, building footprints, nallas, groundwater wells and boreholes, using Indian clearance rules (stricter rule wins).
       </p>
       <button type="button" className="uos-btn self-start" onClick={() => void check()} disabled={busy || proposedCount === 0} data-testid="ug-check-conflicts">
-        <ShieldQuestion size={14} aria-hidden /> {busy ? 'Checking…' : run ? 'Check again' : `Check ${proposedCount} proposed object${proposedCount === 1 ? '' : 's'}`}
+        <ShieldQuestion size={14} aria-hidden /> {busy ? 'Checking…' : restoring && !run ? 'Loading last check…' : run ? 'Check again' : `Check ${proposedCount} proposed object${proposedCount === 1 ? '' : 's'}`}
       </button>
       {proposedCount === 0 && <p className="text-meta text-text-2">Draw an underground alignment or a utility in this alternative to check it.</p>}
       {err && <p className="text-label text-fail" role="alert">The check could not run: {err}</p>}
       {run && (
         <div className="flex flex-col gap-2" data-testid="ug-conflict-results">
-          {stale && <p className="text-meta text-warn" role="status" data-testid="ug-check-stale">Objects were edited after this check — check again for current results.</p>}
+          {origin?.restored && (
+            <p className="text-meta text-text-2" data-testid="ug-check-restored">
+              Last saved check, {new Date(entry!.at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}.
+            </p>
+          )}
+          {stale && (
+            <div className="text-meta text-warn" role="status" data-testid="ug-check-stale">
+              <span className="font-semibold">Stale</span> — {origin?.staleReasons.length ? origin.staleReasons.join(' ') : 'Objects were edited after this check.'} Check again for current results.
+            </div>
+          )}
           <p className="text-label text-text-1" data-testid="ug-check-summary">{plainSummary(run)}</p>
           {run.summary.proposed_checked.length > 1 && (
             <div className={field}>
@@ -264,10 +328,46 @@ export const ConflictCheck: React.FC<{ a?: UndergroundAlignmentObject | null }> 
               )))}</tbody></table>
             <p className="text-[11px] mt-1" style={note}>Where two sources differ the stricter value is used and both are cited. Thresholds are widened by each record&rsquo;s positional uncertainty (ASCE 38 quality level). {run.disclaimer}</p>
           </Disclosure>
+          <ReportExport sid={sid} objects={screeningBody} stale={stale} />
           {a && <ProjectRegistration a={a} />}
         </div>
       )}
     </div>
+  );
+};
+
+/** Screening report: the backend re-runs the check on the objects as they are now and returns PDF or CSV. */
+const ReportExport: React.FC<{ sid: string; objects: () => ScreeningObject[]; stale: boolean }> = ({ sid, objects, stale }) => {
+  const [busy, setBusy] = useState<null | 'pdf' | 'csv'>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const get = async (format: 'pdf' | 'csv') => {
+    setBusy(format); setMsg(null);
+    try {
+      const { blob, filename, findings } = await coordinationApi.screeningReport({ scenario_id: sid, objects: objects() }, format);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = filename; document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setMsg(`Downloaded ${filename} (${findings.toLocaleString('en-IN')} findings).`);
+    } catch (e) { setMsg(`The report could not be made: ${(e as Error).message}`); } finally { setBusy(null); }
+  };
+  return (
+    <section className="uos-card flex flex-col gap-1.5" data-testid="ug-report">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-text-3">Screening report</div>
+      <p className="text-[11px]" style={note}>
+        For sharing with utility owners and engineers: summary, every finding in its five parts, rules and sources, what wasn&rsquo;t checked and the
+        next-investigation plan. The check is run again on the objects as they are now{stale ? ' (they changed since the result above)' : ''}.
+      </p>
+      <div className="flex gap-1.5">
+        <button type="button" className="uos-btn uos-btn-sm" disabled={busy !== null} onClick={() => void get('pdf')} data-testid="ug-report-pdf">
+          <FileDown size={14} aria-hidden /> {busy === 'pdf' ? 'Preparing PDF…' : 'PDF report'}
+        </button>
+        <button type="button" className="uos-btn uos-btn-sm" disabled={busy !== null} onClick={() => void get('csv')} data-testid="ug-report-csv">
+          <FileDown size={14} aria-hidden /> {busy === 'csv' ? 'Preparing CSV…' : 'Findings CSV'}
+        </button>
+      </div>
+      {msg && <p className="text-meta text-text-2" role="status" data-testid="ug-report-status">{msg}</p>}
+    </section>
   );
 };
 

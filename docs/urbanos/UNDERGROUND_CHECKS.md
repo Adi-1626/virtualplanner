@@ -141,6 +141,47 @@ five fixed parts + rules applied + "Record field verification". Below: the objec
 (always visible), Data used, the rules table. Results are kept per alternative across panel remounts; edits after a check
 show "check again".
 
+### 2.8 Insufficient-data grouping and the screening report
+- **Grouping** (UNIT-TESTED): every Insufficient-data finding carries `gap_group` {key, label, unit} — its shared reason:
+  one dataset whose levels are unusable ("PMC storm-water drains: no depth recorded — vertical clearance not checkable",
+  "PMC sewer network: levels have no stated datum — …"), the set of networks with no records ("No water supply, electricity,
+  gas (CGD) or telecom records in this area"), a proposed object without depth, building foundations, cover, groundwater,
+  geology. The result panel shows one expandable line per reason with its count ("501 crossings or near passes (444 cross
+  in plan) · 21 proposed objects"); the 1,283-finding stress run's 1,034 Insufficient-data findings become 5 lines.
+  `screeningGroups.ts` falls back to the dataset / category for results without `gap_group`.
+- **Report** (UNIT-TESTED, MEASURED): `POST /api/coordination/underground/screen/report?format=pdf|docx|csv` (same body as
+  `/screen`; re-runs the check on the objects given; read-only). PDF / DOCX through `feasibility/docgen.py` (fpdf2 /
+  python-docx; additive `subhead` block). Contents: header (alternative name + id, date in IST and UTC, engine, rules and
+  report versions, banner in every page header, disclaimer box) → summary counts with what each status means + objects →
+  Potential conflict / Requires investigation / Verified in full (key numbers, location, Checked / Data used / Found / Not
+  checked / Next investigation) → Insufficient data as one table per reason (≤ 150 places each in the PDF) → rules applied
+  with sources and how many findings cite each → data used → what was not checked (run list + skipped objects + checklist
+  "not checked" items) → next-investigation plan merged over all findings in the Indian order (as-builts → CBuD → GPR →
+  trial pits → Maha-Metro NOC → boreholes → specialist; other steps after), with counts and objects. CSV (UTF-8 BOM for
+  Excel): `# key,value` preamble (alternative, date, engine, rules version, banner, disclaimer, summary, rules applied, not
+  checked, plan) + one row per finding with the five parts (multi-item parts joined by " | "), numbers, location, gap
+  group, verification. UI: "PDF report" / "Findings CSV" in the result panel (`ug-report-pdf`, `ug-report-csv`).
+  Code: `backend/coordination/screening_report.py`; tests `backend/tests/test_underground_screening_report.py`.
+  Time (MEASURED, 2 CPU): 2-object Shivajinagar case 7 pages; 1,283-finding stress run PDF 0.5 MB / ~150 pages in 5.5 s
+  render (+ ~2 s screening), CSV 3.1 MB in 0.07 s.
+
+### 2.9 Saved runs (UNIT-TESTED)
+- Every full check (`POST /underground/screen` without `focus_ids`) is saved in `underground_screening_runs` (created by
+  `create_all`; machine output, not audited): id, alternative id, **inputs hash** (the alternative's underground / metro
+  objects — geometry, properties, name; timestamps and display state ignored — plus rule overrides; same hash whether the
+  UI sends them or they are read from the database), **data hash** (utility-record datasets), engine + rules versions,
+  object / finding counts, summary JSON, and the whole result (findings, layers, rules, geometries) as zlib-compressed JSON
+  (`result_json_gz`; the 1,283-finding run is ~0.24 MB). The newest 20 per alternative are kept. The response carries
+  `run_id`, `saved_at`, `inputs_hash`.
+- `POST /underground/runs/latest` {scenario_id, objects as Design holds them now} → `{run, stale, stale_reasons}`; stale
+  when the objects, the utility records or the engine version changed since. `GET /underground/runs?scenario_id=` lists
+  saved runs (summary only).
+- UI: opening the conflict check with no result in this session loads the last saved run ("Last saved check, <date>"),
+  with a **Stale** line and the reasons when it no longer matches; later edits also mark it stale. "Check again" replaces it.
+- Code: `backend/coordination/screening_runs.py`, `models.UndergroundScreeningRunEntity`; tests
+  `backend/tests/test_underground_screening_runs.py` (save + reopen fresh, stale on object change / add, not stale on
+  timestamp-only change, stale on records / engine change, focus runs not saved, pruning, hash equivalence).
+
 ## 3. Numbers (MEASURED, copy of twincity.db + real indexes, 2 CPU sandbox)
 - All 53,669 utility records (sewer + 9,187 storm drains) parsed + projected + STRtree: **0.6–0.9 s once** per data
   fingerprint (cached); full-extent tree query 5 ms.
@@ -148,7 +189,8 @@ show "check again".
 - 15 km bored tunnel across the city: 7.2 s cold (OSM metro 2.8 s + building index 3.5 s cold reads) / **1.9 s warm**;
   854 existing assets read, 322 findings.
 - 20 water mains × 3.3 km: 2.3 s cold / 1.5 s warm; 3,303 assets read, 981 findings. Tunnel + mains: 1.8–2.2 s, 1,283 findings,
-  JSON 6.2 MB (geometries hoisted, 0.2 MB; text dominates) — no gzip middleware in the app.
+  JSON 5.85 MB (geometries hoisted, 0.2 MB; text dominates).
+- **gzip** (`GZipMiddleware`, minimum 1 KB, level 6, `backend/main.py`), same 1,283-finding run over HTTP on 8391: **5,854,709 B → 238,979 B on the wire (4.1 %)**; compression 49 ms (level 9: 234,099 B, 62 ms; level 1: 414,222 B, 17 ms); round trip 1.98 s identity vs 2.05 s gzip on localhost — the saving is the 5.6 MB transfer on a real network. Clients without `Accept-Encoding: gzip` get identity. Terrain PNG tiles are also passed through gzip (small, already compressed; harmless).
 - Browser (headless Chromium, swiftshader, built app on 4591 + backend 8391): tunnel crossing Pune Metro Line 1 near
   Shivajinagar + a water main → check returns in 2.1–3.3 s; 5 Requires investigation (Metro crossing with NOC, two storm
   drains within the referral distance + QL-D uncertainty, cover 10 m < 2 × 6 m, nalla), 18 Insufficient data; click flies
@@ -169,9 +211,9 @@ show "check again".
 ## 5. Open issues / not done
 - The Underground panel (other agent) mounts `<ConflictCheck a={active} />` only when an alignment is open: a
   utilities-only alternative cannot reach the check. `a` is optional now — mount it unconditionally.
-- Findings are not persisted (screening is read-only apart from verifications); report export (CSV/PDF) not done.
+- Findings persisted per run (§2.9) and exported (§2.8). Saved runs are per alternative, not per user.
 - Large results (≈1,000 findings) are long; grouping by severity + paging helps, but grouping Insufficient-data pairs per
-  dataset would be better. Response is not gzip-compressed (main.py has no GZipMiddleware).
+  dataset would be better. Response gzip: done (see §3).
 - Datum: Design depths are relative to local ground; no conversion via the DEM (research §2.3 asks for absolute Z + datum).
 - Cable voltage, gas material (steel vs PE), road-crossing locations are not modelled → the stricter or voltage-dependent
   values are reported as "Requires investigation", not decided.
