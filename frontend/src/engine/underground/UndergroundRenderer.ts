@@ -10,7 +10,7 @@
  * The first entity of an alignment carries the object's id, so clicking it selects the object like any other.
  */
 import {
-  Cartesian2, Cartesian3, Color, Rectangle, ColorMaterialProperty, CornerType, CustomDataSource, DistanceDisplayCondition, PolylineDashMaterialProperty, type Entity, type Viewer,
+  Cartesian2, Cartesian3, Color, NearFarScalar, Rectangle, ColorMaterialProperty, CornerType, CustomDataSource, DistanceDisplayCondition, PolylineDashMaterialProperty, type Entity, type Viewer,
 } from 'cesium';
 import { groundAt, scenePoint } from '../terrain/groundHeight';
 import { SUBSURFACE_BACKDROP_CSS } from './UndergroundView';
@@ -20,6 +20,7 @@ import { METRO_STATION_LABEL, METRO_TUNNEL_LABEL } from './metroLevel';
 import { utilityZ } from './utilityModel';
 import { depthsOf, sectionHeightM, sectionWidthM } from './alignmentGeometry';
 import type { SubsurfaceRecord } from '../../lib/coordinationApi';
+import { declutterStationLabels } from './hoverInfo';
 import { layerOf } from './recordsSummary';
 
 /** Utility colours (APWA-style convention, used informally in India too): what the asset is. */
@@ -271,12 +272,14 @@ export class UndergroundRenderer {
     ents.removeAll();
     ents.suspendEvents();
     const purple = Color.fromCssColorString('#a855f7');
-    const label = (text: string) => ({
+    const label = (text: string, offsetY = -14, maxM = 6000) => ({
       text, font: '12px sans-serif', fillColor: Color.WHITE, showBackground: true, backgroundColor: Color.fromCssColorString('#3b0764').withAlpha(0.8),
       // Not ground-clamped (scenePoint is already on the ground): a clamped label keeps whatever height a coarse
       // tile gave it and, without depth test, can be drawn far from its place
-      pixelOffset: new Cartesian2(0, -14), disableDepthTestDistance: Number.POSITIVE_INFINITY,
-      distanceDisplayCondition: new DistanceDisplayCondition(0, 6000),
+      pixelOffset: new Cartesian2(0, offsetY), disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      // smaller and fainter with distance, so a district view does not become a wall of labels
+      scaleByDistance: new NearFarScalar(800, 1, 6000, 0.75), translucencyByDistance: new NearFarScalar(Math.max(1000, maxM * 0.6), 1, maxM, 0.25),
+      distanceDisplayCondition: new DistanceDisplayCondition(0, maxM),
     });
     // OSM splits one tunnel into many short ways: one label per ~400 m of tunnel (longest ways first), not one per
     // way, which stacked several identical labels on top of each other
@@ -291,9 +294,10 @@ export class UndergroundRenderer {
         polyline: { positions: m.coordinates.map(c => scenePoint(c[0], c[1], 0)), width: 4, clampToGround: true,
           material: new PolylineDashMaterialProperty({ color: purple.withAlpha(0.9), gapColor: Color.BLACK.withAlpha(0.25), dashLength: 20 }) } });
       const mid = m.coordinates[Math.floor(m.coordinates.length / 2)];
-      if (near(placed, mid, 400) || near(stationAt, mid, 150)) continue;
+      if (near(placed, mid, 400) || near(stationAt, mid, 300)) continue;
       placed.push(mid);
-      ents.add({ id: `ug:${m.id}:label`, name: METRO_TUNNEL_LABEL, position: scenePoint(mid[0], mid[1], 0), label: label(METRO_TUNNEL_LABEL) } as Entity.ConstructorOptions);
+      // the long tunnel label only from close up (3 km); the station names carry the district view
+      ents.add({ id: `ug:${m.id}:label`, name: METRO_TUNNEL_LABEL, position: scenePoint(mid[0], mid[1], 0), label: label(METRO_TUNNEL_LABEL, -14, 3000) } as Entity.ConstructorOptions);
     }
     for (const { s: st, heading, inferred } of stations) {
       const [lon, lat] = st.coordinates;
@@ -304,14 +308,26 @@ export class UndergroundRenderer {
       const text = `${METRO_STATION_LABEL}${inferred ? ' (on a tunnel section in OSM)' : ''}`;
       ents.add({ id: st.id, name: `${st.stationName || st.name} — ${text}`,
         polyline: { positions: ring, width: 3, clampToGround: true, material: new PolylineDashMaterialProperty({ color: purple.withAlpha(0.9), dashLength: 12 }) } });
-      ents.add({ id: `ug:${st.id}:label`, name: text, position: scenePoint(lon, lat, 0), label: label(`${st.stationName || st.name}: ${METRO_STATION_LABEL}`) } as Entity.ConstructorOptions);
+    }
+    // Station labels: the station name only ("depth not mapped" is in the hover tooltip, the legend and the tunnel
+    // label); an interchange's platforms share one label and close neighbours alternate above / below
+    for (const l of declutterStationLabels(stations.map(({ s: st }) => ({ id: st.id, name: st.stationName || st.name, lon: st.coordinates[0], lat: st.coordinates[1] })))) {
+      ents.add({ id: `ug:${l.ids[0]}:label`, name: `${l.text} — ${METRO_STATION_LABEL}`, position: scenePoint(l.lon, l.lat, 0), label: label(l.text, l.offsetY, 9000) } as Entity.ConstructorOptions);
     }
     ents.resumeEvents();
     this.viewer?.scene.requestRender();
   }
 
-  renderRecords(records: SubsurfaceRecord[]) {
+  private records = new Map<string, SubsurfaceRecord>();
+  private datasetNames = new Map<string, string>();
+  /** The record drawn as 'rec:<id>' (hover tooltip). */
+  getRecord(id: string) { return this.records.get(id); }
+  getDatasetName(id: string) { return this.datasetNames.get(id); }
+
+  renderRecords(records: SubsurfaceRecord[], datasets: readonly { id: string; name: string }[] = []) {
     if (!this.recordsDs || !this.isAttached()) return;
+    this.records = new Map(records.map(r => [r.id, r]));
+    this.datasetNames = new Map(datasets.map(d => [d.id, d.name]));
     const ents = this.recordsDs.entities;
     // removeAll BEFORE suspendEvents: while events are suspended, re-adding an entity with a removed entity's id cancels
     // the removal and the visualizer keeps drawing the OLD entity (the white selected highlight never showed)

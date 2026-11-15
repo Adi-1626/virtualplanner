@@ -8,6 +8,7 @@ import { engineInstance } from '../../engine/TwinCityEngine';
 import { groundAt } from '../../engine/terrain/groundHeight';
 import { useUndergroundStore } from './undergroundStore';
 import { sceneGroundLabel } from '../../engine/underground/groundModels';
+import { HoverTooltip } from './HoverTooltip';
 
 type Box = [number, number, number, number];
 
@@ -71,6 +72,7 @@ export const ViewControls: React.FC<{ alignments: UndergroundAlignmentObject[]; 
   const centre = area ? centreOf(area) : null;
   return (
     <div className="flex flex-col gap-2" data-testid="ug-view-controls">
+      {active && <HoverTooltip />}
       <label className="flex items-center gap-3 text-label text-text-2">
         <span className="w-24 shrink-0">Ground opacity</span>
         <input type="range" min={0} max={100} step={5} value={pct} className="flex-1" data-testid="ug-ground-opacity" aria-label="Ground opacity (%)"

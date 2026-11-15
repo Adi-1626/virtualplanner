@@ -60,7 +60,7 @@ export function useSubsurfaceRecords() {
       ]);
       st.setRecords({ datasets, records: recs.records, recordsState: 'loaded' });
       undergroundRenderer.attach(engineInstance.getViewer());
-      undergroundRenderer.renderRecords(recs.records.slice(0, MAX_DRAWN));
+      undergroundRenderer.renderRecords(recs.records.slice(0, MAX_DRAWN), datasets);
     } catch (e) {
       st.setRecords({ recordsState: 'error', recordsError: (e as Error).message });
     }

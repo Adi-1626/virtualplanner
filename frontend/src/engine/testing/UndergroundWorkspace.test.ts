@@ -233,13 +233,20 @@ describe('underground view (globe translucency) enter / leave', () => {
     expect(g.undergroundColor).toBe('SLATE');
     expect(g.translucency.rectangle).toBe('MAX');
     uv.update({ rectangleDeg: [1, 2, 3, 4] });
+    // see-through everywhere is the default: the work-area rectangle is only used in the local (cutaway) mode
+    expect(g.translucency.rectangle).toBe('MAX');
+    uv.update({ seeThroughEverywhere: false });
     expect(g.translucency.rectangle).toBe('RECT 1,2,3,4');
+    uv.update({ seeThroughEverywhere: true });
+    expect(g.translucency.rectangle).toBe('MAX');
+    expect(g.translucency.backFaceAlpha).toBe(0);
+    expect(g.depthTestAgainstTerrain).toBe(true);
     uv.update({ groundOpacity: 1 });
     expect(g.translucency.enabled).toBe(false);
     expect(g.depthTestAgainstTerrain).toBe(true);
     uv.update({ xray: true });
-    expect(g.translucency.enabled).toBe(true);
-    expect(g.translucency.frontFaceAlpha).toBe(0.5);
+    // X-ray draws buried objects through SOLID ground: no forced translucency, terrain depth test off
+    expect(g.translucency.enabled).toBe(false);
     expect(g.depthTestAgainstTerrain).toBe(false);
     uv.update({ groundOpacity: -3 });
     expect(uv.getSettings().groundOpacity).toBe(0);
