@@ -198,7 +198,14 @@ export const AlignmentInspector: React.FC<{ a: UndergroundAlignmentObject }> = (
       <span className={lbl} style={labelStyle}>Cross-section</span>
       <SectionSketch a={a} />
       <button type="button" className="uos-btn uos-btn-sm self-start" data-testid="ug-open-underground"
-        onClick={() => { useUndergroundStore.getState().setActive(a.id); useShellStore.getState().setWorkspace('underground'); }}>
+        onClick={() => {
+          useUndergroundStore.getState().setActive(a.id);
+          const shell = useShellStore.getState();
+          shell.setWorkspace('underground');
+          // Land on the long-section (bottom drawer, Profile tab), not on a closed drawer
+          shell.setDrawerTab('profile');
+          shell.setDrawerOpen(true);
+        }}>
         Long-section, sections &amp; conflicts →
       </button>
     </div>
