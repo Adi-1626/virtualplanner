@@ -222,7 +222,7 @@ export const ConflictCheck: React.FC<{ a?: UndergroundAlignmentObject | null }> 
       {run && (
         <div className="flex flex-col gap-2" data-testid="ug-conflict-results">
           {stale && <p className="text-meta text-warn" role="status" data-testid="ug-check-stale">Objects were edited after this check — check again for current results.</p>}
-          <p className="text-label text-text-1" data-testid="ug-check-summary">{plainSummary(run, scoped)}</p>
+          <p className="text-label text-text-1" data-testid="ug-check-summary">{plainSummary(run)}</p>
           {run.summary.proposed_checked.length > 1 && (
             <div className={field}>
               <label className={lbl} style={labelStyle} htmlFor="ug-cc-scope">Show findings for</label>

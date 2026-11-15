@@ -50,7 +50,7 @@ export function groupBySeverity(findings: readonly ScreeningFinding[], firstObje
   })).filter(g => g.findings.length > 0);
 }
 
-const CATEGORY_ORDER: ScreeningCategory[] = ['clearance', 'metro', 'cover', 'buildings', 'watercourse', 'groundwater', 'geology', 'data_gap'];
+const CATEGORY_ORDER: ScreeningCategory[] = ['metro', 'clearance', 'cover', 'buildings', 'watercourse', 'groundwater', 'geology', 'data_gap'];
 const categoryRank = (c: ScreeningCategory) => { const i = CATEGORY_ORDER.indexOf(c); return i < 0 ? 99 : i; };
 
 /** One plain sentence for the top of the result, for someone who is not an engineer. */

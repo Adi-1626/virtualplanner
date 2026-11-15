@@ -96,6 +96,13 @@ def record_class(utility_type: Optional[str]) -> str:
     return "utility"
 
 
+def record_ref(ext: Optional[str]) -> str:
+    """GeoServer-style feature ids ('pmc_storm_water_drains.631') read as '#631'; other ids as published."""
+    e = str(ext or "")
+    head, _, tail = e.rpartition(".")
+    return f"#{tail}" if head and tail.isdigit() else e
+
+
 def _num(v) -> Optional[float]:
     try:
         f = float(v)
@@ -320,7 +327,7 @@ def record_asset(rec: dict, i: int) -> Asset:
     ds = rec["datasets"].get(did, {"id": did, "name": did})
     cls = record_class(utype)
     ref = did.startswith("ssd_ref_")   # PMC reference networks: levels have no stated datum (research §2.3.3)
-    return Asset(rid, f"{KIND_LABEL.get(cls, 'Utility')} {ext}", "utility_record", "existing", cls, rec["geoms"][i],
+    return Asset(rid, f"{KIND_LABEL.get(cls, 'Utility')} {record_ref(ext)}", "utility_record", "existing", cls, rec["geoms"][i],
                  (dia / 2) if dia else None, [(0.0, crown, invert)], ql or "UNKNOWN", zc or "unknown",
                  {"id": did, "name": ds.get("name"), "quality_level": ql or "UNKNOWN", "publisher": ds.get("publisher"),
                   "data_date": ds.get("data_date")},
@@ -526,8 +533,13 @@ def evaluate_pair(p: Asset, o: Asset, cfg: dict) -> Optional[dict]:
     if raw_gap is not None:
         found.append(("Vertical ranges overlap" if raw_gap <= 1e-6 else f"Vertical gap {raw_gap:.1f} m") +
                      ("." if v_checkable else " on recorded values — relative only, vertical not checkable."))
-    found.append(f"Requirement (stricter rule wins): {h_req:.2f} m horizontal [{_cite_txt(req['rows'], req['h_ids']) or 'none'}] or "
-                 f"{v_req:.2f} m vertical [{_cite_txt(req['rows'], req['v_ids']) or 'none'}].")
+    if req["specialist"]:
+        found.append(f"No Indian numeric clearance applies to this pair: anything within {h_req:.2f} m (1 x the larger diameter, a "
+                     f"referral distance, not a clearance) goes to a specialist assessment; only a physical intersection is a potential "
+                     f"conflict [{_cite_txt(req['rows'], req['h_ids'])}].")
+    else:
+        found.append(f"Requirement (stricter rule wins): {h_req:.2f} m horizontal [{_cite_txt(req['rows'], req['h_ids']) or 'none'}] or "
+                     f"{v_req:.2f} m vertical [{_cite_txt(req['rows'], req['v_ids']) or 'none'}].")
     found.append(f"Widened by positional uncertainty: +{tol_h:.2f} m horizontal" +
                  (f", +{tol_v:.2f} m vertical" if v_checkable else ", vertical not checkable") + f" (data quality {p.quality} / {o.quality}).")
     if req["compare"]:
@@ -567,7 +579,8 @@ def evaluate_pair(p: Asset, o: Asset, cfg: dict) -> Optional[dict]:
     else:
         if edge >= h_req - 1e-6 and edge > 0:
             status = "requires_investigation"
-            found.append("Horizontal requirement met on the recorded position, but by less than the data's positional uncertainty; vertical not checkable.")
+            found.append(("Outside the referral distance on the recorded position" if req["specialist"] else "Horizontal requirement met on the recorded position")
+                         + ", but by less than the data's positional uncertainty; vertical not checkable.")
         else:
             status = "insufficient_data"
             missing = []

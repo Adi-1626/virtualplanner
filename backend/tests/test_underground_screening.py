@@ -283,3 +283,8 @@ def test_run_detection_includes_design_drawn_objects(client):
     run = client.post(f"/api/coordination/projects/{pid}/detect", json={"run_by": "T"}).json()
     hits = [c for c in run["conflicts"] if c["b_type"] == "design_object"]
     assert hits and hits[0]["b_ref"] == "design:dd_gas" and hits[0]["class"] == "conflict"    # gas 4.0–4.2 m inside 4–10 m
+
+
+def test_record_ref_reads_like_a_number():
+    assert S.record_ref("pmc_storm_water_drains.631") == "#631"
+    assert S.record_ref("KT-CO-4774") == "KT-CO-4774"
