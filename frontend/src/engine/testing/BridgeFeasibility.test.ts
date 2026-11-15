@@ -146,6 +146,35 @@ describe('BridgeFeasibilityEngine', () => {
     expect(impact.originalCapacity).toBe(2000);
   });
 
+  it('Test 7: honesty - says what it checked and what it did not', () => {
+    const roadAtStart = makeRoad('r9', 'Start Road', [FLY_START, [BASE_LON + mToLonDeg(500, BASE_LAT), BASE_LAT, 0]]);
+    const roadAtEnd = makeRoad('r10', 'End Road', [FLY_END, [BASE_LON + mToLonDeg(500, FLY_END[1]), FLY_END[1], 0]]);
+    const result = engine.run([FLY_START, FLY_END], 6.0, 4, [roadAtStart, roadAtEnd]);
+    expect(result.feasible).toBe(true);
+    expect(result.scope).toMatch(/Not a feasibility study/);
+    expect(result.notChecked!.length).toBeGreaterThan(3);
+    expect(result.notChecked!.join(' ')).toMatch(/soil|Ground conditions/);
+    // No road under the deck: nothing measured, so no made-up median value.
+    const pier = result.checks.find(c => c.id === 'pier_fit')!;
+    expect(pier.actual).toBeNull();
+    expect(result.checks.every(c => !!c.basis)).toBe(true);
+  });
+
+  it('Test 8: honesty - OSM median widths are model values, so a wide one is unknown, not a pass', () => {
+    const osmUnder = makeRoad('osm_123', 'Mapped Road', [
+      [BASE_LON - mToLonDeg(25, MID_LAT), MID_LAT, 0],
+      [BASE_LON + mToLonDeg(25, MID_LAT), MID_LAT, 0],
+    ], { hasDivider: true, dividerWidth: 4 });
+    const roadAtStart = makeRoad('r11', 'Start Road', [FLY_START, [BASE_LON + mToLonDeg(500, BASE_LAT), BASE_LAT, 0]]);
+    const roadAtEnd = makeRoad('r12', 'End Road', [FLY_END, [BASE_LON + mToLonDeg(500, FLY_END[1]), FLY_END[1], 0]]);
+    const result = engine.run([FLY_START, FLY_END], 6.0, 4, [osmUnder, roadAtStart, roadAtEnd]);
+    const pier = result.checks.find(c => c.id === 'pier_fit')!;
+    expect(pier.status).toBe('unknown');
+    expect(pier.message).toContain('Mapped Road');
+    expect(pier.basis).toMatch(/OpenStreetMap/);
+    expect(pier.actual).toBeNull();
+  });
+
   it('Test 6: bfe_pathLengthMeters - 0.009 deg lat should be ~999m', () => {
     const coords: [number, number, number][] = [
       [73.74, 18.590, 0],

@@ -2234,27 +2234,36 @@ const GatewayEditor: React.FC<{ g: GatewayObject; onUpdate: (field: string, val:
 /* ─── Bridge Feasibility Report Panel ───────────────────────────────────────── */
 
 import type { FeasibilityResult, FeasibilityCheck } from '../engine/simulation/BridgeFeasibilityEngine';
+import { BRIDGE_SCREEN_NOT_CHECKED, BRIDGE_SCREEN_SCOPE } from '../engine/simulation/BridgeFeasibilityEngine';
 import { CertaintyBadge } from './ui/badges/CertaintyBadge';
 import type { Certainty } from './ui/badges/honesty';
 
 const statusIcon = (status: FeasibilityCheck['status']) => {
   if (status === 'pass') return '✅';
   if (status === 'warn') return '⚠️';
+  if (status === 'unknown') return '❔';
   return '❌';
 };
 
 const statusColor = (status: FeasibilityCheck['status']) => {
   if (status === 'pass') return 'text-emerald-400';
   if (status === 'warn') return 'text-amber-400';
+  if (status === 'unknown') return 'text-slate-400';
   return 'text-red-400';
 };
 
 const FlyoverFeasibilityReport: React.FC<{ result: FeasibilityResult }> = ({ result }) => {
   const [expanded, setExpanded] = React.useState(true);
 
-  const overallColor = result.feasible ? 'border-emerald-500/30 bg-emerald-950/20' : 'border-red-500/30 bg-red-950/20';
-  const overallLabel = result.feasible ? '✅ Feasible' : '❌ Not Feasible';
-  const overallTextColor = result.feasible ? 'text-emerald-400' : 'text-red-400';
+  // A desk screen on mapped geometry: with no failed check it can only say "no blocker found", never "feasible".
+  const failed = result.checks.filter(c => c.status === 'fail').length;
+  const open = result.checks.filter(c => c.status === 'warn' || c.status === 'unknown').length;
+  const overallColor = failed === 0 ? 'border-slate-500/30 bg-slate-900/40' : 'border-red-500/30 bg-red-950/20';
+  const overallLabel = failed > 0
+    ? `❌ ${failed} blocker${failed > 1 ? 's' : ''}`
+    : open > 0 ? `No blocker · ${open} to check` : 'No blocker found';
+  const overallTextColor = failed === 0 ? (open > 0 ? 'text-amber-300' : 'text-slate-200') : 'text-red-400';
+  const notChecked = result.notChecked ?? BRIDGE_SCREEN_NOT_CHECKED;
 
   return (
     <div className="space-y-2">
@@ -2264,7 +2273,7 @@ const FlyoverFeasibilityReport: React.FC<{ result: FeasibilityResult }> = ({ res
       >
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
-            🏗️ Bridge Feasibility Report
+            🏗️ Flyover desk check
           </span>
           <span className={`text-xs font-bold ${overallTextColor}`}>{overallLabel}</span>
         </div>
@@ -2274,6 +2283,7 @@ const FlyoverFeasibilityReport: React.FC<{ result: FeasibilityResult }> = ({ res
           <span>Start avail: {result.rampLengthAvailable.start}m</span>
           <span>End avail: {result.rampLengthAvailable.end}m</span>
         </div>
+        <div className="mt-1 text-[10px] text-slate-500" data-testid="flyover-check-scope">{result.scope ?? BRIDGE_SCREEN_SCOPE}</div>
       </button>
 
       {expanded && (
@@ -2290,12 +2300,20 @@ const FlyoverFeasibilityReport: React.FC<{ result: FeasibilityResult }> = ({ res
                   <span>{check.name}</span>
                 </span>
                 <span className={`text-[11px] font-bold font-mono ${statusColor(check.status)}`}>
-                  {check.actual} / {check.required} {check.unit}
+                  {check.actual == null ? '—' : `${check.actual} / ${check.required} ${check.unit}`}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 leading-relaxed">{check.message}</p>
+              {check.basis && <p className="text-[10px] text-slate-600 leading-relaxed">Based on: {check.basis}</p>}
             </div>
           ))}
+
+          <details className="bg-slate-900/40 border border-white/5 rounded-lg p-2.5 text-xs" data-testid="flyover-check-not-checked">
+            <summary className="cursor-pointer font-semibold text-slate-400">Not checked ({notChecked.length})</summary>
+            <ul className="mt-1 list-disc pl-4 text-[11px] text-slate-500 space-y-0.5">
+              {notChecked.map(n => <li key={n}>{n}</li>)}
+            </ul>
+          </details>
 
           {/* Surface Road Impacts */}
           {result.surfaceRoadImpacts.length > 0 && (

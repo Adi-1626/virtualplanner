@@ -89,5 +89,5 @@ export const toolByHotkey = (key: string): ToolDef | undefined =>
 /** Tools of one palette group, in array (hotkey) order. */
 export const toolsInCategory = (c: ToolCategory): ToolDef[] => TOOLS.filter(t => t.category === c);
 
-/** Custom DOM event used to ask the Toolbar to expand (coach marks, hotkeys). */
+/** Custom DOM event used to ask the Design tool palette to expand all groups (coach marks, hotkeys). */
 export const OPEN_TOOLBAR_EVENT = 'twincity:open-toolbar';

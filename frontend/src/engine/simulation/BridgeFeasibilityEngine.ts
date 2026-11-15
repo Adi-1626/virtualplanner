@@ -2,16 +2,20 @@ import type { RoadObject } from '../objects/types';
 
 // ─── Result Types ────────────────────────────────────────────────────────────
 
-export type FeasibilityStatus = 'pass' | 'warn' | 'fail';
+/** `unknown`: the data needed to decide is not in the model (e.g. median widths of OSM roads are not mapped). */
+export type FeasibilityStatus = 'pass' | 'warn' | 'fail' | 'unknown';
 
 export interface FeasibilityCheck {
   id: string;
   name: string;
   status: FeasibilityStatus;
   message: string;
-  actual: number;
+  /** null when there is nothing to measure (e.g. no road under the deck). */
+  actual: number | null;
   required: number;
   unit: string;
+  /** What the check was worked out from, and what it assumed. */
+  basis?: string;
 }
 
 export interface SurfaceImpact {
@@ -24,12 +28,41 @@ export interface SurfaceImpact {
 }
 
 export interface FeasibilityResult {
+  /** No check failed. Not a statement that the flyover can be built: see `scope` and `notChecked`. */
   feasible: boolean;
   checks: FeasibilityCheck[];
   surfaceRoadImpacts: SurfaceImpact[];
   rampLengthRequired: number;
   rampLengthAvailable: { start: number; end: number };
   totalFlyoverLength: number;
+  /** What kind of check this is. Always a desk screen on mapped geometry, never a feasibility study. */
+  scope?: string;
+  /** What these checks do not look at. A result with no failed check only means none of the checked items blocks it. */
+  notChecked?: string[];
+}
+
+export const BRIDGE_SCREEN_SCOPE =
+  'Desk screen on mapped road geometry (OpenStreetMap and drawn roads). Not a feasibility study.';
+
+export const BRIDGE_SCREEN_NOT_CHECKED: string[] = [
+  'Whether the ramps and piers fit inside the road width (right-of-way, land take)',
+  'Vertical clearance under the deck (deck depth is not modelled)',
+  'Ground conditions and foundations (no soil data)',
+  'Underground utilities along the pier line',
+  'Buildings, trees and heritage structures beside the alignment',
+  'Structural design, construction cost and traffic diversion during works',
+  'Traffic benefit (run Simulate for that)',
+];
+
+/** Distinct names, at most `max`, then "and N more". */
+function listNames(names: string[], max = 4): string {
+  const unique = [...new Set(names)];
+  return unique.length <= max ? unique.join('; ') : `${unique.slice(0, max).join('; ')} and ${unique.length - max} more`;
+}
+
+/** Road attributes taken from OpenStreetMap: lane counts come from `lanes` tags or class defaults, median widths are always defaults. */
+function isMappedOsm(road: RoadObject): boolean {
+  return !!road.osmProvenance || road.id.startsWith('osm_');
 }
 
 // ─── IRC/MORTH Constants ─────────────────────────────────────────────────────
@@ -229,11 +262,12 @@ export class BridgeFeasibilityEngine {
       name: 'Ramp Grade (IRC:SP-73)',
       status: rampGradeStatus,
       message: rampGradeStatus === 'pass'
-        ? `Both ramps have sufficient approach road (≥${rampLengthRequired}m at 5% grade for ${elevation}m elevation).`
-        : `Insufficient approach road for ramp. Need ${rampLengthRequired}m, shortest available is ${Math.round(minRampAvail)}m. Grade would exceed 5% IRC limit.`,
+        ? `A ${elevation} m rise at 5% needs ${rampLengthRequired} m of ramp. The longest mapped road within 60 m of each end is long enough (start ${Math.round(rampStartAvail)} m, end ${Math.round(rampEndAvail)} m).`
+        : `A ${elevation} m rise at 5% needs ${rampLengthRequired} m of ramp, but the shortest approach road found is ${Math.round(minRampAvail)} m${minRampAvail === 0 ? ' (no mapped road within 60 m of an end)' : ''}. The ramp would be steeper than 5%.`,
       actual: Math.round(minRampAvail),
       required: rampLengthRequired,
-      unit: 'm approach'
+      unit: 'm approach',
+      basis: 'Length of mapped roads near each end. Not checked: whether that road is straight and wide enough to hold the ramp.'
     });
 
     // ── Check 2: Minimum Deck Length (IRC:SP-73) ──────────────────────────────
@@ -250,37 +284,51 @@ export class BridgeFeasibilityEngine {
         : `Flyover too short. Length ${Math.round(totalLength)}m < minimum ${minDeckLength}m. Increase flyover span.`,
       actual: Math.round(totalLength),
       required: minDeckLength,
-      unit: 'm total'
+      unit: 'm total',
+      basis: 'Drawn alignment length (measured on the map).'
     });
 
     // ── Check 3: Pier Fit in Median (IRC:6) ───────────────────────────────────
 
     const underpassingRoads = bfe_findUnderpassingRoads(flyoverCoords, rampLengthRequired, surfaceRoads);
-    let pierFitStatus: FeasibilityStatus = 'pass';
+    // Median widths are only evidence when someone set them: OpenStreetMap does not map median width, so the
+    // model's value for an OSM road is a class default, and those roads count as "not known" instead of narrow or wide.
     const narrowMedianRoads: string[] = [];
+    const unmappedMedianRoads: string[] = [];
 
     for (const road of underpassingRoads) {
       const medianWidth = road.hasDivider ? (road.dividerWidth || 0) : 0;
-      if (medianWidth < MIN_MEDIAN_FOR_PIER_M) {
-        pierFitStatus = 'warn';
-        narrowMedianRoads.push(`${road.name} (${medianWidth.toFixed(1)}m median)`);
-      }
+      if (isMappedOsm(road)) unmappedMedianRoads.push(road.name);
+      else if (medianWidth < MIN_MEDIAN_FOR_PIER_M) narrowMedianRoads.push(`${road.name} (${medianWidth.toFixed(1)} m median)`);
     }
+    const pierFitStatus: FeasibilityStatus =
+      narrowMedianRoads.length > 0 ? 'warn' : unmappedMedianRoads.length > 0 ? 'unknown' : 'pass';
+    const measured = underpassingRoads.filter(r => !isMappedOsm(r));
+    const unmappedNote = unmappedMedianRoads.length > 0
+      ? ` Median width is not mapped for ${unmappedMedianRoads.length} OpenStreetMap road(s) under the deck (${listNames(unmappedMedianRoads)}); survey them before placing piers.`
+      : '';
 
     checks.push({
       id: 'pier_fit',
       name: 'Pier Fit in Median (IRC:6)',
       status: pierFitStatus,
-      message: pierFitStatus === 'pass'
-        ? underpassingRoads.length === 0
-          ? 'No surface roads detected under flyover mid-section.'
-          : `All ${underpassingRoads.length} underpassing road(s) have adequate median (≥${MIN_MEDIAN_FOR_PIER_M}m).`
-        : `${narrowMedianRoads.length} road(s) have insufficient median for standard pier: ${narrowMedianRoads.join('; ')}. Modified pier design required.`,
-      actual: underpassingRoads.length > 0
-        ? Math.min(...underpassingRoads.map(r => r.hasDivider ? (r.dividerWidth || 0) : 0))
-        : MIN_MEDIAN_FOR_PIER_M,
+      message: underpassingRoads.length === 0
+        ? 'No mapped surface road crosses under the deck mid-section (within 30 m), so no pier has to sit in a median.'
+        : pierFitStatus === 'warn'
+          ? `${narrowMedianRoads.length} road(s) under the deck have a median under ${MIN_MEDIAN_FOR_PIER_M} m: ${listNames(narrowMedianRoads)}. A standard pier would not fit; a portal or modified pier may be needed.${unmappedNote}`
+          : pierFitStatus === 'unknown'
+            ? unmappedNote.trim()
+            : `All ${underpassingRoads.length} road(s) under the deck have a median of at least ${MIN_MEDIAN_FOR_PIER_M} m.`,
+      actual: measured.length > 0
+        ? Math.min(...measured.map(r => r.hasDivider ? (r.dividerWidth || 0) : 0))
+        : null,
       required: MIN_MEDIAN_FOR_PIER_M,
-      unit: 'm median'
+      unit: 'm median',
+      basis: underpassingRoads.length === 0
+        ? 'Mapped roads within 30 m of the deck mid-section.'
+        : unmappedMedianRoads.length > 0
+          ? 'Median widths set on drawn roads; OpenStreetMap does not map median width, so OSM roads are not judged.'
+          : 'Median widths as set on the roads in the model.'
     });
 
     // ── Check 4: Lane Count Match (MORTH) ──────────────────────────────────────
@@ -309,10 +357,13 @@ export class BridgeFeasibilityEngine {
       status: laneMatchStatus,
       message: laneMatchStatus === 'pass'
         ? `Flyover ${flyoverLanes} lanes matches or is ≤ adjacent surface roads.`
-        : `Flyover has ${flyoverLanes} lanes but connects to: ${laneMismatchList.join(', ')}. Merge bottleneck risk.`,
+        : `Flyover has ${flyoverLanes} lanes but connects to: ${listNames(laneMismatchList)}. Merge bottleneck risk.`,
       actual: flyoverLanes,
       required: allAdjRoads.length > 0 ? Math.max(...allAdjRoads.map(r => r.laneCount)) : flyoverLanes,
-      unit: 'lanes'
+      unit: 'lanes',
+      basis: allAdjRoads.some(isMappedOsm)
+        ? 'Lane counts of OpenStreetMap roads come from their lanes tag, or a default for the road class when the tag is missing.'
+        : allAdjRoads.length === 0 ? 'No mapped road within 60 m of either end.' : 'Lane counts as set on the roads in the model.'
     });
 
     // ── Surface Road Impact Calculation ───────────────────────────────────────
@@ -342,7 +393,9 @@ export class BridgeFeasibilityEngine {
         start: Math.round(rampStartAvail),
         end: Math.round(rampEndAvail)
       },
-      totalFlyoverLength: Math.round(totalLength)
+      totalFlyoverLength: Math.round(totalLength),
+      scope: BRIDGE_SCREEN_SCOPE,
+      notChecked: BRIDGE_SCREEN_NOT_CHECKED,
     };
   }
 }
