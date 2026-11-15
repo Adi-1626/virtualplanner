@@ -306,7 +306,7 @@ export const ImportAreaPanel: React.FC = () => {
               {areaReport.cancelled ? 'Cancelled: part of the data loaded' : failedCats.length ? `Loaded, except ${failedCats.map(c => c.category).join(', ')}` : `Loaded · ${areaReport.categories.filter(c => c.category !== 'signals').reduce((s, c) => s + c.added, 0).toLocaleString()} new objects`}
             </div>
           )}
-          {failedCats.length > 0 && (
+          {failedCats.length > 0 && !failure && (  /* when every category failed the error banner above says it once, with Try again */
             <ul className="text-meta text-warn flex flex-col gap-0.5" data-testid="study-failures">
               {failedCats.map(c => <li key={c.category}>{c.category}: {c.error}</li>)}
               <li><button type="button" className="uos-link" onClick={() => void runImport(selectedArea, failedCats.map(c => c.category), !!areaReport!.clippedToBoundary)}>Retry {failedCats.length === 1 ? failedCats[0].category : 'these'}</button></li>

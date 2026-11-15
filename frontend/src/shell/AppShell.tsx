@@ -135,10 +135,14 @@ export const AppShell: React.FC<{ trust?: React.ReactNode }> = ({ trust }) => {
 
   // Inspector content: same precedence as the old right-hand panel (simulate > junction editor > properties > info)
   const isDebugSelection = !!selectedId && selectedId.startsWith('debug_');
+  // A selected saved study area is not a city object: the properties panel would be an empty "Back" box over the
+  // map. Its summary and actions are in the Study area panel instead.
+  const isAreaSelection = !!selectedId && !engineInstance.objects?.getById(selectedId)
+    && !!engineInstance.editing?.getSavedAreas().some(a => a.id === selectedId);
   const inspectorContent =
     mode === 'simulate' ? <SimulationPanel />
     : mode === 'build' && selectedId?.startsWith('ljunction:') ? <JunctionPanel />
-    : mode === 'build' || isDebugSelection ? (selectedId ? <PropertiesPanel key={selectedId} /> : null)
+    : mode === 'build' || isDebugSelection ? (selectedId && !isAreaSelection ? <PropertiesPanel key={selectedId} /> : null)
     : <InfoPanel onClose={() => setInspectorOpen(false)} />;
   const showInspector = !!inspectorContent && inspectorOpen;
   const dual = dualOverlay(viewport, width, workspace);
