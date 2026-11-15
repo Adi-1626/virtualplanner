@@ -162,6 +162,36 @@ export class HistoryManager {
   }
 
   /**
+   * Records several objects changed by one user action (a metro deck raised, and the stations on it following) as
+   * one Undo step. With a `coalesceKey`, repeated calls within the coalesce window (a slider being dragged) merge into
+   * the same step: each object keeps its first `before` and takes the latest `after`.
+   */
+  public recordUpdates(changes: { before: CityObject; after: CityObject }[], description?: string, coalesceKey?: string) {
+    if (changes.length === 0) return;
+    if (changes.length === 1) { this.recordUpdate(changes[0].before, changes[0].after, description, coalesceKey); return; }
+    const top = this.undoStack[this.undoStack.length - 1];
+    const fresh = !!coalesceKey && this.lastCoalesceKey === coalesceKey && Date.now() - this.lastCoalesceAt < COALESCE_WINDOW_MS;
+    if (fresh && (top?.type === 'update' || (top?.type === 'batch' && top.diffs.every(d => d.type === 'update')))) {
+      const diffs: HistoryDiff[] = top.type === 'batch' ? top.diffs : [top];
+      for (const c of changes) {
+        const d = diffs.find(x => x.type === 'update' && x.id === c.before.id);
+        if (d && d.type === 'update') d.after = this.clone(c.after);
+        else diffs.push({ type: 'update', id: c.before.id, before: this.clone(c.before), after: this.clone(c.after) });
+      }
+      if (top.type === 'update') this.undoStack[this.undoStack.length - 1] = { type: 'batch', description: description || top.description, diffs };
+      this.redoStack = [];
+      this.lastCoalesceAt = Date.now();
+      this.notify();
+      return;
+    }
+    this.push({
+      type: 'batch',
+      description: description || `Update ${changes.length} objects`,
+      diffs: changes.map(c => ({ type: 'update', id: c.before.id, before: this.clone(c.before), after: this.clone(c.after) }) as HistoryDiff)
+    }, coalesceKey ?? null);
+  }
+
+  /**
    * Records deleted object(s) in history.
    */
   public recordDelete(objects: CityObject | CityObject[], description?: string) {

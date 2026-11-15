@@ -42,7 +42,7 @@ export const ToolSettings: React.FC<{ mode: EditingMode }> = ({ mode }) => {
 
   if (mode === 'draw_junction') return <p className="text-[12px] leading-relaxed" style={labelStyle}>Move onto a road connection. The cyan footprint shows the roads that will join; red means placement is unavailable. Click to place, then use Select to edit signals and crossings.</p>;
 
-  if (mode === 'draw_road' || mode === 'draw_flyover') return (
+  if (mode === 'draw_road' || mode === 'draw_flyover' || mode === 'draw_metro_flyover') return (
     <div className={field} data-testid="tool-setting-road-class">
       <label className={lbl} style={labelStyle} htmlFor="ts-road-class">Road class</label>
       <select id="ts-road-class" value={e.roadClass} onChange={ev => set(() => { e.roadClass = ev.target.value as RoadClassification; })} className={input} style={inputStyle}>
