@@ -59,7 +59,7 @@ export function watchBaseImageryState(layers: LayerCollectionLike, onState: (mes
 }
 
 interface RemovableLayers extends LayerCollectionLike { remove(layer: LayerLike, destroy?: boolean): boolean }
-interface GlobeLike { showGroundAtmosphere: boolean }
+interface GlobeLike { showGroundAtmosphere: boolean; baseColor: unknown }
 
 /**
  * A base layer whose provider failed (no ion token: HTTP 401, offline) never becomes ready, and Cesium keeps every
@@ -67,21 +67,25 @@ interface GlobeLike { showGroundAtmosphere: boolean }
  * draped on the ground shows either: clamped polylines (study-area and zone outlines, drawing previews) and ground
  * polygons classify the globe's surface, so with no surface they draw nothing. Found in headless Chromium, but it is
  * the same in any browser without base imagery (docs/urbanos/DESIGN_CONTROLS_TRANSIT_UNDERGROUND.md).
- * The failed layer is taken out so the globe draws in its plain base colour; ground atmosphere is off meanwhile (on the
- * bare globe it reads as a bright blue sheet, like water) and comes back when the picker adds another base layer.
+ * The failed layer is taken out so the globe draws; meanwhile it is a plain dark `bareColor` with ground atmosphere off
+ * (Cesium's default navy base colour under the atmosphere reads as a bright blue sheet, like water). Both come back
+ * when the picker adds another base layer.
  * Returns the unsubscribe.
  */
-export function dropFailedBaseLayer(layers: RemovableLayers, globe: GlobeLike): () => void {
+export function dropFailedBaseLayer(layers: RemovableLayers, globe: GlobeLike, bareColor?: unknown): () => void {
   const atmosphere = globe.showGroundAtmosphere;
+  const base = globe.baseColor;
   let current: LayerLike | null = null;
   const watch = (layer: LayerLike) => {
     if (!layer?.errorEvent || layer === current) return;
     current = layer;
     globe.showGroundAtmosphere = atmosphere;
+    globe.baseColor = base;
     layer.errorEvent.addEventListener(() => {
       if (current !== layer) return;
       layers.remove(layer, false);
       globe.showGroundAtmosphere = false;
+      if (bareColor !== undefined) globe.baseColor = bareColor;
     });
   };
   if (layers.length > 0) watch(layers.get(0));

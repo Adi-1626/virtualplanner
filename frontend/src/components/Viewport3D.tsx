@@ -7,7 +7,8 @@ import {
   type ProviderViewModel,
   Cartesian3,
   Math as CesiumMath,
-  ScreenSpaceEventType
+  ScreenSpaceEventType,
+  Color
 } from 'cesium';
 import * as CesiumNs from 'cesium';
 import { engineInstance } from '../engine/TwinCityEngine';
@@ -54,7 +55,7 @@ export const Viewport3D: React.FC = () => {
     // ...and stays noted on the map while the base layer is the failed one
     const stopBaseState = watchBaseImageryState(viewer.imageryLayers, setImageryError);
     // ...and taken out, or the globe (and everything draped on it: area and zone outlines) is never drawn
-    const stopDropFailed = dropFailedBaseLayer(viewer.imageryLayers, viewer.scene.globe);
+    const stopDropFailed = dropFailedBaseLayer(viewer.imageryLayers, viewer.scene.globe, Color.fromCssColorString('#12161c'));
 
     // Disable default double-click camera tracking/zoom
     viewer.screenSpaceEventHandler.removeInputAction(ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
