@@ -2,7 +2,7 @@ import type { Area } from '../objects/types';
 
 export type InfrastructureCategory = 'roads' | 'buildings' | 'metro' | 'signals';
 export const INFRASTRUCTURE_CATEGORIES: InfrastructureCategory[] = ['roads', 'buildings', 'metro', 'signals'];
-export interface ImportCategoryReport { category: InfrastructureCategory; added: number; preserved: number; skipped: number; source?: 'local' | 'Overpass' | 'cache'; error?: string; }
+export interface ImportCategoryReport { category: InfrastructureCategory; added: number; preserved: number; skipped: number; source?: 'local' | 'Overpass' | 'cache'; /** Plain words: which index / server / cache and data date. */ sourceDetail?: string; error?: string; }
 export interface StudyAreaImportReport {
   areaId: string; areaName: string; categories: ImportCategoryReport[]; cancelled: boolean; completed: boolean;
   /** "Map Selected Area": features were cut to the drawn polygon instead of kept whole. */

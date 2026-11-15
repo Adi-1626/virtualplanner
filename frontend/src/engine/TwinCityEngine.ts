@@ -44,6 +44,10 @@ import { isSampleObject } from './objects/sampleObjects';
 import { isDrivable, boundsOf, type StudyProblem } from './simulation/StudyAreaExplorer';
 import { roadConnections, type RoadConnections } from './simulation/roadConnections';
 import { isUserBuilt } from './objects/builtBy';
+import { STUDY_AREA_ROADS_PREFIX } from './simulation/osmCoverage';
+
+/** Study area outlines (saved and being drawn): amber reads on satellite imagery and is not water-blue. */
+const STUDY_AREA_COLOR = Color.fromCssColorString('#fbbf24');
 
 /** What the app is doing: looking at the city, changing it, or simulating traffic. */
 export type AppMode = 'view' | 'build' | 'simulate';
@@ -700,7 +704,9 @@ export class TwinCityEngine {
     // Double click to finalize drawing
     handler.setInputAction(() => {
       const editMode = this.editing.getMode();
-      if (editMode !== 'select' && editMode !== 'import_osm' && !this.editing.isSingleClickMode(editMode)) {
+      // A study-area outline finishes on double-click too (the Study area panel then loads its data)
+      if (editMode === 'import_osm') { this.editing.completeAreaDrawing(); return; }
+      if (editMode !== 'select' && !this.editing.isSingleClickMode(editMode)) {
         try {
           this.editing.finalizeDrawing(this.scenarios.getActiveScenarioId());
           this.clearSnapPreview();
@@ -1378,26 +1384,15 @@ export class TwinCityEngine {
         });
       }
     } else if (mode === 'import_osm') {
-      if (points.length < 3) {
-        this.drawPreviewEntity = this.viewer.entities.add({
-          polyline: {
-            positions: cartesians,
-            width: 3,
-            material: Color.YELLOW.withAlpha(0.6),
-            clampToGround: true
-          }
-        });
-      } else {
-        this.drawPreviewEntity = this.viewer.entities.add({
-          polygon: {
-            hierarchy: cartesians,
-            material: Color.YELLOW.withAlpha(0.3),
-            outline: true,
-            outlineColor: Color.YELLOW,
-            height: 0
-          }
-        });
-      }
+      // The outline being drawn: a thin line, closed once it is a polygon; no fill over the map
+      this.drawPreviewEntity = this.viewer.entities.add({
+        polyline: {
+          positions: points.length >= 3 ? [...cartesians, cartesians[0]] : cartesians,
+          width: 2,
+          material: STUDY_AREA_COLOR,
+          clampToGround: true
+        }
+      });
     } else if (mode === 'draw_junction') {
       this.drawPreviewEntity = this.viewer.entities.add({
         position: cartesians[0],
@@ -1422,7 +1417,7 @@ export class TwinCityEngine {
         this.drawPreviewEntity = this.viewer.entities.add({
           polygon: {
             hierarchy: cartesians,
-            material: Color.fromCssColorString('#f43f5e').withAlpha(0.2),
+            material: Color.fromCssColorString('#f43f5e').withAlpha(0.03),
             outline: true,
             outlineColor: Color.fromCssColorString('#f43f5e'),
             height: 0
@@ -1448,29 +1443,25 @@ export class TwinCityEngine {
     this.areaEntities.forEach(ent => this.viewer?.entities.remove(ent));
     this.areaEntities = [];
 
-    const areas = this.editing.getSavedAreas();
+    // "Roads loaded for a study area" boxes are coverage bookkeeping, not study areas: never drawn. Hundreds of
+    // overlapping copies, each filled blue at 12 %, used to stack into opaque blue blocks that looked like water.
+    const areas = this.editing.getSavedAreas().filter(a => !a.id.startsWith(STUDY_AREA_ROADS_PREFIX));
     const selections = this.selection.getSelection();
 
     areas.forEach(area => {
       const isSelected = selections.includes(area.id);
       const pts = area.polygonCoordinates.map(c => scenePoint(c[0], c[1], c[2]));
-
+      // Study areas are thin outlines (dashed until selected) with a transparent interior, so the map stays readable.
+      // Only the selected one gets a barely visible tint (3 %), which also makes its interior clickable.
       const entity = this.viewer!.entities.add({
         id: area.id,
         name: area.name,
-        polygon: {
-          hierarchy: pts,
-          material: isSelected
-            ? Color.fromCssColorString('#0284c7').withAlpha(0.3)
-            : Color.fromCssColorString('#0284c7').withAlpha(0.12),
-          // Ground-clamped polygons cannot draw outlines (Cesium warns and drops them): the edge is a clamped polyline instead
-          outline: false
-        },
+        ...(isSelected ? { polygon: { hierarchy: pts, material: STUDY_AREA_COLOR.withAlpha(0.03), outline: false } } : {}),
         polyline: {
           positions: [...pts, pts[0]],
           clampToGround: true,
-          width: isSelected ? 4.0 : 2.0,
-          material: isSelected ? Color.CYAN : Color.fromCssColorString('#0284c7')
+          width: isSelected ? 3.0 : 2.0,
+          material: isSelected ? STUDY_AREA_COLOR : new PolylineDashMaterialProperty({ color: STUDY_AREA_COLOR.withAlpha(0.9), dashLength: 14 })
         }
       });
       this.areaEntities.push(entity);
@@ -1522,7 +1513,8 @@ export class TwinCityEngine {
           name: zone.name,
           polygon: {
             hierarchy: pts,
-            material: Color.fromCssColorString('#f43f5e').withAlpha((isSelected ? 0.25 : 0.08) * zoneOpacity),
+            // Large areas: a faint tint only (≤ 3 %, 6 % selected), the outline carries the shape
+            material: Color.fromCssColorString('#f43f5e').withAlpha((isSelected ? 0.06 : 0.03) * zoneOpacity),
             // Ground-clamped polygons cannot draw outlines (Cesium warns and drops them): the edge is a clamped polyline instead
             outline: false,
             classificationType: ClassificationType.BOTH
@@ -1952,10 +1944,20 @@ export class TwinCityEngine {
     }
   }
 
+  /** Points drawn by the "Junction points" layer (0 when it is off or the network is still being built). */
+  public junctionPointCount(): number {
+    return this.trafficVisualizer.pointCount;
+  }
+
+  /** Whether the "Junction points" layer is on but its network is not built yet. */
+  public junctionPointsPending(): boolean {
+    return this.layers.isVisible('traffic_network_debug') && !this.trafficNetwork;
+  }
+
   private syncTrafficNetworkVisualization() {
     const isVisible = this.layers.isVisible('traffic_network_debug');
     if (isVisible && this.trafficNetwork) {
-      this.trafficVisualizer.render(this.trafficNetwork);
+      this.trafficVisualizer.render(this.trafficNetwork, roadId => !!(this.objects.getById(roadId) as RoadObject | undefined)?.osmProvenance?.roundabout);
     } else {
       this.trafficVisualizer.clear();
     }

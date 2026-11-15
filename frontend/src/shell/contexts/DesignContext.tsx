@@ -2,6 +2,7 @@ import React from 'react';
 import ToolPalette from '../../components/design/ToolPalette';
 import { ScenarioSelector } from '../../components/ScenarioSelector';
 import { PanelSection } from '../../components/ui/Panel';
+import { DesignMapToggles } from '../../components/design/DesignMapToggles';
 
 /**
  * MOUNT POINT for the Design tool palette. Renders the categorised ToolPalette (tools.ts categories, hotkeys 1–9). Only one bar is mounted at a time (each owns an import-progress overlay).
@@ -21,6 +22,9 @@ export const DesignContext: React.FC = () => (
   <div className="space-y-5">
     <PanelSection title="Tools">
       <DesignToolPalette />
+    </PanelSection>
+    <PanelSection title="Map">
+      <DesignMapToggles />
     </PanelSection>
     <PanelSection title="Alternatives">
       <div id="uos-alternatives" className="uos-embed-card"><ScenarioSelector /></div>

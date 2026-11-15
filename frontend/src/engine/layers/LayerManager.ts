@@ -29,6 +29,23 @@ export function utilityLayerId(utilityType: string): string {
   return resolveLayerId(`${utilityType}_util`);
 }
 
+/** Layers whose on/off choice is remembered on this device (localStorage). */
+export const PERSISTED_LAYERS = ['traffic_network_debug'] as const;
+const storageKey = (id: string) => `urbanos.layer.${id}.visible`;
+
+function readPersisted(id: string): boolean | undefined {
+  if (!(PERSISTED_LAYERS as readonly string[]).includes(id)) return undefined;
+  try {
+    const v = globalThis.localStorage?.getItem(storageKey(id));
+    return v === '1' ? true : v === '0' ? false : undefined;
+  } catch { return undefined; }
+}
+
+function writePersisted(id: string, visible: boolean) {
+  if (!(PERSISTED_LAYERS as readonly string[]).includes(id)) return;
+  try { globalThis.localStorage?.setItem(storageKey(id), visible ? '1' : '0'); } catch { /* storage unavailable: session only */ }
+}
+
 export class LayerManager {
   private layers: Map<string, Layer> = new Map();
   private onChangeListeners: ((layers: Layer[]) => void)[] = [];
@@ -53,10 +70,12 @@ export class LayerManager {
       { id: 'sewage_util', name: 'Sewage Lines', category: 'utilities', visible: false, opacity: 0.8, supportsOpacity: true },
       { id: 'gas_util', name: 'Gas Mains', category: 'utilities', visible: false, opacity: 0.8, supportsOpacity: true },
       { id: 'fiber_util', name: 'Fiber Network', category: 'utilities', visible: false, opacity: 0.8, supportsOpacity: true },
-      { id: 'traffic_network_debug', name: 'Show Traffic Network', category: 'simulations', visible: false, opacity: 1.0, supportsOpacity: false },
+      // "Junction points": traffic-network junctions / dead ends as map points. Off by default (thousands of points);
+      // the id is kept so older code and saved choices still find it.
+      { id: 'traffic_network_debug', name: 'Junction points', category: 'infrastructure', visible: false, opacity: 1.0, supportsOpacity: false },
     ];
 
-    defaults.forEach(layer => this.layers.set(layer.id, layer));
+    defaults.forEach(layer => this.layers.set(layer.id, { ...layer, visible: readPersisted(layer.id) ?? layer.visible }));
   }
 
   public onChange(callback: (layers: Layer[]) => void) {
@@ -83,6 +102,7 @@ export class LayerManager {
     const layer = this.layers.get(id);
     if (layer && layer.visible !== visible) {
       this.layers.set(id, { ...layer, visible });
+      writePersisted(id, visible);
       this.notify();
     }
   }

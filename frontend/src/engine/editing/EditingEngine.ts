@@ -18,6 +18,7 @@ import { classifyCrossing, findCrossings, planDistM, type LevelCrossing, type Cr
 import { applyFlyoverElevationProfile } from '../objects/flyoverHelper';
 import { junctionLayout } from '../objects/junctionLayout';
 import { TrafficSignalSource } from '../simulation/trafficSignals';
+import { summariseStudyArea, type StudyAreaSummary } from './studyAreaSummary';
 import { areaFromBoundary, buildingRing, geometryTouchesArea, type InfrastructureCategory, type StudyAreaImportOptions, type StudyAreaImportProgress, type StudyAreaImportReport } from './studyAreaImport';
 import { clipPolylineToPolygon, footprintInPolygon, pointInPolygon } from './polygonClip';
 import type { Certainty } from '../objects/certainty';
@@ -211,7 +212,41 @@ export class EditingEngine {
     }
 
     this.drawingPoints.push(resolvedPoint);
+    // Study area, rectangle shape: the second click is the opposite corner, and the area is complete
+    if (this.activeMode === 'import_osm' && this.areaShape === 'rectangle' && this.drawingPoints.length === 2 && !this.redrawingAreaId) {
+      const [a, b] = this.drawingPoints;
+      if (a[0] === b[0] || a[1] === b[1]) { this.drawingPoints.pop(); this.notify(); return; }
+      this.drawingPoints = [[a[0], a[1], 0], [b[0], a[1], 0], [b[0], b[1], 0], [a[0], b[1], 0]];
+      this.notify();
+      this.completeAreaDrawing();
+      return;
+    }
     this.notify();
+  }
+
+  // ── Study area drawing (docs/urbanos/DESIGN_WORKSPACE.md, Study Area) ──────────────────────────────
+  private areaShape: 'polygon' | 'rectangle' = 'polygon';
+  private areaCompleteListeners: (() => void)[] = [];
+
+  public getAreaShape(): 'polygon' | 'rectangle' { return this.areaShape; }
+
+  /** Polygon: click the corners, then double-click or Load. Rectangle: two clicks (opposite corners). */
+  public setAreaShape(shape: 'polygon' | 'rectangle') {
+    if (shape === this.areaShape) return;
+    this.areaShape = shape;
+    if (this.activeMode === 'import_osm' && !this.redrawingAreaId) this.drawingPoints = [];
+    this.notify();
+  }
+
+  /** Called when a study-area outline is finished (double-click, Enter, or a rectangle's second corner). */
+  public onAreaDrawingComplete(cb: () => void) {
+    this.areaCompleteListeners.push(cb);
+    return () => { this.areaCompleteListeners = this.areaCompleteListeners.filter(c => c !== cb); };
+  }
+
+  public completeAreaDrawing() {
+    if (this.activeMode !== 'import_osm' || this.drawingPoints.length < 3) return;
+    this.areaCompleteListeners.forEach(cb => cb());
   }
 
   /** Inserts a boundary vertex before `index` (used by the midpoint handles of a study-area boundary). */
@@ -922,6 +957,14 @@ export class EditingEngine {
     return this.savedAreas;
   }
 
+  /** Mapped traffic signals found by the last import of each study area (they are not objects). */
+  public readonly studyAreaSignals = new Map<string, [number, number][]>();
+
+  /** What the study area holds now (imported and drawn objects in the active alternative). */
+  public studyAreaSummary(area: Area): StudyAreaSummary {
+    return summariseStudyArea(area, this.objectManager.getAll(), this.studyAreaSignals.get(area.id) ?? null);
+  }
+
   /** Whether the saved Areas have been asked for (loaded, or the backend could not be reached). */
   public hasFetchedSavedAreas(): boolean {
     return this.savedAreasFetched;
@@ -1406,6 +1449,8 @@ export class EditingEngine {
   /** Saves the boxes as Areas, recording that the project holds their roads. */
   private recordStudyAreaBoxes(boxes: { minLng: number; minLat: number; maxLng: number; maxLat: number }[]) {
     for (const { minLng, minLat, maxLng, maxLat } of boxes) {
+      // The same box recorded again adds nothing (the database had 1 300+ identical rows)
+      if (this.savedAreas.some(a => a.id.startsWith(STUDY_AREA_ROADS_PREFIX) && a.minLon === minLng && a.minLat === minLat && a.maxLon === maxLng && a.maxLat === maxLat)) continue;
       const area: Area = {
         id: STUDY_AREA_ROADS_PREFIX + Math.random().toString(36).slice(2, 11),
         name: 'Roads loaded for a study area',
@@ -1447,14 +1492,20 @@ export class EditingEngine {
       const deleted = await this.objectManager.deletedOsmIds();
       for (const category of [...new Set(categories)]) {
         if (abort.aborted) { report.cancelled = true; break; }
-        const result = { category, added: 0, preserved: 0, skipped: 0, source: undefined as 'local' | 'Overpass' | 'cache' | undefined, error: undefined as string | undefined };
+        const result = { category, added: 0, preserved: 0, skipped: 0, source: undefined as 'local' | 'Overpass' | 'cache' | undefined, sourceDetail: undefined as string | undefined, error: undefined as string | undefined };
         report.categories.push(result);
         this.studyAreaImportProgress = { category, phase: 'fetching', completed: report.categories.length - 1, total: categories.length }; this.notify();
         try {
           if (category === 'signals') {
+            const local = await this.localOsm.covers(boxes);
+            const before = this.overpass.lastAnswer;
             const points = await new TrafficSignalSource(this.localOsm, this.overpass).signalsIn(boxes[0], abort);
             if (abort.aborted) throw new OverpassCancelledError();
-            result.source = 'cache'; result.added = points.filter(([lng, lat]) => clip ? pointInPolygon([lng, lat], area.polygonCoordinates) : geometryTouchesArea([[lng, lat, 0]], area)).length;
+            const inside = points.filter(([lng, lat]) => clip ? pointInPolygon([lng, lat], area.polygonCoordinates) : geometryTouchesArea([[lng, lat, 0]], area));
+            this.studyAreaSignals.set(area.id, inside);
+            result.source = local ? 'local' : this.overpass.lastAnswer !== before ? 'Overpass' : 'cache';
+            result.sourceDetail = local ? await this.localSourceDetail() : this.overpass.lastAnswer !== before ? describeOverpassAnswer(this.overpass.lastAnswer) : 'OpenStreetMap, cached on this device';
+            result.added = inside.length;
             continue;
           }
           let elements: any[];
@@ -1462,11 +1513,11 @@ export class EditingEngine {
           if (await this.localOsm.supports(localCategory, boxes)) {
             try {
               elements = category === 'roads' ? await this.localOsm.ways(boxes) : await this.localOsm.infrastructure(category, boxes);
-              result.source = 'local';
+              result.source = 'local'; result.sourceDetail = await this.localSourceDetail();
             } catch {
-              elements = await this.fetchAreaElements(area, category, abort); result.source = 'Overpass';
+              elements = await this.fetchAreaElements(area, category, abort); result.source = 'Overpass'; result.sourceDetail = describeOverpassAnswer(this.overpass.lastAnswer);
             }
-          } else { elements = await this.fetchAreaElements(area, category, abort); result.source = 'Overpass'; }
+          } else { elements = await this.fetchAreaElements(area, category, abort); result.source = 'Overpass'; result.sourceDetail = describeOverpassAnswer(this.overpass.lastAnswer); }
           if (abort.aborted) throw new OverpassCancelledError();
           const touching = elements.filter(el => {
             const points = el.geometry?.map((p: any) => [p.lon, p.lat, 0]) ?? (el.type === 'node' ? [[el.lon, el.lat, 0]] : (el.members ?? []).flatMap((m: any) => (m.geometry ?? []).map((p: any) => [p.lon, p.lat, 0])));
@@ -1570,6 +1621,11 @@ export class EditingEngine {
       parts.forEach((part, k) => out.push({ ...obj, id: `${obj.id}_in_${area.id}_${k}`, coordinates: part.coordinates } as CityObject));
     }
     return out;
+  }
+
+  private async localSourceDetail(): Promise<string> {
+    const st = await this.localOsm.getStatus();
+    return `local OSM index${st.dataTimestamp ? `, data of ${String(st.dataTimestamp).slice(0, 16)}` : ''}`;
   }
 
   private async fetchAreaElements(area: Area, category: Exclude<InfrastructureCategory, 'signals'>, signal: AbortSignal): Promise<any[]> {
@@ -1828,4 +1884,11 @@ export class EditingEngine {
 /** Id of the piece of OSM way `wayId` lying inside study area `areaId` ("Map Selected Area"). */
 export function clippedRoadId(wayId: number | string, areaId: string, piece: number): string {
   return `osm_${wayId}_in_${areaId}_${piece}`;
+}
+
+/** Plain words for where an Overpass answer came from (shown in the study area summary). */
+export function describeOverpassAnswer(a: import('./OverpassClient').OverpassAnswerInfo | null): string {
+  if (!a) return 'OpenStreetMap (Overpass)';
+  if (a.via === 'backend') return a.cache === 'hit' ? `OpenStreetMap via Overpass, cached ${a.fetchedAt ? a.fetchedAt.slice(0, 10) : ''}`.trim() : 'OpenStreetMap via Overpass (live, now cached)';
+  return `OpenStreetMap via ${a.host} (live, not cached)`;
 }
