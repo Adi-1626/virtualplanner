@@ -69,6 +69,8 @@ export const ROAD_CLASS_DEFAULTS: Record<RoadClassification, { laneCount: number
 /** Readable default name of a new object ("Road 4kq2"); the user renames it in the inspector. */
 const NEW_OBJECT_LABEL: Partial<Record<EditingMode, string>> = {
   draw_road: 'Road', draw_building: 'Building', draw_junction: 'Junction', draw_flyover: 'Flyover',
+  draw_metro: 'Metro line', draw_metro_flyover: 'Double-deck', place_station: 'Station', draw_utility: 'Utility',
+  draw_zone: 'Demand zone', draw_gateway: 'Gateway',
 };
 
 export type EditingMode = 'select' | 'draw_road' | 'draw_building' | 'draw_junction' | 'draw_utility' | 'draw_flyover' | 'draw_metro' | 'place_station' | 'import_osm' | 'draw_zone' | 'draw_gateway' | 'draw_metro_flyover' | 'draw_underground';
@@ -597,6 +599,12 @@ export class EditingEngine {
 
   /** Crossings of the last drawn road whose level needs the user's confirmation (0 when none). */
   public lastUncertainCrossings = 0;
+  /** The track the last placed station snapped onto (null: no metro track within 100 m). */
+  public lastStationTrack: { name: string; movedM: number } | null = null;
+  /** Id of the object the last finished drawing created. */
+  public lastAddedId: string | null = null;
+  /** Where the last gateway snapped: distance from the click to the road node, and the road's name. */
+  public lastGatewaySnap: { movedM: number; roadName: string | null } | null = null;
 
   public finalizeDrawing(scenarioId: string) {
     if (this.drawingPoints.length === 0) return;
@@ -758,19 +766,20 @@ export class EditingEngine {
       newObj = {
         id,
         type: 'metro_flyover',
-        name: `Metro-Flyover #${id.slice(0, 4)}`,
+        name,
         layerId: 'roads',
         scenarioId,
         coordinates: groundCoordinates,
-        roadClass: 'arterial',
-        width: 19,
-        laneCount: 4,
+        // The Road class setting sets the road deck's lanes and speed, as for the Flyover tool
+        roadClass: this.roadClass,
+        width: cls.laneCount * 3.5 + cls.dividerWidth + 2 * cls.footpathWidth,
+        laneCount: cls.laneCount,
         laneWidth: 3.5,
-        hasDivider: true,
-        dividerWidth: 2.0,
-        hasFootpath: true,
-        footpathWidth: 1.5,
-        speedLimit: 80,
+        hasDivider: cls.dividerWidth > 0,
+        dividerWidth: cls.dividerWidth,
+        hasFootpath: cls.footpathWidth > 0,
+        footpathWidth: cls.footpathWidth,
+        speedLimit: cls.flyoverSpeed,
         isOneWay: false,
         elevation: 6.0,
         metroElevation: 12.0,
@@ -784,10 +793,12 @@ export class EditingEngine {
       newObj = {
         id,
         type: 'metro_line',
-        name: `Metro Track #${id.slice(0, 4)}`,
+        name,
         layerId: 'metro',
         scenarioId,
-        coordinates: [...this.drawingPoints],
+        // Plan line on the ground (a vertex snapped to another track's end would carry that deck's height);
+        // the viaduct height is `elevation` alone (ProceduralGeometryGenerator.generateMetroLineMeshes)
+        coordinates: this.drawingPoints.map(p => [p[0], p[1], 0] as [number, number, number]),
         trackCount: 2,
         trackGauge: 1.435,
         deckWidth: 8.0,
@@ -798,21 +809,25 @@ export class EditingEngine {
       };
     } else if (this.activeMode === 'place_station') {
       if (this.drawingPoints.length === 0) return;
+      // Within 100 m of a metro track the station sits ON it: centred on the track, along it, at its deck height.
+      // Elsewhere it stays where clicked (a stand-alone station at 12 m, facing north) and the user is told.
+      const clicked = this.drawingPoints[0];
+      const track = findNearestTrack(clicked, filterObjectsForScenario(this.objectManager.getAll(), scenarioId));
+      this.lastStationTrack = track ? { name: track.trackName, movedM: track.distanceMeters } : null;
       newObj = {
         id,
         type: 'metro_station',
-        name: `Elevated Metro Station #${id.slice(0, 4)}`,
+        name,
         layerId: 'metro',
         scenarioId,
-        coordinates: this.drawingPoints[0],
-        stationName: `Station ${id.slice(0, 4)}`,
+        coordinates: track ? [track.point[0], track.point[1], 0] : [clicked[0], clicked[1], 0],
+        stationName: name,
         length: 140,
         width: 20,
         height: 8,
-        elevation: 12.0,
+        elevation: track ? track.deckElevation : 12.0,
         capacity: 5000,
-        // Face along the nearest track when there is one; otherwise north
-        heading: findNearestTrack(this.drawingPoints[0], this.objectManager.getAll())?.bearing ?? 0,
+        heading: track?.bearing ?? 0,
         alignToTrack: true,
         createdAt,
         updatedAt: createdAt
@@ -831,7 +846,7 @@ export class EditingEngine {
       newObj = {
         id: `zone_${id}`,
         type: 'zone',
-        name: `Zone #${id.slice(0, 4)}`,
+        name,
         layerId: 'demand_zones',
         scenarioId,
         coordinates: coords,
@@ -856,8 +871,13 @@ export class EditingEngine {
       let minDistance = Infinity; // metres
 
       const network = this.getNetwork ? this.getNetwork() : null;
+      if (!network || !network.nodes || network.nodes.size === 0) {
+        throw new Error('The road network is still loading, so the gateway has no road node to attach to yet. Click again in a few seconds.');
+      }
       if (network && network.nodes) {
         network.nodes.forEach((node: any) => {
+          // Traffic enters on the ground network, never onto a flyover deck passing above
+          if (Math.abs(node.coordinates[2] || 0) > 3) return;
           // Ground distance (equirectangular; error well under 1% at gateway distances)
           const lat0 = this.drawingPoints[0][1] * Math.PI / 180;
           const dx = (node.coordinates[0] - this.drawingPoints[0][0]) * 111320 * Math.cos(lat0);
@@ -874,11 +894,13 @@ export class EditingEngine {
       if (minDistance > GATEWAY_SNAP_M) {
         throw new Error(`Gateway is too far from the road network. Place it within ${GATEWAY_SNAP_M} m of a road node.`);
       }
+      const edge = network ? [...network.edges.values()].find((e: any) => e.fromNodeId === nearestNodeId || e.toNodeId === nearestNodeId) as any : null;
+      this.lastGatewaySnap = { movedM: minDistance, roadName: edge ? (this.objectManager.getById(edge.roadId)?.name ?? null) : null };
 
       newObj = {
         id: `gateway_${id}`,
         type: 'gateway',
-        name: `Gateway #${id.slice(0, 4)}`,
+        name,
         layerId: 'gateways',
         scenarioId,
         coordinates: [nearestCoords],
@@ -931,6 +953,7 @@ export class EditingEngine {
         this.historyManager?.recordAdd?.(newObj, description);
       }
       this.objectManager.add(newObj);
+      this.lastAddedId = newObj.id;
     }
 
     // Tools stay active after finishing so several objects can be drawn in a

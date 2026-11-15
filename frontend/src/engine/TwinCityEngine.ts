@@ -658,6 +658,7 @@ export class TwinCityEngine {
           if (this.editing.isSingleClickMode(editMode)) {
             try {
               this.editing.finalizeDrawing(this.scenarios.getActiveScenarioId());
+              this.reportPlacement(editMode);
             } catch (err: any) {
               // Single-click tools have nothing to continue — reset for the next attempt
               this.editing.clearDrawing();
@@ -1097,8 +1098,28 @@ export class TwinCityEngine {
     }
   }
 
+  /** After a single-click placement: say where the object went (a station on a track, a gateway on a road node). */
+  private reportPlacement(mode: string) {
+    const toast = (window as any).showToast;
+    if (!toast) return;
+    if (mode === 'place_station') {
+      const t = this.editing.lastStationTrack;
+      toast(t ? `Station placed on ${t.name} (moved ${Math.round(t.movedM)} m onto the track).` : 'Station placed. No metro track within 100 m, so it stands alone facing north.', t ? 'success' : 'info');
+    } else if (mode === 'draw_gateway') {
+      const g = this.editing.lastGatewaySnap;
+      if (g) toast(`Gateway placed on ${g.roadName ?? 'the road network'}${g.movedM >= 1 ? `, at the road node ${Math.round(g.movedM)} m from your click` : ''}. Simulate feeds its flows in there.`, 'success');
+    }
+  }
+
   /** After a drawing: crossings whose level is not known are kept apart until the user confirms them (Build panel). */
   private reportUncertainCrossings() {
+    // A utility goes on its type's layer, which is hidden by default: show it, or the line just drawn would vanish
+    const added = this.editing.lastAddedId ? this.objects.getById(this.editing.lastAddedId) : undefined;
+    if (added?.type === 'utility' && !this.layers.isVisible(resolveLayerId(added.layerId))) {
+      this.layers.setVisibility(resolveLayerId(added.layerId), true);
+      (window as any).showToast?.(`Turned on the ${this.layers.get(resolveLayerId(added.layerId))?.name ?? 'utility'} layer so the new line shows.`, 'info');
+    }
+    this.editing.lastAddedId = null;
     const n = this.editing.lastUncertainCrossings;
     if (n > 0) {
       (window as any).showToast?.(`${n} crossing${n > 1 ? 's' : ''} of the new road could be a bridge, tunnel or ramp: kept separate until you check. Select the road and see "Crossings to check".`, 'info');
@@ -1536,20 +1557,23 @@ export class TwinCityEngine {
           name: zone.name,
           polygon: {
             hierarchy: pts,
-            material: Color.fromCssColorString('#f43f5e').withAlpha((isSelected ? 0.25 : 0.08) * zoneOpacity),
+            // Kept light so the map stays readable under it: a faint tint only, the outline carries the shape
+            material: Color.fromCssColorString('#f43f5e').withAlpha((isSelected ? 0.06 : 0.02) * zoneOpacity),
             // Ground-clamped polygons cannot draw outlines (Cesium warns and drops them): the edge is a clamped polyline instead
             outline: false,
             classificationType: ClassificationType.BOTH
           },
+          // Outline 1 m above the ground, densified every ~25 m so it follows terrain when that is on. A clamped
+          // (ground) polyline was drawn here before; where the GPU path for ground polylines is unavailable (verified
+          // in the headless test browser) it showed nothing and only the faint fill was left
           polyline: {
-            positions: [...pts, pts[0]],
-            clampToGround: true,
-            width: isSelected ? 4.0 : 2.0,
-            material: (isSelected ? Color.CYAN : Color.fromCssColorString('#f43f5e')).withAlpha(zoneOpacity)
+            positions: densifiedOutline(zone.coordinates, 25).map(c => scenePoint(c[0], c[1], 1.0)),
+            width: isSelected ? 3.0 : 1.5,
+            material: (isSelected ? Color.CYAN : Color.fromCssColorString('#f43f5e')).withAlpha(0.9 * zoneOpacity)
           },
           label: {
             text: zone.name,
-            font: '14px Outfit, Inter, sans-serif',
+            font: '12px Outfit, Inter, sans-serif',
             fillColor: Color.WHITE,
             outlineColor: Color.BLACK,
             outlineWidth: 3,
@@ -1590,7 +1614,7 @@ export class TwinCityEngine {
             disableDepthTestDistance: Number.POSITIVE_INFINITY
           },
           label: {
-            text: `◆ ${gw.name}\n(Access Node: ${gw.connectedNodeId ? 'Connected' : 'Disconnected'})`,
+            text: gw.connectedNodeId ? gw.name : `${gw.name} (not connected)`,
             font: '12px Outfit, Inter, sans-serif',
             fillColor: Color.WHITE,
             outlineColor: Color.BLACK,
@@ -1615,8 +1639,7 @@ export class TwinCityEngine {
                 material: new PolylineDashMaterialProperty({
                   color: Color.CYAN,
                   dashLength: 16
-                }),
-                clampToGround: true
+                })
               }
             });
             this.gatewayEntities.push(lineEntity);
@@ -2143,3 +2166,21 @@ export class TwinCityEngine {
 
 export const engineInstance = new TwinCityEngine();
 export default engineInstance;
+
+
+/** A closed polygon ring with extra points every `stepM` metres along each edge (lon/lat). */
+function densifiedOutline(ring: readonly (readonly number[])[], stepM: number): [number, number][] {
+  const out: [number, number][] = [];
+  const n = ring.length;
+  if (!n) return out;
+  const closed = ring[0][0] === ring[n - 1][0] && ring[0][1] === ring[n - 1][1];
+  const pts = closed ? ring.slice(0, -1) : ring;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    const m = Math.hypot((b[0] - a[0]) * 111320 * Math.cos(a[1] * Math.PI / 180), (b[1] - a[1]) * 110540);
+    const k = Math.max(1, Math.ceil(m / stepM));
+    for (let j = 0; j < k; j++) out.push([a[0] + (b[0] - a[0]) * j / k, a[1] + (b[1] - a[1]) * j / k]);
+  }
+  out.push([pts[0][0], pts[0][1]]);
+  return out;
+}

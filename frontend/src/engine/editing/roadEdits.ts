@@ -304,7 +304,7 @@ export function flyoverFieldUpdates(obj: CityObject, field: string, value: any):
   else if (field === 'dividerWidth') dividerWidth = Number(value);
   else if (field === 'hasFootpath') hasFootpath = Boolean(value);
   else if (field === 'footpathWidth') footpathWidth = Number(value);
-  else if (field === 'elevation' || field === 'pierSpacing') {
+  else if (field === 'elevation' || field === 'pierSpacing' || field === 'metroElevation') {
     (fUpdates as any)[field] = Number(value);
   }
 
