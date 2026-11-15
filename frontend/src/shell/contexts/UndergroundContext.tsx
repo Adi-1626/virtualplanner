@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Cable, CircleHelp, FlaskConical, Redo2, Search, ShieldQuestion, TrainFrontTunnel, Undo2 } from 'lucide-react';
 import { engineInstance } from '../../engine/TwinCityEngine';
-import type { CityObject, UtilityObject } from '../../engine/objects/types';
+import type { CityObject, UndergroundAlignmentObject, UtilityObject } from '../../engine/objects/types';
 import { PanelSection } from '../../components/ui/Panel';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Disclosure } from '../../components/ui/Disclosure';
@@ -23,8 +23,9 @@ import { useSubsurfaceRecords } from '../../components/underground/useSubsurface
 import { ToolSettings } from '../../components/design/ToolSettings';
 import type { EditingMode } from '../../engine/editing/EditingEngine';
 import { alignmentsRect } from '../../engine/underground/viewRect';
-import { RECORD_COLOR } from '../../engine/underground/UndergroundRenderer';
-import { LAYER_LABEL } from '../../engine/underground/recordsSummary';
+import { summariseRecords } from '../../engine/underground/recordsSummary';
+import { isUnmappedMetroTunnel, unmappedUndergroundStation } from '../../engine/underground/metroLevel';
+import { UndergroundLegend, type LegendCounts } from '../../components/underground/UndergroundLegend';
 import { ConflictCheck } from '../../components/underground/ConflictCheck';
 
 const isUtility = (o: CityObject): o is UtilityObject => o.type === 'utility';
@@ -147,24 +148,30 @@ const GetStarted: React.FC<{ onLook: () => void }> = ({ onLook }) => (
   </div>
 );
 
-/** Line style = status, colour = type, opacity = evidence (research §5). */
-const Legend: React.FC = () => (
-  <div className="flex flex-col gap-1 text-meta text-text-2" data-testid="ug-legend">
-    <div className="flex flex-wrap gap-x-3 gap-y-1">
-      <span className="inline-flex items-center gap-1.5"><svg width="22" height="6" aria-hidden><line x1="0" y1="3" x2="22" y2="3" stroke="currentColor" strokeWidth="3" /></svg>Existing</span>
-      <span className="inline-flex items-center gap-1.5"><svg width="22" height="6" aria-hidden><line x1="0" y1="3" x2="22" y2="3" stroke="currentColor" strokeWidth="3" strokeDasharray="6 3" /></svg>Proposed</span>
-      <span className="inline-flex items-center gap-1.5"><svg width="22" height="6" aria-hidden><line x1="0" y1="3" x2="22" y2="3" stroke="currentColor" strokeWidth="3" strokeDasharray="1.5 3" /></svg>Conceptual</span>
-      <span className="inline-flex items-center gap-1.5" data-testid="ug-legend-abandoned"><svg width="22" height="6" aria-hidden><line x1="0" y1="3" x2="22" y2="3" stroke="currentColor" strokeWidth="3" strokeDasharray="12 3" /></svg>Abandoned in place</span>
-      <span className="inline-flex items-center gap-1.5"><svg width="22" height="6" aria-hidden><line x1="0" y1="3" x2="22" y2="3" stroke="#a855f7" strokeWidth="3" strokeDasharray="6 3" /></svg>Metro, depth not mapped (plan only)</span>
-    </div>
-    <div className="flex flex-wrap gap-x-3 gap-y-1">
-      {(['sewer', 'storm_drain', 'water', 'power', 'gas', 'telecom'] as const).map(k => (
-        <span key={k} className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: RECORD_COLOR[k] }} aria-hidden />{LAYER_LABEL[k]}</span>
-      ))}
-    </div>
-    <div className="text-text-3">Paler = less certain (records only, QL-D, or user-drawn). Records with no depth are drawn on the surface, not at a guessed depth.</div>
-  </div>
-);
+/** Counts the legend can show from what the panel already holds (records in the work area, alignments, utilities, metro). */
+function useLegendCounts(alignments: UndergroundAlignmentObject[], utils: UtilityObject[]): LegendCounts {
+  const all = useEngineObjects();
+  const records = useUndergroundStore(s => s.records);
+  const datasets = useUndergroundStore(s => s.datasets);
+  const recordsState = useUndergroundStore(s => s.recordsState);
+  const recordCounts = useMemo(() => (recordsState === 'loaded'
+    ? Object.fromEntries(summariseRecords(records, datasets).map(l => [l.key, l.inArea])) as LegendCounts['records'] : undefined), [records, datasets, recordsState]);
+  // metro objects change rarely: recount only when the set of metro ids changes (the panel re-renders often)
+  const metro = all.filter(o => o.type === 'metro_line' || o.type === 'metro_station');
+  const metroKey = metro.map(o => o.id).join(',');
+  const metroCounts = useMemo(() => {
+    const tunnels = metro.filter(isUnmappedMetroTunnel);
+    return { metroTunnels: tunnels.length, metroStations: metro.filter(o => o.type === 'metro_station' && unmappedUndergroundStation(o, tunnels) !== null).length };
+  }, [metroKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const count = <K extends string>(keys: K[]) => keys.reduce<Partial<Record<K, number>>>((m, k) => { m[k] = (m[k] ?? 0) + 1; return m; }, {});
+  return { records: recordCounts, alignments: count(alignments.map(a => a.alignmentKind)), utilities: count(utils.map(u => u.utilityType)), ...metroCounts };
+}
+
+function useLayerVisible(id: string): [boolean, (v: boolean) => void] {
+  const [v, setV] = useState(() => engineInstance.layers.isVisible(id));
+  useEffect(() => engineInstance.layers.onChange(() => setV(engineInstance.layers.isVisible(id))), [id]);
+  return [v, (on: boolean) => engineInstance.layers.setVisibility(id, on)];
+}
 
 /**
  * Underground workspace (docs/urbanos/UNDERGROUND_WORKSPACE.md, UNDERGROUND_AUDIT.md): get-started actions, view and
@@ -177,6 +184,8 @@ export const UndergroundContext: React.FC = () => {
   const selectedUtil = utils.find(u => u.id === selectedId) ?? null;
   const mode = useEditingMode();
   const hist = useHistoryState();
+  const legendCounts = useLegendCounts(alignments, utils);
+  const [metroOn, setMetroOn] = useLayerVisible('metro');
   const { reload } = useSubsurfaceRecords();
   const recordsRef = useRef<HTMLDivElement>(null);
   const checkRef = useRef<HTMLDivElement>(null);
@@ -229,7 +238,10 @@ export const UndergroundContext: React.FC = () => {
       {!drawing && alignments.length === 0 && utils.length === 0 && <GetStarted onLook={look} />}
       <PanelSection title="View">
         <ViewControls alignments={alignments} utilities={utils} />
-        <Disclosure summary="Legend"><Legend /></Disclosure>
+        {/* open by default in Underground: the colour key is how the 3D view is read (UNDERGROUND_VISUAL_FIXES.md) */}
+        <Disclosure summary="Legend" open data-testid="ug-legend-disclosure">
+          <UndergroundLegend counts={legendCounts} metroLayer={{ visible: metroOn, onToggle: setMetroOn }} />
+        </Disclosure>
       </PanelSection>
       <PanelSection title="Proposed alignments" aside={`${alignments.length}`}>
         <AlignmentList />
