@@ -175,7 +175,7 @@ export function openActionableCount(issues: readonly ProjectIssue[]): number {
 /** Layer names for layer-level findings (b_type "layer": b_ref is the layer id the backend checked). */
 export const LAYER_NAME: Readonly<Record<string, string>> = {
   baseline_road: 'Existing roads (base city)', osm_metro: 'Existing metro (OpenStreetMap)', subsurface_utility: 'Utility records',
-  building: 'Building footprints', project_element: 'Other projects\u2019 elements', geometry: 'Element geometry',
+  building: 'Building footprints', design_object: 'Objects drawn in Design', project_element: 'Other projects\u2019 elements', geometry: 'Element geometry',
 };
 
 /**
@@ -202,6 +202,11 @@ export function sideBLabel(i: Pick<ConflictFinding, 'b_type' | 'b_ref' | 'eviden
     case 'building': {
       const b = (i.evidence?.b ?? {}) as Record<string, unknown>;
       return b.source === 'osm' ? 'Existing building (OSM footprint)' : 'Possible building (ML footprint)';
+    }
+    case 'design_object': {
+      const b = (i.evidence?.b ?? {}) as Record<string, unknown>;
+      const st = b.status === 'existing' ? 'Existing' : 'Proposed';
+      return `${st} object drawn in Design${b.name ? `: ${String(b.name)}` : ''}`;
     }
     case 'layer': return `Layer: ${LAYER_NAME[i.b_ref] ?? i.b_ref.replace(/_/g, ' ')}`;
     default: return i.b_ref;
