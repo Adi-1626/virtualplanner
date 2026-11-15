@@ -13,7 +13,7 @@ import type { Certainty } from '../objects/certainty';
 import type {
   CityObject, UndergroundAlignmentKind, UndergroundAlignmentObject, UndergroundSection, UndergroundVertexDepth,
 } from '../objects/types';
-
+import { STATUS_LABEL, ZREF_LABEL, utilityExtentAt, utilityZ } from './utilityModel';
 export const ALIGNMENT_KIND_LABEL: Record<UndergroundAlignmentKind, string> = {
   bored_tunnel: 'Bored tunnel',
   underground_metro: 'Underground metro',
@@ -194,12 +194,14 @@ export function verticalExtentOf(o: CityObject, otherChainageM = 0): VerticalExt
     case 'building':
       return { topDepthM: ok(o.height) ? -o.height : null, bottomDepthM: null, certainty: 'unknown', note: 'Building: foundation / basement depth UNKNOWN' };
     case 'utility': {
-      const d = ok(o.depth) ? o.depth : null;
-      const dia = ok(o.diameterMm) && (o.diameterMm as number) > 0 ? (o.diameterMm as number) / 1000 : null;
+      // Per-vertex depths (utilityModel; legacy objects migrated on read), interpolated at the crossing chainage
+      const e = utilityExtentAt(o, otherChainageM);
+      const z = utilityZ(o);
+      const dflt = z.depths.some(d => d.isDefault);
       return {
-        topDepthM: d, bottomDepthM: d !== null && dia !== null ? d + dia : null,
-        certainty: d === null ? 'unknown' : (o.depthCertainty ?? 'unknown'),
-        note: `${UTILITY_LABEL[o.utilityType] ?? o.utilityType} utility (drawn object)${dia === null ? '; diameter UNKNOWN' : ''}`,
+        topDepthM: e.topM, bottomDepthM: e.bottomM, certainty: e.certainty,
+        note: `${UTILITY_LABEL[o.utilityType] ?? o.utilityType} utility (drawn, ${STATUS_LABEL[z.status].toLowerCase()}; depths to ${ZREF_LABEL[z.zRef].toLowerCase()})`
+          + `${z.diameterM === null ? '; diameter UNKNOWN' : ''}${dflt ? '; depth is a typical-cover default, not measured' : ''}`,
       };
     }
     case 'underground_alignment': {

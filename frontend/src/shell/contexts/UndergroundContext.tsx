@@ -9,7 +9,10 @@ import { CertaintyBadge } from '../../components/ui/badges/CertaintyBadge';
 import { useEngineObjects } from '../useEngineObjects';
 import { dualOverlay, useShellStore } from '../useShellStore';
 import { lengthM } from './geo';
-import { DEFAULT_DEPTH_M, UTILITY_LABEL, utilityCertainty } from './utilityCertainty';
+import { UTILITY_LABEL } from './utilityCertainty';
+import { STATUS_LABEL, utilitySummary } from '../../engine/underground/utilityModel';
+
+const topText = (s: ReturnType<typeof utilitySummary>) => (s.minTopM === null ? 'Unknown' : s.minTopM === s.maxTopM ? `${s.minTopM.toFixed(2)} m` : `${s.minTopM.toFixed(2)}–${(s.maxTopM as number).toFixed(2)} m`);
 import { ALIGNMENT_KIND_LABEL, alignmentProfile, alignmentRowSummary, worstCertainty } from '../../engine/underground/alignmentGeometry';
 import { useActiveAlignment } from '../../components/underground/common';
 import { useUndergroundStore } from '../../components/underground/undergroundStore';
@@ -41,19 +44,21 @@ export const UtilityTable: React.FC = () => {
   if (utils.length === 0) return <p className="text-label text-text-2">No utilities in this alternative.</p>;
   return (
     <table className="uos-table" data-testid="utility-table">
-      <thead><tr><th>Name</th><th>Type</th><th className="num">Depth (m)</th><th className="num">Length (m)</th><th className="num">Capacity</th><th>Certainty</th></tr></thead>
+      <thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Evidence</th><th className="num">Top of pipe (m below ground)</th><th className="num">Ø (mm)</th><th className="num">Length (m)</th><th>Depth</th></tr></thead>
       <tbody>
         {utils.map(u => {
-          const c = utilityCertainty(u);
+          const s = utilitySummary(u);
           const len = lengthM(u.coordinates);
           return (
-            <tr key={u.id} onClick={() => focus(u.id)} className="cursor-pointer">
+            <tr key={u.id} onClick={() => focus(u.id)} className="cursor-pointer" data-testid={`utility-row-${u.id}`}>
               <td>{u.name || 'Utility'}</td>
               <td>{UTILITY_LABEL[u.utilityType] ?? u.utilityType}</td>
-              <td className="num">{Number.isFinite(u.depth) ? u.depth.toFixed(1) : '—'}{u.depth === DEFAULT_DEPTH_M ? ' (default)' : ''}</td>
+              <td>{STATUS_LABEL[s.z.status]}</td>
+              <td>{s.z.evidence === 'user-drawn' ? 'User-drawn' : s.z.evidence === 'unknown' ? 'Unknown' : s.z.evidence}</td>
+              <td className="num">{topText(s)}{s.defaults ? ' (default — adjust)' : ''}</td>
+              <td className="num">{u.diameterMm ?? 'Unknown'}</td>
               <td className="num">{len == null ? '—' : Math.round(len).toLocaleString('en-IN')}</td>
-              <td className="num" title="Capacity units as entered; no unit is defined in the model">{u.capacity}</td>
-              <td><CertaintyText {...c} /></td>
+              <td><CertaintyBadge certainty={worstCertainty(s.z.depths.map(d => d.certainty))} compact /></td>
             </tr>
           );
         })}
@@ -254,19 +259,19 @@ export const UndergroundContext: React.FC = () => {
         ) : (
           <ul className="space-y-1" data-testid="underground-utilities">
             {utils.map(u => {
-              const c = utilityCertainty(u);
+              const s = utilitySummary(u);
               return (
                 <li key={u.id}>
-                  <button type="button" onClick={() => focus(u.id)} className="uos-row w-full text-left">
+                  <button type="button" onClick={() => focus(u.id)} className="uos-row w-full text-left" data-testid={`ug-utility-${u.id}`}>
                     <Cable size={16} aria-hidden className="text-text-2 shrink-0" />
                     <span className="min-w-0 flex-1">
                       <span className="block text-body text-text-1 truncate">{u.name || 'Utility'}</span>
                       <span className="block text-meta text-text-2">
-                        {UTILITY_LABEL[u.utilityType] ?? u.utilityType} · <span className="tabular-nums">{Number.isFinite(u.depth) ? `${u.depth.toFixed(1)} m below ground` : 'depth —'}</span>
-                        {u.depth === DEFAULT_DEPTH_M ? ' (drawing default)' : ''}
+                        {UTILITY_LABEL[u.utilityType] ?? u.utilityType} · {STATUS_LABEL[s.z.status].toLowerCase()} · <span className="tabular-nums">top {topText(s)} below ground</span>
+                        {s.defaults ? <span className="text-warn"> (default — adjust)</span> : ''}
                       </span>
                     </span>
-                    <CertaintyText {...c} />
+                    <CertaintyBadge certainty={worstCertainty(s.z.depths.map(d => d.certainty))} compact />
                   </button>
                 </li>
               );

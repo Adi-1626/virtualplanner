@@ -7,7 +7,8 @@ import { layoutProfile, layoutSection, scale } from '../../engine/underground/se
 import { EmptyState } from '../ui/EmptyState';
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
 import { useEngineObjects } from '../../shell/useEngineObjects';
-import { fmtM, useActiveAlignment } from './common';
+import { fmtM, useActiveSubject } from './common';
+import { profileKindLabel } from '../../engine/underground/utilityModel';
 import { useUndergroundStore } from './undergroundStore';
 import { ElevationProfileSvg } from './ElevationProfile';
 import { useSubsurfaceEvidence, useTerrainProfile, type Loadable } from './useTerrain';
@@ -51,7 +52,7 @@ function flatLabel(t: Loadable<TerrainProfile>): string {
  * Without: chainage vs depth below a flat ground datum labelled UNKNOWN.
  */
 export const ProfileView: React.FC = () => {
-  const { active } = useActiveAlignment();
+  const { active } = useActiveSubject();
   const all = useEngineObjects();
   const terrain = useTerrainProfile(active?.coordinates);
   const ev = useSubsurfaceEvidence(active?.coordinates);
@@ -72,7 +73,7 @@ export const ProfileSvg: React.FC<{ a: UndergroundAlignmentObject; others: reado
   return (
     <div className="flex flex-col gap-1" data-testid="ug-profile">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-text-2">
-        <span className="text-text-1 font-medium">{a.name} · {ALIGNMENT_KIND_LABEL[a.alignmentKind]}</span>
+        <span className="text-text-1 font-medium">{a.name} · {profileKindLabel(a, ALIGNMENT_KIND_LABEL)}</span>
         <span>Length {Math.round(L.profile.lengthM)} m</span>
         <span>Deepest known {fmtM(L.profile.maxKnownDepthM)}</span>
         {L.profile.unknownDepthCount > 0 && <span className="text-unknown" data-testid="ug-profile-unknown-count">{L.profile.unknownDepthCount} vertex depth{L.profile.unknownDepthCount > 1 ? 's' : ''} UNKNOWN</span>}
@@ -143,7 +144,7 @@ export const ProfileSvg: React.FC<{ a: UndergroundAlignmentObject; others: reado
 
 /** Cross-section perpendicular to the alignment at the chosen chainage. */
 export const CrossSectionView: React.FC = () => {
-  const { active } = useActiveAlignment();
+  const { active } = useActiveSubject();
   const all = useEngineObjects();
   if (!active) return <NoAlignment />;
   return <CrossSectionSvg a={active} others={all} />;

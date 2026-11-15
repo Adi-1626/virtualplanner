@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { engineInstance } from '../../engine/TwinCityEngine';
-import type { CityObject, UndergroundAlignmentObject } from '../../engine/objects/types';
+import type { CityObject, UndergroundAlignmentObject, UtilityObject } from '../../engine/objects/types';
+import { utilityAsAlignment } from '../../engine/underground/utilityModel';
 import type { Certainty } from '../../engine/objects/certainty';
 import { isAlignment } from '../../engine/underground/alignmentFactory';
 import { useEngineObjects } from '../../shell/useEngineObjects';
@@ -20,6 +21,7 @@ export const CERTAINTY_OPTIONS: { value: Certainty; label: string }[] = [
   { value: 'unknown', label: 'Unknown' },
 ];
 
+const isUtilityObj = (o: CityObject): o is UtilityObject => o.type === 'utility';
 const isAlignmentObj = (o: CityObject): o is UndergroundAlignmentObject => isAlignment(o);
 
 /** Underground alignments in the active alternative (re-renders on object / alternative changes). */
@@ -42,6 +44,19 @@ export function useActiveAlignment(): { alignments: UndergroundAlignmentObject[]
   const selected = alignments.find(a => a.id === selectedId);
   const chosen = alignments.find(a => a.id === activeId);
   return { alignments, active: selected ?? chosen ?? alignments[alignments.length - 1] ?? null };
+}
+
+/**
+ * What the Profile / Cross-section draw: a selected drawn utility (as an alignment-shaped view, utilityAsAlignment), else
+ * the active alignment. `isUtility` tells the views to say "top of pipe".
+ */
+export function useActiveSubject(): { active: UndergroundAlignmentObject | null; isUtility: boolean } {
+  const { active } = useActiveAlignment();
+  const selectedId = useSelectedId();
+  const utils = useEngineObjects(isUtilityObj);
+  const u = utils.find(x => x.id === selectedId);
+  const view = useMemo(() => (u ? utilityAsAlignment(u) : null), [u]);
+  return view ? { active: view, isUtility: true } : { active, isUtility: false };
 }
 
 /** Applies an edit with Undo (history.recordUpdate + ObjectManager.update: copy-on-write in a proposal). */

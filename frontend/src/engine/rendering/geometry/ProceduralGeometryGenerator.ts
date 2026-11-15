@@ -1,3 +1,4 @@
+import { utilityZ } from '../../underground/utilityModel';
 import type { CityObject, RoadObject, BuildingObject, FlyoverObject, MetroLineObject, MetroStationObject, UtilityObject, JunctionObject, MetroFlyoverObject } from '../../objects/types';
 import { groundAt, withFlatGround } from '../../terrain/groundHeight';
 import { depressedLevel, elevatedLayer, isOsmBridge } from '../../objects/bridgeElevation';
@@ -89,7 +90,7 @@ export class ProceduralGeometryGenerator {
         return this.generateMetroStationMeshes(obj as MetroStationObject, allObjects);
       }
       if (obj.type === 'utility') {
-        return [this.generateUtilityMesh(obj as UtilityObject)];
+        return this.generateUtilityMesh(obj as UtilityObject);
       }
       if (obj.type === 'junction') {
         return this.generateJunctionMeshes(obj as JunctionObject, allObjects);
@@ -2341,29 +2342,35 @@ export class ProceduralGeometryGenerator {
   }
 
   /**
-   * Generates a subsurface 3D utility conduit line
+   * A drawn utility to scale: one ribbon per run of vertices whose top-of-pipe depth is known (utilityModel: per-vertex
+   * depth to its zRef, legacy objects migrated on read), its top at that depth and as tall as the diameter (0.5 m
+   * placeholder thickness when the diameter is unknown). Vertices with an UNKNOWN depth are not placed below ground: the
+   * Underground renderer draws them dashed on the surface. A minimum-pixel-width line and a surface trace are added by
+   * the Underground renderer, so a 150 mm pipe stays findable from above.
    */
-  private generateUtilityMesh(utility: UtilityObject): MeshData {
-    const coords = utility.coordinates;
-    const depth = utility.depth || 3;
-    // Drawn to its diameter when known (top of pipe at `depth`, as entered); 0.5 m placeholder when unknown
-    const thickness = utility.diameterMm && utility.diameterMm > 0 ? Math.max(0.05, utility.diameterMm / 1000) : 0.5;
-
-    // Utilities are rendered as a subterranean 3D ribbon profile; the plan line is on the ground
-    const flat = coords.map(c => [c[0], c[1], 0] as [number, number, number]);
-    const ribbon = this.generateRibbon(flat, -thickness / 2, thickness / 2, -depth, thickness);
-
+  private generateUtilityMesh(utility: UtilityObject): MeshData[] {
+    const z = utilityZ(utility);
+    const thickness = z.diameterM !== null ? Math.max(0.05, z.diameterM) : 0.5;
     let color = '#38bdf8'; // water: blue
     if (utility.utilityType === 'electricity') color = '#eab308'; // electric: yellow
     if (utility.utilityType === 'sewage') color = '#a1a1aa'; // sewage: grey
     if (utility.utilityType === 'fiber') color = '#ec4899'; // fiber: pink
     if (utility.utilityType === 'gas') color = '#f97316'; // gas: orange
-
-    return {
-      positions: new Float64Array(ribbon.positions),
-      indices: new Uint32Array(ribbon.indices),
-      material: { type: 'solid', color },
-      layerId: 'transit_utility'
+    const out: MeshData[] = [];
+    let run: [number, number, number][] = [];
+    const flush = () => {
+      if (run.length >= 2) {
+        const ribbon = this.generateRibbon(run, -thickness / 2, thickness / 2, 0, thickness);
+        out.push({ positions: new Float64Array(ribbon.positions), indices: new Uint32Array(ribbon.indices), material: { type: 'solid', color }, layerId: 'transit_utility' });
+      }
+      run = [];
     };
+    utility.coordinates.forEach((c, i) => {
+      const top = z.depths[i]?.topDepthM;
+      if (typeof top === 'number' && Number.isFinite(top)) run.push([c[0], c[1], -top]);
+      else flush();
+    });
+    flush();
+    return out;
   }
 }

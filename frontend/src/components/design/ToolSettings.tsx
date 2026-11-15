@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import type { EditingMode } from '../../engine/editing/EditingEngine';
-import { DEFAULT_BUILDING_FLOORS, DEFAULT_ZONE_POPULATION, DEFAULT_ZONE_EMPLOYMENT, DEFAULT_UTILITY_DEPTH_M, GATEWAY_SNAP_M, clampFloors } from '../../engine/editing/EditingEngine';
+import { TYPICAL_COVER } from '../../engine/underground/utilityModel';
+import { DEFAULT_BUILDING_FLOORS, DEFAULT_ZONE_POPULATION, DEFAULT_ZONE_EMPLOYMENT, GATEWAY_SNAP_M, clampFloors } from '../../engine/editing/EditingEngine';
 import type { RoadClassification, BuildingUsage, UtilityType } from '../../engine/objects/types';
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
 import type { Certainty } from '../ui/badges/honesty';
@@ -79,9 +80,10 @@ export const ToolSettings: React.FC<{ mode: EditingMode }> = ({ mode }) => {
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div className={field}>
-          <label className={lbl} style={labelStyle} htmlFor="ts-utility-depth">Depth (m)</label>
-          <input id="ts-utility-depth" data-testid="tool-setting-utility-depth" type="number" min={0.1} max={60} step={0.1} value={e.utilityDepthM}
-            onChange={ev => set(() => { const v = Number(ev.target.value); e.utilityDepthM = Number.isFinite(v) && v > 0 ? v : DEFAULT_UTILITY_DEPTH_M; })} className={input} style={inputStyle} />
+          <label className={lbl} style={labelStyle} htmlFor="ts-utility-depth">Top of pipe (m)</label>
+          <input id="ts-utility-depth" data-testid="tool-setting-utility-depth" type="number" min={0.1} max={60} step={0.1} value={e.utilityDepthM ?? ''}
+            placeholder={`${TYPICAL_COVER[e.utilityType].coverM} default`} title="Blank = the type's typical cover, stored as a default to adjust"
+            onChange={ev => set(() => { const v = Number(ev.target.value); e.utilityDepthM = ev.target.value !== '' && Number.isFinite(v) && v > 0 ? v : null; })} className={input} style={inputStyle} />
         </div>
         <div className={field}>
           <label className={lbl} style={labelStyle} htmlFor="ts-utility-diameter">Diameter (mm)</label>
@@ -94,7 +96,7 @@ export const ToolSettings: React.FC<{ mode: EditingMode }> = ({ mode }) => {
         <select id="ts-utility-depth-cert" data-testid="tool-setting-utility-depth-certainty" value={e.utilityDepthCertainty} onChange={ev => set(() => { e.utilityDepthCertainty = ev.target.value as Certainty; })} className={input} style={inputStyle}>
           {CERTAINTY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-        <p className="text-[11px]" style={note}>Default depth {DEFAULT_UTILITY_DEPTH_M} m is an assumption. A blank diameter is stored as unknown, not 0.</p>
+        <p className="text-[11px]" style={note} data-testid="tool-setting-utility-default-note">Blank depth = typical minimum cover for this type, {TYPICAL_COVER[e.utilityType].coverM} m to the top of the pipe ({TYPICAL_COVER[e.utilityType].source}); it is stored as "default — adjust", never as measured. A blank diameter is stored as unknown, not 0.</p>
       </div>
     </div>
   );

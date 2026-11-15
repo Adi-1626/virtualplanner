@@ -275,12 +275,24 @@ export interface UtilityObject extends BaseCityObject {
   type: 'utility';
   coordinates: [number, number, number][]; // Path or line of utility piping/cables
   utilityType: UtilityType;
-  depth: number; // meters below ground (cover to crown as entered; see depthCertainty)
+  /**
+   * DERIVED (engine/underground/utilityModel.ts): shallowest known top-of-pipe depth, m below ground. Kept for the screening
+   * engine and older readers; the source of truth is `depths` + `zRef`. Absent `depths` = a legacy object (migrated on read).
+   */
+  depth: number;
   capacity: number; // capacity units
-  /** How the depth is known. 'unknown' means the stored depth is only a drawing placeholder. */
+  /** DERIVED: worst certainty of the vertices giving `depth`. 'unknown' means no top-of-pipe depth is known (depth is a placeholder). */
   depthCertainty?: import('./certainty').Certainty;
   /** Internal/nominal diameter in mm; null/absent = unknown (never 0). */
   diameterMm?: number | null;
+  /** Per-vertex typed depth (to zRef), certainty, default flag, elevation + ground reference. Same order as coordinates. */
+  depths?: import('../underground/utilityModel').UtilityVertexDepth[];
+  /** Which part of the pipe the typed depths are to (absent = top of pipe). */
+  zRef?: import('../underground/utilityModel').UtilityZRef;
+  /** Lifecycle status, separate from evidence. */
+  status?: import('../underground/utilityModel').UtilityStatus;
+  /** How the position is known (ASCE 38 QL-A..D, user-drawn, unknown). */
+  evidence?: import('../underground/utilityModel').UtilityEvidence;
 }
 
 export interface MetroFlyoverObject extends BaseCityObject {

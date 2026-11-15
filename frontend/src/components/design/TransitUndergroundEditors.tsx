@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import { engineInstance } from '../../engine/TwinCityEngine';
-import type { BuildingObject, GatewayObject, MetroLineObject, MetroStationObject, UndergroundAlignmentObject, UtilityObject, UtilityType, ZoneObject } from '../../engine/objects/types';
+import type { BuildingObject, GatewayObject, MetroLineObject, MetroStationObject, UndergroundAlignmentObject, UtilityObject, ZoneObject } from '../../engine/objects/types';
 import type { DemandZone } from '../../engine/objects/demandTypes';
 import { findNearestTrack, resolveStationHeading, STATION_TRACK_SNAP_METERS } from '../../engine/objects/stationAlignment';
 import { filterObjectsForScenario } from '../../engine/scenarios/scenarioFilter';
@@ -10,10 +10,10 @@ import { alignmentProfile, ALIGNMENT_KIND_LABEL } from '../../engine/underground
 import { useShellStore } from '../../shell/useShellStore';
 import { useUndergroundStore } from '../underground/undergroundStore';
 import { AlignmentEditor } from '../underground/AlignmentForms';
+import { UtilityZEditor } from '../underground/UtilityForms';
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
 import { SourceBadge } from '../ui/SourceBadge';
 import { sourceOf } from '../ui/dataSource';
-import type { Certainty } from '../ui/badges/honesty';
 
 /*
  * Inspector editors for the Design tools Metro line, Double-deck metro deck, Station, Utility, Tunnel (underground
@@ -128,45 +128,8 @@ export const MetroStationEditor: React.FC<{ s: MetroStationObject; onUpdate: Upd
 
 /* ─── Utility line ───────────────────────────────────────────────────────── */
 
-const UTILITY_TYPES: { value: UtilityType; label: string }[] = [
-  { value: 'water', label: 'Water' }, { value: 'sewage', label: 'Sewage' }, { value: 'electricity', label: 'Electrical' }, { value: 'gas', label: 'Gas' }, { value: 'fiber', label: 'Fibre / telecom' },
-];
-const CERTAINTY_OPTIONS: { value: Certainty; label: string }[] = [
-  { value: 'hypothetical', label: 'Hypothetical (design / assumed)' }, { value: 'estimated', label: 'Estimated' }, { value: 'measured', label: 'Measured (survey / record)' }, { value: 'unknown', label: 'Unknown' },
-];
-
-export const UtilityEditor: React.FC<{ u: UtilityObject; onUpdate: Update }> = ({ u, onUpdate }) => (
-  <div className="flex flex-col gap-3" data-testid="utility-editor">
-    <div className={card} style={cardStyle}>
-      <Row k="Plan length" v={`${fmtInt(planLengthM(u.coordinates))} m`} />
-      <Row k="Top of pipe" testId="utility-top" v={`${u.depth} m below ground`} />
-      {u.diameterMm ? <Row k="Bottom of pipe" v={`${(u.depth + u.diameterMm / 1000).toFixed(2)} m below ground`} /> : null}
-    </div>
-    <div className="flex flex-col gap-0.5">
-      <label className={lbl} style={labelStyle} htmlFor="util-type">Type</label>
-      <select id="util-type" data-testid="utility-type" value={u.utilityType} onChange={e => onUpdate('utilityType', e.target.value)} className={inputCls} style={inputStyle}>
-        {UTILITY_TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-    </div>
-    <div className="grid grid-cols-2 gap-2">
-      <div className="flex flex-col gap-0.5">
-        <label className={lbl} style={labelStyle} htmlFor="util-depth">Depth (m)</label>
-        <input id="util-depth" data-testid="utility-depth" type="number" min={0.1} step={0.1} value={u.depth} onChange={e => onUpdate('depth', Number(e.target.value))} className={inputCls} style={inputStyle} />
-      </div>
-      <div className="flex flex-col gap-0.5">
-        <label className={lbl} style={labelStyle} htmlFor="util-dia">Diameter (mm)</label>
-        <input id="util-dia" data-testid="utility-diameter" type="number" min={1} placeholder="Unknown" value={u.diameterMm ?? ''} onChange={e => onUpdate('diameterMm', e.target.value)} className={inputCls} style={inputStyle} />
-      </div>
-    </div>
-    <div className="flex flex-col gap-0.5">
-      <label className={lbl} style={labelStyle} htmlFor="util-cert">Depth is <CertaintyBadge certainty={u.depthCertainty ?? 'unknown'} note={u.depthCertainty ? undefined : 'Drawn before depth certainty was recorded.'} /></label>
-      <select id="util-cert" data-testid="utility-depth-certainty" value={u.depthCertainty ?? 'unknown'} onChange={e => onUpdate('depthCertainty', e.target.value)} className={inputCls} style={inputStyle}>
-        {CERTAINTY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-    </div>
-    <p className="text-[11px]" style={note}>Depth is to the top of the pipe. A blank diameter is unknown, not 0. Underground shows it in the long-section and conflict check.</p>
-  </div>
-);
+/** Same Z model and editor as Underground (utilityModel / UtilityForms): status, evidence, per-point depth to a stated part of the pipe. */
+export const UtilityEditor: React.FC<{ u: UtilityObject; onUpdate?: Update }> = ({ u }) => <UtilityZEditor u={u} />;
 
 /* ─── Underground alignment (Tunnel tool) ────────────────────────────────── */
 

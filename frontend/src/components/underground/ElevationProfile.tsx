@@ -1,3 +1,4 @@
+import { profileKindLabel } from '../../engine/underground/utilityModel';
 import React, { useMemo } from 'react';
 import type { CityObject, UndergroundAlignmentObject } from '../../engine/objects/types';
 import { ALIGNMENT_KIND_LABEL, chainages } from '../../engine/underground/alignmentGeometry';
@@ -36,7 +37,7 @@ export const ElevationProfileSvg: React.FC<{ a: UndergroundAlignmentObject; othe
   return (
     <div className="flex flex-col gap-1" data-testid="ug-profile">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-text-2">
-        <span className="text-text-1 font-medium">{a.name} · {ALIGNMENT_KIND_LABEL[a.alignmentKind]}</span>
+        <span className="text-text-1 font-medium" data-testid="ug-profile-title">{a.name} · {profileKindLabel(a, ALIGNMENT_KIND_LABEL)}</span>
         <span>Length {Math.round(L.ep.lengthM)} m</span>
         <span data-testid="ug-profile-dem-coverage">DEM coverage {Math.round(L.ep.coverageFraction * 100)} % of samples</span>
         {unknownDepths > 0 && <span className="text-unknown" data-testid="ug-profile-unknown-count">{unknownDepths} vertex depth{unknownDepths > 1 ? 's' : ''} UNKNOWN</span>}

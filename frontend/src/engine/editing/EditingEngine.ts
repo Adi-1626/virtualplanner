@@ -24,11 +24,14 @@ import { clipPolylineToPolygon, footprintInPolygon, pointInPolygon } from './pol
 import type { Certainty } from '../objects/certainty';
 import type { UndergroundAlignmentKind, UndergroundSection } from '../objects/types';
 import { buildAlignment, DRAWING_DEFAULTS } from '../underground/alignmentFactory';
+import { initialUtilityDepths, withUtilityZ } from '../underground/utilityModel';
+import type { UtilityObject } from '../objects/types';
 
 /** Tool defaults (HYPOTHETICAL, editable in the tool settings): not data. */
 export const DEFAULT_BUILDING_FLOORS = 4;
 export const DEFAULT_ZONE_POPULATION = 10000;
 export const DEFAULT_ZONE_EMPLOYMENT = 5000;
+/** Legacy fallback only (old saved tool state); a new utility takes its type's typical cover (utilityModel TYPICAL_COVER) marked as a default. */
 export const DEFAULT_UTILITY_DEPTH_M = 1.5;
 /** A gateway must be within this ground distance of a network node (metres). */
 export const GATEWAY_SNAP_M = 440;
@@ -96,7 +99,8 @@ export class EditingEngine {
   public buildingFloors = DEFAULT_BUILDING_FLOORS;
   public zonePopulation = DEFAULT_ZONE_POPULATION;
   public zoneEmployment = DEFAULT_ZONE_EMPLOYMENT;
-  public utilityDepthM = DEFAULT_UTILITY_DEPTH_M;
+  /** Depth typed in the tool (m below ground, to the top of the pipe); null = use the type's typical cover, marked "default — adjust". */
+  public utilityDepthM: number | null = null;
   public utilityDepthCertainty: Certainty = 'hypothetical';
   /** null = unknown diameter (never stored as 0). */
   public utilityDiameterMm: number | null = null;
@@ -758,7 +762,7 @@ export class EditingEngine {
         scenarioId,
         coordinates: [...this.drawingPoints],
         utilityType: this.utilityType,
-        depth: Number.isFinite(this.utilityDepthM) && this.utilityDepthM > 0 ? this.utilityDepthM : DEFAULT_UTILITY_DEPTH_M,
+        depth: DEFAULT_UTILITY_DEPTH_M,
         depthCertainty: this.utilityDepthCertainty,
         diameterMm: this.utilityDiameterMm !== null && Number.isFinite(this.utilityDiameterMm) && this.utilityDiameterMm > 0 ? this.utilityDiameterMm : null,
         capacity: 100,
@@ -766,6 +770,14 @@ export class EditingEngine {
         createdAt,
         updatedAt: createdAt
       };
+      // Same Z model as an alignment: per-vertex depth to the top of the pipe, status proposed, evidence user-drawn;
+      // `depth` / `depthCertainty` are derived from it (utilityModel.withUtilityZ)
+      const typed = this.utilityDepthM !== null && Number.isFinite(this.utilityDepthM) && this.utilityDepthM > 0 ? this.utilityDepthM : null;
+      newObj = withUtilityZ(newObj as UtilityObject, {
+        zRef: 'top', status: 'proposed', evidence: 'user-drawn',
+        depths: initialUtilityDepths(this.drawingPoints.length, this.utilityType, typed, this.utilityDepthCertainty),
+      });
+      (newObj as UtilityObject).updatedAt = createdAt;
     } else if (this.activeMode === 'draw_underground') {
       minPoints(2, 'An underground alignment');
       newObj = buildAlignment({
