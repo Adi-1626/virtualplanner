@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { cesiumIonToken } from '../lib/cesiumToken';
-import { watchBaseImageryState, watchImageryErrors } from '../lib/baseImageryErrors';
+import { dropFailedBaseLayer, watchBaseImageryState, watchImageryErrors } from '../lib/baseImageryErrors';
 import {
   Viewer,
   Ion,
   type ProviderViewModel,
   Cartesian3,
   Math as CesiumMath,
-  ScreenSpaceEventType
+  ScreenSpaceEventType,
+  Color
 } from 'cesium';
 import * as CesiumNs from 'cesium';
 import { engineInstance } from '../engine/TwinCityEngine';
@@ -53,6 +54,8 @@ export const Viewport3D: React.FC = () => {
     const stopImageryWatch = watchImageryErrors(viewer.imageryLayers, msg => (window as any).showToast?.(msg, 'error'));
     // ...and stays noted on the map while the base layer is the failed one
     const stopBaseState = watchBaseImageryState(viewer.imageryLayers, setImageryError);
+    // ...and taken out, or the globe (and everything draped on it: area and zone outlines) is never drawn
+    const stopDropFailed = dropFailedBaseLayer(viewer.imageryLayers, viewer.scene.globe, Color.fromCssColorString('#12161c'));
 
     // Disable default double-click camera tracking/zoom
     viewer.screenSpaceEventHandler.removeInputAction(ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
@@ -79,6 +82,7 @@ export const Viewport3D: React.FC = () => {
     return () => {
       stopImageryWatch();
       stopBaseState();
+      stopDropFailed();
       engineInstance.dispose();
       viewer.destroy();
     };

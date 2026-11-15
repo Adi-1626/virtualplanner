@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { SourceBadge } from './ui/SourceBadge';
-import { sourceOf } from './ui/dataSource';
 import { Trash2, ArrowLeft } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import { ConfirmDialog } from './ui/ConfirmDialog';
@@ -9,11 +8,14 @@ import { LevelCrossingPanel } from './LevelCrossingPanel';
 import { FeasibilityPanel } from './FeasibilityPanel';
 import { isProposalObject } from '../engine/feasibility/proposal';
 import { TYPE_LABELS } from '../engine/objects/builtBy';
-import { MODE_SPLIT_KEYS, rebalanceSplit } from '../engine/simulation/modeSplit';
+import { rebalanceSplit } from '../engine/simulation/modeSplit';
+import { AlignmentInspector, GatewayEditor, MetroLineEditor, MetroStationEditor, UtilityEditor, ZoneEditor } from './design/TransitUndergroundEditors';
+import { utilityLayerId } from '../engine/layers/LayerManager';
 
 const BUILDING_SPLIT_KEYS = ['car', 'twoWheeler', 'bus', 'metro', 'walk', 'other'] as const;
 type BuildingSplitKey = typeof BUILDING_SPLIT_KEYS[number];
 import { findNearestTrack, normalizeHeading, resolveStationHeading } from '../engine/objects/stationAlignment';
+import type { UndergroundAlignmentObject, UtilityType } from '../engine/objects/types';
 import type { CityObject, RoadObject, BuildingObject, JunctionObject, UtilityObject, FlyoverObject, MetroLineObject, MetroStationObject, BuildingCategory, BuildingState, ZoneObject, GatewayObject } from '../engine/objects/types';
 import { getFlyoverConnectionStatus } from '../engine/objects/flyoverHelper';
 import { commitRoadFieldEdit, flyoverFieldUpdates } from '../engine/editing/roadEdits';
@@ -173,6 +175,14 @@ export const PropertiesPanel: React.FC = () => {
         sUpdates.heading = resolved.heading;
       } else if (field === 'name' || field === 'stationName') {
         (sUpdates as any)[field] = value;
+      } else if (field === 'snapToTrack') {
+        // Put the station on the nearest track within 100 m: on its centreline, at its deck height, along it
+        const track = findNearestTrack((selectedObj as MetroStationObject).coordinates, engineInstance.objects.getAll());
+        if (!track) return;
+        sUpdates.coordinates = [track.point[0], track.point[1], 0];
+        sUpdates.elevation = track.deckElevation;
+        sUpdates.heading = track.bearing;
+        sUpdates.alignToTrack = true;
       }
     } else if (selectedObj.type === 'junction') {
       const jUpdates = updates as Partial<JunctionObject>;
@@ -187,8 +197,10 @@ export const PropertiesPanel: React.FC = () => {
       }
     } else if (selectedObj.type === 'utility') {
       const uUpdates = updates as Partial<UtilityObject>;
-      if (field === 'depth' || field === 'capacity') {
-        (uUpdates as any)[field] = Number(value);
+      if (field === 'depth') {
+        const v = Number(value);
+        if (!Number.isFinite(v) || v <= 0) return;
+        uUpdates.depth = v;
       } else if (field === 'diameterMm') {
         // blank or non-positive = unknown (null), never 0
         const v = Number(value);
@@ -196,6 +208,12 @@ export const PropertiesPanel: React.FC = () => {
       } else if (field === 'depthCertainty') {
         uUpdates.depthCertainty = value as Certainty;
         uUpdates.valueCertainty = { ...((selectedObj as UtilityObject).valueCertainty ?? {}), depth: value as Certainty };
+      } else if (field === 'utilityType') {
+        // The type picks the layer it is drawn on (Layers panel: water, electric, sewage, gas, fibre)
+        uUpdates.utilityType = value as UtilityType;
+        uUpdates.layerId = utilityLayerId(value as UtilityType);
+        // Utility layers start hidden: show the new one, or the line vanishes as its type changes
+        if (!engineInstance.layers.isVisible(uUpdates.layerId)) engineInstance.layers.setVisibility(uUpdates.layerId, true);
       } else if (field === 'name') {
         uUpdates.name = value;
       }
@@ -205,8 +223,6 @@ export const PropertiesPanel: React.FC = () => {
         zUpdates.name = value;
       } else if (field === 'totalPopulation' || field === 'totalEmployment') {
         (zUpdates as any)[field] = Number(value);
-      } else if (field === 'landUseMix') {
-        zUpdates.landUseMix = value;
       } else if (field === 'provenance') {
         zUpdates.provenance = value;
       }
@@ -237,10 +253,22 @@ export const PropertiesPanel: React.FC = () => {
 
     // Apply & trigger updates
     const merged = { ...selectedObj, ...updates } as CityObject;
+    // Stations sitting on a metro line (or a double-deck's metro deck) stay at its deck height when it changes: the
+    // same Undo step as the height change itself
+    const followers: { before: CityObject; after: CityObject }[] = [];
+    if ((selectedObj.type === 'metro_line' && field === 'elevation') || (selectedObj.type === 'metro_flyover' && field === 'metroElevation')) {
+      for (const st of engineInstance.objects.getAll()) {
+        if (st.type !== 'metro_station') continue;
+        const near = findNearestTrack(st.coordinates, [merged]);
+        if (!near || near.distanceMeters > 1 || st.elevation === near.deckElevation) continue;
+        followers.push({ before: st, after: { ...st, elevation: near.deckElevation } });
+      }
+    }
     // Coalesce per object+field so typing or dragging a slider is one Undo step
-    engineInstance.history.recordUpdate(selectedObj, merged, `Update ${selectedObj.name || selectedObj.id} ${field}`, `${selectedObj.id}:${field}`);
+    engineInstance.history.recordUpdates([{ before: selectedObj, after: merged }, ...followers], `Update ${selectedObj.name || selectedObj.id} ${field}`, `${selectedObj.id}:${field}`);
     setSelectedObj(merged);
     engineInstance.objects.update(selectedObj.id, updates);
+    for (const f of followers) engineInstance.objects.update(f.after.id, { elevation: (f.after as MetroStationObject).elevation });
   };
 
   const handleDelete = () => {
@@ -395,6 +423,10 @@ export const PropertiesPanel: React.FC = () => {
             {/* Zone Specifics */}
             {selectedObj.type === 'zone' && (
               <ZoneEditor z={selectedObj as ZoneObject} onUpdate={handleUpdateField} />
+            )}
+
+            {selectedObj.type === 'underground_alignment' && (
+              <AlignmentInspector a={selectedObj as UndergroundAlignmentObject} />
             )}
 
             {/* Gateway Specifics */}
@@ -1602,203 +1634,6 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
   );
 };
 
-const MetroLineEditor: React.FC<{ m: MetroLineObject; onUpdate: (field: string, val: any) => void }> = ({ m, onUpdate }) => {
-  return (
-    <div className="space-y-4">
-      {/* Tracks count */}
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-slate-400 uppercase font-semibold">Track Count</label>
-        <select
-          value={m.trackCount}
-          onChange={(e) => onUpdate('trackCount', Number(e.target.value))}
-          className="bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
-        >
-          <option value={1}>Single Track</option>
-          <option value={2}>Double Track</option>
-        </select>
-      </div>
-
-      {/* Deck Width */}
-      <div className="flex flex-col gap-1">
-        <div className="flex justify-between items-center">
-          <label className="text-xs text-slate-400 uppercase font-semibold">Deck Width (m)</label>
-          <span className="text-xs text-indigo-400 font-mono">{m.deckWidth}m</span>
-        </div>
-        <input
-          type="range"
-          min={4.0}
-          max={12.0}
-          step={0.5}
-          value={m.deckWidth}
-          onChange={(e) => onUpdate('deckWidth', Number(e.target.value))}
-          className="w-full accent-indigo-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
-        />
-      </div>
-
-      {/* Elevation */}
-      <div className="flex flex-col gap-1">
-        <div className="flex justify-between items-center">
-          <label className="text-xs text-slate-400 uppercase font-semibold">Track Elevation (m)</label>
-          <span className="text-xs text-indigo-400 font-mono">{m.elevation}m</span>
-        </div>
-        <input
-          type="range"
-          min={6.0}
-          max={24.0}
-          step={1.0}
-          value={m.elevation}
-          onChange={(e) => onUpdate('elevation', Number(e.target.value))}
-          className="w-full accent-indigo-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
-        />
-      </div>
-
-      {/* Pier Spacing */}
-      <div className="flex flex-col gap-1">
-        <div className="flex justify-between items-center">
-          <label className="text-xs text-slate-400 uppercase font-semibold">Column Spacing (m)</label>
-          <span className="text-xs text-indigo-400 font-mono">{m.pierSpacing}m</span>
-        </div>
-        <input
-          type="range"
-          min={15.0}
-          max={60.0}
-          step={5.0}
-          value={m.pierSpacing}
-          onChange={(e) => onUpdate('pierSpacing', Number(e.target.value))}
-          className="w-full accent-indigo-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
-        />
-      </div>
-    </div>
-  );
-};
-
-const MetroStationEditor: React.FC<{ s: MetroStationObject; onUpdate: (field: string, val: any) => void }> = ({ s, onUpdate }) => {
-  const orientation = resolveStationHeading(s, engineInstance.objects.getAll());
-  const nearbyTrack = findNearestTrack(s.coordinates, engineInstance.objects.getAll());
-  const heading = Math.round(orientation.heading);
-  const autoAlign = s.alignToTrack !== false;
-
-  return (
-    <div className="space-y-4">
-      {/* Orientation */}
-      <div className="bg-slate-950/40 p-3 rounded-lg border border-white/5 space-y-2.5">
-        <div className="flex justify-between items-center">
-          <label className="text-xs text-slate-400 uppercase font-semibold">Orientation</label>
-          <span className="text-xs text-indigo-400 font-mono">{heading}° from north</span>
-        </div>
-
-        <label className="flex items-center justify-between gap-2 text-sm text-slate-300 cursor-pointer">
-          <span>Align to nearest metro track</span>
-          <input
-            type="checkbox"
-            checked={autoAlign}
-            onChange={(e) => onUpdate('alignToTrack', e.target.checked)}
-            className="accent-indigo-500 cursor-pointer"
-          />
-        </label>
-        <p className="text-xs leading-relaxed text-slate-400">
-          {orientation.source === 'track' && orientation.track
-            ? `Following "${orientation.track.trackName}" (${Math.round(orientation.track.distanceMeters)} m away).`
-            : autoAlign
-              ? 'No metro track within 100 m — using the manual heading below.'
-              : nearbyTrack
-                ? `Manual. "${nearbyTrack.trackName}" is ${Math.round(nearbyTrack.distanceMeters)} m away — tick above to align.`
-                : 'Manual heading.'}
-        </p>
-
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => onUpdate('heading', heading - 15)}
-            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 cursor-pointer"
-            title="Rotate 15° anticlockwise (Shift+R)"
-          >
-            ⟲ 15°
-          </button>
-          <input
-            type="range"
-            min={0}
-            max={359}
-            step={1}
-            value={heading}
-            onChange={(e) => onUpdate('heading', Number(e.target.value))}
-            aria-label="Station heading in degrees"
-            className="flex-1 accent-indigo-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
-          />
-          <button
-            onClick={() => onUpdate('heading', heading + 15)}
-            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 cursor-pointer"
-            title="Rotate 15° clockwise (R)"
-          >
-            15° ⟳
-          </button>
-        </div>
-      </div>
-
-      {/* Length */}
-      <div className="flex flex-col gap-1">
-        <div className="flex justify-between items-center">
-          <label className="text-xs text-slate-400 uppercase font-semibold">Station Length (m)</label>
-          <span className="text-xs text-indigo-400 font-mono">{s.length}m</span>
-        </div>
-        <input
-          type="range"
-          min={80}
-          max={200}
-          step={10}
-          value={s.length}
-          onChange={(e) => onUpdate('length', Number(e.target.value))}
-          className="w-full accent-indigo-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
-        />
-      </div>
-
-      {/* Width */}
-      <div className="flex flex-col gap-1">
-        <div className="flex justify-between items-center">
-          <label className="text-xs text-slate-400 uppercase font-semibold">Station Width (m)</label>
-          <span className="text-xs text-indigo-400 font-mono">{s.width}m</span>
-        </div>
-        <input
-          type="range"
-          min={12}
-          max={30}
-          step={2}
-          value={s.width}
-          onChange={(e) => onUpdate('width', Number(e.target.value))}
-          className="w-full accent-indigo-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
-        />
-      </div>
-
-      {/* Elevation */}
-      <div className="flex flex-col gap-1">
-        <div className="flex justify-between items-center">
-          <label className="text-xs text-slate-400 uppercase font-semibold">Platform Elevation (m)</label>
-          <span className="text-xs text-indigo-400 font-mono">{s.elevation}m</span>
-        </div>
-        <input
-          type="range"
-          min={6.0}
-          max={24.0}
-          step={1.0}
-          value={s.elevation}
-          onChange={(e) => onUpdate('elevation', Number(e.target.value))}
-          className="w-full accent-indigo-500 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer"
-        />
-      </div>
-
-      {/* Capacity */}
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-slate-400 uppercase font-semibold">Passenger Capacity (Peak)</label>
-        <input
-          type="number"
-          value={s.capacity}
-          onChange={(e) => onUpdate('capacity', Number(e.target.value))}
-          className="bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-        />
-      </div>
-    </div>
-  );
-};
-
 const JunctionEditor: React.FC<{ j: JunctionObject; onUpdate: (field: string, val: any) => void }> = ({ j, onUpdate }) => {
   return (
     <div className="space-y-3.5">
@@ -1845,388 +1680,6 @@ const JunctionEditor: React.FC<{ j: JunctionObject; onUpdate: (field: string, va
           <p className="text-xs text-slate-500">Applied to this junction in Simulate. Green time is split between the crossing approaches.</p>
         </div>
       )}
-    </div>
-  );
-};
-
-const UtilityEditor: React.FC<{ u: UtilityObject; onUpdate: (field: string, val: any) => void }> = ({ u, onUpdate }) => {
-  return (
-    <div className="space-y-3.5">
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-slate-400 uppercase font-semibold flex items-center gap-1.5">Depth (m) <CertaintyBadge certainty={u.depthCertainty ?? 'unknown'} note={u.depthCertainty ? undefined : 'Drawn before depth certainty was recorded.'} /></label>
-        <input
-          type="number"
-          step="0.1"
-          value={u.depth}
-          onChange={(e) => onUpdate('depth', Number(e.target.value))}
-          className="bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
-        />
-        <select value={u.depthCertainty ?? 'unknown'} onChange={(e) => onUpdate('depthCertainty', e.target.value)} aria-label="Depth certainty" data-testid="utility-depth-certainty"
-          className="bg-slate-900 border border-slate-700/50 rounded-lg p-1.5 text-xs text-slate-200 focus:outline-none">
-          <option value="hypothetical">Hypothetical (design / assumed)</option>
-          <option value="estimated">Estimated</option>
-          <option value="measured">Measured (survey / record)</option>
-          <option value="unknown">Unknown</option>
-        </select>
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-slate-400 uppercase font-semibold">Diameter (mm)</label>
-        <input
-          type="number"
-          min={1}
-          placeholder="Unknown"
-          value={u.diameterMm ?? ''}
-          onChange={(e) => onUpdate('diameterMm', e.target.value)}
-          data-testid="utility-diameter"
-          className="bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
-        />
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-slate-400 uppercase font-semibold">Service Capacity</label>
-        <input
-          type="number"
-          value={u.capacity}
-          onChange={(e) => onUpdate('capacity', Number(e.target.value))}
-          className="bg-slate-900 border border-slate-700/50 rounded-lg p-2 text-xs text-slate-200 focus:outline-none"
-        />
-      </div>
-    </div>
-  );
-};
-
-const ZoneEditor: React.FC<{ z: ZoneObject; onUpdate: (field: string, val: any) => void }> = ({ z, onUpdate }) => {
-  useEffect(() => engineInstance.requestTrafficNetwork(), []);
-  const allObjects = engineInstance.objects.getAll();
-  const buildings = allObjects.filter(o => o.type === 'building') as BuildingObject[];
-
-  const isPtInPoly = (pt: [number, number], poly: [number, number, number][]) => {
-    const x = pt[0], y = pt[1];
-    let inside = false;
-    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const xi = poly[i][0], yi = poly[i][1];
-      const xj = poly[j][0], yj = poly[j][1];
-      const intersect = ((yi > y) !== (yj > y)) && (x < ((xj - xi) * (y - yi)) / (yj - yi || 1) + xi);
-      if (intersect) inside = !inside;
-    }
-    return inside;
-  };
-
-  const zoneBuildings = buildings.filter(b => {
-    if (!z.coordinates || z.coordinates.length === 0) return false;
-    const bPt = b.coordinates[0];
-    return isPtInPoly([bPt[0], bPt[1]], z.coordinates);
-  });
-
-  const network = engineInstance.getTrafficNetwork();
-  let zoneNodesCount = 0;
-  let zoneRoadsCount = 0;
-
-  if (network && z.coordinates && z.coordinates.length > 0) {
-    if (network.nodes) {
-      network.nodes.forEach((node: any) => {
-        if (isPtInPoly([node.coordinates[0], node.coordinates[1]], z.coordinates)) {
-          zoneNodesCount++;
-        }
-      });
-    }
-
-    const roads = allObjects.filter(o => o.type === 'road') as RoadObject[];
-    roads.forEach(r => {
-      const hasCoordInside = r.coordinates.some(pt => isPtInPoly([pt[0], pt[1]], z.coordinates));
-      if (hasCoordInside) {
-        zoneRoadsCount++;
-      }
-    });
-  }
-
-  const gateways = allObjects.filter(o => o.type === 'gateway') as GatewayObject[];
-  const zoneGatewaysCount = gateways.filter(g => {
-    if (!z.coordinates || z.coordinates.length === 0) return false;
-    const pt = g.coordinates && g.coordinates[0];
-    if (!pt) return false;
-    return isPtInPoly([pt[0], pt[1]], z.coordinates);
-  }).length;
-
-  const sumPop = zoneBuildings.reduce((sum, b) => sum + (b.residents ?? b.population ?? 0), 0);
-  const sumEmp = zoneBuildings.reduce((sum, b) => sum + (b.employees ?? 0), 0);
-
-  const residualPop = Math.max(0, (z.totalPopulation || 0) - sumPop);
-  const residualEmp = Math.max(0, (z.totalEmployment || 0) - sumEmp);
-
-  return (
-    <div className="space-y-4">
-      <div className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">
-        Demand Zone Planning
-      </div>
-
-      {/* Snapped Object Statistics */}
-      <div className="space-y-2 bg-slate-900/30 border border-white/5 rounded-xl p-3 text-xs">
-        <span className="text-xs text-indigo-400 uppercase font-mono block">Boundary Snapped Objects</span>
-        <div className="space-y-1.5 pt-1 font-mono text-sm">
-          <div className="flex justify-between border-b border-white/5 pb-1">
-            <span className="text-slate-400">Road Access:</span>
-            <span className="text-slate-200 font-bold">{zoneRoadsCount} roads</span>
-          </div>
-          <div className="flex justify-between border-b border-white/5 pb-1">
-            <span className="text-slate-400">Traffic Nodes:</span>
-            <span className="text-slate-200 font-bold">{zoneNodesCount} nodes</span>
-          </div>
-          <div className="flex justify-between border-b border-white/5 pb-1">
-            <span className="text-slate-400">Buildings:</span>
-            <span className="text-slate-200 font-bold">{zoneBuildings.length} buildings</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-400">Gateways:</span>
-            <span className="text-slate-200 font-bold">{zoneGatewaysCount} gateways</span>
-          </div>
-        </div>
-      </div>
-      <div className="space-y-3 bg-slate-900/30 border border-white/5 rounded-xl p-3">
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Zone Name</label>
-          <input
-            type="text"
-            value={z.name}
-            onChange={(e) => onUpdate('name', e.target.value)}
-            className="w-full bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-medium"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-2.5">
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">Total Residents <SourceBadge source={sourceOf(z.provenance?.source)} /></label>
-            <input
-              type="number"
-              value={z.totalPopulation || 0}
-              onChange={(e) => onUpdate('totalPopulation', Number(e.target.value))}
-              className="w-full bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-mono"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Employees</label>
-            <input
-              type="number"
-              value={z.totalEmployment || 0}
-              onChange={(e) => onUpdate('totalEmployment', Number(e.target.value))}
-              className="w-full bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-mono"
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-2 bg-slate-900/30 border border-white/5 rounded-xl p-3 text-xs">
-        <span className="text-xs text-indigo-400 uppercase font-mono block">Residual Planning Math</span>
-        <div className="space-y-1.5 pt-1">
-          <div className="flex justify-between border-b border-white/5 pb-1">
-            <span className="text-slate-400">Explicit Population:</span>
-            <span className="text-slate-200 font-bold">{sumPop.toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between border-b border-white/5 pb-1">
-            <span className="text-slate-400">Residual Population:</span>
-            <span className="text-emerald-400 font-bold">{residualPop.toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between border-b border-white/5 pb-1">
-            <span className="text-slate-400">Explicit Employment:</span>
-            <span className="text-slate-200 font-bold">{sumEmp.toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-400">Residual Employment:</span>
-            <span className="text-emerald-400 font-bold">{residualEmp.toLocaleString()}</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-2 bg-slate-900/30 border border-white/5 rounded-xl p-3">
-        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">Land-Use Mix (%)</label>
-        <div className="space-y-2.5 pt-1.5">
-          {['residential', 'commercial', 'industrial', 'educational'].map((use) => {
-            const mix = z.landUseMix || { residential: 50, commercial: 30, industrial: 10, educational: 10 };
-            const val = (mix as any)[use] || 0;
-            return (
-              <div key={use} className="space-y-1">
-                <div className="flex justify-between text-xs capitalize text-slate-400 font-medium">
-                  <span>{use}</span>
-                  <span>{val}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={val}
-                  onChange={(e) => {
-                    const newMix = { ...mix, [use]: Number(e.target.value) };
-                    onUpdate('landUseMix', newMix);
-                  }}
-                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                />
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="space-y-2 bg-slate-900/30 border border-white/5 rounded-xl p-3 text-xs">
-        <span className="text-xs text-indigo-400 uppercase font-mono block">Associated Gateways</span>
-        <div className="flex flex-wrap gap-1 pt-1">
-          {z.gateways && z.gateways.length > 0 ? (
-            z.gateways.map((gId) => (
-              <span key={gId} className="bg-slate-950 border border-white/10 px-2 py-0.5 rounded text-xs text-indigo-300 font-mono">
-                {gId}
-              </span>
-            ))
-          ) : (
-            <span className="text-slate-500 italic text-sm">No gateways associated.</span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const GatewayEditor: React.FC<{ g: GatewayObject; onUpdate: (field: string, val: any) => void }> = ({ g, onUpdate }) => {
-  useEffect(() => engineInstance.requestTrafficNetwork(), []);
-  const periods = ['AM_Peak', 'PM_Peak', 'Midday', 'Night'];
-
-  const allObjects = engineInstance.objects.getAll();
-  const network = engineInstance.getTrafficNetwork();
-
-  let connectedRoadName = 'None';
-  if (g.connectedNodeId && network) {
-    if (network.edges) {
-      const connectedEdges = Array.from(network.edges.values() as any).filter(
-        (e: any) => e.fromNodeId === g.connectedNodeId || e.toNodeId === g.connectedNodeId
-      ) as any[];
-      if (connectedEdges.length > 0) {
-        const roadObj = allObjects.find(o => o.id === connectedEdges[0].roadId);
-        if (roadObj) {
-          connectedRoadName = roadObj.name || connectedEdges[0].roadId;
-        } else {
-          connectedRoadName = connectedEdges[0].roadId;
-        }
-      }
-    }
-  }
-
-  const direction = (g as any).direction || 'bidirectional';
-
-  return (
-    <div className="space-y-4">
-      <div className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">
-        External Gateway Settings
-      </div>
-      <div className="space-y-3 bg-slate-900/30 border border-white/5 rounded-xl p-3">
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Gateway Name</label>
-          <input
-            type="text"
-            value={g.name}
-            onChange={(e) => onUpdate('name', e.target.value)}
-            className="w-full bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-medium"
-          />
-        </div>
-
-        {/* Connected Road Display */}
-        <div className="flex justify-between text-xs border-b border-white/5 pb-2 pt-1 font-mono">
-          <span className="text-slate-400">Connected Road:</span>
-          <span className="text-indigo-300 font-bold select-all">{connectedRoadName}</span>
-        </div>
-
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Connected Traffic Node</label>
-          <input
-            type="text"
-            value={g.connectedNodeId || ''}
-            className="w-full bg-slate-950/60 border border-white/5 rounded-lg px-2.5 py-1.5 text-xs text-slate-500 font-mono focus:outline-none cursor-not-allowed"
-            placeholder="node_lng_lat"
-            disabled
-          />
-        </div>
-
-        {/* Direction Selector */}
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Directional Flow</label>
-          <select
-            value={direction}
-            onChange={(e) => onUpdate('direction', e.target.value)}
-            className="w-full bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-          >
-            <option value="bidirectional">Bidirectional (In/Out)</option>
-            <option value="incoming">Incoming Only (O-D Source)</option>
-            <option value="outgoing">Outgoing Only (O-D Sink)</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="space-y-3 bg-slate-900/30 border border-white/5 rounded-xl p-3">
-        <div className="flex items-center justify-between gap-2">
-          <label className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">Flow Rate (Vehicles/hr)</label>
-          <SourceBadge source={sourceOf(g.provenance?.source)} />
-        </div>
-        <ProvenancePicker value={g.provenance?.source} onChange={source => onUpdate('provenance', { ...(g.provenance ?? { confidence: 0.5 }), source, updatedAt: new Date().toISOString() })} />
-        <div className="space-y-2 pt-1.5">
-          {periods.map(p => {
-            const inf = g.inboundFlows?.[p] || 0;
-            const outf = g.outboundFlows?.[p] || 0;
-            return (
-              <div key={p} className="grid grid-cols-3 gap-2 items-center text-xs">
-                <span className="text-xs capitalize text-slate-400 font-mono">{p.replace('_', ' ')}</span>
-                <input
-                  type="number"
-                  value={inf}
-                  onChange={(e) => {
-                    const newFlows = { ...(g.inboundFlows || {}), [p]: Number(e.target.value) };
-                    onUpdate('inboundFlows', newFlows);
-                  }}
-                  className="bg-slate-950 border border-white/10 rounded-lg p-1.5 text-xs text-slate-200 text-center font-mono focus:outline-none focus:border-indigo-500"
-                  placeholder="In"
-                />
-                <input
-                  type="number"
-                  value={outf}
-                  onChange={(e) => {
-                    const newFlows = { ...(g.outboundFlows || {}), [p]: Number(e.target.value) };
-                    onUpdate('outboundFlows', newFlows);
-                  }}
-                  className="bg-slate-950 border border-white/10 rounded-lg p-1.5 text-xs text-slate-200 text-center font-mono focus:outline-none focus:border-indigo-500"
-                  placeholder="Out"
-                />
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="space-y-2 bg-slate-900/30 border border-white/5 rounded-xl p-3">
-        <label className="text-xs font-bold text-slate-500 uppercase tracking-widest font-mono">Gateway Mode Split (%)</label>
-        <div className="space-y-2.5 pt-1.5">
-          {MODE_SPLIT_KEYS.map((mode) => {
-            const split = g.modeSplit || { car: 0.25, twoWheeler: 0.35, bus: 0.2, metro: 0.1, walking: 0.08, other: 0.02 };
-            const val = Math.round((split[mode] || 0) * 100);
-            return (
-              <div key={mode} className="space-y-1">
-                <div className="flex justify-between text-xs capitalize text-slate-400 font-medium">
-                  <span>{mode.replace('W', ' W')}</span>
-                  <span>{val}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={val}
-                  onChange={(e) => {
-                    // Fractions that must sum to 1 — rescale the other modes proportionally
-                    const newSplit = rebalanceSplit(split, MODE_SPLIT_KEYS, mode, Number(e.target.value) / 100, 1);
-                    onUpdate('modeSplit', newSplit);
-                  }}
-                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                />
-              </div>
-            );
-          })}
-        </div>
-      </div>
     </div>
   );
 };
@@ -2363,16 +1816,3 @@ const FlyoverImpactNotice: React.FC<{ impact: NonNullable<import('../engine/obje
 );
 
 
-/** Lets the planner say where entered flows come from, so they are labelled honestly. */
-const ProvenancePicker: React.FC<{ value: string | undefined; onChange: (source: 'hypothetical' | 'estimated' | 'survey' | 'observed') => void }> = ({ value, onChange }) => (
-  <label className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
-    Data source
-    <select value={value === 'observed' || value === 'survey' || value === 'hypothetical' ? value : 'estimated'} onChange={e => onChange(e.target.value as 'hypothetical' | 'estimated' | 'survey' | 'observed')}
-      className="bg-slate-950 border border-white/10 rounded-md px-1.5 py-0.5 text-[11px] text-slate-200">
-      <option value="hypothetical">Hypothetical (tool default / what-if)</option>
-      <option value="estimated">Estimated (heuristic)</option>
-      <option value="survey">Survey (own count)</option>
-      <option value="observed">Observed (published, cite in name)</option>
-    </select>
-  </label>
-);

@@ -1789,15 +1789,19 @@ export class ProceduralGeometryGenerator {
    */
   private generateMetroLineMeshes(metro: MetroLineObject): MeshData[] {
     const meshes: MeshData[] = [];
-    const coords = metro.coordinates;
-    const elevation = metro.elevation || 12;
-    const deckWidth = 5.0;
+    // The plan line is on the ground; the deck height is the line's `elevation` alone. Imported OSM tracks store
+    // their level in each vertex too (12 bridge, -6 tunnel), drawn ones 0: flattening keeps both at `elevation` and
+    // makes the inspector's elevation edit move every line (it used to be ignored when vertices carried a height).
+    const coords = metro.coordinates.map(c => [c[0], c[1], 0] as [number, number, number]);
+    const elevation = Number.isFinite(metro.elevation) ? metro.elevation : 12;
+    const deckWidth = Math.max(3, metro.deckWidth || 8);
+    const gauge = metro.trackGauge || 1.435;
+    const tracks = metro.trackCount === 1 ? 1 : 2;
+    // Two tracks share the deck, centres up to 4 m apart (the deck width caps it)
+    const centreOffset = tracks === 1 ? [0] : [-Math.min(2, deckWidth / 4), Math.min(2, deckWidth / 4)];
 
-    const averageElev = coords.reduce((sum, c) => sum + (c[2] || 0), 0) / coords.length;
-    const renderElevation = averageElev > 0.5 ? 0 : elevation;
-
-    // 1. Metro track bed deck
-    const deck = this.generateRibbon(coords, -deckWidth / 2, deckWidth / 2, renderElevation, 0.4);
+    // 1. Track bed deck (deckWidth wide)
+    const deck = this.generateRibbon(coords, -deckWidth / 2, deckWidth / 2, elevation, 0.4);
     meshes.push({
       positions: new Float64Array(deck.positions),
       indices: new Uint32Array(deck.indices),
@@ -1805,27 +1809,25 @@ export class ProceduralGeometryGenerator {
       layerId: 'transit_deck'
     });
 
-    // 2. Glowing rails
-    const railLeft = this.generateRibbon(coords, -1.5, -1.3, renderElevation + 0.1, 0.1);
-    meshes.push({
-      positions: new Float64Array(railLeft.positions),
-      indices: new Uint32Array(railLeft.indices),
-      material: { type: 'solid', color: '#a5f3fc' }, // cyan glowing track
-      layerId: 'transit_rails'
-    });
+    // 2. Two rails per track at the track gauge
+    for (const c of centreOffset) {
+      for (const side of [-1, 1]) {
+        const r = c + side * gauge / 2;
+        const rail = this.generateRibbon(coords, r - 0.1, r + 0.1, elevation + 0.1, 0.1);
+        meshes.push({
+          positions: new Float64Array(rail.positions),
+          indices: new Uint32Array(rail.indices),
+          material: { type: 'solid', color: '#a5f3fc' },
+          layerId: 'transit_rails'
+        });
+      }
+    }
 
-    const railRight = this.generateRibbon(coords, 1.3, 1.5, renderElevation + 0.1, 0.1);
-    meshes.push({
-      positions: new Float64Array(railRight.positions),
-      indices: new Uint32Array(railRight.indices),
-      material: { type: 'solid', color: '#a5f3fc' },
-      layerId: 'transit_rails'
-    });
-
-    // 3. Support pillars
-    const pierSpacing = metro.pierSpacing || 30;
-    const pillars = this.generatePillarsAlongCenterline(coords, undefined, renderElevation, pierSpacing, 'transit_pillars');
-    meshes.push(...pillars);
+    // 3. Support pillars (only for an elevated line; an underground one has none)
+    if (elevation > 1.5) {
+      const pierSpacing = metro.pierSpacing || 30;
+      meshes.push(...this.generatePillarsAlongCenterline(coords, undefined, elevation, pierSpacing, 'transit_pillars'));
+    }
 
     return meshes;
   }
@@ -2344,15 +2346,18 @@ export class ProceduralGeometryGenerator {
   private generateUtilityMesh(utility: UtilityObject): MeshData {
     const coords = utility.coordinates;
     const depth = utility.depth || 3;
-    const thickness = 0.5;
+    // Drawn to its diameter when known (top of pipe at `depth`, as entered); 0.5 m placeholder when unknown
+    const thickness = utility.diameterMm && utility.diameterMm > 0 ? Math.max(0.05, utility.diameterMm / 1000) : 0.5;
 
-    // Utilities are rendered as a subterranean 3D ribbon profile
-    const ribbon = this.generateRibbon(coords, -thickness / 2, thickness / 2, -depth, thickness);
+    // Utilities are rendered as a subterranean 3D ribbon profile; the plan line is on the ground
+    const flat = coords.map(c => [c[0], c[1], 0] as [number, number, number]);
+    const ribbon = this.generateRibbon(flat, -thickness / 2, thickness / 2, -depth, thickness);
 
     let color = '#38bdf8'; // water: blue
     if (utility.utilityType === 'electricity') color = '#eab308'; // electric: yellow
     if (utility.utilityType === 'sewage') color = '#a1a1aa'; // sewage: grey
     if (utility.utilityType === 'fiber') color = '#ec4899'; // fiber: pink
+    if (utility.utilityType === 'gas') color = '#f97316'; // gas: orange
 
     return {
       positions: new Float64Array(ribbon.positions),

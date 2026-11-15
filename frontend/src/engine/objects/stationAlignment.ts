@@ -27,6 +27,10 @@ export interface NearestTrack {
   trackName: string;
   bearing: number;
   distanceMeters: number;
+  /** Closest point on the track centreline (lon, lat): where a station placed on this track sits. */
+  point: [number, number];
+  /** Height of the track deck above ground (metro line elevation, or the metro deck of a double-deck). */
+  deckElevation: number;
 }
 
 /** Finds the closest metro track segment (metro line or metro+flyover) to a point. */
@@ -59,6 +63,11 @@ export function findNearestTrack(
           trackName: obj.name,
           bearing: normalizeHeading((Math.atan2(dx, dy) * 180) / Math.PI),
           distanceMeters: dist,
+          point: [
+            coords[i][0] + t * (coords[i + 1][0] - coords[i][0]),
+            coords[i][1] + t * (coords[i + 1][1] - coords[i][1]),
+          ],
+          deckElevation: obj.type === 'metro_flyover' ? (obj.metroElevation ?? 12) : (obj.elevation ?? 12),
         };
       }
     }
