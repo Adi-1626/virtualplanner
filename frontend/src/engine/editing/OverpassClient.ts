@@ -1,11 +1,11 @@
 import { API_BASE } from '../../lib/api';
 
 /** Public Overpass instances (usage policy: < 10 000 queries/day, one at a time; OSM data is ODbL). */
+// Private.coffee (formerly overpass.kumi.systems) first; overpass-api.de discourages apps using it as their backend.
+// Not overpass.osm.ch: it holds Switzerland only and answers "nothing here" for everywhere else.
 export const PUBLIC_OVERPASS_ENDPOINTS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-  // Not overpass.osm.ch: it holds Switzerland only and answers "nothing here" for everywhere else
   'https://overpass.private.coffee/api/interpreter',
+  'https://overpass-api.de/api/interpreter',
 ];
 
 /**
@@ -86,13 +86,13 @@ export class OverpassClient {
 
   constructor(opts: OverpassClientOptions = {}) {
     this.endpoints = opts.endpoints ?? DEFAULT_OVERPASS_ENDPOINTS;
-    this.requestTimeoutMs = opts.requestTimeoutMs ?? 60_000;
+    this.requestTimeoutMs = opts.requestTimeoutMs ?? 180_000;
     this.backoffBaseMs = opts.backoffBaseMs ?? 1_000;
     this.fetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
     this.now = opts.now ?? Date.now;
     this.sleep = opts.sleep ?? abortableSleep;
     this.proxyEndpoints = new Set(opts.proxyEndpoints ?? (opts.endpoints ? [] : [BACKEND_OVERPASS_PROXY]));
-    this.proxyTimeoutMs = opts.proxyTimeoutMs ?? 200_000;
+    this.proxyTimeoutMs = opts.proxyTimeoutMs ?? 400_000; // the backend may try two mirrors at 180 s each
   }
 
   /** Seconds until the soonest mirror leaves cooldown (0 if one is available now). */

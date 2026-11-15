@@ -25,7 +25,7 @@ const SourceLine: React.FC<{ status: OsmStatus | null | 'offline' }> = ({ status
   if (status === 'offline') return <p className="text-meta text-warn" data-testid="study-source" role="status">Backend offline: data comes straight from public OpenStreetMap servers (not cached) and areas cannot be saved.</p>;
   if (status.available) {
     return (
-      <p className="text-meta text-text-3 flex items-center gap-1" data-testid="study-source" title={`Local index built from ${status.source ?? 'an OSM extract'}; OpenStreetMap © contributors, ODbL. Outside its region (${status.bbox?.join(', ')}) the live Overpass API is used.`}>
+      <p className="text-meta text-text-3 flex items-center gap-1" data-testid="study-source" title={`Local index built from ${status.source ?? 'an OSM extract'}; © OpenStreetMap contributors, ODbL. Outside its region (${status.bbox?.join(', ')}) the live Overpass API is used.`}>
         <Database size={12} aria-hidden className="text-measured" /> OpenStreetMap, local index{status.dataTimestamp ? ` · data ${String(status.dataTimestamp).slice(0, 16)}` : ''}
       </p>
     );
@@ -63,6 +63,11 @@ export const StudyAreaSummaryCard: React.FC<{ area: Area; summary: StudyAreaSumm
         <dd className="text-text-1" data-testid="study-sum-buildings">{summary.buildings.toLocaleString()}</dd>
         <dt className="text-text-2">Metro</dt>
         <dd className="text-text-1" data-testid="study-sum-metro">{summary.metroKm || summary.metroStations ? `${n(summary.metroKm)} km · ${summary.metroStations} stations` : <span className="text-text-3">none mapped</span>}</dd>
+        {summary.lanesTaggedPct !== null && <><dt className="text-text-2">Lanes, speed</dt>
+          <dd className="text-text-1 flex items-center gap-1.5 flex-wrap" data-testid="study-sum-tagged">
+            <span>tagged on {summary.lanesTaggedPct}% / {summary.maxspeedTaggedPct}% of road length</span>
+            <CertaintyBadge certainty="estimated" note="Where OSM has no lanes / maxspeed tag the value is a default from the road class (estimated), not observed. In Pune OSM about 41 % of major-road ways have lanes and 17 % maxspeed." />
+          </dd></>}
         {summary.elevatedKm > 0 && <><dt className="text-text-2">Elevated</dt><dd className="text-text-1">{n(summary.elevatedKm)} km of roads on bridges / flyovers</dd></>}
       </dl>
       {topClasses.length > 0 && (
@@ -76,7 +81,7 @@ export const StudyAreaSummaryCard: React.FC<{ area: Area; summary: StudyAreaSumm
       )}
       <p className="text-meta text-text-3 flex items-center gap-1 flex-wrap">
         <CertaintyBadge certainty="measured" compact note="Counted from mapped OpenStreetMap data: complete only as far as OSM is." />
-        {sources.length ? sources.join(' · ') : 'OpenStreetMap'} · © OSM contributors (ODbL)
+        {sources.length ? sources.join(' · ') : 'OpenStreetMap'} · © OpenStreetMap contributors (ODbL)
       </p>
     </div>
   );

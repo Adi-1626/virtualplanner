@@ -36,10 +36,11 @@ import requests
 
 from .index import DATA_DIR
 
+# Private.coffee first (formerly overpass.kumi.systems; "no rate limit in place"); overpass-api.de second, because its
+# commons page lists apps that rely on the public instance as backend as problematic (docs/urbanos/DESIGN_DATA_SOURCES.md).
 DEFAULT_ENDPOINTS = [
-    "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
 ]
 USER_AGENT = "UrbanOS-VirtualPlanner/1.0 (local planning tool; study-area import; +https://github.com/Adi-1626)"
 INCOMPLETE = ("timeout", "runtime error", "out of memory")
@@ -66,7 +67,7 @@ class OverpassProxy:
     ttl_s: float = field(default_factory=lambda: float(os.environ.get("TWINCITY_OVERPASS_CACHE_TTL_H", "168")) * 3600)
     daily_budget: int = field(default_factory=lambda: int(os.environ.get("TWINCITY_OVERPASS_DAILY_BUDGET", "2000")))
     min_interval_s: float = 1.0
-    timeout_s: float = 60.0
+    timeout_s: float = 180.0  # the public servers' default query limit
     get: Callable[..., requests.Response] = field(default=requests.get, repr=False)
     now: Callable[[], float] = field(default=time.time, repr=False)
     sleep: Callable[[float], None] = field(default=time.sleep, repr=False)

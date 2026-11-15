@@ -66,7 +66,7 @@ describe('Study area summary', () => {
 
   it('counts road km inside (cut at the edge), derived junctions, buildings, metro and signals', () => {
     const objects = [
-      road('r1', [[73.850, 18.500], [73.860, 18.500], [73.870, 18.500]]),          // crosses the box E–W: ~1.05 km inside
+      road('r1', [[73.850, 18.500], [73.860, 18.500], [73.870, 18.500]], { highway: 'primary', lanes: '4' }),          // crosses the box E–W: ~1.05 km inside
       road('r2', [[73.860, 18.495], [73.860, 18.500]], { highway: 'residential' }), // ends at r1's middle vertex: a T
       road('r3', [[73.860, 18.500], [73.860, 18.504]], { highway: 'residential' }), // continues north: now an X (4 arms)
       road('far', [[73.900, 18.600], [73.901, 18.601]]),
@@ -86,6 +86,8 @@ describe('Study area summary', () => {
     expect(s.metroKm).toBeGreaterThan(1.0);
     expect(s.metroKm).toBeLessThan(1.2);
     expect(s.signals).toBe(1);
+    expect(s.lanesTaggedPct).toBe(51);       // only r1 (1.06 of 2.06 km) has a lanes tag: the rest is estimated
+    expect(s.maxspeedTaggedPct).toBe(0);
     expect(s.areaKm2).toBeGreaterThan(1.1);
     expect(s.areaKm2).toBeLessThan(1.25);
   });

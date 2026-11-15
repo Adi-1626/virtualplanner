@@ -25,6 +25,10 @@ export interface StudyAreaSummary {
   buildings: number;
   metroKm: number;
   metroStations: number;
+  /** Share of OSM road length inside whose lane count / speed limit is TAGGED in OSM (0–100), null with no OSM roads.
+   *  The rest use defaults from the road class: ESTIMATED (Pune OSM: lanes on ~41 % of major-road ways, maxspeed ~17 %). */
+  lanesTaggedPct: number | null;
+  maxspeedTaggedPct: number | null;
   /** Area of the polygon, km². */
   areaKm2: number;
 }
@@ -88,6 +92,7 @@ export function summariseStudyArea(area: Area, objects: readonly CityObject[], s
     return x1 >= area.minLon && x0 <= area.maxLon && y1 >= area.minLat && y0 <= area.maxLat;
   };
   const byClass = new Map<string, number>();
+  let osmKm = 0, lanesKm = 0, speedKm = 0;
   let roadKm = 0, roads = 0, elevatedKm = 0, metroKm = 0, metroStations = 0, buildings = 0;
   // vertex key -> neighbouring vertex keys (arms), and whether a roundabout way passes
   const arms = new Map<string, Set<string>>();
@@ -106,6 +111,12 @@ export function summariseStudyArea(area: Area, objects: readonly CityObject[], s
       const cls = roadClassLabel(o);
       byClass.set(cls, (byClass.get(cls) ?? 0) + m / 1000);
       if (o.type !== 'road' || o.osmProvenance?.bridge) elevatedKm += m / 1000;
+      const tags = o.osmProvenance?.originalTags;
+      if (tags) {
+        osmKm += m / 1000;
+        if (tags.lanes || tags['lanes:forward'] || tags['lanes:backward']) lanesKm += m / 1000;
+        if (tags.maxspeed) speedKm += m / 1000;
+      }
       if (o.type !== 'road') continue; // grade-separated decks do not make at-grade junctions
       for (let i = 0; i < coords.length; i++) {
         const k = key(coords[i]);
@@ -143,6 +154,8 @@ export function summariseStudyArea(area: Area, objects: readonly CityObject[], s
     buildings,
     metroKm: round(metroKm),
     metroStations,
+    lanesTaggedPct: osmKm > 0 ? Math.round((lanesKm / osmKm) * 100) : null,
+    maxspeedTaggedPct: osmKm > 0 ? Math.round((speedKm / osmKm) * 100) : null,
     areaKm2: round(polygonAreaKm2(area.polygonCoordinates)),
   };
 }

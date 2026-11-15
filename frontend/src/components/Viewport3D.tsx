@@ -89,6 +89,12 @@ export const Viewport3D: React.FC = () => {
       {/* Target element for Cesium container */}
       <div ref={containerRef} className="w-full h-full absolute inset-0" />
 
+      {/* Roads, buildings, metro and signals come from OpenStreetMap (ODbL): attribution is required on the map.
+          Cesium's own credit bar is hidden (index.css), so this is the map's attribution. */}
+      <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" data-testid="osm-attribution"
+        className="absolute right-1 bottom-0.5 z-10 rounded px-1.5 py-px text-[10px] leading-tight no-underline"
+        style={{ background: 'rgba(15,20,28,0.6)', color: 'var(--text-2, #a9b3c1)' }}>© OpenStreetMap contributors</a>
+
       {imageryError && (
         <div role="status" data-testid="base-imagery-notice"
           className="uos-imagery-notice rounded px-2 py-1 text-[11px] leading-snug pointer-events-none"
