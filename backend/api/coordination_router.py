@@ -355,6 +355,68 @@ def detect(pid: str, body: DetectIn, db: Session = Depends(get_db)):
     return _run_dict(db, db.get(CoordinationRunEntity, run.id), with_conflicts=True)
 
 
+# ── underground screening (stateless; docs/urbanos/UNDERGROUND_CHECKS.md) ─────────────────────────────────────────
+
+class ScreenIn(BaseModel):
+    scenario_id: str = Field(default="base", min_length=1)
+    # Objects as Design holds them ({id, type, name, scenarioId, coordinates, properties}); omitted = read from the database
+    objects: Optional[list[dict]] = Field(default=None, max_length=5000)
+    focus_ids: Optional[list[str]] = None
+    config_overrides: Optional[dict] = None
+
+
+@router.post("/underground/screen")
+def underground_screen(body: ScreenIn, db: Session = Depends(get_db)):
+    """Screens every proposed underground object of the alternative against existing data (read-only; nothing stored)."""
+    from coordination import screening as SCR
+    return SCR.screen(db, body.scenario_id, body.objects, body.focus_ids, body.config_overrides)
+
+
+@router.get("/underground/screening-config")
+def underground_screening_config():
+    from coordination import screening as SCR
+    from coordination import screening_config as SC
+    return {"rules_table": SC.rules_table(), "config": SC.effective(),
+            "statuses": [{"id": s, "label": SCR.STATUS_LABEL[s], "meaning": SCR.STATUS_MEANING[s]} for s in SCR.STATUSES],
+            "banner": SCR.BANNER, "disclaimer": SCR.DISCLAIMER, "engine_version": SCR.ENGINE}
+
+
+class VerificationIn(BaseModel):
+    pair_key: str = Field(min_length=3)
+    fingerprint: str = Field(min_length=4)
+    method: str
+    evidence: str = Field(min_length=3)
+    measured_horizontal_m: Optional[float] = Field(default=None, ge=0)
+    measured_vertical_m: Optional[float] = Field(default=None, ge=0)
+    note: str = ""
+    verified_by: str = Field(min_length=1)
+
+
+@router.post("/underground/verifications", status_code=201)
+def record_verification(body: VerificationIn, db: Session = Depends(get_db)):
+    """A person records QL-A field evidence for one finding; later screenings show it as Verified while neither asset changes."""
+    from coordination.models import VERIFICATION_METHODS, UndergroundVerificationEntity
+    if body.method not in VERIFICATION_METHODS:
+        raise HTTPException(422, f"method must be one of {', '.join(VERIFICATION_METHODS)} (QL-A field evidence)")
+    with acting_as(body.verified_by):
+        v = UndergroundVerificationEntity(id=f"ugv_{uuid.uuid4().hex[:12]}", **body.model_dump())
+        db.add(v)
+        db.commit()
+    return {"id": v.id, "pair_key": v.pair_key, "fingerprint": v.fingerprint, "method": v.method, "verified_by": v.verified_by,
+            "created_at": _iso(v.created_at)}
+
+
+@router.get("/underground/verifications")
+def list_verifications(pair_key: Optional[str] = None, db: Session = Depends(get_db)):
+    from coordination.models import UndergroundVerificationEntity as V
+    q = db.query(V)
+    if pair_key:
+        q = q.filter(V.pair_key == pair_key)
+    return [{"id": v.id, "pair_key": v.pair_key, "fingerprint": v.fingerprint, "method": v.method, "evidence": v.evidence,
+             "measured_horizontal_m": v.measured_horizontal_m, "measured_vertical_m": v.measured_vertical_m, "note": v.note,
+             "verified_by": v.verified_by, "created_at": _iso(v.created_at)} for v in q.order_by(V.created_at)]
+
+
 @router.get("/projects/{pid}/runs")
 def list_runs(pid: str, db: Session = Depends(get_db)):
     _project(db, pid)

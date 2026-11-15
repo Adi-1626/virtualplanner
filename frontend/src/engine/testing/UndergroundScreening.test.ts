@@ -1,0 +1,88 @@
+import { describe, expect, it } from 'vitest';
+import {
+  STATUS_ORDER, STATUS_TEXT, SCREENING_BANNER, countsByStatus, focusBounds, forObject, groupBySeverity, highlightTargets, isStale,
+  keyNumbers, pathsOf, plainSummary,
+} from '../../components/underground/conflictClasses';
+import { sideBLabel } from '../../lib/planningProjects';
+import type { ScreeningFinding, ScreeningRun } from '../../lib/coordinationApi';
+
+// SYNTHETIC findings (shape of POST /api/coordination/underground/screen)
+const asset = (id: string, name = id) => ({
+  id, name, kind: 'water', kind_label: 'Water main', layer: 'design_proposed' as const, status: 'proposed' as const, quality_level: 'design',
+  certainty: 'hypothetical' as const, dataset: { id: 'design:alt' }, width_m: 0.3, crown_depth_m: 1, invert_depth_m: 1.3,
+});
+const finding = (id: string, status: ScreeningFinding['status'], category: ScreeningFinding['category'], pid = 'P1', other: string | null = 'R1'): ScreeningFinding => ({
+  id, pair_key: `${pid}|${other}|${category}`, fingerprint: 'fp', status, status_label: STATUS_TEXT[status].label, category, title: id,
+  checked: 'c', data_used: [], found: ['f'], not_checked: ['n'], next_steps: ['s'], rules: [],
+  measurements: { horizontal_m: 0.8, required_horizontal_m: 3, vertical_gap_m: 0.6, required_vertical_m: 1, vertical_checkable: true, crossing: false },
+  location: [73.85, 18.52], proposed: asset(pid), other: other ? { ...asset(other), layer: 'utility_record', status: 'existing' } : null,
+});
+const run = (findings: ScreeningFinding[]): ScreeningRun => ({
+  engine_version: 'x', config_version: 'y', scenario_id: 'alt', generated_at: '2026-11-15T10:00:00Z', banner: SCREENING_BANNER, disclaimer: 'd',
+  summary: { counts: countsByStatus(findings), worst_status: null, headline: '', proposed_checked: [{ ...asset('P1'), checklist: [] }, { ...asset('P2'), checklist: [] }],
+    skipped: [], existing_assets_read: 0, not_checked: [], status_meaning: {} as ScreeningRun['summary']['status_meaning'] },
+  layers: [], findings,
+  geometries: { P1: { type: 'LineString', coordinates: [[73.85, 18.52], [73.86, 18.52]] }, R1: { type: 'Point', coordinates: [73.855, 18.52] } },
+  rules_table: [], timings_ms: {},
+});
+
+describe('underground screening helpers', () => {
+  it('uses only the four statuses, most severe first, with no green and a fixed banner', () => {
+    expect(STATUS_ORDER).toEqual(['potential_conflict', 'requires_investigation', 'insufficient_data', 'verified']);
+    expect(SCREENING_BANNER).toBe('Automated screening — not an engineering assessment');
+    for (const s of STATUS_ORDER) expect(STATUS_TEXT[s].color).not.toMatch(/green|#22c55e|#16a34a|--ok|--pass/i);
+    const words = JSON.stringify(STATUS_TEXT).toLowerCase();
+    for (const w of ['safe', 'feasible', 'construction-ready', 'passed']) expect(words).not.toContain(w);
+  });
+
+  it('counts and groups by severity, selected object first, empty groups dropped', () => {
+    const fs = [finding('a', 'insufficient_data', 'clearance'), finding('b', 'potential_conflict', 'clearance', 'P2'),
+      finding('c', 'potential_conflict', 'cover', 'P1', null), finding('d', 'potential_conflict', 'clearance', 'P1')];
+    expect(countsByStatus(fs)).toEqual({ potential_conflict: 3, requires_investigation: 0, insufficient_data: 1, verified: 0 });
+    const g = groupBySeverity(fs, 'P1');
+    expect(g.map(x => x.status)).toEqual(['potential_conflict', 'insufficient_data']);
+    expect(g[0].findings.map(f => f.id)).toEqual(['d', 'c', 'b']);   // P1 first; clearance before cover
+    expect(forObject(fs, 'P2').map(f => f.id)).toEqual(['b']);
+    expect(forObject(fs, null)).toHaveLength(4);
+  });
+
+  it('summarises in plain words and never calls an empty result a pass', () => {
+    const r = run([finding('a', 'potential_conflict', 'clearance'), finding('b', 'insufficient_data', 'data_gap', 'P1', null)]);
+    const s = plainSummary(r);
+    expect(s).toContain('2 proposed objects checked');
+    expect(s).toContain('1 potential conflict to look at first');
+    expect(s).toContain('can\u2019t be judged');
+    expect(plainSummary(run([]))).toContain('incomplete');
+    expect(plainSummary({ summary: { ...r.summary, proposed_checked: [] } })).toContain('Nothing to check');
+  });
+
+  it('key numbers say when the vertical is not checkable', () => {
+    const f = finding('a', 'insufficient_data', 'clearance');
+    expect(keyNumbers(f)).toEqual(['Plan distance 0.8\u00a0m (needs 3.0\u00a0m)', 'Vertical gap 0.6\u00a0m (needs 1.0\u00a0m)']);
+    f.measurements = { ...f.measurements, vertical_checkable: false, crossing: true };
+    expect(keyNumbers(f)).toEqual(['Crosses in plan', 'Vertical: not checkable']);
+  });
+
+  it('highlight targets both assets and focuses on the finding location', () => {
+    const r = run([finding('a', 'potential_conflict', 'clearance')]);
+    const t = highlightTargets(r.findings[0], r.geometries);
+    expect(t.proposed).toHaveLength(1);
+    expect(t.other).toHaveLength(2);                                     // a point becomes a small cross
+    expect(t.bounds.minLng).toBeLessThan(73.85);
+    expect(t.bounds.maxLat - t.bounds.minLat).toBeCloseTo(120 / 111_320, 6);
+    const b = focusBounds([73.85, 18.52], 10);
+    expect(b.maxLng - b.minLng).toBeGreaterThan(b.maxLat - b.minLat);   // longitude degrees are shorter at 18.5°N
+    expect(pathsOf({ type: 'MultiPolygon', coordinates: [[[[0, 0], [1, 0], [1, 1], [0, 0]]]] })).toHaveLength(1);
+    expect(pathsOf(null)).toEqual([]);
+  });
+
+  it('flags results as out of date after an edit', () => {
+    expect(isStale('2026-11-15T10:00:00Z', [{ updatedAt: '2026-11-15T09:00:00Z' }])).toBe(false);
+    expect(isStale('2026-11-15T10:00:00Z', [{ updatedAt: '2026-11-15T10:05:00Z' }])).toBe(true);
+  });
+
+  it('names Design-drawn objects in Projects → Conflicts', () => {
+    expect(sideBLabel({ b_type: 'design_object', b_ref: 'design:u1', evidence: { b: { status: 'existing', name: 'Old main' } } }))
+      .toBe('Existing object drawn in Design: Old main');
+  });
+});

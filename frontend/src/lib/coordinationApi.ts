@@ -62,7 +62,7 @@ export interface StaleVerdict {
 export interface PermissionTrigger { rule_id: string; label: string; distance_m: number; threshold_m: number; basis: string; citation: string | null; note: string }
 export interface ConflictFinding {
   id: string; run_id: string; project_a_id: string; element_a_id: string; segment_a: number | null;
-  b_type: 'project_element' | 'baseline_road' | 'osm_metro' | 'subsurface_utility' | 'layer' | 'project'; project_b_id: string | null;
+  b_type: 'project_element' | 'baseline_road' | 'osm_metro' | 'subsurface_utility' | 'design_object' | 'layer' | 'project'; project_b_id: string | null;
   b_ref: string; segment_b: number | null; class: ConflictClass; class_label: string; horizontal_distance_m: number | null;
   vertical_gap_m: number | null; certainty: Certainty; reasons: string[]; permission_triggers: PermissionTrigger[];
   evidence: Record<string, unknown>; status: ConflictStatus; status_by: string | null; status_note: string | null;
@@ -106,6 +106,50 @@ export interface EnvironmentLayer {
   id: string; domain: string; name: string; status: 'available' | 'not_imported'; status_label: string; status_source: string;
   source: string; licence: string; data_date: string | null; limitations: string; feature_count?: number | null; coverage_bbox?: number[] | null;
   recommended_sources: { name: string; publisher: string; url: string; licence: string; notes: string; status: string }[];
+}
+
+// ── underground screening (POST /underground/screen; docs/urbanos/UNDERGROUND_CHECKS.md) ───────────────────────────
+/** Automated statuses are the first three; 'verified' only when a person recorded QL-A field evidence for the pair. */
+export type ScreeningStatus = 'potential_conflict' | 'requires_investigation' | 'insufficient_data' | 'verified';
+export type ScreeningCategory = 'clearance' | 'metro' | 'cover' | 'buildings' | 'watercourse' | 'groundwater' | 'geology' | 'data_gap';
+export interface ScreeningAsset {
+  id: string; name: string; kind: string; kind_label: string;
+  layer: 'design_proposed' | 'design_existing' | 'utility_record' | 'osm_metro' | 'building' | 'watercourse';
+  status: 'proposed' | 'existing'; quality_level: string; certainty: Certainty;
+  dataset: { id: string; name?: string; quality_level?: string; [k: string]: unknown };
+  width_m: number | null; crown_depth_m: number | null; invert_depth_m: number | null; distance_m?: number | null;
+}
+export interface ScreeningRuleCite { id: string; dim: 'H' | 'V' | '3D'; value_m: number; type: string; source: string; clause: string; note?: string }
+export interface ScreeningFinding {
+  id: string; pair_key: string; fingerprint: string; status: ScreeningStatus; status_label: string; computed_status?: ScreeningStatus;
+  category: ScreeningCategory; protection_zone?: boolean; title: string;
+  checked: string; data_used: { dataset: string; dataset_id: string; quality_level: string; datum?: string }[];
+  found: string[]; not_checked: string[]; next_steps: string[]; rules: ScreeningRuleCite[];
+  measurements: Record<string, number | boolean | null | (number | null)[]>;
+  location: [number, number]; proposed: ScreeningAsset; other: ScreeningAsset | null; buildings?: ScreeningAsset[];
+  merged_pieces?: number;
+  verification?: { id: string; verified_by: string; method: string; evidence: string; recorded_at: string | null; stale?: boolean };
+}
+export interface ScreeningChecklistItem { check: string; result: 'flagged' | 'nothing found in the available data' | 'not checked'; detail: string }
+export interface ScreeningLayer { id: string; name: string; used: boolean; quality_level?: string; records?: number; datum?: string; coverage?: string }
+export interface ScreeningRun {
+  engine_version: string; config_version: string; scenario_id: string; generated_at: string; banner: string; disclaimer: string;
+  summary: {
+    counts: Record<ScreeningStatus, number>; worst_status: ScreeningStatus | null; headline: string;
+    proposed_checked: (ScreeningAsset & { checklist: ScreeningChecklistItem[] })[]; skipped: { id: string; name: string; reason: string }[];
+    existing_assets_read: number; not_checked: string[]; status_meaning: Record<ScreeningStatus, { label: string; meaning: string }>;
+  };
+  layers: ScreeningLayer[]; findings: ScreeningFinding[];
+  /** Lon/lat GeoJSON per asset id (proposed, other side and listed buildings). */
+  geometries: Record<string, GeoJsonGeometry | { type: 'MultiLineString' | 'MultiPolygon'; coordinates: unknown }>;
+  rules_table: { pair: string; rows: (ScreeningRuleCite & { compare_only?: boolean; on_breach?: string })[] }[];
+  timings_ms: Record<string, number>;
+}
+/** A Design object as stored ({id, type, name, scenarioId, coordinates, properties}). */
+export interface ScreeningObject { id: string; type: string; name: string; scenarioId?: string; coordinates: unknown; properties: Record<string, unknown> }
+export interface VerificationInput {
+  pair_key: string; fingerprint: string; method: 'trial_pit' | 'vacuum_excavation' | 'survey_of_exposed_asset'; evidence: string;
+  measured_horizontal_m?: number | null; measured_vertical_m?: number | null; note?: string; verified_by: string;
 }
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -156,6 +200,10 @@ export const coordinationApi = {
     const s = p.toString();
     return call<{ records: SubsurfaceRecord[]; note: string }>('GET', `/subsurface/records${s ? `?${s}` : ''}`);
   },
+  // underground screening (read-only; verifications are recorded by a person)
+  screenUnderground: (body: { scenario_id: string; objects?: ScreeningObject[]; focus_ids?: string[] }) =>
+    call<ScreeningRun>('POST', '/underground/screen', body),
+  recordVerification: (body: VerificationInput) => call<{ id: string; pair_key: string; created_at: string }>('POST', '/underground/verifications', body),
   // environment
   environmentLayers: () => call<{ layers: EnvironmentLayer[]; note: string }>('GET', '/environment-layers'),
 };
