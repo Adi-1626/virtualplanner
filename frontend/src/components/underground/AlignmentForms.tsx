@@ -8,6 +8,7 @@ import { elevationProfile } from '../../engine/underground/terrainProfile';
 import { useTerrainProfile } from './useTerrain';
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
 import { CERTAINTY_OPTIONS, commitAlignment, field, input, inputStyle, lbl, labelStyle, note } from './common';
+import { terrainErrorReason } from './chartLabels';
 
 const cell: React.CSSProperties = { padding: '4px 3px' };
 const num = (s: string): number | null => (s.trim() === '' ? null : Number(s));
@@ -154,7 +155,7 @@ export const AlignmentEditor: React.FC<{ a: UndergroundAlignmentObject }> = ({ a
             <span className="text-warn">This ground model is a surface model: it includes roofs and trees (about ±2–4 m in the open), so treat cover as screening only.</span>
           </>
         ) : g.state === 'error'
-          ? <span className="text-unknown">Ground level UNKNOWN (terrain service unavailable: {g.error}). Depths are below an unknown ground; no elevations stored.</span>
+          ? <span className="text-unknown">Ground level UNKNOWN ({terrainErrorReason(g.error)}). Depths are below an unknown ground; no elevations stored.</span>
           : g.state === 'ok'
             ? <span className="text-unknown">Ground level UNKNOWN here (outside the ground model). Depths are below an unknown ground.</span>
             : <span>Loading ground levels…</span>}

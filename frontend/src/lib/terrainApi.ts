@@ -4,6 +4,7 @@
  * (nodata / outside coverage / not published), never 0.
  */
 import { API_BASE } from './api';
+import { redactPaths } from './redactPaths';
 
 export type SampleStatus = 'ok' | 'nodata' | 'outside_coverage';
 
@@ -67,7 +68,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   if (!res.ok) {
     let detail = `${res.status} ${res.statusText}`;
     try { const j = await res.json(); if (j?.detail) detail = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail); } catch { /* not json */ }
-    throw new Error(detail);
+    throw new Error(redactPaths(detail));
   }
   return res.json() as Promise<T>;
 }

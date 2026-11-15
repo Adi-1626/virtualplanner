@@ -8,6 +8,7 @@
  * distances, not engineering clearances. No UI here.
  */
 import { API_BASE } from './api';
+import { redactPaths } from './redactPaths';
 
 export type Certainty = 'measured' | 'estimated' | 'hypothetical' | 'unknown';
 export type ConflictClass = 'conflict' | 'potential_conflict' | 'vertically_separated' | 'no_conflict_within_available_data' | 'unknown_no_coverage';
@@ -163,7 +164,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   if (!res.ok) {
     let msg = res.statusText;
     try { const j = await res.json(); msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail); } catch { /* keep statusText */ }
-    throw new Error(`${res.status}: ${msg}`);
+    throw new Error(`${res.status}: ${redactPaths(msg)}`);
   }
   return res.json() as Promise<T>;
 }

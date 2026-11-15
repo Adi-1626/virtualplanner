@@ -3,6 +3,7 @@
  * (PMC via OpenCity) and merged building footprints from the spatial index. A missing value is null (= UNKNOWN).
  */
 import { API_BASE } from './api';
+import { redactPaths } from './redactPaths';
 import type { DataClass, Suitability } from './datasetsApi';
 
 export interface InfraLayer {
@@ -36,7 +37,7 @@ async function get<T>(path: string): Promise<T> {
   if (!r.ok) {
     let msg = `${r.status} ${r.statusText}`;
     try { const j = await r.json(); if (j?.detail) msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail); } catch { /* not json */ }
-    throw new Error(msg);
+    throw new Error(redactPaths(msg));
   }
   return r.json() as Promise<T>;
 }

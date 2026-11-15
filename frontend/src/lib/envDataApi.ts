@@ -4,6 +4,7 @@
  * No UI here.
  */
 import { API_BASE } from './api';
+import { redactPaths } from './redactPaths';
 
 export type EnvDataStatus = 'available' | 'missing' | 'blocked' | 'rejected';
 export type EnvDataKind = 'raster' | 'vector' | 'points' | 'stations' | 'series' | 'none';
@@ -78,7 +79,7 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Pr
   if (!r.ok) {
     let msg = `${r.status}`;
     try { const j = await r.json(); msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail ?? j); } catch { /* keep status */ }
-    throw new Error(msg);
+    throw new Error(redactPaths(msg));
   }
   return r.json() as Promise<T>;
 }

@@ -28,6 +28,7 @@ from coordination.models import (CERTAINTIES, CONFLICT_CLASSES, CONFLICT_STATUSE
                                  SubsurfaceDatasetEntity, SubsurfaceRecordEntity)
 from coordination.seed import live_status
 from database.connection import get_db
+from datasets.public_text import public_path, redact_paths
 from feasibility.models import FeasibilityAssessmentEntity
 from models.models import ScenarioEntity, ScenarioRunEntity, ScenarioVersionEntity
 from planning.audit import acting_as
@@ -644,10 +645,12 @@ class ImportIn(BaseModel):
 
 def _dataset_dict(d: SubsurfaceDatasetEntity) -> dict:
     return {"id": d.id, "project_id": d.project_id, "record_type": d.record_type, "format": d.format, "name": d.name,
-            "file_name": d.file_name, "file_sha256": d.file_sha256, "publisher": d.publisher, "source_url": d.source_url,
+            "file_name": public_path(d.file_name), "file_sha256": d.file_sha256, "publisher": d.publisher, "source_url": d.source_url,
             "licence": d.licence, "data_date": d.data_date, "coverage_bbox": _load(d.coverage_bbox_json),
             "coverage_label": "stated by importer" if d.coverage_bbox_json else "UNKNOWN (absence of records proves nothing)",
-            "provenance": d.provenance, "record_count": d.record_count, "warnings": _load(d.warnings_json, []),
+            # stored provenance/warnings may name the server's data folder (pmc_import): never send paths to the UI
+            "provenance": redact_paths(d.provenance), "record_count": d.record_count,
+            "warnings": [redact_paths(w) for w in _load(d.warnings_json, [])],
             "supersedes_id": d.supersedes_id, "imported_by": d.imported_by, "imported_at": _iso(d.imported_at)}
 
 

@@ -1,6 +1,7 @@
 /** Client for /api/feasibility (backend/api/feasibility_router.py). */
 import { API_BASE } from '../../lib/api';
 import type { FeasibilityAssessment, SiteData } from './types';
+import { redactPaths } from '../../lib/redactPaths';
 
 export type ReviewStatus = 'not_started' | 'in_review' | 'information_requested' | 'reviewed_not_approval' | 'external_approval_recorded_unverified';
 export const REVIEW_STATUS_LABEL: Record<ReviewStatus, string> = {
@@ -22,7 +23,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   if (!res.ok) {
     let msg = res.statusText;
     try { const j = await res.json(); msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail); } catch { /* keep statusText */ }
-    throw new Error(`${res.status}: ${msg}`);
+    throw new Error(`${res.status}: ${redactPaths(msg)}`);
   }
   return res.json() as Promise<T>;
 }

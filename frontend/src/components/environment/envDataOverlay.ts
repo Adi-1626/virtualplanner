@@ -16,6 +16,7 @@ import {
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { envDataApi, type AqStation, type EnvDataLayer } from '../../lib/envDataApi';
 import { clipBbox, renderWidth, streamEntityId } from './envDataModel';
+import { redactPaths } from '../../lib/redactPaths';
 
 export interface EnvDataOverlayState {
   status: 'off' | 'loading' | 'shown' | 'error';
@@ -104,7 +105,7 @@ async function drawRaster(v: Viewer, l: EnvDataLayer, st: EnvDataOverlayState, b
   if (!r.ok) {
     let detail = `${r.status}`;
     try { const j = await r.json(); if (typeof j.detail === 'string') detail = `${r.status} ${j.detail}`; } catch { /* keep status */ }
-    throw new Error(`server could not render this view (${detail})`);
+    throw new Error(`server could not render this view (${redactPaths(detail)})`);
   }
   const blob = await r.blob();
   if (!guard()) throw new Superseded();

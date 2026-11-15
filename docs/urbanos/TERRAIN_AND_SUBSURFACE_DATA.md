@@ -73,7 +73,9 @@ samples. Tests: `backend/tests/test_data_paths.py` (UNIT-TESTED).
 - Profile tab: when the server returns ≥ 1 known sample, the long-section is drawn on an **elevation axis (m EGM2008)** with
   the DSM ground line; spans where the ground is UNKNOWN are shaded and labelled "Ground UNKNOWN — outside DEM coverage".
   With no coverage, the service failing, or still loading, the original depth chart is kept with the flat datum labelled
-  accordingly ("outside DEM coverage — UNKNOWN", "terrain service unavailable (…) — UNKNOWN", "loading DEM…").
+  accordingly ("Flat datum 0 m (outside local DEM coverage)", "Flat datum 0 m (local DEM not loaded)", "… (terrain service
+  unreachable)", "… (loading local DEM…)"). The service's error text is never shown: it used to carry the server's data folder
+  (see UNDERGROUND_VISUAL_FIXES.md, "Charts and legend").
 - Depths stay **relative to ground**. Crown elevation at a vertex = DSM at the vertex − entered depth; between vertices the crown
   is a straight grade in elevation. Each vertex line shows chainage, crown m EGM2008, depth below DSM and the DSM value; each run
   reports its least crown depth below the DSM, and warns when the straight grade rises **above** the DSM.

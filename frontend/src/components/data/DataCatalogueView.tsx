@@ -14,6 +14,7 @@ import {
   pendingNote, qualityBadge, qualitySummary, reviewStatusLabel, themeLabel, workspaceLabel,
 } from './dataCatalogueModel';
 import { useDataCatalogue, type DataView } from './useDataCatalogue';
+import { displayPath, redactPaths } from '../../lib/redactPaths';
 
 const TONE_COLOR = { good: 'var(--measured, #3FB950)', warn: 'var(--warn, #E8833A)', bad: 'var(--fail, #FF6B61)', unknown: 'var(--unknown, #9AA4B2)' };
 const FEATURE_COLOR = { ready: TONE_COLOR.good, partial: TONE_COLOR.warn, blocked: TONE_COLOR.bad };
@@ -228,7 +229,7 @@ const ProvenanceCard: React.FC<{ id: string; features: FeatureReadiness[] | null
                   </span>
                 )}
               </div>
-              {x.notes && <p className="text-meta text-text-2 whitespace-pre-wrap">{x.notes}</p>}
+              {x.notes && <p className="text-meta text-text-2 whitespace-pre-wrap">{redactPaths(x.notes)}</p>}
               {x.reviewed_by && <p className="text-meta text-text-3">Reviewed by {x.reviewed_by}{x.review_note ? ` — ${x.review_note}` : ''}</p>}
               {(x.processing_runs ?? []).map(p => (
                 <div key={p.id} className="text-meta text-text-2">
@@ -236,7 +237,7 @@ const ProvenanceCard: React.FC<{ id: string; features: FeatureReadiness[] | null
                 </div>
               ))}
               {(x.files ?? []).length > 0 && (
-                <ul className="text-meta text-text-3">{(x.files ?? []).map(f => <li key={f.id} className="break-all" title={f.path}>{f.role}: {f.path} · sha256 {f.sha256 ? f.sha256.slice(0, 12) + '…' : UNKNOWN}</li>)}</ul>
+                <ul className="text-meta text-text-3">{(x.files ?? []).map(f => <li key={f.id} className="break-all">{f.role}: {f.display_path || displayPath(f.path)} · sha256 {f.sha256 ? f.sha256.slice(0, 12) + '…' : UNKNOWN}</li>)}</ul>
               )}
             </li>
           ))}
@@ -244,7 +245,7 @@ const ProvenanceCard: React.FC<{ id: string; features: FeatureReadiness[] | null
       </Disclosure>
       {(d.update_checks ?? []).length > 0 && (
         <Disclosure summary={`Update checks (${d.update_checks!.length})`}>
-          <ul className="text-meta text-text-2 space-y-0.5">{d.update_checks!.map(u => <li key={u.id}>{u.checked_at?.slice(0, 16).replace('T', ' ')} UTC · {u.result} · {u.detail}</li>)}</ul>
+          <ul className="text-meta text-text-2 space-y-0.5">{d.update_checks!.map(u => <li key={u.id}>{u.checked_at?.slice(0, 16).replace('T', ' ')} UTC · {u.result} · {redactPaths(u.detail)}</li>)}</ul>
         </Disclosure>
       )}
       {(d.used_by_features ?? []).length > 0 && <p className="text-meta text-text-3" data-testid="used-by">Used by: {featureNames(d.used_by_features!, features).join(', ')}</p>}
@@ -263,7 +264,7 @@ const QualityList: React.FC<{ checks: QualityCheck[] }> = ({ checks }) => (
           <tr key={c.check}>
             <td>{CHECK_LABEL[c.check] ?? c.check}</td>
             <td><span className="inline-flex items-center gap-1" style={{ color: TONE_COLOR[tone] }}><Icon size={12} aria-hidden />{CHECK_STATUS_LABEL[c.status] ?? c.status}</span></td>
-            <td className="text-text-2" style={{ whiteSpace: 'normal' }}>{c.detail}</td>
+            <td className="text-text-2" style={{ whiteSpace: 'normal' }}>{redactPaths(c.detail)}</td>
           </tr>
         );
       })}

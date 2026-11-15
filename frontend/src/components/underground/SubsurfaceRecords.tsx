@@ -9,6 +9,7 @@ import { field, fmtM, input, inputStyle, lbl, labelStyle, note } from './common'
 import { MAX_DRAWN, USER_KEY, useSubsurfaceRecords } from './useSubsurfaceRecords';
 import { showConflictHighlight } from './conflictHighlight';
 import { focusBounds } from './conflictClasses';
+import { redactPaths } from '../../lib/redactPaths';
 
 const QL_NOTE: Record<string, string> = {
   'QL-A': 'ASCE 38 QL-A: exposed / potholed (horizontal and vertical measured)',
@@ -68,7 +69,7 @@ const DatasetSource: React.FC<{ d: SubsurfaceDataset }> = ({ d }) => (
       <div>Licence: {d.licence || 'UNKNOWN'}</div>
       <div>Coverage: {d.coverage_label}</div>
       <div className="truncate" title={d.file_sha256 ?? ''}>Imported by {d.imported_by} · sha256 {d.file_sha256 ? d.file_sha256.replace(/^sha256:/, '').slice(0, 12) + '…' : 'n/a'}</div>
-      {d.warnings.map((w, i) => <div key={i} className="text-warn">{w}</div>)}
+      {d.warnings.map((w, i) => <div key={i} className="text-warn">{redactPaths(w)}</div>)}
     </div>
   </details>
 );

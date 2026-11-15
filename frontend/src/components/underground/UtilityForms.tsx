@@ -13,6 +13,7 @@ import { utilityLayerId } from '../../engine/layers/LayerManager';
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
 import { useTerrainProfile } from './useTerrain';
 import { CERTAINTY_OPTIONS, field, input, inputStyle, lbl, labelStyle, note } from './common';
+import { terrainErrorReason } from './chartLabels';
 
 const cell: React.CSSProperties = { padding: '4px 3px' };
 const num = (s: string): number | null => (s.trim() === '' ? null : Number(s));
@@ -116,7 +117,7 @@ export const UtilityZEditor: React.FC<{ u: UtilityObject }> = ({ u }) => {
         <span className="text-label text-text-1">Depth reference</span>
         {g.state === 'ok' && g.model
           ? <span>Depth = {ZREF_LABEL[z.zRef].toLowerCase()}, metres below ground. Ground = {g.model}, m EGM2008 (a surface model incl. roofs and trees, ±2–4 m: screening only).</span>
-          : g.state === 'error' ? <span className="text-unknown">Ground level UNKNOWN (terrain service unavailable: {g.error}). No elevations stored.</span>
+          : g.state === 'error' ? <span className="text-unknown">Ground level UNKNOWN ({terrainErrorReason(g.error)}). No elevations stored.</span>
             : g.state === 'ok' ? <span className="text-unknown">Ground level UNKNOWN here (outside the ground model).</span> : <span>Loading ground levels…</span>}
       </div>
       <div>

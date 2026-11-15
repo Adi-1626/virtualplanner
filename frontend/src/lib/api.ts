@@ -20,6 +20,8 @@
  * await apiDelete('/api/objects/abc');
  */
 
+import { redactPaths } from './redactPaths';
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Base URL — read once at module load
 // ──────────────────────────────────────────────────────────────────────────────
@@ -40,7 +42,8 @@ export class ApiError extends Error {
     endpoint: string,
     message: string,
   ) {
-    super(`[API ${status}] ${endpoint}: ${message}`);
+    // the body can carry a server path (an exception text): never let it reach the UI
+    super(`[API ${status}] ${endpoint}: ${redactPaths(message)}`);
     this.name = 'ApiError';
     this.status = status;
     this.endpoint = endpoint;
