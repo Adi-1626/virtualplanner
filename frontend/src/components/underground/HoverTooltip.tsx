@@ -34,8 +34,8 @@ function tipOf(p: unknown): HoverTip | null {
 
 /**
  * Hover tooltips on the Underground map (records, drawn pipes, alignments, metro tunnels and stations): mouse move only,
- * no click. One `scene.pick` per throttled move; a drill pick (4 deep) only when the top object is not an underground
- * asset (a pipe under a building). Nothing is picked while a mouse button is held (camera drag) or a draw tool is on.
+ * no click. One `scene.pick` per throttled move; a drill pick (8 deep) only when the top object is not an underground
+ * asset (a metro tunnel under a building's footprint, roof and walls). Nothing is picked while a mouse button is held (camera drag) or a draw tool is on.
  */
 export const HoverTooltip: React.FC = () => {
   const [tip, setTip] = useState<{ t: HoverTip; x: number; y: number } | null>(null);
@@ -60,13 +60,17 @@ export const HoverTooltip: React.FC = () => {
       if (engineInstance.editing.getMode() !== 'select') { setTip(null); return; }
       last.current = { x: pos.x, y: pos.y, at: performance.now() };
       let t: HoverTip | null = null;
+      const t0 = performance.now();
       try {
         const top = v.scene.pick(pos);
         t = top ? tipOf(top) : null;
         if (!t && top) {
-          for (const p of v.scene.drillPick(pos, 4)) { t = tipOf(p); if (t) break; }
+          for (const p of v.scene.drillPick(pos, 8)) { t = tipOf(p); if (t) break; }
         }
       } catch { t = null; }
+      // last pick durations (ms), read by the headless QA
+      const st = ((window as unknown as { __ugHoverMs?: number[] }).__ugHoverMs ??= []);
+      st.push(Math.round(performance.now() - t0)); if (st.length > 50) st.shift();
       const r = canvas.getBoundingClientRect();
       setTip(t ? { t, x: r.left + pos.x, y: r.top + pos.y } : null);
     };

@@ -147,7 +147,8 @@ export function shortStationName(name: string | undefined | null): string {
   const latin = s.match(/^[\x20-\x7E\u00C0-\u024F]+/);
   if (latin && latin[0].trim()) s = latin[0];
   s = s.replace(/\b(metro\s+station|station|metro)\b/gi, ' ').replace(/\s+/g, ' ').trim();
-  return s;
+  // an import placeholder for an unnamed OSM node ("Subway Station 7944597694") is no name
+  return /^(subway\s*)?\d+$/i.test(s) ? '' : s;
 }
 
 export interface StationLabel {

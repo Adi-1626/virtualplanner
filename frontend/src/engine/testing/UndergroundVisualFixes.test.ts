@@ -67,6 +67,7 @@ describe('metro station label declutter', () => {
     expect(shortStationName('Kasba Peth कसबा पेठ')).toBe('Kasba Peth');
     expect(shortStationName('Civil Court')).toBe('Civil Court');
     expect(shortStationName(undefined)).toBe('');
+    expect(shortStationName('Subway Station 7944597694')).toBe('');
   });
   it('merges an interchange into one label and staggers close neighbours (Pune: District Court, Kasba Peth, Mandai)', () => {
     const labels = declutterStationLabels([
