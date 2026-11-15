@@ -121,9 +121,10 @@ const HUD_TEXT: Record<Exclude<EditingMode, 'select'>, (n: number) => string> = 
   draw_junction: () => 'Placing Junction: click on the map to place one',
   place_station: () => 'Placing Metro Station: click on the map to place one',
   draw_gateway: () => 'Placing Gateway: click on or near a boundary road to place one',
-  import_osm: n => n > 0
-    ? `Draw Area: ${n} boundary points. Drag points to move them, drag a midpoint to add one, then choose "Map Selected Area" in the tool panel`
-    : 'Draw Area: click 3+ points to outline a polygon, then choose Map Selected Area',
+  // Study area: the outline's data loads as soon as it is finished (no "Map Selected Area" step any more)
+  import_osm: n => engineInstance.editing.getAreaShape() === 'rectangle'
+    ? (n > 0 ? 'Study area: click the opposite corner' : 'Study area: click one corner, then the opposite corner. Its data loads automatically')
+    : (n > 0 ? `Study area: ${n} corner${n === 1 ? '' : 's'}. Double-click to finish (3 or more); drag a corner to move it` : 'Study area: click the corners, double-click to finish. Its data loads automatically'),
 };
 
 const DrawingHUD: React.FC = () => {

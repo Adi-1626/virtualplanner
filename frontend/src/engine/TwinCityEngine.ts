@@ -2,6 +2,7 @@ import {
   Viewer,
   Entity,
   Cartesian2,
+  Cartesian3,
   Color,
   ScreenSpaceEventHandler,
   ScreenSpaceEventType,
@@ -544,9 +545,7 @@ export class TwinCityEngine {
     handler.setInputAction((movement: { endPosition: Cartesian2 }) => {
       if (!this.viewer) return;
 
-      const ray = this.viewer.camera.getPickRay(movement.endPosition);
-      if (!ray) return;
-      const position = this.viewer.scene.globe.pick(ray, this.viewer.scene);
+      const position = this.groundAt(movement.endPosition);
       if (!position) return;
 
       const cartographic = Cartographic.fromCartesian(position);
@@ -631,9 +630,7 @@ export class TwinCityEngine {
       const pickedObject = this.viewer.scene.pick(click.position);
 
       // Draw mode path
-      const ray = this.viewer.camera.getPickRay(click.position);
-      if (!ray) return;
-      const position = this.viewer.scene.globe.pick(ray, this.viewer.scene);
+      const position = this.groundAt(click.position);
 
       if (position) {
         const cartographic = Cartographic.fromCartesian(position);
@@ -728,6 +725,18 @@ export class TwinCityEngine {
         }
       }
     }, ScreenSpaceEventType.RIGHT_CLICK);
+  }
+
+  /**
+   * The ground point under a screen position: the rendered globe surface, or the ellipsoid when the globe tile
+   * there has not loaded yet (slow imagery, a fresh camera move). Without the fallback a click on a not-yet-loaded
+   * tile placed no point at all, and drawing tools (Study area, Road, ...) silently ignored it.
+   */
+  private groundAt(windowPosition: Cartesian2): Cartesian3 | undefined {
+    if (!this.viewer) return undefined;
+    const scene = this.viewer.scene;
+    const ray = this.viewer.camera.getPickRay(windowPosition);
+    return (ray ? scene.globe.pick(ray, scene) : undefined) ?? this.viewer.camera.pickEllipsoid(windowPosition, scene.globe.ellipsoid) ?? undefined;
   }
 
   /**
