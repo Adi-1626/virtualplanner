@@ -288,3 +288,34 @@ def test_run_detection_includes_design_drawn_objects(client):
 def test_record_ref_reads_like_a_number():
     assert S.record_ref("pmc_storm_water_drains.631") == "#631"
     assert S.record_ref("KT-CO-4774") == "KT-CO-4774"
+
+
+def test_insufficient_data_findings_carry_one_gap_group_per_reason(client):
+    """Each Insufficient-data finding names its shared reason (dataset / network / missing input) so the UI and the report
+    can list one line per reason instead of hundreds of pairs."""
+    objs = [align("T", _line(-200, 0, 200, 0), "bored_tunnel", [12, 12], 6.0),
+            util("B1", _line(-100, -40, -100, 40), "sewage", 3.0, 300, sid="base"),
+            util("B2", _line(100, -40, 100, 40), "sewage", 3.0, 300, sid="base"),
+            util("W", _line(0, -40, 0, 40), "water", None, 300, depthCertainty="unknown")]
+    run = _screen(client, objs)
+    ins = [f for f in run["findings"] if f["status"] == "insufficient_data"]
+    assert ins and all(f.get("gap_group") and f["gap_group"]["key"] and f["gap_group"]["label"] for f in ins)
+    assert not any("gap_group" in f for f in run["findings"] if f["status"] != "insufficient_data")
+    tb = [f for f in ins if f["proposed"]["id"] == "T" and (f.get("other") or {}).get("id") in ("B1", "B2")]
+    assert len(tb) == 2 and tb[0]["gap_group"]["key"] == tb[1]["gap_group"]["key"]              # same reason → one group
+    assert "vertical clearance not checkable" in tb[0]["gap_group"]["label"]
+    gaps = [f for f in ins if f["category"] == "data_gap"]
+    by_nets = {}
+    for f in gaps:                                                                                # same missing networks ↔ same group
+        by_nets.setdefault(tuple(f["measurements"]["missing_networks"]), set()).add(f["gap_group"]["key"])
+    assert all(len(keys) == 1 for keys in by_nets.values()) and len({k for ks in by_nets.values() for k in ks}) == len(by_nets)
+    assert gaps[0]["gap_group"]["label"].startswith("No ") and "records in this area" in gaps[0]["gap_group"]["label"]
+    assert gaps[0]["measurements"]["missing_networks"]
+    for f in ins:
+        assert not any(w in f["gap_group"]["label"].lower() for w in FORBIDDEN)
+
+
+def test_short_dataset_name():
+    assert S.short_dataset_name("PMC storm-water drains, labelled rows only (OpenCity mirror) — QL-D records") == "PMC storm-water drains"
+    assert S.short_dataset_name("PMC sewer network (OpenCity mirror) — QL-D records") == "PMC sewer network"
+    assert S.short_dataset_name(None) == "Unnamed dataset"

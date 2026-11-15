@@ -71,7 +71,7 @@ SECTION_TITLES = [
 
 @dataclass
 class Block:
-    kind: str  # para | bullets | table | blank | note
+    kind: str  # para | subhead | bullets | table | blank | note
     text: str = ""
     items: list[str] = field(default_factory=list)
     header: list[str] = field(default_factory=list)
@@ -272,6 +272,9 @@ def render_docx(m: DocModel) -> bytes:
         for b in s.blocks:
             if b.kind == "para":
                 d.add_paragraph(b.text)
+            elif b.kind == "subhead":
+                q = d.add_paragraph()
+                q.add_run(b.text).bold = True
             elif b.kind == "note":
                 q = d.add_paragraph()
                 rr = q.add_run(b.text)
@@ -380,6 +383,12 @@ def render_pdf(m: DocModel) -> bytes:
             if b.kind == "para":
                 pdf.set_font(FAM, "", 9.5)
                 pdf.multi_cell(0, 4.8, T(b.text), new_x="LMARGIN", new_y="NEXT")
+            elif b.kind == "subhead":
+                if pdf.get_y() > 262:
+                    pdf.add_page()
+                pdf.ln(1)
+                pdf.set_font(FAM, "B", 9.5)
+                pdf.multi_cell(0, 4.8, T(b.text), align="L", new_x="LMARGIN", new_y="NEXT")
             elif b.kind == "note":
                 pdf.set_font(FAM, "", 8.5)
                 pdf.set_text_color(80, 80, 80)
