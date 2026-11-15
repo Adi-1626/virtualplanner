@@ -35,14 +35,16 @@ function useCameraDepth(): number | null {
 
 const centreOf = (b: Box): [number, number] => [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2];
 
+/** Camera `backM` south of the point, `h` m above (−: below) its ground. Below ground the camera is set directly:
+ * Cesium's flight path does not end below the surface. */
 function flyTo(lon: number, lat: number, h: number, pitchDeg: number, backM: number) {
   const v = engineInstance.getViewer?.();
   if (!v) return;
   const dLat = backM / 110574;
-  v.camera.flyTo({
-    destination: Cartesian3.fromDegrees(lon, lat - dLat, h + groundAt(lon, lat)),
-    orientation: { heading: 0, pitch: CMath.toRadians(pitchDeg), roll: 0 }, duration: 1.2,
-  });
+  const destination = Cartesian3.fromDegrees(lon, lat - dLat, h + groundAt(lon, lat - dLat));
+  const orientation = { heading: 0, pitch: CMath.toRadians(pitchDeg), roll: 0 };
+  if (h < 0) { v.camera.setView({ destination, orientation }); v.scene.requestRender(); return; }
+  v.camera.flyTo({ destination, orientation, duration: 1.2 });
 }
 
 /**

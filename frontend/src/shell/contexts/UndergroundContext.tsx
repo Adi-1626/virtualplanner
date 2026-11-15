@@ -175,6 +175,24 @@ export const UndergroundContext: React.FC = () => {
   const first = useRef(true);
   useEffect(() => { if (first.current) { first.current = false; return; } void reload(); }, [rectKey, reload]);
   const drawing = mode === 'draw_underground' || mode === 'draw_utility';
+  // Finishing a line in Underground ends the drawing and opens the new object's editor (one at a time here,
+  // unlike Design's stay-active tools), so the depth/size editing is the obvious next step
+  const known = useRef<Set<string> | null>(null);
+  const idsKey = [...alignments.map(a => a.id), ...utils.map(u => u.id)].join(',');
+  useEffect(() => {
+    const ids = new Set(idsKey ? idsKey.split(',') : []);
+    const prev = known.current;
+    known.current = ids;
+    if (!prev) return;
+    const added = [...ids].filter(id => !prev.has(id));
+    if (added.length !== 1 || useShellStore.getState().workspace !== 'underground') return;
+    const m = engineInstance.editing.getMode();
+    if (m !== 'draw_underground' && m !== 'draw_utility') return;
+    engineInstance.editing.setMode('select');
+    const id = added[0];
+    if (alignments.some(a => a.id === id)) useUndergroundStore.getState().setActive(id);
+    engineInstance.selection.selectSingle(id);
+  }, [idsKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const look = () => { void reload(); recordsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   return (
     <div className="space-y-5">
@@ -197,11 +215,6 @@ export const UndergroundContext: React.FC = () => {
         <ViewControls alignments={alignments} />
         <Disclosure summary="Legend"><Legend /></Disclosure>
       </PanelSection>
-      <div ref={recordsRef}>
-        <PanelSection title="Already recorded here">
-          <SubsurfaceRecords />
-        </PanelSection>
-      </div>
       <PanelSection title="Proposed alignments" aside={`${alignments.length}`}>
         <AlignmentList />
         {alignments.length > 0 && !drawing && (
@@ -220,6 +233,11 @@ export const UndergroundContext: React.FC = () => {
           <ConflictCheck key={active.id} a={active} />
         </PanelSection>
       )}
+      <div ref={recordsRef}>
+        <PanelSection title="Already recorded here">
+          <SubsurfaceRecords />
+        </PanelSection>
+      </div>
       <PanelSection title="Utilities drawn in this alternative" aside={`${utils.length}`}>
         {utils.length === 0 ? (
           <EmptyState icon={Cable} title="No utilities drawn in this alternative"
