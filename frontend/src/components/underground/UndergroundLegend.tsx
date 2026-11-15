@@ -60,7 +60,21 @@ const KINDS = Object.keys(ALIGNMENT_KIND_COLOR) as UndergroundAlignmentKind[];
 const UTIL_TYPES = Object.keys(UTILITY_COLOR) as UtilityType[];
 const sum = (o?: Partial<Record<string, number>>) => (o ? Object.values(o).reduce<number>((s, v) => s + (v ?? 0), 0) : undefined);
 
-export const UndergroundLegend: React.FC<{ counts?: LegendCounts; metroLayer?: { visible: boolean; onToggle: (v: boolean) => void } }> = ({ counts = {}, metroLayer }) => {
+type Group3 = 'records' | 'utilities' | 'alignments';
+/** "Show …" checkbox at the end of a legend group (renderer visibility of the whole group). */
+const Toggle: React.FC<{ g: Group3; label: string; groups?: { visible: (g: Group3) => boolean; onToggle: (g: Group3, v: boolean) => void } }> = ({ g, label, groups }) => (groups ? (
+  <li className="flex items-center gap-1.5">
+    <label className="inline-flex items-center gap-1.5 cursor-pointer">
+      <input type="checkbox" checked={groups.visible(g)} onChange={e => groups.onToggle(g, e.target.checked)} data-testid={`ug-legend-toggle-${g}`} />
+      {label}
+    </label>
+  </li>
+) : null);
+
+export const UndergroundLegend: React.FC<{
+  counts?: LegendCounts; metroLayer?: { visible: boolean; onToggle: (v: boolean) => void };
+  groups?: { visible: (g: Group3) => boolean; onToggle: (g: Group3, v: boolean) => void };
+}> = ({ counts = {}, metroLayer, groups }) => {
   const rec = counts.records;
   // PMC sewers and storm drains always (the reference networks); other record layers only when some are in the area
   const recordLayers = RECORD_LAYERS.filter(k => k === 'sewer' || k === 'storm_drain' || (rec?.[k] ?? 0) > 0);
@@ -73,6 +87,7 @@ export const UndergroundLegend: React.FC<{ counts?: LegendCounts; metroLayer?: {
             swatch={<Line color={RECORD_COLOR[k]} opacity={pale} />} count={rec ? rec[k] ?? 0 : undefined} title="Solid = existing; paler = lower quality level (QL-D or unknown)" />
         ))}
         {(rec?.borehole ?? 0) > 0 && <Item testId="ug-legend-record-borehole" color={LEGEND_COLOR.borehole} label="Boreholes (to final depth)" swatch={<Tick color={LEGEND_COLOR.borehole} />} count={rec?.borehole} />}
+        <Toggle g="records" label="Show records" groups={groups} />
       </Group>
       <Group title="Metro (OpenStreetMap)">
         <Item testId="ug-legend-metro-tunnel" color={LEGEND_COLOR.metroPlanOnly} label={METRO_TUNNEL_LABEL} swatch={<Line color={LEGEND_COLOR.metroPlanOnly} dash={DASH.proposed} />} count={counts.metroTunnels}
@@ -92,12 +107,14 @@ export const UndergroundLegend: React.FC<{ counts?: LegendCounts; metroLayer?: {
           <Item key={k} testId={`ug-legend-alignment-${k}`} color={ALIGNMENT_KIND_COLOR[k]} label={ALIGNMENT_KIND_LABEL[k]} swatch={<Line color={ALIGNMENT_KIND_COLOR[k]} dash={DASH.proposed} width={4} />}
             count={counts.alignments ? counts.alignments[k] ?? 0 : undefined} />
         ))}
+        <Toggle g="alignments" label="Show alignments" groups={groups} />
       </Group>
       <Group title="Utilities you drew (colour = type)">
         {UTIL_TYPES.map(t => (
           <Item key={t} testId={`ug-legend-utility-${t}`} color={UTILITY_COLOR[t]} label={UTILITY_LABEL[t]} swatch={<Line color={UTILITY_COLOR[t]} opacity={strong} />}
             count={counts.utilities ? counts.utilities[t] ?? 0 : undefined} />
         ))}
+        <Toggle g="utilities" label="Show drawn utilities" groups={groups} />
       </Group>
       <Group title="Line style = status">
         <Item testId="ug-legend-existing" color="currentColor" label="Existing" swatch={<Line color="currentColor" dash={DASH.existing} />} />

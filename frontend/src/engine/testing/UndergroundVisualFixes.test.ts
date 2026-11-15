@@ -146,3 +146,19 @@ describe('leave() restores values Cesium copies into its own objects', () => {
     expect(rect.w).toBe(-3.14);
   });
 });
+
+describe('legend group toggles', () => {
+  it('hide / show a renderer group and notify listeners once per change', async () => {
+    const { UndergroundRenderer } = await import('../underground/UndergroundRenderer');
+    const r = new UndergroundRenderer();
+    let n = 0;
+    r.onVisibilityChange(() => { n++; });
+    expect(r.isGroupVisible('records')).toBe(true);
+    r.setGroupVisible('records', false);
+    r.setGroupVisible('records', false);
+    expect(r.isGroupVisible('records')).toBe(false);
+    expect(r.isGroupVisible('utilities')).toBe(true);
+    r.setGroupVisible('records', true);
+    expect(n).toBe(2);
+  });
+});

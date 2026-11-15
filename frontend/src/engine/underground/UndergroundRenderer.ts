@@ -36,6 +36,9 @@ export const UTILITY_COLOR: Record<UtilityType, string> = {
 export const UTILITY_MIN_PX = 3;
 export const EVIDENCE_ALPHA: Record<string, number> = { 'QL-A': 1, 'QL-B': 0.9, 'QL-C': 0.75, 'QL-D': 0.6, UNKNOWN: 0.5 };
 
+/** Groups the Underground legend can show / hide. */
+export type UndergroundGroup = 'records' | 'utilities' | 'alignments';
+
 /** Depth of the cutaway floor below the ground (m): below the deepest proposed tunnel drawn so far (~30 m). */
 export const CUTAWAY_DEPTH_M = 45;
 
@@ -102,9 +105,28 @@ export class UndergroundRenderer {
     void viewer.dataSources.add(this.metroDs);
     void viewer.dataSources.add(this.ds);
     void viewer.dataSources.add(this.recordsDs);
+    this.applyVisibility();
   }
 
   isAttached() { return !!this.viewer && !this.viewer.isDestroyed(); }
+
+  /** Legend toggles: show / hide a whole group (records, drawn utilities, alignments). Reset to shown on leaving Underground. */
+  private hidden = new Set<UndergroundGroup>();
+  private visListeners = new Set<() => void>();
+  isGroupVisible(g: UndergroundGroup) { return !this.hidden.has(g); }
+  onVisibilityChange(cb: () => void) { this.visListeners.add(cb); return () => { this.visListeners.delete(cb); }; }
+  setGroupVisible(g: UndergroundGroup, visible: boolean) {
+    if (visible === this.isGroupVisible(g)) return;
+    if (visible) this.hidden.delete(g); else this.hidden.add(g);
+    this.applyVisibility();
+    this.visListeners.forEach(cb => cb());
+  }
+  private applyVisibility() {
+    if (this.recordsDs) this.recordsDs.show = this.isGroupVisible('records');
+    if (this.utilDs) this.utilDs.show = this.isGroupVisible('utilities');
+    if (this.ds) this.ds.show = this.isGroupVisible('alignments');
+    this.viewer?.scene.requestRender();
+  }
 
   /**
    * Cutaway pit under the see-through window (local mode): a dark floor CUTAWAY_DEPTH_M below the ground and four dark

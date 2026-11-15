@@ -27,6 +27,7 @@ import { summariseRecords } from '../../engine/underground/recordsSummary';
 import { isUnmappedMetroTunnel, unmappedUndergroundStation } from '../../engine/underground/metroLevel';
 import { UndergroundLegend, type LegendCounts } from '../../components/underground/UndergroundLegend';
 import { ConflictCheck } from '../../components/underground/ConflictCheck';
+import { undergroundRenderer } from '../../engine/underground/UndergroundRenderer';
 
 const isUtility = (o: CityObject): o is UtilityObject => o.type === 'utility';
 
@@ -186,6 +187,7 @@ export const UndergroundContext: React.FC = () => {
   const hist = useHistoryState();
   const legendCounts = useLegendCounts(alignments, utils);
   const [metroOn, setMetroOn] = useLayerVisible('metro');
+  const [, bumpVis] = useState(0); // legend group toggles (renderer visibility)
   const { reload } = useSubsurfaceRecords();
   const recordsRef = useRef<HTMLDivElement>(null);
   const checkRef = useRef<HTMLDivElement>(null);
@@ -240,7 +242,8 @@ export const UndergroundContext: React.FC = () => {
         <ViewControls alignments={alignments} utilities={utils} />
         {/* open by default in Underground: the colour key is how the 3D view is read (UNDERGROUND_VISUAL_FIXES.md) */}
         <Disclosure summary="Legend" open data-testid="ug-legend-disclosure">
-          <UndergroundLegend counts={legendCounts} metroLayer={{ visible: metroOn, onToggle: setMetroOn }} />
+          <UndergroundLegend counts={legendCounts} metroLayer={{ visible: metroOn, onToggle: setMetroOn }}
+            groups={{ visible: g => undergroundRenderer.isGroupVisible(g), onToggle: (g, v) => { undergroundRenderer.setGroupVisible(g, v); bumpVis(n => n + 1); } }} />
         </Disclosure>
       </PanelSection>
       <PanelSection title="Proposed alignments" aside={`${alignments.length}`}>

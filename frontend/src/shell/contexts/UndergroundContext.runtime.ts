@@ -38,7 +38,12 @@ export function startUndergroundRuntime() {
     undergroundRenderer.renderUtilities(all.filter((o): o is UtilityObject => o.type === 'utility' && (inUg || engineInstance.layers.isVisible(o.layerId))), sel);
     syncCutaway();
   };
-  const syncView = (ws: string) => { if (ws === 'underground') undergroundView.enter(viewer()); else undergroundView.leave(); };
+  const syncView = (ws: string) => {
+    if (ws === 'underground') { undergroundView.enter(viewer()); return; }
+    undergroundView.leave();
+    // legend "Show …" toggles only apply in Underground
+    (['records', 'utilities', 'alignments'] as const).forEach(g => undergroundRenderer.setGroupVisible(g, true));
+  };
   // Cutaway pit (local see-through window) and X-ray building fade follow the view settings
   const syncCutaway = () => {
     const v = viewer();
