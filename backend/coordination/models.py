@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, LargeBinary, String, Text
 
 from database.connection import Base
 
@@ -234,6 +234,25 @@ class UndergroundVerificationEntity(Base):
 
 
 VERIFICATION_METHODS = ("trial_pit", "vacuum_excavation", "survey_of_exposed_asset")   # QL-A evidence only
+
+
+class UndergroundScreeningRunEntity(Base):
+    """One underground screening run of an alternative (docs/urbanos/UNDERGROUND_CHECKS.md §2.9), so reopening the
+    alternative shows the last result — marked stale when the screened objects (inputs_hash) or the utility records
+    (data_hash) changed since. Machine output, not audited; the newest RUNS_KEPT per alternative are kept."""
+    __tablename__ = "underground_screening_runs"
+
+    id = Column(String, primary_key=True)
+    scenario_id = Column(String, nullable=False, index=True)     # the alternative screened
+    inputs_hash = Column(String, nullable=False)                 # objects screened (+ rule overrides)
+    data_hash = Column(String, nullable=True)                    # utility record datasets at the time
+    engine_version = Column(String, nullable=False)
+    config_version = Column(String, nullable=False)
+    objects_count = Column(Integer, nullable=False, default=0)
+    findings_count = Column(Integer, nullable=False, default=0)
+    summary_json = Column(Text, nullable=False)                  # counts, headline, objects checked, not checked
+    result_json_gz = Column(LargeBinary, nullable=False)         # zlib(JSON) of the whole result: findings, layers, rules, geometries
+    created_at = Column(DateTime, default=_now, index=True)
 
 
 # ── audit registration (planning.audit tracks entities by class name; additive) ─────────────────────────────────────

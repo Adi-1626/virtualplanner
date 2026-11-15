@@ -205,6 +205,27 @@ export const ConflictCheck: React.FC<{ a?: UndergroundAlignmentObject | null }> 
   const [statusFilter, setStatusFilter] = useState<ScreeningStatus | null>(null);
 
   useEffect(() => () => clearConflictHighlight(), []);
+  // Reopening: no result in this session for the alternative → show its last saved run, marked stale if objects changed since.
+  const [restoring, setRestoring] = useState(false);
+  const hasEntry = !!entry;
+  useEffect(() => {
+    if (hasEntry) return;
+    let live = true;
+    setRestoring(true);
+    const objs = visible.map(o => engineInstance.objects.schemaOf(o) as ScreeningObject);
+    coordinationApi.latestScreening({ scenario_id: sid, objects: objs })
+      .then(r => {
+        if (!live || !r.run) return;
+        const cur = useScreeningStore.getState().runs[sid];
+        if (cur) return;                                            // a check finished meanwhile
+        setRun(sid, r.run, { restored: true, stale: !!r.stale, staleReasons: r.stale_reasons ?? [], comparedAt: new Date().toISOString() }, r.run.saved_at ?? r.run.generated_at);
+      })
+      .catch(() => { /* no saved run reachable: the panel simply starts empty */ })
+      .finally(() => { if (live) setRestoring(false); });
+    return () => { live = false; };
+    // visible is read once per alternative: staleness after that is tracked by isStale on edits
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sid, hasEntry]);
   const run = entry?.run ?? null;
   const proposedCount = visible.filter(o => (o.type === 'underground_alignment' || o.type === 'utility') && (sid === 'base' || o.scenarioId === sid)).length;
 
@@ -235,7 +256,8 @@ export const ConflictCheck: React.FC<{ a?: UndergroundAlignmentObject | null }> 
   const counts = countsByStatus(scoped);
   const filtered = statusFilter ? scoped.filter(f => f.status === statusFilter) : scoped;
   const groups = groupBySeverity(filtered, a?.id);
-  const stale = entry ? isStale(entry.at, visible) : false;
+  const origin = entry?.origin;
+  const stale = entry ? (origin?.stale ?? false) || isStale(origin?.comparedAt ?? entry.at, visible) : false;
   const objChecklist = run?.summary.proposed_checked.find(p => p.id === scope);
 
   return (
@@ -248,13 +270,22 @@ export const ConflictCheck: React.FC<{ a?: UndergroundAlignmentObject | null }> 
         objects drawn in Design, building footprints, nallas, groundwater wells and boreholes, using Indian clearance rules (stricter rule wins).
       </p>
       <button type="button" className="uos-btn self-start" onClick={() => void check()} disabled={busy || proposedCount === 0} data-testid="ug-check-conflicts">
-        <ShieldQuestion size={14} aria-hidden /> {busy ? 'Checking…' : run ? 'Check again' : `Check ${proposedCount} proposed object${proposedCount === 1 ? '' : 's'}`}
+        <ShieldQuestion size={14} aria-hidden /> {busy ? 'Checking…' : restoring && !run ? 'Loading last check…' : run ? 'Check again' : `Check ${proposedCount} proposed object${proposedCount === 1 ? '' : 's'}`}
       </button>
       {proposedCount === 0 && <p className="text-meta text-text-2">Draw an underground alignment or a utility in this alternative to check it.</p>}
       {err && <p className="text-label text-fail" role="alert">The check could not run: {err}</p>}
       {run && (
         <div className="flex flex-col gap-2" data-testid="ug-conflict-results">
-          {stale && <p className="text-meta text-warn" role="status" data-testid="ug-check-stale">Objects were edited after this check — check again for current results.</p>}
+          {origin?.restored && (
+            <p className="text-meta text-text-2" data-testid="ug-check-restored">
+              Last saved check, {new Date(entry!.at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}.
+            </p>
+          )}
+          {stale && (
+            <div className="text-meta text-warn" role="status" data-testid="ug-check-stale">
+              <span className="font-semibold">Stale</span> — {origin?.staleReasons.length ? origin.staleReasons.join(' ') : 'Objects were edited after this check.'} Check again for current results.
+            </div>
+          )}
           <p className="text-label text-text-1" data-testid="ug-check-summary">{plainSummary(run)}</p>
           {run.summary.proposed_checked.length > 1 && (
             <div className={field}>

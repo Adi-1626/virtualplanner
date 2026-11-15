@@ -355,7 +355,7 @@ def detect(pid: str, body: DetectIn, db: Session = Depends(get_db)):
     return _run_dict(db, db.get(CoordinationRunEntity, run.id), with_conflicts=True)
 
 
-# ── underground screening (stateless; docs/urbanos/UNDERGROUND_CHECKS.md) ─────────────────────────────────────────
+# ── underground screening (runs saved for reopening; docs/urbanos/UNDERGROUND_CHECKS.md) ─────────────────────────────────────────
 
 class ScreenIn(BaseModel):
     scenario_id: str = Field(default="base", min_length=1)
@@ -367,9 +367,40 @@ class ScreenIn(BaseModel):
 
 @router.post("/underground/screen")
 def underground_screen(body: ScreenIn, db: Session = Depends(get_db)):
-    """Screens every proposed underground object of the alternative against existing data (read-only; nothing stored)."""
+    """Screens every proposed underground object of the alternative against existing data. The run is saved (alternative,
+    inputs hash, time, summary, findings) unless only some objects were screened (focus_ids); the result carries run_id /
+    saved_at. Nothing else is written."""
     from coordination import screening as SCR
-    return SCR.screen(db, body.scenario_id, body.objects, body.focus_ids, body.config_overrides)
+    from coordination import screening_runs as RUNS
+    run = SCR.screen(db, body.scenario_id, body.objects, body.focus_ids, body.config_overrides)
+    if not body.focus_ids:
+        run.update(RUNS.save(db, run))
+    return run
+
+
+class LatestIn(BaseModel):
+    scenario_id: str = Field(default="base", min_length=1)
+    # The alternative's objects as Design holds them now (to tell whether the saved run is stale); omitted = database
+    objects: Optional[list[dict]] = Field(default=None, max_length=5000)
+    config_overrides: Optional[dict] = None
+
+
+@router.post("/underground/runs/latest")
+def underground_latest_run(body: LatestIn, db: Session = Depends(get_db)):
+    """The last saved screening of the alternative, with `stale` / `stale_reasons` against the objects given now.
+    {"run": null} when the alternative was never checked."""
+    from coordination import screening_runs as RUNS
+    e = RUNS.latest(db, body.scenario_id)
+    if e is None:
+        return {"run": None}
+    return {"run": RUNS.load(e), **RUNS.staleness(db, e, body.objects, body.config_overrides)}
+
+
+@router.get("/underground/runs")
+def underground_runs(scenario_id: str = Query(..., min_length=1), db: Session = Depends(get_db)):
+    """Saved screening runs of an alternative, newest first (summary only)."""
+    from coordination import screening_runs as RUNS
+    return RUNS.listing(db, scenario_id)
 
 
 def _alternative_name(db: Session, sid: str) -> str:

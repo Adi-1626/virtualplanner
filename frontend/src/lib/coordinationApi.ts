@@ -136,6 +136,8 @@ export interface ScreeningChecklistItem { check: string; result: 'flagged' | 'no
 export interface ScreeningLayer { id: string; name: string; used: boolean; quality_level?: string; records?: number; datum?: string; coverage?: string }
 export interface ScreeningRun {
   engine_version: string; config_version: string; scenario_id: string; generated_at: string; banner: string; disclaimer: string;
+  /** Set when the run was saved (every full check): reopening the alternative shows it. */
+  run_id?: string; saved_at?: string; inputs_hash?: string;
   summary: {
     counts: Record<ScreeningStatus, number>; worst_status: ScreeningStatus | null; headline: string;
     proposed_checked: (ScreeningAsset & { checklist: ScreeningChecklistItem[] })[]; skipped: { id: string; name: string; reason: string }[];
@@ -205,6 +207,9 @@ export const coordinationApi = {
   // underground screening (read-only; verifications are recorded by a person)
   screenUnderground: (body: { scenario_id: string; objects?: ScreeningObject[]; focus_ids?: string[] }) =>
     call<ScreeningRun>('POST', '/underground/screen', body),
+  /** Last saved screening of the alternative; stale when the objects sent now (or the records / engine) differ from the run's. */
+  latestScreening: (body: { scenario_id: string; objects?: ScreeningObject[] }) =>
+    call<{ run: ScreeningRun | null; stale?: boolean; stale_reasons?: string[] }>('POST', '/underground/runs/latest', body),
   /** Screening report (re-runs the check on these objects): PDF / DOCX / CSV as a Blob plus the server's file name. */
   screeningReport: async (body: { scenario_id: string; objects?: ScreeningObject[] }, format: 'pdf' | 'docx' | 'csv'): Promise<{ blob: Blob; filename: string; findings: number }> => {
     const res = await fetch(`${API_BASE}/api/coordination/underground/screen/report?format=${format}`, {

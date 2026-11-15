@@ -1007,6 +1007,22 @@ def objects_from_db(db, scenario_id: str) -> list[dict]:
     return list(out.values())
 
 
+_VOLATILE_KEYS = {"createdAt", "updatedAt", "layerId", "visible", "selected", "highlighted", "locked", "hidden"}
+
+
+def inputs_hash(objects: list[dict], scenario_id: str, config_overrides: Optional[dict] = None) -> str:
+    """What a run screened: the alternative, its underground / metro objects (geometry, properties; timestamps and display
+    state ignored) and any rule overrides. Same objects → same hash, whether sent by the UI or read from the database."""
+    types = ("underground_alignment", "utility", "metro_line", "metro_station")
+    canon = sorted(
+        ({"id": o.get("id"), "type": o.get("type"), "name": o.get("name"), "scenarioId": o.get("scenarioId") or "base",
+          "coordinates": o.get("coordinates"),
+          "properties": {k: v for k, v in (o.get("properties") or {}).items() if k not in _VOLATILE_KEYS}}
+         for o in objects if o.get("type") in types), key=lambda d: str(d["id"]))
+    raw = json.dumps([scenario_id, canon, config_overrides or {}], sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(raw.encode()).hexdigest()[:24]
+
+
 def _boxes(assets: list[Asset], pad_of) -> list[tuple]:
     out = []
     for a in assets:
@@ -1145,6 +1161,7 @@ def screen(db, scenario_id: str, objects: Optional[list[dict]] = None, focus_ids
     lap("report")
     return {
         "engine_version": ENGINE, "config_version": cfg["version"], "scenario_id": scenario_id,
+        "inputs_hash": inputs_hash(objs, scenario_id, config_overrides), "objects_count": len(objs),
         "generated_at": datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0, tzinfo=None).isoformat() + "Z", "banner": BANNER, "disclaimer": DISCLAIMER,
         "summary": {"counts": counts, "worst_status": worst, "headline": _headline(counts, len(targets)),
                     "proposed_checked": [a.public(with_geometry=False) | {"checklist": checklists[a.id]} for a in targets], "skipped": skipped,
