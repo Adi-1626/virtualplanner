@@ -54,6 +54,23 @@ function boxesOverlap(c: readonly (readonly number[])[], minX: number, minY: num
   return a <= maxX && cc >= minX && b <= maxY && d >= minY;
 }
 
+/**
+ * Design defaults per road class for a drawn road or flyover (HYPOTHETICAL until edited on the object). Collector used
+ * to fall through to the local defaults, so choosing it changed nothing. Width and capacity are derived from the lanes
+ * and footpaths by ObjectManager.syncRoadProperties.
+ */
+export const ROAD_CLASS_DEFAULTS: Record<RoadClassification, { laneCount: number; dividerWidth: number; footpathWidth: number; speedLimit: number; flyoverSpeed: number }> = {
+  highway: { laneCount: 6, dividerWidth: 3, footpathWidth: 0, speedLimit: 100, flyoverSpeed: 100 },
+  arterial: { laneCount: 4, dividerWidth: 2, footpathWidth: 1.5, speedLimit: 70, flyoverSpeed: 80 },
+  collector: { laneCount: 2, dividerWidth: 0, footpathWidth: 2, speedLimit: 50, flyoverSpeed: 60 },
+  local: { laneCount: 2, dividerWidth: 0, footpathWidth: 1.5, speedLimit: 40, flyoverSpeed: 40 },
+};
+
+/** Readable default name of a new object ("Road 4kq2"); the user renames it in the inspector. */
+const NEW_OBJECT_LABEL: Partial<Record<EditingMode, string>> = {
+  draw_road: 'Road', draw_building: 'Building', draw_junction: 'Junction', draw_flyover: 'Flyover',
+};
+
 export type EditingMode = 'select' | 'draw_road' | 'draw_building' | 'draw_junction' | 'draw_utility' | 'draw_flyover' | 'draw_metro' | 'place_station' | 'import_osm' | 'draw_zone' | 'draw_gateway' | 'draw_metro_flyover' | 'draw_underground';
 
 export class EditingEngine {
@@ -587,7 +604,9 @@ export class EditingEngine {
 
     const id = Math.random().toString(36).substr(2, 9);
     const createdAt = new Date().toISOString();
-    const name = `${this.activeMode.split('_')[1].toUpperCase()} #${id.slice(0, 4)}`;
+    const label = NEW_OBJECT_LABEL[this.activeMode];
+    const name = label ? `${label} ${id.slice(0, 4)}` : `${this.activeMode.split('_')[1].toUpperCase()} #${id.slice(0, 4)}`;
+    const cls = ROAD_CLASS_DEFAULTS[this.roadClass] ?? ROAD_CLASS_DEFAULTS.local;
 
     let newObj: CityObject | null = null;
     let splitDiffs: HistoryDiff[] = [];
@@ -608,16 +627,16 @@ export class EditingEngine {
         scenarioId,
         coordinates: coords,
         roadClass: this.roadClass,
-        width: this.roadClass === 'highway' ? 24 : this.roadClass === 'arterial' ? 19 : 10,
-        laneCount: this.roadClass === 'highway' ? 6 : this.roadClass === 'arterial' ? 4 : 2,
+        width: cls.laneCount * 3.5 + cls.dividerWidth + 2 * cls.footpathWidth,
+        laneCount: cls.laneCount,
         laneWidth: 3.5,
-        hasDivider: this.roadClass === 'highway' || this.roadClass === 'arterial',
-        dividerWidth: this.roadClass === 'highway' ? 3.0 : this.roadClass === 'arterial' ? 2.0 : 0.0,
-        hasFootpath: this.roadClass !== 'highway',
-        footpathWidth: this.roadClass !== 'highway' ? 1.5 : 0.0,
-        speedLimit: this.roadClass === 'highway' ? 100 : this.roadClass === 'arterial' ? 70 : 40,
+        hasDivider: cls.dividerWidth > 0,
+        dividerWidth: cls.dividerWidth,
+        hasFootpath: cls.footpathWidth > 0,
+        footpathWidth: cls.footpathWidth,
+        speedLimit: cls.speedLimit,
         isOneWay: false,
-        trafficCapacity: this.roadClass === 'highway' ? 4000 : this.roadClass === 'arterial' ? 2000 : 1000,
+        trafficCapacity: cls.laneCount * 1000,
         connectedJunctions: [],
         createdAt,
         updatedAt: createdAt
@@ -710,19 +729,20 @@ export class EditingEngine {
       newObj = {
         id,
         type: 'flyover',
-        name: `Flyover #${id.slice(0, 4)}`,
+        name,
         layerId: 'roads',
         scenarioId,
         coordinates: groundCoordinates,
-        roadClass: 'arterial',
-        width: 19,
-        laneCount: 4,
+        // The Road class setting (shared with the Road tool) sets the deck's lanes and speed; it used to be ignored
+        roadClass: this.roadClass,
+        width: cls.laneCount * 3.5 + cls.dividerWidth + 2 * cls.footpathWidth,
+        laneCount: cls.laneCount,
         laneWidth: 3.5,
-        hasDivider: true,
-        dividerWidth: 2.0,
-        hasFootpath: true,
-        footpathWidth: 1.5,
-        speedLimit: 80,
+        hasDivider: cls.dividerWidth > 0,
+        dividerWidth: cls.dividerWidth,
+        hasFootpath: cls.footpathWidth > 0,
+        footpathWidth: cls.footpathWidth,
+        speedLimit: cls.flyoverSpeed,
         isOneWay: false,
         elevation: 6.0,
         pierSpacing: 30.0,

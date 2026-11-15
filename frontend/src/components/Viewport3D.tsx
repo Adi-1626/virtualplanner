@@ -103,18 +103,19 @@ export const Viewport3D: React.FC = () => {
   );
 };
 
+/** One short line per tool: what to click and how to finish. */
 const HUD_TEXT: Record<Exclude<EditingMode, 'select'>, (n: number) => string> = {
-  draw_road: n => `Drawing Road: click to add points, double-click or Enter to finish (${n} points)`,
-  draw_flyover: n => `Drawing Elevated Flyover: click to add points, double-click or Enter to finish (${n} points)`,
-  draw_metro: n => `Drawing Elevated Metro Line: click to add points, double-click or Enter to finish (${n} points)`,
-  draw_metro_flyover: n => `Drawing Metro + Flyover: click to add points, double-click or Enter to finish (${n} points)`,
-  draw_building: n => `Drawing Building Footprint: click 3+ corners, double-click or Enter to extrude (${n} corners)`,
-  draw_underground: n => `Underground alignment: click plan points on the ground, double-click or Enter to finish (${n} points). Depths are set per vertex in the Underground panel`,
-  draw_utility: n => `Laying Utility Conduit: click to add points, double-click or Enter to finish (${n} points)`,
-  draw_zone: n => `Drawing Demand Zone: click 3+ corners, double-click or Enter to finish (${n} corners)`,
-  draw_junction: () => 'Placing Junction: click on the map to place one',
-  place_station: () => 'Placing Metro Station: click on the map to place one',
-  draw_gateway: () => 'Placing Gateway: click on or near a boundary road to place one',
+  draw_road: n => `Road: click points on the map, double-click or Enter to finish (${n} placed)`,
+  draw_flyover: n => `Flyover: click points along the route, double-click or Enter to finish (${n} placed)`,
+  draw_metro: n => `Metro line: click points along the route, double-click or Enter to finish (${n} placed)`,
+  draw_metro_flyover: n => `Double-deck: click points along the route, double-click or Enter to finish (${n} placed)`,
+  draw_building: n => `Building: click 3 or more corners, double-click or Enter to finish (${n} placed)`,
+  draw_underground: n => `Tunnel: click plan points, double-click or Enter to finish (${n} placed). Set depths in Underground`,
+  draw_utility: n => `Utility: click points along the line, double-click or Enter to finish (${n} placed)`,
+  draw_zone: n => `Demand zone: click 3 or more corners, double-click or Enter to finish (${n} placed)`,
+  draw_junction: () => 'Junction: click where two or more roads meet',
+  place_station: () => 'Station: click on or near a metro line',
+  draw_gateway: () => 'Gateway: click on or near a road where traffic enters the area',
   import_osm: n => n > 0
     ? `Draw Area: ${n} boundary points. Drag points to move them, drag a midpoint to add one, then choose "Map Selected Area" in the tool panel`
     : 'Draw Area: click 3+ points to outline a polygon, then choose Map Selected Area',
@@ -135,21 +136,30 @@ const DrawingHUD: React.FC = () => {
   if (mode === 'select') return null;
 
   const multiPoint = !engineInstance.editing.isSingleClickMode(mode);
+  // "Finish" completes the line or outline being drawn (it used to discard it); with nothing drawn it leaves the tool
+  const canFinish = multiPoint && mode !== 'import_osm' && pointsCount > 0;
+  const onDone = () => {
+    if (canFinish && !engineInstance.finishDrawing()) return; // too few points: keep drawing (the toast says why)
+    engineInstance.editing.cancelDrawing();
+  };
 
   return (
-    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-2xl bg-slate-950/90 backdrop-blur-xl border border-indigo-400/30 shadow-2xl flex items-center gap-3 text-sm z-999 animate-fade-in pointer-events-auto max-w-[min(42rem,calc(100vw-48rem))]">
+    <div data-testid="drawing-hud" className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-2xl bg-slate-950/90 backdrop-blur-xl border border-indigo-400/30 shadow-2xl flex items-center gap-3 text-sm z-999 animate-fade-in pointer-events-auto max-w-[min(42rem,calc(100vw-48rem))]">
       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
       <div className="flex flex-col">
         <span className="text-slate-100">{HUD_TEXT[mode](pointsCount)}</span>
         <span className="text-xs text-slate-400">
-          {multiPoint && pointsCount > 0 ? 'Right-click a point to remove it · ' : ''}Tool stays active · Esc to exit
+          {multiPoint && pointsCount > 0 ? 'Right-click a point to remove it · ' : ''}Tool stays active · Esc cancels
         </span>
       </div>
       <button
-        onClick={() => engineInstance.editing.cancelDrawing()}
+        type="button"
+        data-testid="drawing-hud-done"
+        onClick={onDone}
+        title={canFinish ? 'Finish this drawing and leave the tool' : 'Leave the tool'}
         className="px-3 py-1 rounded-lg bg-white/[0.07] text-slate-100 hover:bg-white/[0.12] border border-white/10 text-sm font-semibold transition cursor-pointer shrink-0"
       >
-        Done
+        {canFinish ? 'Finish' : 'Done'}
       </button>
     </div>
   );
