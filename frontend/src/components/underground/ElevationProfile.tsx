@@ -14,7 +14,7 @@ const C = {
   unknown: 'var(--unknown, #94a3b8)', cross: '#38bdf8', sewer: '#c084fc', text: 'var(--text-2, #A9B3C1)',
 };
 const TYPE_LABEL: Partial<Record<CityObject['type'], string>> = {
-  road: 'Road', flyover: 'Flyover', metro_flyover: 'Double-deck', metro_line: 'Metro (elevated)', building: 'Building', utility: 'Utility', underground_alignment: 'Alignment',
+  road: 'Road', flyover: 'Flyover', metro_flyover: 'Double-deck', metro_line: 'Metro', building: 'Building', utility: 'Utility', underground_alignment: 'Alignment',
 };
 const isHypo = (c: string) => c === 'hypothetical' || c === 'unknown';
 const f1 = (v: number | null | undefined) => (v === null || v === undefined || !Number.isFinite(v) ? 'Unknown' : v.toFixed(1));

@@ -17,6 +17,14 @@ import type { Certainty } from '../objects/certainty';
 import type { UndergroundAlignmentKind, UndergroundAlignmentObject } from '../objects/types';
 import { depthsOf, sectionHeightM, sectionWidthM } from './alignmentGeometry';
 import type { SubsurfaceRecord } from '../../lib/coordinationApi';
+import { layerOf } from './recordsSummary';
+
+/** Utility colours (APWA-style convention, used informally in India too): what the asset is. */
+export const RECORD_COLOR: Record<string, string> = {
+  sewer: '#22c55e', storm_drain: '#14b8a6', water: '#3b82f6', power: '#ef4444', gas: '#eab308', telecom: '#f97316', other_utility: '#38bdf8',
+};
+/** Evidence → opacity (ASCE 38 quality level): how sure the position is, separate from status. */
+export const EVIDENCE_ALPHA: Record<string, number> = { 'QL-A': 1, 'QL-B': 0.9, 'QL-C': 0.75, 'QL-D': 0.6, UNKNOWN: 0.5 };
 
 const KIND_COLOR: Record<UndergroundAlignmentKind, string> = {
   bored_tunnel: '#f59e0b', underground_metro: '#a855f7', cut_and_cover: '#f97316', utility_trunk: '#22d3ee', storm_drain: '#22c55e',
@@ -136,13 +144,20 @@ export class UndergroundRenderer {
           },
         });
       } else if (g.type === 'LineString') {
-        const d = r.depth_m;
-        const color = Color.fromCssColorString('#38bdf8').withAlpha(r.z_certainty === 'measured' ? 0.95 : 0.7);
-        ents.add({
-          id: `rec:${r.id}`, name: `${r.utility_type ?? 'Utility'} record ${r.external_id}`,
-          polyline: d === null
-            ? { positions: g.coordinates.map(c => scenePoint(c[0], c[1], 0)), width: 3, clampToGround: true, material: new PolylineDashMaterialProperty({ color: Color.fromCssColorString('#94a3b8') }) }
-            : { positions: g.coordinates.map(c => scenePoint(c[0], c[1], -d)), width: 4, material: color },
+        // Existing records: solid line in the layer colour; opacity by evidence (QL-A/B strong, QL-C/D and unknown paler).
+        // A record with no depth is drawn ON the surface (it cannot be placed below ground) — never at an invented depth.
+        const d = r.depth_m ?? (r.z_max_m !== null ? -r.z_max_m : null);
+        const alpha = EVIDENCE_ALPHA[r.quality_level ?? 'UNKNOWN'] ?? 0.55;
+        const color = Color.fromCssColorString(RECORD_COLOR[layerOf(r)] ?? '#38bdf8').withAlpha(d === null ? alpha * 0.8 : alpha);
+        const lines = [g.coordinates];
+        lines.forEach((line, k) => {
+          if (line.length < 2) return;
+          ents.add({
+            id: k === 0 ? `rec:${r.id}` : `rec:${r.id}:${k}`, name: `${r.utility_type ?? 'Utility'} record ${r.external_id}${d === null ? ' (depth UNKNOWN: drawn on the surface)' : ''}`,
+            polyline: d === null
+              ? { positions: line.map(c => scenePoint(c[0], c[1], 0)), width: 2, clampToGround: true, material: color }
+              : { positions: line.map(c => scenePoint(c[0], c[1], -d)), width: 3, material: color },
+          });
         });
       }
     }

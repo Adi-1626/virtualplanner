@@ -180,9 +180,14 @@ export function verticalExtentOf(o: CityObject, otherChainageM = 0): VerticalExt
   switch (o.type) {
     case 'road':
       return { topDepthM: 0, bottomDepthM: null, certainty: 'unknown', note: 'At-grade road: pavement / structure depth UNKNOWN' };
+    case 'metro_line':
+      // OSM tunnel=yes / layer<0 is imported with a −6 m placeholder: the real tunnel depth is not published (UNKNOWN)
+      if (ok(o.elevation) && o.elevation < 0) {
+        return { topDepthM: null, bottomDepthM: null, certainty: 'unknown', note: 'Existing metro tunnel (OSM tunnel=yes, plan position only): crown/invert depth UNKNOWN — no official levels; ask Maha-Metro' };
+      }
+      return { topDepthM: ok(o.elevation) ? -o.elevation : null, bottomDepthM: null, certainty: 'unknown', note: 'Elevated structure: pier foundation depth UNKNOWN (not in the model)' };
     case 'flyover':
-    case 'metro_flyover':
-    case 'metro_line': {
+    case 'metro_flyover': {
       const elev = o.type === 'metro_flyover' ? o.metroElevation : o.elevation;
       return { topDepthM: ok(elev) ? -elev : null, bottomDepthM: null, certainty: 'unknown', note: 'Elevated structure: pier foundation depth UNKNOWN (not in the model)' };
     }

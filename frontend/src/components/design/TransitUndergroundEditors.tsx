@@ -74,9 +74,17 @@ export const MetroLineEditor: React.FC<{ m: MetroLineObject; onUpdate: Update }>
         </select>
       </div>
       <Slider id="metro-deck" testId="metro-deck" label="Deck width" unit="m" min={4} max={12} step={0.5} value={m.deckWidth || 8} onChange={v => onUpdate('deckWidth', v)} />
-      <Slider id="metro-elev" testId="metro-elevation" label="Track height" unit="m" min={6} max={24} step={1} value={m.elevation} onChange={v => onUpdate('elevation', v)} />
-      <Slider id="metro-piers" label="Pier spacing" unit="m" min={15} max={60} step={5} value={m.pierSpacing || 30} onChange={v => onUpdate('pierSpacing', v)} />
-      <p className="text-[11px] flex items-center gap-1.5 flex-wrap" style={note}><CertaintyBadge certainty="hypothetical" /> Design values; drawn in 3D as set. Stations placed within {STATION_TRACK_SNAP_METERS} m sit on this track.</p>
+      {m.elevation < 0 ? (
+        <p className="text-[11px] flex items-center gap-1.5 flex-wrap" style={note} data-testid="metro-tunnel-note">
+          <CertaintyBadge certainty="unknown" /> Underground section{m.tags?.tunnel ? ' (OpenStreetMap tunnel=yes)' : ''}: plan position only. Tunnel depth is UNKNOWN (no official levels published); it is drawn just below the surface as a placeholder, not at its real depth.
+        </p>
+      ) : (
+        <>
+          <Slider id="metro-elev" testId="metro-elevation" label="Track height" unit="m" min={6} max={24} step={1} value={m.elevation} onChange={v => onUpdate('elevation', v)} />
+          <Slider id="metro-piers" label="Pier spacing" unit="m" min={15} max={60} step={5} value={m.pierSpacing || 30} onChange={v => onUpdate('pierSpacing', v)} />
+          <p className="text-[11px] flex items-center gap-1.5 flex-wrap" style={note}><CertaintyBadge certainty="hypothetical" /> Design values; drawn in 3D as set. Stations placed within {STATION_TRACK_SNAP_METERS} m sit on this track.</p>
+        </>
+      )}
     </div>
   );
 };
@@ -192,26 +200,38 @@ const SectionSketch: React.FC<{ a: UndergroundAlignmentObject }> = ({ a }) => {
   );
 };
 
-export const AlignmentInspector: React.FC<{ a: UndergroundAlignmentObject }> = ({ a }) => (
-  <div className="flex flex-col gap-3" data-testid="alignment-inspector">
-    <div className={card} style={cardStyle}>
-      <span className={lbl} style={labelStyle}>Cross-section</span>
-      <SectionSketch a={a} />
-      <button type="button" className="uos-btn uos-btn-sm self-start" data-testid="ug-open-underground"
-        onClick={() => {
-          useUndergroundStore.getState().setActive(a.id);
-          const shell = useShellStore.getState();
-          shell.setWorkspace('underground');
-          // Land on the long-section (bottom drawer, Profile tab), not on a closed drawer
-          shell.setDrawerTab('profile');
-          shell.setDrawerOpen(true);
-        }}>
-        Long-section, sections &amp; conflicts →
-      </button>
+/**
+ * One editing surface per alignment (UNDERGROUND_AUDIT F5): in Design the inspector edits it; in Underground the
+ * Underground panel does (profile editor + long-section), so the inspector shows the section sketch and points there.
+ */
+export const AlignmentInspector: React.FC<{ a: UndergroundAlignmentObject }> = ({ a }) => {
+  const ws = useShellStore(s => s.workspace);
+  const inUnderground = ws === 'underground';
+  return (
+    <div className="flex flex-col gap-3" data-testid="alignment-inspector">
+      <div className={card} style={cardStyle}>
+        <span className={lbl} style={labelStyle}>Cross-section</span>
+        <SectionSketch a={a} />
+        {inUnderground
+          ? <p className="text-[12px]" style={labelStyle} data-testid="ug-inspector-edit-note">Edit type, size and depths in the Underground panel on the left; the long-section is in the Profile tab below.</p>
+          : (
+            <button type="button" className="uos-btn uos-btn-sm self-start" data-testid="ug-open-underground"
+              onClick={() => {
+                useUndergroundStore.getState().setActive(a.id);
+                const shell = useShellStore.getState();
+                shell.setWorkspace('underground');
+                // Land on the long-section (bottom drawer, Profile tab), not on a closed drawer
+                shell.setDrawerTab('profile');
+                shell.setDrawerOpen(true);
+              }}>
+              Long-section, sections &amp; conflicts →
+            </button>
+          )}
+      </div>
+      {!inUnderground && <AlignmentEditor a={a} />}
     </div>
-    <AlignmentEditor a={a} />
-  </div>
-);
+  );
+};
 
 /* ─── Demand zone ────────────────────────────────────────────────────────── */
 
