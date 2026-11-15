@@ -5,7 +5,7 @@
  * copy-on-write applies exactly as for other objects.
  */
 import type { Certainty } from '../objects/certainty';
-import type { UndergroundAlignmentKind, UndergroundAlignmentObject, UndergroundSection, UndergroundVertexDepth } from '../objects/types';
+import type { UndergroundAlignmentKind, UndergroundAlignmentObject, UndergroundLifecycle, UndergroundSection, UndergroundVertexDepth } from '../objects/types';
 import { ALIGNMENT_KIND_LABEL } from './alignmentGeometry';
 
 /**
@@ -60,6 +60,7 @@ export function buildAlignment(d: AlignmentDraft): UndergroundAlignmentObject {
     section: cleanSection(d.section),
     sectionCertainty: d.sectionCertainty,
     depths: d.points.map(() => ({ crownDepthM: depth, certainty: depth === null ? 'unknown' : d.depthCertainty })),
+    lifecycle: 'proposed',
     createdAt: d.createdAt,
     updatedAt: d.createdAt,
   };
@@ -72,7 +73,8 @@ export function withVertexDepth(a: UndergroundAlignmentObject, i: number, patch:
   const cur = depths[i];
   const crownDepthM = 'crownDepthM' in patch ? cleanDepth(patch.crownDepthM) : cur.crownDepthM;
   const certainty: Certainty = crownDepthM === null ? 'unknown' : (patch.certainty ?? (cur.certainty === 'unknown' ? 'hypothetical' : cur.certainty));
-  depths[i] = { crownDepthM, certainty };
+  // A changed depth invalidates the stored elevation (re-derived by withGroundReference); a certainty change keeps it
+  depths[i] = crownDepthM === cur.crownDepthM ? { ...cur, crownDepthM, certainty } : { crownDepthM, certainty };
   return { ...a, depths, updatedAt: new Date().toISOString() };
 }
 
@@ -91,3 +93,25 @@ export function withKind(a: UndergroundAlignmentObject, kind: UndergroundAlignme
 }
 
 export const isAlignment = (o: { type: string } | null | undefined): o is UndergroundAlignmentObject => !!o && o.type === 'underground_alignment';
+
+export function withLifecycle(a: UndergroundAlignmentObject, lifecycle: UndergroundLifecycle): UndergroundAlignmentObject {
+  return { ...a, lifecycle, updatedAt: new Date().toISOString() };
+}
+
+/**
+ * Stores, per vertex, the crown elevation (m, datum) derived from the typed depth and the ground at that vertex, with the
+ * ground level and ground model used (research §2.3). Ground null at a vertex = elevation null (UNKNOWN), never a guess.
+ * Returns the same object when nothing changes (so callers can skip a write).
+ */
+export function withGroundReference(a: UndergroundAlignmentObject, groundM: readonly (number | null)[], groundModel: string): UndergroundAlignmentObject {
+  let changed = false;
+  const depths = a.coordinates.map((_, i) => {
+    const d = a.depths?.[i] ?? { crownDepthM: null, certainty: 'unknown' as Certainty };
+    const g = groundM[i] ?? null;
+    const elev = d.crownDepthM !== null && g !== null ? Math.round((g - d.crownDepthM) * 100) / 100 : null;
+    const next: UndergroundVertexDepth = { ...d, elevationM: elev, datum: 'EGM2008', zRef: 'crown', groundM: g, groundModel: g === null ? null : groundModel };
+    if (d.elevationM !== next.elevationM || d.groundM !== next.groundM || (d.groundModel ?? null) !== next.groundModel || d.zRef !== 'crown' || d.datum !== 'EGM2008') changed = true;
+    return next;
+  });
+  return changed ? { ...a, depths } : a;
+}

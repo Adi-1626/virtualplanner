@@ -50,3 +50,28 @@ describe('existing metro tunnel (audit F8)', () => {
     expect(verticalExtentOf(m)!.topDepthM).toBe(-12);
   });
 });
+
+import { buildAlignment, withGroundReference, withKind, withLifecycle, withSection, withVertexDepth } from '../underground/alignmentFactory';
+
+describe('Z model: typed depth + elevation + datum + ground model per vertex (research §2.3)', () => {
+  const a0 = buildAlignment({ id: 'abcd1234', scenarioId: 's', points: [[73.85, 18.5, 0], [73.86, 18.5, 0], [73.87, 18.5, 0]], kind: 'bored_tunnel',
+    crownDepthM: 15, depthCertainty: 'hypothetical', section: { shape: 'circular', diameterM: 6 }, sectionCertainty: 'hypothetical', createdAt: 't' });
+  const M = 'Copernicus GLO-30 DSM v3 (dsv_x)';
+  it('new alignments are proposed', () => expect(a0.lifecycle).toBe('proposed'));
+  it('stores crown elevation = ground − depth with datum, z-ref, ground and model; unknown ground stays null', () => {
+    const a = withGroundReference(a0, [574.2, null, 575], M);
+    expect(a.depths[0]).toMatchObject({ crownDepthM: 15, elevationM: 559.2, datum: 'EGM2008', zRef: 'crown', groundM: 574.2, groundModel: M });
+    expect(a.depths[1]).toMatchObject({ crownDepthM: 15, elevationM: null, groundM: null, groundModel: null });
+    expect(withGroundReference(a, [574.2, null, 575], M)).toBe(a);   // idempotent: no write when nothing changes
+  });
+  it('keeps Z through section / kind / status / certainty edits, and re-derives it when the depth changes', () => {
+    const a = withGroundReference(a0, [574.2, 580, 575], M);
+    for (const b of [withSection(a, { shape: 'circular', diameterM: 7 }), withKind(a, 'underground_metro'), withLifecycle(a, 'conceptual'), withVertexDepth(a, 1, { certainty: 'measured' })]) {
+      expect(b.depths.map(d => d.elevationM)).toEqual([559.2, 565, 560]);
+    }
+    const c = withVertexDepth(a, 1, { crownDepthM: 20 });
+    expect(c.depths[1].elevationM).toBeUndefined();                 // stale elevation dropped…
+    expect(withGroundReference(c, [574.2, 580, 575], M).depths[1].elevationM).toBe(560);   // …and re-derived
+    expect(c.coordinates.map(p => p[2])).toEqual([0, 0, 0]);        // plan vertices stay on the ground
+  });
+});

@@ -388,7 +388,7 @@ export function alignmentElementPayload(a: UndergroundAlignmentObject): Alignmen
     z_ref: 'ground',
     profile: prof,
     certainty: worstCertainty([...p.vertices.map(v => v.certainty), a.sectionCertainty]),
-    provenance: `UrbanOS underground alignment ${a.id} (scenario ${a.scenarioId}); depths user-entered relative to a flat ground datum (no DEM)`,
+    provenance: `UrbanOS underground alignment ${a.id} (scenario ${a.scenarioId}, ${a.lifecycle ?? 'proposed'}); crown depths user-entered below ground${a.depths?.find(d => d.groundModel)?.groundModel ? `; crown elevations m EGM2008 from ${a.depths.find(d => d.groundModel)?.groundModel} (DSM incl. roofs/trees, screening)` : '; ground level not sampled'}`,
     scenario_id: a.scenarioId ?? null,
     element_ref: a.id,
   };

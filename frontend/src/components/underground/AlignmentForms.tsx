@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { engineInstance } from '../../engine/TwinCityEngine';
-import type { UndergroundAlignmentKind, UndergroundAlignmentObject, UndergroundSection } from '../../engine/objects/types';
+import type { CityObject, UndergroundAlignmentKind, UndergroundAlignmentObject, UndergroundLifecycle, UndergroundSection } from '../../engine/objects/types';
 import type { Certainty } from '../../engine/objects/certainty';
 import { ALIGNMENT_KIND_LABEL, alignmentProfile } from '../../engine/underground/alignmentGeometry';
-import { ALIGNMENT_KINDS, cleanDepth, withAllDepths, withKind, withSection, withVertexDepth } from '../../engine/underground/alignmentFactory';
+import { ALIGNMENT_KINDS, cleanDepth, withAllDepths, withGroundReference, withKind, withLifecycle, withSection, withVertexDepth } from '../../engine/underground/alignmentFactory';
+import { elevationProfile } from '../../engine/underground/terrainProfile';
+import { useTerrainProfile } from './useTerrain';
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
 import { CERTAINTY_OPTIONS, commitAlignment, field, input, inputStyle, lbl, labelStyle, note } from './common';
 
@@ -87,65 +89,119 @@ export const UndergroundToolSettings: React.FC = () => {
   );
 };
 
-/** Inspector-style editor for one alignment: type, section, and the vertical profile (depth per vertex). */
+const LIFECYCLE_OPTIONS: { value: UndergroundLifecycle; label: string }[] = [
+  { value: 'proposed', label: 'Proposed' },
+  { value: 'conceptual', label: 'Conceptual / illustrative' },
+  { value: 'existing', label: 'Existing (entered from records)' },
+];
+
+/** Ground at each vertex from the DSM, with the model label (null while loading / unavailable). */
+function useVertexGround(a: UndergroundAlignmentObject) {
+  const terrain = useTerrainProfile(a.coordinates);
+  return useMemo(() => {
+    if (terrain.state !== 'ok' || terrain.data.summary.n_ok === 0) return { state: terrain.state, ground: null, model: null, error: terrain.state === 'error' ? terrain.error : null };
+    const ds = terrain.data.dataset;
+    const model = `Copernicus GLO-30 ${ds.surface} ${ds.version}${ds.dataset_version_id ? ` (${ds.dataset_version_id})` : ''}`;
+    return { state: 'ok' as const, ground: elevationProfile(a, terrain.data).vertices.map(v => v.groundM), model, error: null };
+  }, [terrain, a]);
+}
+
+/** The one editor for an alignment (Underground panel; the Design inspector shows it only in Design): status, type, section, depths. */
 export const AlignmentEditor: React.FC<{ a: UndergroundAlignmentObject }> = ({ a }) => {
   const p = alignmentProfile(a);
   const [allDepth, setAllDepth] = useState('');
+  const g = useVertexGround(a);
+  // Every depth edit also stores the crown elevation, datum, ground level and ground model used (research §2.3)
+  const commit = (after: UndergroundAlignmentObject, what: string, key?: string) =>
+    commitAlignment(a, g.ground && g.model ? withGroundReference(after, g.ground, g.model) : after, what, key);
+  // Alignments drawn before the ground was known get their elevations once it is (derived data, no undo entry;
+  // only in the alternative the object belongs to, so viewing never creates a copy-on-write change)
+  useEffect(() => {
+    if (!g.ground || !g.model || a.scenarioId !== engineInstance.scenarios.getActiveScenarioId()) return;
+    const next = withGroundReference(a, g.ground, g.model);
+    if (next !== a) engineInstance.objects.update(a.id, { depths: next.depths } as Partial<CityObject>);
+  }, [a, g.ground, g.model]);
+  const lifecycle = a.lifecycle ?? 'proposed';
   return (
     <div className="flex flex-col gap-3" data-testid="alignment-editor">
       <div className="grid grid-cols-2 gap-2">
         <div className={field}>
-          <label className={lbl} style={labelStyle} htmlFor="ug-kind">Type</label>
-          <select id="ug-kind" data-testid="ug-kind" className={input} style={inputStyle} value={a.alignmentKind}
-            onChange={e => commitAlignment(a, withKind(a, e.target.value as UndergroundAlignmentKind), 'Change alignment type')}>
-            {ALIGNMENT_KINDS.map(k => <option key={k} value={k}>{ALIGNMENT_KIND_LABEL[k]}</option>)}
+          <label className={lbl} style={labelStyle} htmlFor="ug-lifecycle">Status</label>
+          <select id="ug-lifecycle" data-testid="ug-lifecycle" className={input} style={inputStyle} value={lifecycle}
+            onChange={e => commit(withLifecycle(a, e.target.value as UndergroundLifecycle), 'Change status')}>
+            {LIFECYCLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
         <div className={field}>
-          <span className={lbl} style={labelStyle}>Length</span>
-          <span className="text-body tabular-nums text-text-1 py-1">{Math.round(p.lengthM).toLocaleString('en-IN')} m (plan)</span>
+          <label className={lbl} style={labelStyle} htmlFor="ug-kind">Type</label>
+          <select id="ug-kind" data-testid="ug-kind" className={input} style={inputStyle} value={a.alignmentKind}
+            onChange={e => commit(withKind(a, e.target.value as UndergroundAlignmentKind), 'Change alignment type')}>
+            {ALIGNMENT_KINDS.map(k => <option key={k} value={k}>{ALIGNMENT_KIND_LABEL[k]}</option>)}
+          </select>
         </div>
       </div>
-      <SectionFields idBase="ug-section" section={a.section} onChange={s => commitAlignment(a, withSection(a, s), 'Edit cross-section', `${a.id}:section`)} />
+      <div className="text-label text-text-2">Length <span className="tabular-nums text-text-1">{Math.round(p.lengthM).toLocaleString('en-IN')} m</span> (plan)</div>
+      <SectionFields idBase="ug-section" section={a.section} onChange={s => commit(withSection(a, s), 'Edit cross-section', `${a.id}:section`)} />
       <div className={field}>
         <label className={lbl} style={labelStyle} htmlFor="ug-sec-cert">Section is <CertaintyBadge certainty={a.sectionCertainty} compact /></label>
-        <CertaintySelect id="ug-sec-cert" label="Section certainty" value={a.sectionCertainty} onChange={c => commitAlignment(a, withSection(a, a.section, c), 'Section certainty')} />
+        <CertaintySelect id="ug-sec-cert" label="Section certainty" value={a.sectionCertainty} onChange={c => commit(withSection(a, a.section, c), 'Section certainty')} />
+      </div>
+      <div className="uos-card text-meta text-text-2 flex flex-col gap-0.5" data-testid="ug-depth-reference">
+        <span className="text-label text-text-1">Depth reference</span>
+        {g.state === 'ok' && g.model ? (
+          <>
+            <span>Depth = top of the structure (crown), metres below ground. Ground = {g.model}, m EGM2008.</span>
+            <span className="text-warn">This ground model is a surface model: it includes roofs and trees (about ±2–4 m in the open), so treat cover as screening only.</span>
+          </>
+        ) : g.state === 'error'
+          ? <span className="text-unknown">Ground level UNKNOWN (terrain service unavailable: {g.error}). Depths are below an unknown ground; no elevations stored.</span>
+          : g.state === 'ok'
+            ? <span className="text-unknown">Ground level UNKNOWN here (outside the ground model). Depths are below an unknown ground.</span>
+            : <span>Loading ground levels…</span>}
       </div>
       <div>
         <div className="flex items-end gap-2 mb-1">
           <div className={`${field} flex-1`}>
-            <label className={lbl} style={labelStyle} htmlFor="ug-all-depth">Set all vertices (m)</label>
+            <label className={lbl} style={labelStyle} htmlFor="ug-all-depth">Set all depths (m below ground)</label>
             <input id="ug-all-depth" data-testid="ug-all-depth" type="number" min={0} step={0.5} placeholder="crown depth" className={input} style={inputStyle} value={allDepth} onChange={e => setAllDepth(e.target.value)} />
           </div>
           <button type="button" className="uos-btn uos-btn-sm" data-testid="ug-apply-all-depth" disabled={allDepth.trim() === '' || cleanDepth(Number(allDepth)) === null}
-            onClick={() => { commitAlignment(a, withAllDepths(a, Number(allDepth), 'hypothetical'), 'Set all depths'); setAllDepth(''); }}>Apply</button>
+            onClick={() => { commit(withAllDepths(a, Number(allDepth), 'hypothetical'), 'Set all depths'); setAllDepth(''); }}>Apply</button>
         </div>
         <table className="uos-table ug-vertex-table" data-testid="ug-vertex-table">
-          <thead><tr><th style={cell}>#</th><th className="num" style={cell}>Chainage · grade</th><th style={cell}>Crown (m)</th><th style={cell}>Certainty</th></tr></thead>
+          <thead><tr><th style={cell}>#</th><th className="num" style={cell}>Chainage · grade</th><th style={cell}>Depth ↓ (m)</th><th style={cell}>Certainty</th></tr></thead>
           <tbody>
-            {p.vertices.map((v, i) => (
-              <tr key={i}>
-                <td style={cell}>{i + 1}</td>
-                <td className="num" style={cell} title="Grade = Δcrown / Δchainage to the next vertex; + = getting deeper">
-                  {Math.round(v.chainageM)} m
-                  {i < p.gradientsPct.length && <span className="block text-meta text-text-3">{p.gradientsPct[i] === null ? 'grade ?' : `${(p.gradientsPct[i] as number) >= 0 ? '+' : ''}${(p.gradientsPct[i] as number).toFixed(2)} %`}</span>}
-                </td>
-                <td style={cell}>
-                  <input aria-label={`Crown depth at vertex ${i + 1} (m)`} data-testid={`ug-depth-${i}`} type="number" min={0} step={0.5} placeholder="?" title="Blank = Unknown"
-                    className={input} style={{ ...inputStyle, width: 70, fontSize: 12 }} value={v.crownDepthM ?? ''}
-                    onChange={e => commitAlignment(a, withVertexDepth(a, i, { crownDepthM: num(e.target.value) }), `Depth at vertex ${i + 1}`, `${a.id}:depth:${i}`)} />
-                </td>
-                <td style={cell}>
-                  {v.crownDepthM === null ? <CertaintyBadge certainty="unknown" note="No depth entered" /> : (
-                    <CertaintySelect id={`ug-cert-${i}`} label={`Depth certainty at vertex ${i + 1}`} testId={`ug-cert-${i}`} short value={v.certainty}
-                      onChange={c => commitAlignment(a, withVertexDepth(a, i, { certainty: c }), `Depth certainty at vertex ${i + 1}`)} />
-                  )}
-                </td>
-              </tr>
-            ))}
+            {p.vertices.map((v, i) => {
+              const gr = g.ground?.[i] ?? null;
+              const elev = v.crownDepthM !== null && gr !== null ? gr - v.crownDepthM : null;
+              return (
+                <tr key={i}>
+                  <td style={cell}>{i + 1}</td>
+                  <td className="num" style={cell} title="Grade = Δcrown / Δchainage to the next vertex; + = getting deeper">
+                    {Math.round(v.chainageM)} m
+                    {i < p.gradientsPct.length && <span className="block text-meta text-text-3">{p.gradientsPct[i] === null ? 'grade ?' : `${(p.gradientsPct[i] as number) >= 0 ? '+' : ''}${(p.gradientsPct[i] as number).toFixed(2)} %`}</span>}
+                  </td>
+                  <td style={cell}>
+                    <input aria-label={`Crown depth below ground at vertex ${i + 1} (m)`} data-testid={`ug-depth-${i}`} type="number" min={0} step={0.5} placeholder="?" title="Blank = Unknown"
+                      className={input} style={{ ...inputStyle, width: 70, fontSize: 12 }} value={v.crownDepthM ?? ''}
+                      onChange={e => commit(withVertexDepth(a, i, { crownDepthM: num(e.target.value) }), `Depth at vertex ${i + 1}`, `${a.id}:depth:${i}`)} />
+                    <span className="block text-meta text-text-3 tabular-nums" data-testid={`ug-elev-${i}`}
+                      title={gr === null ? 'Ground UNKNOWN here' : `Ground ${gr.toFixed(1)} m EGM2008 (DSM) − depth`}>
+                      {elev === null ? (v.crownDepthM === null ? 'elev ?' : 'ground ?') : `${elev.toFixed(1)} m EGM2008`}
+                    </span>
+                  </td>
+                  <td style={cell}>
+                    {v.crownDepthM === null ? <CertaintyBadge certainty="unknown" note="No depth entered" /> : (
+                      <CertaintySelect id={`ug-cert-${i}`} label={`Depth certainty at vertex ${i + 1}`} testId={`ug-cert-${i}`} short value={v.certainty}
+                        onChange={c => commit(withVertexDepth(a, i, { certainty: c }), `Depth certainty at vertex ${i + 1}`)} />
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
-        <p className="text-[11px] mt-1" style={note}>Depth = crown (top of structure) below the ground (DSM where covered, else flat datum UNKNOWN); the Profile shows the crown elevation (m EGM2008) too. Blank = Unknown: never interpolated across, shown as "?" on the profile.</p>
+        <p className="text-[11px] mt-1" style={note}>Under each depth: the crown elevation it gives (ground − depth), stored with the ground level and model used. Blank depth = Unknown: never interpolated across, shown as "?" on the Profile.</p>
       </div>
     </div>
   );

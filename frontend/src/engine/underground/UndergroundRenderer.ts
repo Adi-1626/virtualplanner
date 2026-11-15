@@ -93,7 +93,9 @@ export class UndergroundRenderer {
     const nextId = (suffix: string) => { if (first) { first = false; return a.id; } return `ug:${a.id}:${suffix}`; };
     known.forEach((run, k) => {
       const cert = run.reduce<Certainty>((worst, i) => (ALPHA[ds[i].certainty] < ALPHA[worst] ? ds[i].certainty : worst), 'measured');
-      const color = base.withAlpha(selected ? Math.min(1, ALPHA[cert] + 0.25) : ALPHA[cert]);
+      const conceptual = a.lifecycle === 'conceptual';
+      const alpha = ALPHA[cert] * (conceptual ? 0.6 : 1);
+      const color = base.withAlpha(selected ? Math.min(1, alpha + 0.25) : alpha);
       if (h !== null && w !== null) {
         const positions = run.map(i => scenePoint(a.coordinates[i][0], a.coordinates[i][1], -((ds[i].crownDepthM as number) + h / 2)));
         ents.add({
@@ -118,10 +120,16 @@ export class UndergroundRenderer {
         },
       });
     });
-    // Plan trace on the surface so the alignment can be found and clicked from above
+    // Plan trace on the surface so the alignment can be found and clicked from above. Line style = status
+    // (research §5): solid existing, dashed proposed, dotted conceptual.
+    const lc = a.lifecycle ?? 'proposed';
+    const traceColor = base.withAlpha(0.7);
     ents.add({
-      id: nextId('plan'), name: a.name,
-      polyline: { positions: a.coordinates.map(c => scenePoint(c[0], c[1], 0)), width: selected ? 3 : 2, clampToGround: true, material: base.withAlpha(0.5) },
+      id: nextId('plan'), name: `${a.name} (${lc})`,
+      polyline: {
+        positions: a.coordinates.map(c => scenePoint(c[0], c[1], 0)), width: selected ? 4 : 3, clampToGround: true,
+        material: lc === 'existing' ? traceColor : new PolylineDashMaterialProperty({ color: traceColor, dashLength: lc === 'conceptual' ? 6 : 18 }),
+      },
     });
   }
 

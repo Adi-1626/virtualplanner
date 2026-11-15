@@ -319,9 +319,27 @@ export type UndergroundSection =
 
 /** Depth at one plan vertex: crown (top of structure) below ground in metres, positive down. null = UNKNOWN. */
 export interface UndergroundVertexDepth {
+  /** What the user typed: depth of the crown below ground (m, + down). null = UNKNOWN. */
   crownDepthM: number | null;
   certainty: import('./certainty').Certainty;
+  /**
+   * Absolute elevation of `zRef` (m, in `datum`), derived from the typed depth and the ground model at the time
+   * (research §2.3: keep the elevation, the typed depth and the ground model + version used to convert it).
+   * null/absent = not converted (ground UNKNOWN there or not yet sampled).
+   */
+  elevationM?: number | null;
+  /** Vertical datum of elevationM / groundM. */
+  datum?: 'EGM2008';
+  /** Which part of the cross-section elevationM is (the typed depth is always to the crown). */
+  zRef?: 'crown' | 'centre' | 'invert';
+  /** Ground elevation used for the conversion (m, datum). */
+  groundM?: number | null;
+  /** Ground model + version used, e.g. "Copernicus GLO-30 DSM v3 (dsv_…)". */
+  groundModel?: string | null;
 }
+
+/** Lifecycle status (line style), separate from evidence/certainty (opacity). Absent = proposed. */
+export type UndergroundLifecycle = 'proposed' | 'conceptual' | 'existing';
 
 /**
  * A buried linear structure drawn on the ground (plan polyline) with a depth per vertex and a typical cross-section.
@@ -336,6 +354,8 @@ export interface UndergroundAlignmentObject extends BaseCityObject {
   sectionCertainty: import('./certainty').Certainty;
   /** One entry per coordinate (same order). */
   depths: UndergroundVertexDepth[];
+  /** Proposed (default), conceptual / illustrative, or existing (entered from records). */
+  lifecycle?: UndergroundLifecycle;
 }
 
 export interface ZoneObject extends BaseCityObject {
