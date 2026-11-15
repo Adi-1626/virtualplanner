@@ -13,6 +13,8 @@ import { useUndergroundStore } from './undergroundStore';
 import { ElevationProfileSvg } from './ElevationProfile';
 import { useSubsurfaceEvidence, useTerrainProfile, type Loadable } from './useTerrain';
 import type { TerrainProfile } from '../../lib/terrainApi';
+import { redactPaths } from '../../lib/redactPaths';
+import { declutterLabels, flatDatumLabel, FLAT_DATUM } from './chartLabels';
 
 const W = 880, H = 180;
 const C = {
@@ -31,7 +33,7 @@ const NoAlignment: React.FC = () => (
   </EmptyState>
 );
 
-const FLAT_LABEL = 'Ground = flat datum 0 m · no terrain data — UNKNOWN';
+const FLAT_LABEL = FLAT_DATUM.idle;
 const GroundLine: React.FC<{ x0: number; x1: number; y: number; label?: string }> = ({ x0, x1, y, label = FLAT_LABEL }) => (
   <g data-testid="ug-ground-line">
     <line x1={x0} x2={x1} y1={y} y2={y} stroke={C.ground} strokeWidth={1.5} strokeDasharray="6 4" />
@@ -39,13 +41,11 @@ const GroundLine: React.FC<{ x0: number; x1: number; y: number; label?: string }
   </g>
 );
 
-/** Why the flat datum is shown (terrain still loading, outside DEM coverage, or the terrain service failed). */
-function flatLabel(t: Loadable<TerrainProfile>): string {
-  if (t.state === 'loading') return 'Ground = flat datum 0 m · loading DEM…';
-  if (t.state === 'error') return `Ground = flat datum 0 m · terrain service unavailable (${t.error}) — UNKNOWN`;
-  if (t.state === 'ok') return 'Ground = flat datum 0 m · outside DEM coverage — UNKNOWN';
-  return FLAT_LABEL;
-}
+/** Why the flat datum is shown (chartLabels.flatDatumLabel: a fixed reason, never the service's error text or a path). */
+const flatLabel = (t: Loadable<TerrainProfile>): string => flatDatumLabel(t);
+
+const LABEL_ROW_PX = 10;
+const crossingText = (type: CityObject['type'], bottomUnknown: boolean) => `${TYPE_LABEL[type] ?? type}${bottomUnknown ? ' · depth unknown' : ''}`;
 
 /**
  * Long-section. With DEM coverage: elevation axis (m EGM2008) with the DSM ground line (ElevationProfile.tsx).
@@ -58,7 +58,7 @@ export const ProfileView: React.FC = () => {
   const ev = useSubsurfaceEvidence(active?.coordinates);
   if (!active) return <NoAlignment />;
   if (terrain.state === 'ok' && terrain.data.summary.n_ok > 0) {
-    return <ElevationProfileSvg a={active} others={all} prof={terrain.data} evidence={ev.state === 'ok' ? ev.data : null} evidenceNote={ev.state === 'error' ? `PMC sewer crossings: evidence service unavailable (${ev.error}) — UNKNOWN` : ev.state === 'ok' ? null : 'PMC sewer crossings: loading…'} />;
+    return <ElevationProfileSvg a={active} others={all} prof={terrain.data} evidence={ev.state === 'ok' ? ev.data : null} evidenceNote={ev.state === 'error' ? `PMC sewer crossings: evidence service unavailable (${redactPaths(ev.error)}) — UNKNOWN` : ev.state === 'ok' ? null : 'PMC sewer crossings: loading…'} />;
   }
   return <ProfileSvg a={active} others={all} groundLabel={flatLabel(terrain)} />;
 };
@@ -70,6 +70,9 @@ export const ProfileSvg: React.FC<{ a: UndergroundAlignmentObject; others: reado
   const y0 = scale(L.y, 0);
   const bottomY = H - L.box.bottom;
   const hypo = L.profile.vertices.some(v => isHypo(v.certainty));
+  const crossingLabels = useMemo(() => declutterLabels(
+    L.crossings.map(c => ({ x: scale(L.x, c.chainageM) + 3, text: crossingText(c.objectType, c.extent.bottomDepthM === null) })),
+    { anchor: 'start', minX: L.box.left, maxX: W - L.box.right, maxRows: 3 }), [L]);
   return (
     <div className="flex flex-col gap-1" data-testid="ug-profile">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-text-2">
@@ -77,7 +80,7 @@ export const ProfileSvg: React.FC<{ a: UndergroundAlignmentObject; others: reado
         <span>Length {Math.round(L.profile.lengthM)} m</span>
         <span>Deepest known ({L.profile.maxKnownDepthRef}) {fmtM(L.profile.maxKnownDepthM)} below ground</span>
         {L.profile.unknownDepthCount > 0 && <span className="text-unknown" data-testid="ug-profile-unknown-count">{L.profile.unknownDepthCount} vertex depth{L.profile.unknownDepthCount > 1 ? 's' : ''} UNKNOWN</span>}
-        <span>{L.crossings.length} crossing{L.crossings.length === 1 ? '' : 's'} with model objects</span>
+        <span>{L.crossings.length} crossing{L.crossings.length === 1 ? '' : 's'} with model objects{crossingLabels.hidden > 0 ? <span data-testid="ug-profile-labels-hidden"> ({crossingLabels.hidden} label{crossingLabels.hidden === 1 ? '' : 's'} hidden: hover a crossing)</span> : null}</span>
         <span>Vertical scale exaggerated; click to set the cross-section chainage</span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxHeight: H, minWidth: 560 }} role="img"
@@ -117,7 +120,6 @@ export const ProfileSvg: React.FC<{ a: UndergroundAlignmentObject; others: reado
         {/* crossings with model objects */}
         {L.crossings.map((c, i) => {
           const x = scale(L.x, c.chainageM);
-          const showLabel = i === 0 || x - scale(L.x, L.crossings[i - 1].chainageM) > 70;
           const top = c.extent.topDepthM, bot = c.extent.bottomDepthM;
           const yt = top === null ? y0 : Math.max(L.box.top, scale(L.y, top));
           return (
@@ -127,10 +129,13 @@ export const ProfileSvg: React.FC<{ a: UndergroundAlignmentObject; others: reado
                 ? <rect x={x - 3} y={yt} width={6} height={Math.max(2, scale(L.y, bot) - yt)} fill={C.cross} fillOpacity={0.8} />
                 : <line x1={x} x2={x} y1={yt} y2={bottomY} stroke={C.cross} strokeWidth={2} strokeDasharray="1 4" />}
               <circle cx={x} cy={yt} r={3} fill={C.cross} />
-              {showLabel && <text x={x + 3} y={bottomY - 4} fontSize={9} fill={C.text}>{(TYPE_LABEL[c.objectType] ?? c.objectType)}{bot === null ? ' · depth unknown' : ''}</text>}
             </g>
           );
         })}
+        {/* crossing labels: identical ones nearby grouped with a count, others staggered over up to 3 rows */}
+        {crossingLabels.labels.map((l, i) => (
+          <text key={`xl${i}`} x={l.x} y={bottomY - 4 - l.row * LABEL_ROW_PX} fontSize={9} fill={C.text} data-testid="ug-profile-crossing-label">{l.text}</text>
+        ))}
         {/* section marker */}
         <line x1={scale(L.x, chainage)} x2={scale(L.x, chainage)} y1={L.box.top} y2={bottomY} stroke="var(--accent, #3b82f6)" strokeWidth={1} data-testid="ug-profile-section-marker" />
       </svg>
@@ -160,6 +165,9 @@ export const CrossSectionSvg: React.FC<{ a: UndergroundAlignmentObject; others: 
   const ownInfo = L.section.own;
   const len = Math.round(layoutProfile(a, [], { width: 10, height: 10 }).profile.lengthM);
   const ground = useSectionGround(a, chainage, half);
+  const itemLabels = useMemo(() => declutterLabels(
+    L.section.items.map(it => ({ x: scale(L.x, it.offsetM), text: crossingText(it.objectType, it.extent.bottomDepthM === null) })),
+    { anchor: 'middle', minX: L.box.left, maxX: W - L.box.right, maxRows: 3 }), [L]);
   const groundPts = useMemo(() => {
     if (ground.state !== 'ok') return null;
     const s = ground.data.samples, mid = ground.data.length_m_utm / 2;
@@ -186,7 +194,7 @@ export const CrossSectionSvg: React.FC<{ a: UndergroundAlignmentObject; others: 
         </label>
         <span>Crown here {fmtM(ownInfo.crownDepthM)} <CertaintyBadge certainty={ownInfo.certainty} compact /></span>
         <span>Section {ownInfo.section.shape === 'circular' ? `Ø ${fmtM(ownInfo.widthM)}` : `${fmtM(ownInfo.widthM)} × ${fmtM(ownInfo.heightM)}`} <CertaintyBadge certainty={a.sectionCertainty} compact /></span>
-        <span>{L.section.items.length} object{L.section.items.length === 1 ? '' : 's'} cut</span>
+        <span>{L.section.items.length} object{L.section.items.length === 1 ? '' : 's'} cut{itemLabels.hidden > 0 ? <span data-testid="ug-section-labels-hidden"> ({itemLabels.hidden} label{itemLabels.hidden === 1 ? '' : 's'} hidden: hover an object)</span> : null}</span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ maxHeight: H, minWidth: 560 }} role="img" aria-label={`Cross-section of ${a.name} at chainage ${Math.round(L.section.chainageM)} m`}>
         {L.yTicks.map(t => (
@@ -228,10 +236,12 @@ export const CrossSectionSvg: React.FC<{ a: UndergroundAlignmentObject; others: 
                     <rect x={x - halfW} y={yt - 2} width={halfW * 2} height={4} fill={C.cross} />
                     <line x1={x} x2={x} y1={yt} y2={H - L.box.bottom} stroke={C.cross} strokeWidth={2} strokeDasharray="1 4" />
                   </>}
-              <text x={x} y={H - L.box.bottom - 4 - (i % 2) * 10} fontSize={9} textAnchor="middle" fill={C.text}>{TYPE_LABEL[it.objectType] ?? it.objectType}{bot === null ? ' · depth unknown' : ''}</text>
             </g>
           );
         })}
+        {itemLabels.labels.map((l, i) => (
+          <text key={`il${i}`} x={l.x} y={H - L.box.bottom - 4 - l.row * LABEL_ROW_PX} fontSize={9} textAnchor="middle" fill={C.text} data-testid="ug-section-item-label">{l.text}</text>
+        ))}
       </svg>
     </div>
   );

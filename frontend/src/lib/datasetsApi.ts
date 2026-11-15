@@ -3,6 +3,7 @@
  * Honesty carried by the types: a missing value is null (= UNKNOWN), never 0 or ''. Licence 'UNKNOWN' is a value.
  */
 import { API_BASE } from './api';
+import { redactPaths } from './redactPaths';
 
 export type DataClass = 'observed' | 'inferred' | 'estimated' | 'derived' | 'synthetic';
 export type Suitability = 'visualisation' | 'screening' | 'engineering';
@@ -21,7 +22,7 @@ export interface ProcessingRun {
   inputs: { path?: string; sha256?: string; version_id?: string }[]; outputs: unknown[]; validation: unknown;
   started_at: string | null; finished_at: string | null; origin_path: string | null;
 }
-export interface DsFile { id: string; role: string; path: string; sha256: string | null; size_bytes: number | null; format: string | null; url: string | null }
+export interface DsFile { id: string; role: string; path: string; /** relative to the data directory (never an absolute server path); older backends omit it */ display_path?: string | null; sha256: string | null; size_bytes: number | null; format: string | null; url: string | null }
 export interface DsVersion {
   id: string; dataset_id: string; version_label: string; review_status: 'active' | 'pending_review' | 'superseded' | 'rejected';
   observation_start: string | null; observation_end: string | null; published_date: string | null; source_updated_date: string | null;
@@ -69,7 +70,7 @@ async function j<T>(path: string, init?: RequestInit): Promise<T> {
   if (!r.ok) {
     let msg = `${r.status} ${r.statusText}`;
     try { const b = await r.json(); if (b?.detail) msg = typeof b.detail === 'string' ? b.detail : JSON.stringify(b.detail); } catch { /* keep status */ }
-    throw new Error(msg);
+    throw new Error(redactPaths(msg));
   }
   return r.json() as Promise<T>;
 }

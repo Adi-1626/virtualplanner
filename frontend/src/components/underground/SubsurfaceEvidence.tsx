@@ -4,6 +4,7 @@ import { EmptyState } from '../ui/EmptyState';
 import type { Well } from '../../lib/terrainApi';
 import { useActiveAlignment } from './common';
 import { useSubsurfaceEvidence } from './useTerrain';
+import { redactPaths } from '../../lib/redactPaths';
 
 const box = 'rounded border p-2 flex flex-col gap-1';
 const boxStyle: React.CSSProperties = { borderColor: 'var(--border, #2C3540)', background: 'var(--surface-1, #161B22)' };
@@ -35,7 +36,7 @@ export const SubsurfaceEvidenceView: React.FC = () => {
   const ev = useSubsurfaceEvidence(active?.coordinates);
   if (!active) return <EmptyState icon={Layers} title="No underground alignment in this alternative">Draw one with the Tunnel tool to list evidence near it.</EmptyState>;
   if (ev.state === 'loading' || ev.state === 'idle') return <div className="text-meta text-text-3 p-2">Loading evidence near {active.name}…</div>;
-  if (ev.state === 'error') return <div className="text-meta p-2" style={{ color: 'var(--danger, #f87171)' }} data-testid="ug-ev-error">Evidence service unavailable: {ev.error}. Ground data near this alignment: UNKNOWN.</div>;
+  if (ev.state === 'error') return <div className="text-meta p-2" style={{ color: 'var(--danger, #f87171)' }} data-testid="ug-ev-error">Evidence service unavailable: {redactPaths(ev.error)}. Ground data near this alignment: UNKNOWN.</div>;
   const e = ev.data;
   const gw = e.groundwater, so = e.soil, sw = e.sewers, bh = e.boreholes;
   return (

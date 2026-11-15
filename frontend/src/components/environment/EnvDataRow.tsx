@@ -10,6 +10,7 @@ import { Disclosure } from '../ui/Disclosure';
 import type { EnvDataLayer, EnvLegend } from '../../lib/envDataApi';
 import { classLine, envDataStatus, hasMapToggle, legendOf, rampCss, STATUS_LABEL } from './envDataModel';
 import { setEnvDataVariant, setEnvDataVisible, useEnvDataOverlayStore } from './envDataOverlay';
+import { displayPath } from '../../lib/redactPaths';
 
 const selCls = 'max-w-full min-w-0 rounded-md bg-white/[0.05] border border-white/10 px-1.5 py-0.5 text-label text-text-1 focus:outline-none focus:border-cyan-400/60';
 
@@ -93,7 +94,7 @@ export const EnvDataRow: React.FC<{ l: EnvDataLayer }> = ({ l }) => {
         {l.processing && (
           <p className="text-meta text-text-3 break-all" data-testid={`env-data-processing-${l.id}`}>
             Pipeline {l.processing.pipeline ?? 'UNKNOWN'} @ {(l.processing.git_commit ?? 'UNKNOWN').slice(0, 10)} · run {l.processing.run_at ?? 'UNKNOWN'}
-            {l.processing.file ? ` · ${l.processing.file} sha256 ${(l.processing.sha256 ?? 'UNKNOWN').slice(0, 16)}…` : ''}
+            {l.processing.file ? ` · ${displayPath(l.processing.file)} sha256 ${(l.processing.sha256 ?? 'UNKNOWN').slice(0, 16)}…` : ''}
           </p>
         )}
       </Disclosure>
