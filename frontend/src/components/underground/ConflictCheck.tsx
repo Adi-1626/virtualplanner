@@ -17,6 +17,7 @@ import {
   highlightTargets, isStale, keyNumbers, plainSummary,
 } from './conflictClasses';
 import { clearConflictHighlight, showConflictHighlight } from './conflictHighlight';
+import { gapCountText, groupGaps, type GapGroup } from './screeningGroups';
 
 const SCREENED_TYPES = new Set(['underground_alignment', 'utility', 'metro_line', 'metro_station']);
 const isScreened = (o: CityObject) => SCREENED_TYPES.has(o.type);
@@ -134,8 +135,32 @@ const FindingRow: React.FC<{ f: ScreeningFinding; run: ScreeningRun; selected: b
   );
 };
 
+/** One reason why findings can't be judged (a dataset, a network, a missing input); the findings behind it on expand. */
+const GapGroupRow: React.FC<{ g: GapGroup; run: ScreeningRun; selectedId: string | null; onSelect: (f: ScreeningFinding | null) => void }> = ({ g, run, selectedId, onSelect }) => {
+  const [open, setOpen] = useState(() => g.findings.some(f => f.id === selectedId));
+  const [shown, setShown] = useState(PAGE);
+  return (
+    <li className="uos-card text-meta" data-testid="ug-gap-group" data-key={g.key}>
+      <button type="button" className="w-full text-left flex items-start gap-2" aria-expanded={open} onClick={() => setOpen(!open)} data-testid="ug-gap-group-open">
+        {open ? <ChevronDown size={14} className="mt-0.5 shrink-0" aria-hidden /> : <ChevronRight size={14} className="mt-0.5 shrink-0" aria-hidden />}
+        <span className="min-w-0 flex-1">
+          <span className="block text-text-1 break-words">{g.label}</span>
+          <span className="block text-text-2" data-testid="ug-gap-group-count">{gapCountText(g)}</span>
+        </span>
+      </button>
+      {open && (
+        <div className="mt-1.5 pl-3">
+          <ul className="space-y-1">{g.findings.slice(0, shown).map(f => <FindingRow key={f.id} f={f} run={run} selected={selectedId === f.id} onSelect={onSelect} />)}</ul>
+          {g.findings.length > shown && <button type="button" className="uos-btn uos-btn-sm mt-1" onClick={() => setShown(shown + PAGE)}>Show {Math.min(PAGE, g.findings.length - shown)} more of {g.findings.length - shown}</button>}
+        </div>
+      )}
+    </li>
+  );
+};
+
 const Group: React.FC<{ status: ScreeningStatus; findings: ScreeningFinding[]; run: ScreeningRun; selectedId: string | null; onSelect: (f: ScreeningFinding | null) => void }> = ({ status, findings, run, selectedId, onSelect }) => {
-  const [open, setOpen] = useState(status !== 'insufficient_data' || findings.length <= 6);
+  const gaps = useMemo(() => (status === 'insufficient_data' ? groupGaps(findings) : null), [status, findings]);
+  const [open, setOpen] = useState(status !== 'insufficient_data' || (gaps?.length ?? 0) <= 8);
   const [shown, setShown] = useState(PAGE);
   return (
     <section data-testid={`ug-group-${status}`}>
@@ -144,7 +169,13 @@ const Group: React.FC<{ status: ScreeningStatus; findings: ScreeningFinding[]; r
         <StatusBadge status={status} count={findings.length} />
         <span className="text-meta text-text-3 min-w-0 truncate">{STATUS_TEXT[status].hint}</span>
       </button>
-      {open && (
+      {open && gaps && (
+        <>
+          <p className="text-[11px] mb-1" style={note}>Grouped by what is missing. Open a line to see each place.</p>
+          <ul className="space-y-1" data-testid="ug-gap-groups">{gaps.map(g => <GapGroupRow key={g.key} g={g} run={run} selectedId={selectedId} onSelect={onSelect} />)}</ul>
+        </>
+      )}
+      {open && !gaps && (
         <>
           <ul className="space-y-1">{findings.slice(0, shown).map(f => <FindingRow key={f.id} f={f} run={run} selected={selectedId === f.id} onSelect={onSelect} />)}</ul>
           {findings.length > shown && <button type="button" className="uos-btn uos-btn-sm mt-1" onClick={() => setShown(shown + PAGE)}>Show {Math.min(PAGE, findings.length - shown)} more of {findings.length - shown}</button>}

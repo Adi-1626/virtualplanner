@@ -128,6 +128,8 @@ export interface ScreeningFinding {
   measurements: Record<string, number | boolean | null | (number | null)[]>;
   location: [number, number]; proposed: ScreeningAsset; other: ScreeningAsset | null; buildings?: ScreeningAsset[];
   merged_pieces?: number;
+  /** Insufficient data only: the shared reason (one dataset / network / missing input) these findings are grouped under. */
+  gap_group?: { key: string; label: string; unit: string };
   verification?: { id: string; verified_by: string; method: string; evidence: string; recorded_at: string | null; stale?: boolean };
 }
 export interface ScreeningChecklistItem { check: string; result: 'flagged' | 'nothing found in the available data' | 'not checked'; detail: string }

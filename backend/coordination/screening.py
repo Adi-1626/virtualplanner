@@ -879,8 +879,52 @@ def data_gap_finding(p: Asset, gaps: list[str], rec_layers: dict, cfg: dict) -> 
     return _finding(p, "insufficient_data", "data_gap", "data not available",
                     "Which networks and evidence layers have any data for this object.",
                     [{"dataset": "Layer inventory (see the layers list)", "dataset_id": "layers", "quality_level": "—"}],
-                    found, {"networks_missing": len(missing_nets)}, [f"Clearance to {n} assets." for n in missing_nets],
+                    found, {"networks_missing": len(missing_nets), "missing_networks": missing_nets}, [f"Clearance to {n} assets." for n in missing_nets],
                     ladder(cfg, "as_builts", "cbud", "gpr", "boreholes"), [])
+
+
+def short_dataset_name(name: Optional[str]) -> str:
+    """'PMC storm-water drains, labelled rows only (OpenCity mirror) — QL-D records' → 'PMC storm-water drains'."""
+    n = (name or "").split(" — ")[0].split(" (")[0].split(",")[0].strip()
+    return n or "Unnamed dataset"
+
+
+def _join_or(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " or " + items[-1]
+
+
+def gap_group(f: dict) -> dict:
+    """Why an Insufficient-data finding cannot be judged, as one group shared by all findings with the same reason (one
+    dataset / network / missing input). key = grouping key; label = plain sentence for a non-engineer; unit = what the
+    count counts. The UI and the screening report list one line per group with the findings behind an expand."""
+    cat = f["category"]
+    o = f.get("other") or {}
+    m = f.get("measurements") or {}
+    if cat in ("clearance", "metro"):
+        if m.get("proposed_crown_m") is None or m.get("proposed_invert_m") is None:
+            pid = f["proposed"]["id"]
+            return {"key": f"proposed_depth:{pid}", "label": f"{f['proposed']['name']}: depth or section size not entered — vertical "
+                    "clearance not checkable", "unit": "nearby asset"}
+        ds = o.get("dataset") or {}
+        name = short_dataset_name(ds.get("name") or o.get("kind_label"))
+        no_depth = m.get("other_crown_m") is None and m.get("other_invert_m") is None
+        reason = "no depth recorded" if no_depth else "levels have no stated datum"
+        return {"key": f"vertical:{ds.get('id') or o.get('layer')}:{'nodepth' if no_depth else 'nodatum'}",
+                "label": f"{name}: {reason} — vertical clearance not checkable", "unit": "crossing or near pass"}
+    if cat == "data_gap":
+        nets = list(m.get("missing_networks") or [])
+        if nets:
+            return {"key": "networks:" + ",".join(nets), "label": f"No {_join_or(nets)} records in this area", "unit": "object"}
+        return {"key": "data_gap", "label": "Evidence layers missing in this area", "unit": "object"}
+    if cat == "buildings":
+        return {"key": "buildings", "label": "Building foundations, basements and piles: depths unknown", "unit": "object"}
+    if cat == "cover":
+        return {"key": "cover", "label": "Cover not checkable: no crown depth entered", "unit": "object"}
+    if cat == "groundwater":
+        return {"key": "groundwater", "label": "Groundwater: no recent reading nearby or asset depth unknown", "unit": "object"}
+    if cat == "geology":
+        return {"key": "geology", "label": "Ground conditions: invert depth unknown, borehole reach not checkable", "unit": "object"}
+    return {"key": f"cat:{cat}", "label": f.get("title") or cat, "unit": "finding"}
 
 
 # ── field verification (recorded by a person) ───────────────────────────────────────────────────────────────────────
@@ -1089,6 +1133,8 @@ def screen(db, scenario_id: str, objects: Optional[list[dict]] = None, focus_ids
     apply_verifications(db, findings)
     for f in findings:
         f["status_label"] = STATUS_LABEL[f["status"]]
+        if f["status"] == "insufficient_data":
+            f["gap_group"] = gap_group(f)
     findings.sort(key=lambda f: (SEVERITY[f["status"]], f["proposed"]["name"], f.pop("_sort", 0.0)))
     for f in findings:
         f.pop("_sort", None)

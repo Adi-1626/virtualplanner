@@ -3,6 +3,7 @@ import {
   STATUS_ORDER, STATUS_TEXT, SCREENING_BANNER, countsByStatus, focusBounds, forObject, groupBySeverity, highlightTargets, isStale,
   keyNumbers, pathsOf, plainSummary,
 } from '../../components/underground/conflictClasses';
+import { gapCountText, groupGaps } from '../../components/underground/screeningGroups';
 import { sideBLabel } from '../../lib/planningProjects';
 import type { ScreeningFinding, ScreeningRun } from '../../lib/coordinationApi';
 
@@ -84,5 +85,26 @@ describe('underground screening helpers', () => {
   it('names Design-drawn objects in Projects → Conflicts', () => {
     expect(sideBLabel({ b_type: 'design_object', b_ref: 'design:u1', evidence: { b: { status: 'existing', name: 'Old main' } } }))
       .toBe('Existing object drawn in Design: Old main');
+  });
+
+  it('groups Insufficient-data findings per dataset / network with a short count line', () => {
+    const storm = (id: string, pid: string, crossing: boolean): ScreeningFinding => ({
+      ...finding(id, 'insufficient_data', 'clearance', pid, `R${id}`),
+      measurements: { horizontal_m: 0, vertical_checkable: false, crossing },
+      gap_group: { key: 'vertical:storm:nodepth', label: 'PMC storm-water drains: no depth recorded — vertical clearance not checkable', unit: 'crossing or near pass' },
+    });
+    const gap = (id: string, pid: string): ScreeningFinding => ({
+      ...finding(id, 'insufficient_data', 'data_gap', pid, null),
+      gap_group: { key: 'networks:water supply', label: 'No water supply records in this area', unit: 'object' },
+    });
+    const legacy: ScreeningFinding = { ...finding('x', 'insufficient_data', 'clearance', 'P1', 'R9'),
+      other: { ...asset('R9'), layer: 'utility_record', status: 'existing', dataset: { id: 'ssd_sewer', name: 'PMC sewer network (OpenCity mirror) — QL-D records' } } };
+    const gs = groupGaps([storm('a', 'P1', true), storm('b', 'P1', false), storm('c', 'P2', true), gap('g', 'P1'), legacy]);
+    expect(gs.map(g => g.key)).toEqual(['vertical:storm:nodepth', 'networks:water supply', 'vertical:ssd_sewer']);
+    expect(gs[0].findings).toHaveLength(3);
+    expect(gapCountText(gs[0])).toBe('3 crossings or near passes (2 cross in plan) · 2 proposed objects');
+    expect(gapCountText(gs[1])).toBe('1 object');
+    expect(gs[2].label).toBe('PMC sewer network: vertical clearance not checkable');   // older result without gap_group
+    for (const g of gs) for (const w of ['safe', 'feasible', 'passed', 'compliant']) expect(g.label.toLowerCase()).not.toContain(w);
   });
 });
