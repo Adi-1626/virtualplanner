@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ChevronDown, ChevronRight, FolderKanban, MapPin, ShieldQuestion } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, FileDown, FolderKanban, MapPin, ShieldQuestion } from 'lucide-react';
 import { coordinationApi, type ConflictClass, type ScreeningFinding, type ScreeningObject, type ScreeningRun, type ScreeningStatus } from '../../lib/coordinationApi';
 import { planningApi, type Project } from '../../engine/planning/planningApi';
 import type { CityObject, UndergroundAlignmentObject } from '../../engine/objects/types';
@@ -208,11 +208,13 @@ export const ConflictCheck: React.FC<{ a?: UndergroundAlignmentObject | null }> 
   const run = entry?.run ?? null;
   const proposedCount = visible.filter(o => (o.type === 'underground_alignment' || o.type === 'utility') && (sid === 'base' || o.scenarioId === sid)).length;
 
+  const screeningBody = (): ScreeningObject[] => visible.map(o => engineInstance.objects.schemaOf(o) as ScreeningObject);
+
   const check = async () => {
     setBusy(true); setErr(null);
     clearConflictHighlight();
     try {
-      const body: ScreeningObject[] = visible.map(o => engineInstance.objects.schemaOf(o) as ScreeningObject);
+      const body = screeningBody();
       const r = await coordinationApi.screenUnderground({ scenario_id: sid, objects: body });
       setRun(sid, r);
       setScope(a && r.summary.proposed_checked.some(p => p.id === a.id) ? a.id : null);
@@ -295,10 +297,46 @@ export const ConflictCheck: React.FC<{ a?: UndergroundAlignmentObject | null }> 
               )))}</tbody></table>
             <p className="text-[11px] mt-1" style={note}>Where two sources differ the stricter value is used and both are cited. Thresholds are widened by each record&rsquo;s positional uncertainty (ASCE 38 quality level). {run.disclaimer}</p>
           </Disclosure>
+          <ReportExport sid={sid} objects={screeningBody} stale={stale} />
           {a && <ProjectRegistration a={a} />}
         </div>
       )}
     </div>
+  );
+};
+
+/** Screening report: the backend re-runs the check on the objects as they are now and returns PDF or CSV. */
+const ReportExport: React.FC<{ sid: string; objects: () => ScreeningObject[]; stale: boolean }> = ({ sid, objects, stale }) => {
+  const [busy, setBusy] = useState<null | 'pdf' | 'csv'>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const get = async (format: 'pdf' | 'csv') => {
+    setBusy(format); setMsg(null);
+    try {
+      const { blob, filename, findings } = await coordinationApi.screeningReport({ scenario_id: sid, objects: objects() }, format);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = filename; document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setMsg(`Downloaded ${filename} (${findings.toLocaleString('en-IN')} findings).`);
+    } catch (e) { setMsg(`The report could not be made: ${(e as Error).message}`); } finally { setBusy(null); }
+  };
+  return (
+    <section className="uos-card flex flex-col gap-1.5" data-testid="ug-report">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-text-3">Screening report</div>
+      <p className="text-[11px]" style={note}>
+        For sharing with utility owners and engineers: summary, every finding in its five parts, rules and sources, what wasn&rsquo;t checked and the
+        next-investigation plan. The check is run again on the objects as they are now{stale ? ' (they changed since the result above)' : ''}.
+      </p>
+      <div className="flex gap-1.5">
+        <button type="button" className="uos-btn uos-btn-sm" disabled={busy !== null} onClick={() => void get('pdf')} data-testid="ug-report-pdf">
+          <FileDown size={14} aria-hidden /> {busy === 'pdf' ? 'Preparing PDF…' : 'PDF report'}
+        </button>
+        <button type="button" className="uos-btn uos-btn-sm" disabled={busy !== null} onClick={() => void get('csv')} data-testid="ug-report-csv">
+          <FileDown size={14} aria-hidden /> {busy === 'csv' ? 'Preparing CSV…' : 'Findings CSV'}
+        </button>
+      </div>
+      {msg && <p className="text-meta text-text-2" role="status" data-testid="ug-report-status">{msg}</p>}
+    </section>
   );
 };
 

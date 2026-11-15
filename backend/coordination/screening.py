@@ -1225,7 +1225,7 @@ def _layers_report(rec, metro_meta, bld_meta, wc_meta, existing_design, cfg) -> 
                     "records": d.get("record_count"), "datum": "not stated (levels relative only, vertical not checkable)" if ref else "as imported",
                     "coverage": "stated" if d.get("coverage_bbox") else "completeness unknown — absence of a record is not absence of a pipe"})
     for net in ("water supply", "electricity", "gas (CGD)", "telecom"):
-        out.append({"id": f"missing:{net}", "name": f"{net.capitalize()} network", "used": False, "coverage": "no dataset loaded"})
+        out.append({"id": f"missing:{net}", "name": f"{net[0].upper() + net[1:]} network", "used": False, "coverage": "no dataset loaded"})
     out.append({"id": "osm_metro", "name": "OpenStreetMap metro (tunnels, stations, lines)", "used": bool(metro_meta.get("available")),
                 "quality_level": "plan only, no levels", "coverage": metro_meta.get("reason") or f"index {metro_meta.get('source')} ({metro_meta.get('data_timestamp')})"})
     out.append({"id": "buildings", "name": "Building footprints (foundation proxy)", "used": bool(bld_meta.get("available")),

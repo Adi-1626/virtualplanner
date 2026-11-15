@@ -205,6 +205,16 @@ export const coordinationApi = {
   // underground screening (read-only; verifications are recorded by a person)
   screenUnderground: (body: { scenario_id: string; objects?: ScreeningObject[]; focus_ids?: string[] }) =>
     call<ScreeningRun>('POST', '/underground/screen', body),
+  /** Screening report (re-runs the check on these objects): PDF / DOCX / CSV as a Blob plus the server's file name. */
+  screeningReport: async (body: { scenario_id: string; objects?: ScreeningObject[] }, format: 'pdf' | 'docx' | 'csv'): Promise<{ blob: Blob; filename: string; findings: number }> => {
+    const res = await fetch(`${API_BASE}/api/coordination/underground/screen/report?format=${format}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+    const cd = res.headers.get('Content-Disposition') ?? '';
+    const filename = /filename="([^"]+)"/.exec(cd)?.[1] ?? `underground-screening.${format}`;
+    return { blob: await res.blob(), filename, findings: Number(res.headers.get('X-Findings') ?? 0) };
+  },
   recordVerification: (body: VerificationInput) => call<{ id: string; pair_key: string; created_at: string }>('POST', '/underground/verifications', body),
   // environment
   environmentLayers: () => call<{ layers: EnvironmentLayer[]; note: string }>('GET', '/environment-layers'),

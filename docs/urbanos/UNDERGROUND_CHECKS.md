@@ -141,6 +141,30 @@ five fixed parts + rules applied + "Record field verification". Below: the objec
 (always visible), Data used, the rules table. Results are kept per alternative across panel remounts; edits after a check
 show "check again".
 
+### 2.8 Insufficient-data grouping and the screening report
+- **Grouping** (UNIT-TESTED): every Insufficient-data finding carries `gap_group` {key, label, unit} — its shared reason:
+  one dataset whose levels are unusable ("PMC storm-water drains: no depth recorded — vertical clearance not checkable",
+  "PMC sewer network: levels have no stated datum — …"), the set of networks with no records ("No water supply, electricity,
+  gas (CGD) or telecom records in this area"), a proposed object without depth, building foundations, cover, groundwater,
+  geology. The result panel shows one expandable line per reason with its count ("501 crossings or near passes (444 cross
+  in plan) · 21 proposed objects"); the 1,283-finding stress run's 1,034 Insufficient-data findings become 5 lines.
+  `screeningGroups.ts` falls back to the dataset / category for results without `gap_group`.
+- **Report** (UNIT-TESTED, MEASURED): `POST /api/coordination/underground/screen/report?format=pdf|docx|csv` (same body as
+  `/screen`; re-runs the check on the objects given; read-only). PDF / DOCX through `feasibility/docgen.py` (fpdf2 /
+  python-docx; additive `subhead` block). Contents: header (alternative name + id, date in IST and UTC, engine, rules and
+  report versions, banner in every page header, disclaimer box) → summary counts with what each status means + objects →
+  Potential conflict / Requires investigation / Verified in full (key numbers, location, Checked / Data used / Found / Not
+  checked / Next investigation) → Insufficient data as one table per reason (≤ 150 places each in the PDF) → rules applied
+  with sources and how many findings cite each → data used → what was not checked (run list + skipped objects + checklist
+  "not checked" items) → next-investigation plan merged over all findings in the Indian order (as-builts → CBuD → GPR →
+  trial pits → Maha-Metro NOC → boreholes → specialist; other steps after), with counts and objects. CSV (UTF-8 BOM for
+  Excel): `# key,value` preamble (alternative, date, engine, rules version, banner, disclaimer, summary, rules applied, not
+  checked, plan) + one row per finding with the five parts (multi-item parts joined by " | "), numbers, location, gap
+  group, verification. UI: "PDF report" / "Findings CSV" in the result panel (`ug-report-pdf`, `ug-report-csv`).
+  Code: `backend/coordination/screening_report.py`; tests `backend/tests/test_underground_screening_report.py`.
+  Time (MEASURED, 2 CPU): 2-object Shivajinagar case 7 pages; 1,283-finding stress run PDF 0.5 MB / ~150 pages in 5.5 s
+  render (+ ~2 s screening), CSV 3.1 MB in 0.07 s.
+
 ## 3. Numbers (MEASURED, copy of twincity.db + real indexes, 2 CPU sandbox)
 - All 53,669 utility records (sewer + 9,187 storm drains) parsed + projected + STRtree: **0.6–0.9 s once** per data
   fingerprint (cached); full-extent tree query 5 ms.
