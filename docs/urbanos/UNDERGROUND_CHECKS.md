@@ -148,7 +148,8 @@ show "check again".
 - 15 km bored tunnel across the city: 7.2 s cold (OSM metro 2.8 s + building index 3.5 s cold reads) / **1.9 s warm**;
   854 existing assets read, 322 findings.
 - 20 water mains × 3.3 km: 2.3 s cold / 1.5 s warm; 3,303 assets read, 981 findings. Tunnel + mains: 1.8–2.2 s, 1,283 findings,
-  JSON 6.2 MB (geometries hoisted, 0.2 MB; text dominates) — no gzip middleware in the app.
+  JSON 5.85 MB (geometries hoisted, 0.2 MB; text dominates).
+- **gzip** (`GZipMiddleware`, minimum 1 KB, level 6, `backend/main.py`), same 1,283-finding run over HTTP on 8391: **5,854,709 B → 238,979 B on the wire (4.1 %)**; compression 49 ms (level 9: 234,099 B, 62 ms; level 1: 414,222 B, 17 ms); round trip 1.98 s identity vs 2.05 s gzip on localhost — the saving is the 5.6 MB transfer on a real network. Clients without `Accept-Encoding: gzip` get identity. Terrain PNG tiles are also passed through gzip (small, already compressed; harmless).
 - Browser (headless Chromium, swiftshader, built app on 4591 + backend 8391): tunnel crossing Pune Metro Line 1 near
   Shivajinagar + a water main → check returns in 2.1–3.3 s; 5 Requires investigation (Metro crossing with NOC, two storm
   drains within the referral distance + QL-D uncertainty, cover 10 m < 2 × 6 m, nalla), 18 Insufficient data; click flies
@@ -171,7 +172,7 @@ show "check again".
   utilities-only alternative cannot reach the check. `a` is optional now — mount it unconditionally.
 - Findings are not persisted (screening is read-only apart from verifications); report export (CSV/PDF) not done.
 - Large results (≈1,000 findings) are long; grouping by severity + paging helps, but grouping Insufficient-data pairs per
-  dataset would be better. Response is not gzip-compressed (main.py has no GZipMiddleware).
+  dataset would be better. Response gzip: done (see §3).
 - Datum: Design depths are relative to local ground; no conversion via the DEM (research §2.3 asks for absolute Z + datum).
 - Cable voltage, gas material (steel vs PE), road-crossing locations are not modelled → the stricter or voltage-dependent
   values are reported as "Requires investigation", not decided.

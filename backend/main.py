@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from database.connection import engine, Base
 from api.router import router
 from api.sim_router import router as sim_router
@@ -47,6 +48,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Compress JSON responses >= 1 KB when the client accepts gzip (a 1,283-finding underground screening is ~5.9 MB of JSON;
+# docs/urbanos/UNDERGROUND_CHECKS.md §3). Level 6: most of level 9's ratio at a fraction of its CPU on 2-CPU hosts.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 
 # Optional self-declared actor for the audit log (no authentication; docs/PLANNING_WORKSPACE.md)
 @app.middleware("http")
