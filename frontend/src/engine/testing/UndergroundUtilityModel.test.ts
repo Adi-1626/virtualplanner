@@ -59,6 +59,17 @@ describe('utility Z model', () => {
     expect(withUtilityGroundReference(l, [1, 2, 3], 'x')).toBe(l);   // viewing never rewrites a legacy object
   });
 
+  it('a default stays the typical cover to the TOP of the pipe when the reference or diameter changes', () => {
+    let u = withUtilityZ(legacy(), { depths: initialUtilityDepths(3, 'water', null, 'hypothetical') });
+    u = withUtilityZ(u, { zRef: 'invert' });
+    expect(u.depths!.map(d => [d.depthM, d.topDepthM])).toEqual([[1, null], [1, null], [1, null]]);   // diameter unknown → top Unknown
+    u = withUtilityZ(u, { diameterMm: 300 });
+    expect(u.depths!.map(d => [d.depthM, d.topDepthM])).toEqual([[1.3, 1], [1.3, 1], [1.3, 1]]);
+    u = withUtilityVertexDepth(u, 0, { depthM: 2 });
+    u = withUtilityType(u, 'electricity');
+    expect(u.depths!.map(d => d.topDepthM)).toEqual([1.7, 0.9, 0.9]);
+  });
+
   it('profile / section extent interpolates per-vertex depths at the crossing, with the stated reference', () => {
     const u = withUtilityZ(legacy(), { zRef: 'top', diameterMm: 300, depths: [{ depthM: 1, certainty: 'estimated' }, { depthM: 3, certainty: 'estimated' }, { depthM: null, certainty: 'unknown' }] });
     const seg = utilityExtentAt(u, 0).topM;

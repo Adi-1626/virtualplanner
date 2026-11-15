@@ -88,7 +88,7 @@ export const ViewControls: React.FC<{ alignments: UndergroundAlignmentObject[]; 
       <p className="text-meta text-text-2" data-testid="ug-view-area">
         {!active ? 'Map not ready.' : area && !everywhere ? `Ground is see-through only around ${alignments.length || utilities.length ? 'your drawn objects' : 'the listed records'} (${pct}% opaque); the surface stays aligned above.` : 'Ground is see-through everywhere.'}
       </p>
-      <p className="text-meta text-text-3" data-testid="ug-ground-3d" title={ground.long}>{ground.long}</p>
+      <p className="text-meta text-text-3" data-testid="ug-ground-3d" title={ground.long}>{ground.short} · Profile: DSM ground. Same depth below ground at every point in both; only the ground shape differs.</p>
       <div className="flex items-center gap-2 flex-wrap">
         <span className={`text-label tabular-nums ${below ? 'text-warn' : 'text-text-2'}`} data-testid="ug-camera-depth">
           {camH === null ? 'Camera height —' : below ? `Camera ${Math.abs(camH).toFixed(0)} m below ground` : `Camera ${camH >= 1000 ? `${(camH / 1000).toFixed(1)} km` : `${camH.toFixed(0)} m`} above ground`}

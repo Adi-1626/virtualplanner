@@ -72,6 +72,13 @@ const ok = (v: unknown): v is number => typeof v === 'number' && Number.isFinite
 export const cleanUtilityDepth = (v: number | null | undefined): number | null => (ok(v) && v >= 0 ? v : null);
 const diaM = (u: Pick<UtilityObject, 'diameterMm'>): number | null => (ok(u.diameterMm) && u.diameterMm > 0 ? u.diameterMm / 1000 : null);
 
+/** The typical-cover default expressed as a depth to `zRef` (cover to the top + D/2 or D when the diameter is known). */
+export function defaultDepthFor(type: UtilityType, zRef: UtilityZRef, diameterM: number | null): number {
+  const c = TYPICAL_COVER[type].coverM;
+  if (zRef === 'top' || diameterM === null) return c;
+  return Math.round((c + (zRef === 'centre' ? diameterM / 2 : diameterM)) * 1000) / 1000;
+}
+
 /** Depth to the top of the pipe for a depth to `zRef`; null when it cannot be derived (no depth, or no diameter for centre/invert). */
 export function topDepthFrom(depthM: number | null, zRef: UtilityZRef, diameterM: number | null): number | null {
   if (depthM === null) return null;
@@ -142,8 +149,11 @@ export function withUtilityZ(u: UtilityObject, z: Partial<Pick<UtilityZ, 'zRef' 
   const src = z.depths ?? cur.depths;
   const depths: UtilityVertexDepth[] = u.coordinates.map((_, i) => {
     const d = src[i] ?? { depthM: null, certainty: 'unknown' as Certainty };
-    const depthM = cleanUtilityDepth(d.depthM);
+    // A default is the typical cover to the TOP of the pipe: re-expressed for the stated reference (needs the diameter
+    // for centre / invert; without it the top stays Unknown below)
+    const depthM = d.isDefault ? defaultDepthFor(u.utilityType, zRef, dia) : cleanUtilityDepth(d.depthM);
     const next: UtilityVertexDepth = { ...d, depthM, certainty: depthM === null ? 'unknown' : d.certainty, topDepthM: topDepthFrom(depthM, zRef, dia) };
+    if (depthM !== d.depthM) { delete next.elevationM; delete next.groundM; delete next.groundModel; delete next.datum; }
     if (depthM === null) delete next.isDefault;
     return next;
   });
@@ -178,7 +188,7 @@ export function withAllUtilityDepths(u: UtilityObject, depthM: number | null, ce
 /** Type change: vertices still on the old type's default take the new type's default (typed depths are kept). */
 export function withUtilityType(u: UtilityObject, type: UtilityType): UtilityObject {
   const z = utilityZ(u);
-  const depths = z.depths.map(d => (d.isDefault ? { depthM: TYPICAL_COVER[type].coverM, certainty: 'hypothetical' as Certainty, isDefault: true } : d));
+  const depths = z.depths.map(d => (d.isDefault ? { depthM: null, certainty: 'hypothetical' as Certainty, isDefault: true } : d));
   return withUtilityZ({ ...u, utilityType: type }, { depths });
 }
 
