@@ -111,6 +111,14 @@ export class TwinCityEngine {
   private demandRebuildTimeout: any = null;
   private trafficWorker: Worker | null = null;
   private activeRequestId = 0;
+  /**
+   * One rebuild in the worker at a time. Every edit used to post a full rebuild of the city graph; the worker answers
+   * them in order (about a minute each for the 18k-road city on a loaded laptop CPU) and all but the last are thrown
+   * away, so after a few edits the graph trailed them by minutes. Edits made while one runs now coalesce into one
+   * follow-up request.
+   */
+  private workerBusy = false;
+  private workerPending: { network: boolean } | null = null;
 
   // Viewer-bound resources released by dispose()
   private interactionHandler: ScreenSpaceEventHandler | null = null;
@@ -669,8 +677,19 @@ export class TwinCityEngine {
         }
       }
 
-      // Selection mode path
-      if (defined(pickedObject) && pickedObject.id) {
+      // Selection mode path. A saved study area is a large polygon over the roads inside it: when it is on top, an
+      // object under it wins (clicking a road inside an area used to select the area instead).
+      let picked = pickedObject;
+      const topId = defined(pickedObject) ? (pickedObject.id?.id ?? pickedObject.id) : undefined;
+      if (typeof topId === 'string' && this.editing.getSavedAreas().some(a => a.id === topId)) {
+        const under = this.viewer.scene.drillPick(click.position, 8).find((p: any) => {
+          const id = p?.id?.id ?? p?.id;
+          return typeof id === 'string' && id !== topId && !!this.objects.getById(id.startsWith('junction_edit_') ? id.slice('junction_edit_'.length) : id);
+        });
+        if (under) picked = under;
+      }
+      if (defined(picked) && picked.id) {
+        const pickedObject = picked;
         const rawId = pickedObject.id.id || pickedObject.id;
         const entityId = typeof rawId === 'string' && rawId.startsWith('junction_edit_') ? rawId.slice('junction_edit_'.length) : rawId;
 
@@ -1848,55 +1867,74 @@ export class TwinCityEngine {
   private setupWorkerListener() {
     if (!this.trafficWorker) return;
     this.trafficWorker.onmessage = (e: MessageEvent) => {
-      const { requestId, status, result, error } = e.data;
-      if (requestId !== this.activeRequestId) {
-        // Discard stale results from previous requests
-        return;
-      }
-
-      if (status === 'success') {
-        if (result.network) {
-          // Rehydrate network Maps
-          this.trafficNetwork = {
-            nodes: new Map(result.network.nodes),
-            edges: new Map(result.network.edges)
-          };
-          this.syncTrafficNetworkVisualization();
-        }
-
-        if (result.matrix) {
-          this.trafficDemandMatrix = result.matrix;
-        }
-
-        // Apply snaps quietly in memory to avoid onChange loops
-        if (result.gatewaySnaps) {
-          result.gatewaySnaps.forEach((snap: any) => {
-            const gwObj = this.objects.getById(snap.id) as any;
-            if (gwObj) {
-              gwObj.connectedNodeId = snap.connectedNodeId;
-            }
-          });
-          this.syncZonesAndGatewaysWithCesium();
-        }
-
-        if (result.buildingSnaps) {
-          result.buildingSnaps.forEach((snap: any) => {
-            const bObj = this.objects.getById(snap.id) as any;
-            if (bObj) {
-              bObj.nearestEdgeId = snap.nearestEdgeId;
-              bObj.accessNodeId = snap.accessNodeId;
-            }
-          });
-        }
-
-        console.log('[TRAFFIC WORKER] Rebuild completed successfully.');
-        if (result.diagnostics) {
-          console.log(result.diagnostics);
-        }
-      } else {
-        console.error('[TRAFFIC WORKER] Error in background calculation:', error);
+      this.workerBusy = false;
+      try {
+        this.applyWorkerResult(e);
+      } finally {
+        // Edits made while it ran: one follow-up request with the current state (after this result is applied, so a
+        // demand-only follow-up sends the fresh graph)
+        const pending = this.workerPending;
+        this.workerPending = null;
+        if (pending) this.triggerWorkerRebuild(pending.network);
       }
     };
+    this.trafficWorker.onerror = () => {
+      this.workerBusy = false;
+      const pending = this.workerPending;
+      this.workerPending = null;
+      if (pending) this.triggerWorkerRebuild(pending.network);
+    };
+  }
+
+  private applyWorkerResult(e: MessageEvent) {
+    const { requestId, status, result, error } = e.data;
+    if (requestId !== this.activeRequestId) {
+      // Discard stale results from previous requests
+      return;
+    }
+
+    if (status === 'success') {
+      if (result.network) {
+        // Rehydrate network Maps
+        this.trafficNetwork = {
+          nodes: new Map(result.network.nodes),
+          edges: new Map(result.network.edges)
+        };
+        this.syncTrafficNetworkVisualization();
+      }
+
+      if (result.matrix) {
+        this.trafficDemandMatrix = result.matrix;
+      }
+
+      // Apply snaps quietly in memory to avoid onChange loops
+      if (result.gatewaySnaps) {
+        result.gatewaySnaps.forEach((snap: any) => {
+          const gwObj = this.objects.getById(snap.id) as any;
+          if (gwObj) {
+            gwObj.connectedNodeId = snap.connectedNodeId;
+          }
+        });
+        this.syncZonesAndGatewaysWithCesium();
+      }
+
+      if (result.buildingSnaps) {
+        result.buildingSnaps.forEach((snap: any) => {
+          const bObj = this.objects.getById(snap.id) as any;
+          if (bObj) {
+            bObj.nearestEdgeId = snap.nearestEdgeId;
+            bObj.accessNodeId = snap.accessNodeId;
+          }
+        });
+      }
+
+      console.log('[TRAFFIC WORKER] Rebuild completed successfully.');
+      if (result.diagnostics) {
+        console.log(result.diagnostics);
+      }
+    } else {
+      console.error('[TRAFFIC WORKER] Error in background calculation:', error);
+    }
   }
 
   private triggerWorkerRebuild(rebuildNetwork: boolean) {
@@ -1905,6 +1943,11 @@ export class TwinCityEngine {
       return;
     }
 
+    if (this.workerBusy) {
+      this.workerPending = { network: rebuildNetwork || !!this.workerPending?.network };
+      return;
+    }
+    this.workerBusy = true;
     this.activeRequestId++;
     const requestId = this.activeRequestId;
 

@@ -517,8 +517,8 @@ export const PropertiesPanel: React.FC = () => {
 
       <ConfirmDialog
         isOpen={showDeleteConfirm}
-        title="Delete Object"
-        message={`Are you sure you want to delete "${selectedObj?.name || selectedObj?.type || 'this object'}"? You can undo this action anytime via Ctrl+Z or Toolbar.`}
+        title="Delete"
+        message={`Delete "${selectedObj?.name || selectedObj?.type || 'this object'}"? You can undo this with Ctrl+Z.`}
         confirmText="Delete"
         cancelText="Cancel"
         isDestructive={true}
@@ -573,7 +573,7 @@ const BuildingInspector: React.FC<{
         </div>
         <div className="bg-slate-900/40 p-2.5 rounded-lg border border-white/5 flex flex-col">
           <span className="text-xs text-slate-400 font-medium uppercase">State</span>
-          <span className="text-slate-100 font-bold capitalize mt-0.5">{b.state || 'Existing'}</span>
+          <span className="text-slate-100 font-bold capitalize mt-0.5">{(b.state || (b.osmId ? 'existing' : 'unknown')).replace(/_/g, ' ')}</span>
         </div>
         <div className="bg-slate-900/40 p-2.5 rounded-lg border border-white/5 flex flex-col">
           <span className="text-xs text-slate-400 font-medium uppercase flex items-center gap-1.5">Floors / Height {b.valueCertainty?.floors && <CertaintyBadge certainty={b.valueCertainty.floors} />}</span>
@@ -587,7 +587,7 @@ const BuildingInspector: React.FC<{
 
       {/* Capacities */}
       <div className="bg-slate-900/30 rounded-xl p-3 border border-white/5 space-y-2">
-        <span className="text-xs text-indigo-400 uppercase font-mono flex items-center justify-between">Planning Capacities <SourceBadge source="estimated" /></span>
+        <span className="text-xs text-indigo-400 uppercase font-mono flex items-center justify-between">Planning Capacities {b.valueCertainty?.population === 'hypothetical' ? <SourceBadge source="hypothetical" /> : <SourceBadge source="estimated" />}</span>
         <div className="text-xs space-y-1.5">
           {(b.category === 'residential' || !b.category) && (
             <div className="flex justify-between border-b border-white/5 pb-1">
@@ -615,7 +615,7 @@ const BuildingInspector: React.FC<{
           )}
           <div className="flex justify-between">
             <span className="text-slate-400">Visitors/Day:</span>
-            <span className="text-slate-200 font-bold">{b.visitorsPerDay ?? 10}</span>
+            <span className="text-slate-200 font-bold">{b.visitorsPerDay ?? 'Unknown'}</span>
           </div>
           {b.nearestEdgeId && (
             <div className="flex justify-between border-t border-white/5 pt-1.5 mt-1.5">
@@ -783,7 +783,7 @@ const BuildingInspector: React.FC<{
         <div className="text-xs space-y-1.5">
           <div className="flex justify-between">
             <span className="text-slate-400">Data Source:</span>
-            <span className="text-slate-200 capitalize font-medium">{b.source || 'OSM'}</span>
+            <span className="text-slate-200 capitalize font-medium">{b.source === 'manual' ? 'Drawn by hand' : b.source || (b.osmId ? 'OSM' : 'Unknown')}</span>
           </div>
           {b.osmId && (
             <div className="flex justify-between">

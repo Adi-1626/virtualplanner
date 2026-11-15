@@ -673,7 +673,16 @@ export class EditingEngine {
         waterDemand: population * 150, // 150L/person/day
         electricityDemand: population * 6, // 6kWh/person/day
         constructionYear: 2026,
-        valueCertainty: { floors: 'hypothetical', height: 'hypothetical', population: 'hypothetical', parkingSpaces: 'hypothetical', waterDemand: 'hypothetical', electricityDemand: 'hypothetical' },
+        // A drawn footprint is a proposal entered by hand. Stated explicitly: without them the inspector showed "Existing" /
+        // "OSM", a reload filled category "residential" and source "municipal", and the trip model (which reads residents
+        // and employees) saw no activity from the new building until the page was reloaded.
+        source: 'manual',
+        state: 'proposed',
+        category: ({ residential: 'residential', commercial: 'commercial', industrial: 'industrial', educational: 'school', institutional: 'government', mixed: 'mixed_use' } as const)[this.buildingUsage],
+        residents: this.buildingUsage === 'residential' ? population : 0,
+        employees: this.buildingUsage === 'residential' ? 0 : Math.round(population * 0.8),
+        parkingCapacity: Math.round(floors * 2.5),
+        valueCertainty: { floors: 'hypothetical', height: 'hypothetical', population: 'hypothetical', residents: 'hypothetical', employees: 'hypothetical', parkingSpaces: 'hypothetical', waterDemand: 'hypothetical', electricityDemand: 'hypothetical' },
         createdAt,
         updatedAt: createdAt
       };
