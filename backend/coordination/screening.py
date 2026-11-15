@@ -1085,7 +1085,7 @@ def screen(db, scenario_id: str, objects: Optional[list[dict]] = None, focus_ids
     lap("report")
     return {
         "engine_version": ENGINE, "config_version": cfg["version"], "scenario_id": scenario_id,
-        "generated_at": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z", "banner": BANNER, "disclaimer": DISCLAIMER,
+        "generated_at": datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0, tzinfo=None).isoformat() + "Z", "banner": BANNER, "disclaimer": DISCLAIMER,
         "summary": {"counts": counts, "worst_status": worst, "headline": _headline(counts, len(targets)),
                     "proposed_checked": [a.public(with_geometry=False) | {"checklist": checklists[a.id]} for a in targets], "skipped": skipped,
                     "existing_assets_read": sum(read.values()), "not_checked": _run_not_checked(layers),
