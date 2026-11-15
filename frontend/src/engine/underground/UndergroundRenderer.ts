@@ -1,5 +1,5 @@
 /**
- * 3D display of underground alignments and imported subsurface records (docs/urbanos/UNDERGROUND_WORKSPACE.md §3).
+ * 3D display of underground alignments and imported subsurface records (docs/urbanos/UNDERGROUND_WORKSPACE.md §5.3).
  * Uses Cesium entities in its own CustomDataSource:
  * - an alignment is a polylineVolume (circle or box of the entered size) whose centreline sits at
  *   −(crown depth + height/2) below the ground datum. Runs of vertices with UNKNOWN depth are not placed below ground:

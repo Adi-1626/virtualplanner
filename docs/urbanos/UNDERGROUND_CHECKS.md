@@ -58,7 +58,7 @@ Flat list sorted by class (max 100), plan distance / vertical gap / certainty, t
 
 ## 2. Redesign (implemented, commits on `ug-checks`)
 
-Rules aligned with `/workspace/work/underground-research/UNDERGROUND_RESEARCH.md` §3 (checks C1–C22), §4 (statuses,
+Rules aligned with [UNDERGROUND_RESEARCH.md](UNDERGROUND_RESEARCH.md) §3 (checks C1–C22), §4 (statuses,
 wording) and Top 12. Code: `backend/coordination/screening_config.py` (rules table, the only place values live),
 `backend/coordination/screening.py` (engine), `POST /api/coordination/underground/screen`, UI
 `frontend/src/components/underground/{ConflictCheck.tsx, conflictClasses.ts, conflictHighlight.ts, screeningStore.ts}`.
@@ -221,7 +221,15 @@ show "check again".
   banner, Design utility included, proposed × proposed once, data gaps, forbidden words); missing depth + skipped objects;
   empty alternative; QL-A record → potential conflict → person verification → Verified → design edit → re-verify; objects
   read from the DB; `run_detection` sees a Design-drawn gas main (`design_object`).
-- `frontend/src/engine/testing/UndergroundScreening.test.ts` (7): statuses / banner / no green / no forbidden words, counts
+- Drawn-utility Z model (SYNTHETIC, 2026-11-15): per-point top-of-pipe depth interpolated at the crossing (a line diving
+  1 → 6 m clears a QL-A main at ~4.5 m where the one-depth reading would conflict); Unknown vertex not interpolated across;
+  centre / invert reference → top and bottom of pipe (top Unknown without a diameter); status decides the side with the
+  membership fallback (base proposal checked in an alternative, existing / abandoned in an alternative are obstacles,
+  alignment `lifecycle` existing); evidence → tolerance (QL-A..D, user-drawn existing, unknown, proposals = design);
+  measured user-drawn only when every depth used is measured; QL on a proposal ignored and noted; abandoned pipe =
+  existing obstacle with its own found / not-checked lines; typical-cover defaults named only where the vertices used are
+  defaults (pairs and cover); whole run with Z-model objects keeps the wording rules.
+- `frontend/src/engine/testing/UndergroundScreening.test.ts` (7) + `screenedAsProposed` (same proposed / existing rule as the engine, used for the button count): statuses / banner / no green / no forbidden words, counts
   and grouping, plain summary, key numbers, highlight targets and focus box, staleness, `sideBLabel` for `design_object`.
 - Regression: `test_coordination.py`, `test_infra_data.py`, `test_terrain.py` pass with and without the real data dirs.
 

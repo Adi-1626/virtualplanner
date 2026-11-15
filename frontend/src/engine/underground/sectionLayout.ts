@@ -1,5 +1,5 @@
 /**
- * Pure layout for the Profile (long-section) and Cross-section SVGs (docs/urbanos/UNDERGROUND_WORKSPACE.md §4).
+ * Pure layout for the Profile (long-section) and Cross-section SVGs (docs/urbanos/UNDERGROUND_WORKSPACE.md §7).
  * Depth axis: metres below the flat ground datum, + down. Nothing here invents a value: UNKNOWN stays null and is
  * drawn as an explicit "UNKNOWN" marker by the components.
  */
