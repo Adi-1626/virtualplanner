@@ -154,3 +154,28 @@ describe('utility, zone and gateway', () => {
     expect(() => editing.finalizeDrawing('base')).toThrow(/still loading/);
   });
 });
+
+describe('track height change and the stations on it', () => {
+  it('raising the track and the station following it is one Undo step, also while a slider is dragged', () => {
+    const objects = new ObjectManager();
+    const history = new HistoryManager(objects);
+    const line = metroLine() as CityObject;
+    const station = { id: 's1', type: 'metro_station', name: 'Nal Stop', layerId: 'metro', scenarioId: 'base', coordinates: [KARVE[1][0], KARVE[1][1], 0],
+      stationName: 'Nal Stop', length: 140, width: 20, height: 8, elevation: 12, capacity: 5000, heading: 0, alignToTrack: true, createdAt: '', updatedAt: '' } as unknown as CityObject;
+    objects.add(line); objects.add(station);
+    // Two slider ticks: 12 -> 14 -> 16 m (as PropertiesPanel.handleUpdateField records them)
+    for (const h of [14, 16]) {
+      const l = objects.getById('m1')!, s = objects.getById('s1')!;
+      history.recordUpdates([{ before: l, after: { ...l, elevation: h } as CityObject }, { before: s, after: { ...s, elevation: h } as CityObject }], 'Update elevation', 'm1:elevation');
+      objects.update('m1', { elevation: h } as Partial<CityObject>);
+      objects.update('s1', { elevation: h } as Partial<CityObject>);
+    }
+    expect(history.getUndoStackCount()).toBe(1);
+    history.undo();
+    expect((objects.getById('m1') as MetroLineObject).elevation).toBe(12);
+    expect((objects.getById('s1') as MetroStationObject).elevation).toBe(12);
+    history.redo();
+    expect((objects.getById('m1') as MetroLineObject).elevation).toBe(16);
+    expect((objects.getById('s1') as MetroStationObject).elevation).toBe(16);
+  });
+});

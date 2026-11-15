@@ -253,21 +253,22 @@ export const PropertiesPanel: React.FC = () => {
 
     // Apply & trigger updates
     const merged = { ...selectedObj, ...updates } as CityObject;
-    // Coalesce per object+field so typing or dragging a slider is one Undo step
-    engineInstance.history.recordUpdate(selectedObj, merged, `Update ${selectedObj.name || selectedObj.id} ${field}`, `${selectedObj.id}:${field}`);
-    setSelectedObj(merged);
-    engineInstance.objects.update(selectedObj.id, updates);
-    // Stations sitting on a metro line (or a double-deck's metro deck) stay at its deck height when it changes
+    // Stations sitting on a metro line (or a double-deck's metro deck) stay at its deck height when it changes: the
+    // same Undo step as the height change itself
+    const followers: { before: CityObject; after: CityObject }[] = [];
     if ((selectedObj.type === 'metro_line' && field === 'elevation') || (selectedObj.type === 'metro_flyover' && field === 'metroElevation')) {
-      const track = engineInstance.objects.getById(selectedObj.id)!;
       for (const st of engineInstance.objects.getAll()) {
         if (st.type !== 'metro_station') continue;
-        const near = findNearestTrack(st.coordinates, [track]);
+        const near = findNearestTrack(st.coordinates, [merged]);
         if (!near || near.distanceMeters > 1 || st.elevation === near.deckElevation) continue;
-        engineInstance.history.recordUpdate(st, { ...st, elevation: near.deckElevation }, `Station ${st.name} follows the track height`, `${st.id}:elevation`);
-        engineInstance.objects.update(st.id, { elevation: near.deckElevation });
+        followers.push({ before: st, after: { ...st, elevation: near.deckElevation } });
       }
     }
+    // Coalesce per object+field so typing or dragging a slider is one Undo step
+    engineInstance.history.recordUpdates([{ before: selectedObj, after: merged }, ...followers], `Update ${selectedObj.name || selectedObj.id} ${field}`, `${selectedObj.id}:${field}`);
+    setSelectedObj(merged);
+    engineInstance.objects.update(selectedObj.id, updates);
+    for (const f of followers) engineInstance.objects.update(f.after.id, { elevation: (f.after as MetroStationObject).elevation });
   };
 
   const handleDelete = () => {
