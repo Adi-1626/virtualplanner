@@ -64,16 +64,33 @@ wording) and Top 12. Code: `backend/coordination/screening_config.py` (rules tab
 `frontend/src/components/underground/{ConflictCheck.tsx, conflictClasses.ts, conflictHighlight.ts, screeningStore.ts}`.
 
 ### 2.1 Inputs (UNIT-TESTED)
-- **Proposed**: every `underground_alignment` (tunnel, underground metro, cut-and-cover, trunk, storm drain) and `utility`
-  of the active alternative, sent by the UI as Design holds them (unsaved edits included) or read from the database
-  (`objects` omitted: baseline + the alternative's own objects, its modifies and deletes applied). In the baseline itself
-  every drawn alignment / utility counts as proposed. Proposed × proposed pairs are checked once.
-- **Existing**: Design-drawn baseline objects (utilities, alignments, elevated `metro_line`, `metro_station`; quality
-  "user-drawn"); utility records (PMC sewer 44,482 + storm drains 9,187 = 53,669 with geometry, plus anything imported);
-  OSM metro (tunnel / viaduct / unknown-level lines, stations); building footprints (infra index, foundation proxy);
-  PMC nallas + rivers; NWDP groundwater wells (3 km); imported boreholes (500 m).
-- Depth model: crown from the typed depth, invert = crown + section height / diameter. A utility whose `depthCertainty`
-  is `unknown` (drawing placeholder) has depth UNKNOWN.
+- **Which side a drawn object is on**: the lifecycle the user recorded wins — utility `status`, alignment `lifecycle`.
+  *proposed* and *conceptual* are checked as proposals wherever they are drawn (a proposal drawn on the base city is
+  checked in every alternative); *existing* and *abandoned* (in place) are existing obstacles and are never checked as
+  proposals. When no lifecycle is recorded (older objects, `unknown`), alternative membership decides: objects of the
+  active alternative are proposed, baseline objects existing; in the baseline itself every drawn alignment / utility
+  counts as proposed. Objects are sent by the UI as Design holds them (unsaved edits included) or read from the database
+  (`objects` omitted: baseline + the alternative's own objects, its modifies and deletes applied). Proposed × proposed
+  pairs are checked once.
+- **Existing**: Design-drawn existing / abandoned objects (utilities, alignments, elevated `metro_line`,
+  `metro_station`); utility records (PMC sewer 44,482 + storm drains 9,187 = 53,669 with geometry, plus anything
+  imported); OSM metro (tunnel / viaduct / unknown-level lines, stations); building footprints (infra index, foundation
+  proxy); PMC nallas + rivers; NWDP groundwater wells (3 km); imported boreholes (500 m).
+- Depth model, alignments: crown per vertex, invert = crown + section height / diameter.
+- Depth model, drawn utilities (Z model of `engine/underground/utilityModel.ts`, UNIT-TESTED): per vertex, top of pipe =
+  `topDepthM` (derived from `depthM`, the object's `zRef` top / centre / invert and the diameter when absent), bottom =
+  top + diameter (or `depthM` itself for an invert reference). Between vertices the depth is interpolated along the line,
+  and a pair uses only the stretch of each line near the other (as for alignments) — never one depth for the whole line.
+  A vertex with no depth is UNKNOWN and is never interpolated across. A typical-cover default (`isDefault`) is used as a
+  hypothetical value and named in the finding wherever the vertices used are defaults. Older utilities without `depths`
+  keep the legacy reading: one `depth` (top of pipe) for the whole line; `depthCertainty` `unknown` = depth UNKNOWN.
+- Evidence → positional uncertainty: an existing / abandoned utility with evidence QL-A..QL-D takes that quality
+  level's tolerance (table below). *User-drawn* existing utilities have no survey behind them: tolerance "user-drawn"
+  (QL-D-like, level not usable unless every depth used is marked measured). A **proposal** (proposed / conceptual) is
+  screened as design intent: *user-drawn* adds no position uncertainty (tolerance 0) — a deliberate choice, since the drawn
+  line is what is being proposed; a QL recorded on a proposal is ignored and noted in the finding.
+- Abandoned in place: an existing obstacle (the finding says so and lists "whether it has been removed or filled" under
+  not checked).
 
 ### 2.2 Statuses (UNIT-TESTED)
 Only **Potential conflict · Requires investigation · Insufficient data · Verified**. The engine assigns the first three;

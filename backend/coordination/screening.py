@@ -3,7 +3,7 @@ Underground screening engine (docs/urbanos/UNDERGROUND_CHECKS.md; rules: coordin
 UNDERGROUND_RESEARCH.md §3–4).
 
 Checks every PROPOSED underground object of an alternative (Design-drawn underground alignments and utilities) against
-what exists: Design-drawn existing objects (baseline), PMC sewer / storm-drain records and other imported utility
+what exists: Design-drawn existing objects (status existing / abandoned, or older baseline objects), PMC sewer / storm-drain records and other imported utility
 records, OSM metro (tunnels, stations, lines), Design-drawn elevated metro, building footprints (foundation proxy,
 depth UNKNOWN), PMC nallas / rivers, NWDP groundwater wells and imported boreholes; and proposed objects against each
 other.
@@ -186,6 +186,10 @@ class Asset:
              "layer": self.layer, "status": self.status, "quality_level": self.quality, "certainty": self.certainty,
              "dataset": self.dataset, "width_m": None if self.half_width is None else _r(self.half_width * 2),
              "crown_depth_m": _r(crown), "invert_depth_m": _r(invert)}
+        if self.meta.get("lifecycle"):
+            d["lifecycle"] = self.meta["lifecycle"]
+        if self.meta.get("default_vertices"):
+            d["default_depth_points"] = self.meta["default_vertices"]
         if with_geometry:
             d["geometry"] = _lonlat(self.geom)
         return d
@@ -216,17 +220,156 @@ def _cert_worst(cs: list[str]) -> str:
     return max(vals, key=lambda c: CERT_RANK[c])
 
 
+LIFECYCLES = ("existing", "proposed", "conceptual", "abandoned")
+EVIDENCE_QL = ("QL-A", "QL-B", "QL-C", "QL-D")
+
+
+def _lc_suffix(lc: Optional[str]) -> str:
+    return {"conceptual": " (conceptual)", "abandoned": " (abandoned in place)"}.get(lc or "", "")
+
+
+def defaults_used(a: Asset, c0: Optional[float], c1: Optional[float]) -> bool:
+    """True when the depth of `a` over chainage c0..c1 (whole asset when None) rests on a typical-cover default vertex."""
+    flags = a.meta.get("default_flags") or []
+    if not any(flags):
+        return False
+    chs = [ch for ch, _, _ in a.profile]
+    if c0 is None or len(chs) < 2:
+        return True
+    lo, hi = min(c0, c1), max(c0, c1)
+    used = set()
+    for i in range(len(chs) - 1):
+        if chs[i + 1] >= lo - 1e-6 and chs[i] <= hi + 1e-6:
+            used.update((i, i + 1))
+    return any(flags[i] for i in used if i < len(flags))
+
+
+def _profile_from_extents(line: LineString, tops: list[Optional[float]], bottoms: list[Optional[float]]):
+    """Per-vertex (chainage, top depth, bottom depth); the envelope interpolates between known vertices and never across
+    an UNKNOWN one."""
+    coords = list(line.coords)
+    out, ch = [], 0.0
+    for i, c in enumerate(coords):
+        if i:
+            ch += math.dist(coords[i - 1][:2], c[:2])
+        out.append((ch, tops[i] if i < len(tops) else None, bottoms[i] if i < len(bottoms) else None))
+    return out
+
+
+def utility_z(p: dict, n: int, status: str, dia: Optional[float]) -> dict:
+    """Per-vertex top / bottom-of-pipe depth (m, +down) of a drawn utility (frontend engine/underground/utilityModel.ts).
+
+    Per-point model (`depths` list present): each vertex's `topDepthM` is used; when it is absent it is derived from
+    `depthM` and the object's `zRef` (top / centre / invert) and diameter, as the frontend does. A depth that is not a
+    finite number >= 0 is UNKNOWN. A typical-cover default (`isDefault`) is used as a hypothetical value and counted.
+    Legacy model (no `depths`): one `depth` for the whole line, read as the top of the pipe; `depthCertainty` 'unknown'
+    = no depth; no certainty = hypothetical on a proposal, unknown on an existing object.
+    """
+    zref = p.get("zRef") if p.get("zRef") in ("top", "centre", "invert") else "top"
+    ev = p.get("evidence") if p.get("evidence") in EVIDENCE_QL + ("user-drawn", "unknown") else None
+    depths = p.get("depths")
+    tops: list[Optional[float]] = []
+    bottoms: list[Optional[float]] = []
+    certs: list[str] = []
+    defaults = 0
+    flags: list[bool] = []
+    if isinstance(depths, list):
+        model = "per-point"
+        for i in range(n):
+            d = depths[i] if i < len(depths) and isinstance(depths[i], dict) else {}
+            dm = _num(d.get("depthM"))
+            dm = dm if dm is not None and dm >= 0 else None
+            top = _num(d.get("topDepthM")) if "topDepthM" in d else None
+            if top is not None and top < 0:
+                top = None
+            if dm is None:
+                top = None
+            elif top is None:
+                top = dm if zref == "top" else (max(0.0, dm - (dia / 2 if zref == "centre" else dia)) if dia else None)
+            if dm is None:
+                bot = None
+            elif zref == "invert":
+                bot = dm
+            elif top is not None and dia:
+                bot = top + dia
+            else:
+                bot = None
+            tops.append(top)
+            bottoms.append(bot)
+            flags.append(bool(d.get("isDefault")) and (top is not None or bot is not None))
+            if top is not None or bot is not None:
+                if d.get("isDefault"):
+                    defaults += 1
+                    certs.append("hypothetical")
+                else:
+                    c = d.get("certainty")
+                    certs.append(c if c in CERT_RANK and c != "unknown" else "hypothetical" if status == "proposed" else "unknown")
+    else:
+        model = "legacy"
+        # depthCertainty 'unknown' = the stored depth is only a drawing placeholder (types.ts UtilityObject); absent = a
+        # design value on a proposal (hypothetical) or an unsourced hand entry on an existing object (used, quality UNKNOWN)
+        stated = p.get("depthCertainty")
+        depth = _num(p.get("depth"))
+        if stated == "unknown" or (depth is not None and depth < 0):
+            depth = None
+        tops = [depth] * n
+        flags = [False] * n
+        bottoms = [(depth + dia) if (depth is not None and dia is not None) else None] * n
+        if depth is not None:
+            certs = [stated or ("hypothetical" if status == "proposed" else "unknown")]
+    cert = _cert_worst(certs) if certs else "unknown"
+    note = None
+    if status == "proposed" and ev in EVIDENCE_QL:
+        note = f"Evidence {ev} is recorded on a proposal: a proposal is screened as design intent (no positional widening)."
+    return {"tops": tops, "bottoms": bottoms, "cert": cert, "zref": zref, "evidence": ev or "user-drawn", "defaults": defaults, "flags": flags,
+            "model": model, "evidence_note": note}
+
+
+def _utility_quality(status: str, evidence: str, cert: str) -> str:
+    """Quality level used for positional-uncertainty widening (screening_config.TOLERANCE).
+    - Proposed / conceptual: 'design' — the drawn line IS the design intent, so 'user-drawn' adds no position uncertainty
+      (deliberate choice; any recorded QL on a proposal is ignored and noted).
+    - Existing / abandoned with evidence QL-A..QL-D: that quality level (ASCE 38).
+    - Existing / abandoned drawn by hand ('user-drawn', or unknown): no survey behind it — 'user-drawn' (treated as QL-D,
+      level not usable) or 'user-drawn (measured)' when every depth used is stated as measured; 'unknown' -> UNKNOWN."""
+    if status == "proposed":
+        return "design"
+    if evidence in EVIDENCE_QL:
+        return evidence
+    if evidence == "unknown":
+        return "UNKNOWN"
+    return _drawn_quality(cert)
+
+
+def object_lifecycle(obj: dict) -> Optional[str]:
+    """The lifecycle the user recorded on a drawn object: utilities `status` (existing / proposed / conceptual / abandoned),
+    underground alignments `lifecycle` (existing / proposed / conceptual). None when not recorded ('unknown' or absent):
+    the caller then falls back to alternative membership."""
+    p = obj.get("properties") or {}
+    v = p.get("status") if obj.get("type") == "utility" else (p.get("lifecycle") if obj.get("type") == "underground_alignment" else None)
+    return v if v in LIFECYCLES else None
+
+
+def lifecycle_side(lc: Optional[str]) -> Optional[str]:
+    """proposed / conceptual are checked as proposals; existing and abandoned-in-place are obstacles (existing)."""
+    if lc is None:
+        return None
+    return "proposed" if lc in ("proposed", "conceptual") else "existing"
+
+
 def design_asset(obj: dict, status: str) -> Optional[Asset]:
     """An object as stored by Design ({id, type, name, scenarioId, coordinates, properties}) -> Asset, or None when it is
-    not an underground / metro object or its geometry is unusable."""
+    not an underground / metro object or its geometry is unusable. `status` is the side it is screened on (proposed /
+    existing); the recorded lifecycle (conceptual, abandoned) is kept in meta['lifecycle']."""
     t, p = obj.get("type"), obj.get("properties") or {}
+    lc = object_lifecycle(obj)
     coords = obj.get("coordinates") or []
     try:
         pts = [(float(c[0]), float(c[1])) for c in coords if isinstance(c, (list, tuple)) and len(c) >= 2]
     except (TypeError, ValueError):
         return None
     layer = "design_proposed" if status == "proposed" else "design_existing"
-    ds = {"id": f"design:{obj.get('scenarioId') or 'base'}", "name": "Drawn in Design" + (" (this alternative)" if status == "proposed" else " (baseline)"),
+    ds = {"id": f"design:{obj.get('scenarioId') or 'base'}", "name": "Drawn in Design" + (" (proposal)" if status == "proposed" else " (recorded as existing)"),
           "quality_level": "design" if status == "proposed" else "as drawn"}
     if t == "underground_alignment" and len(pts) >= 2:
         line = G.project_geojson({"type": "LineString", "coordinates": pts})
@@ -247,25 +390,21 @@ def design_asset(obj: dict, status: str) -> Optional[Asset]:
         return Asset(str(obj.get("id")), obj.get("name") or "", layer, status, cls, line, None if w is None else w / 2,
                      _profile_from_vertices(line, crowns, h), "design" if status == "proposed" else _drawn_quality(cert), cert, ds,
                      diameter=w if sec.get("shape") == "circular" else (max(w, h) if (w and h) else None),
-                     kind_label=ALIGNMENT_LABEL.get(kind, "Underground alignment"), method=method,
-                     meta={"section": sec, "section_height_m": h, "design_type": t, "alignment_kind": kind})
+                     kind_label=ALIGNMENT_LABEL.get(kind, "Underground alignment") + _lc_suffix(lc), method=method,
+                     meta={"section": sec, "section_height_m": h, "design_type": t, "alignment_kind": kind, "lifecycle": lc or status})
     if t == "utility" and len(pts) >= 2:
         line = G.project_geojson({"type": "LineString", "coordinates": pts})
-        # depthCertainty 'unknown' = the stored depth is only a drawing placeholder (types.ts UtilityObject); absent = a design
-        # value on a proposal (hypothetical) or an unsourced hand entry on the baseline (used, quality UNKNOWN)
-        stated = p.get("depthCertainty")
-        cert = stated or ("hypothetical" if status == "proposed" else "unknown")
-        depth = _num(p.get("depth"))
-        if stated == "unknown" or (depth is not None and depth < 0):
-            depth = None
         dia_mm = _num(p.get("diameterMm"))
         dia = dia_mm / 1000.0 if dia_mm and dia_mm > 0 else None
         cls = UTILITY_CLASS.get(p.get("utilityType"), "utility")
-        prof = [(0.0, depth, (depth + dia) if (depth is not None and dia is not None) else None),
-                (line.length, depth, (depth + dia) if (depth is not None and dia is not None) else None)]
+        z = utility_z(p, len(pts), status, dia)
+        prof = _profile_from_extents(line, z["tops"], z["bottoms"])
+        quality = _utility_quality(status, z["evidence"], z["cert"])
         return Asset(str(obj.get("id")), obj.get("name") or "", layer, status, cls, line, None if dia is None else dia / 2, prof,
-                     "design" if status == "proposed" else _drawn_quality(cert), cert if depth is not None else "unknown", ds, diameter=dia,
-                     kind_label=KIND_LABEL.get(cls, "Utility"), method="open_cut", meta={"design_type": t, "utility_type": p.get("utilityType")})
+                     quality, z["cert"], ds, diameter=dia, kind_label=KIND_LABEL.get(cls, "Utility") + _lc_suffix(lc), method="open_cut",
+                     meta={"design_type": t, "utility_type": p.get("utilityType"), "lifecycle": lc or status, "evidence": z["evidence"],
+                           "z_model": z["model"], "z_ref": z["zref"], "default_vertices": z["defaults"], "default_flags": z["flags"],
+                           "evidence_note": z["evidence_note"]})
     if t == "metro_line" and len(pts) >= 2 and status == "existing":
         line = G.project_geojson({"type": "LineString", "coordinates": pts})
         w = _num(p.get("deckWidth"))
@@ -530,6 +669,14 @@ def evaluate_pair(p: Asset, o: Asset, cfg: dict) -> Optional[dict]:
     if o.meta.get("depth_note") and (o_crown is not None or o_inv is not None):
         o_depth += f" ({o.meta['depth_note']})"
     found.append(f"Depth where they meet: proposed {_fmt(p_crown)} to {_fmt(p_inv)}; {o.label()} {o_depth}.")
+    for a, c0, c1 in ((p, pc0, pc1), (o, oc0, oc1)):
+        if defaults_used(a, c0, c1):
+            found.append(f"The depth of {a.label()} there is the typical-cover default for its type, not an entered or measured "
+                         "value: enter the real depth.")
+    if p.meta.get("evidence_note"):
+        found.append(p.meta["evidence_note"])
+    if o.meta.get("lifecycle") == "abandoned":
+        found.append(f"{o.label()} is recorded as abandoned in place: screened as an existing obstacle (it stays in the ground unless removed).")
     if raw_gap is not None:
         found.append(("Vertical ranges overlap" if raw_gap <= 1e-6 else f"Vertical gap {raw_gap:.1f} m") +
                      ("." if v_checkable else " on recorded values — relative only, vertical not checkable."))
@@ -599,6 +746,8 @@ def evaluate_pair(p: Asset, o: Asset, cfg: dict) -> Optional[dict]:
             found.append(f"Within {z['distance_m']:.0f} m of a Metro structure ({o.label()}, {edge:.1f} m): Maha-Metro NOC required "
                          f"({z['source']}). Permission trigger, not an engineering clearance.")
     not_checked = ["Owner's own standard for these assets (PMC, MSEDCL, MNGL, Maha-Metro may be stricter)."]
+    if o.meta.get("lifecycle") == "abandoned":
+        not_checked.append(f"Whether {o.label()} has been removed or filled since it was abandoned.")
     if not v_checkable:
         not_checked.append(f"Vertical clearance: level of {o.label() if tov is None else p.label()} not usable (quality / datum).")
     if o.layer == "osm_metro" or o.cls in METRO_CLASSES:
@@ -609,7 +758,8 @@ def evaluate_pair(p: Asset, o: Asset, cfg: dict) -> Optional[dict]:
     return {
         "status": status, "category": "metro" if o.cls in METRO_CLASSES else "clearance", "protection_zone": bool(zone_hit),
         "title": f"{p.label()} × {o.label()}",
-        "checked": f"Horizontal and vertical clearance between the proposed {p.kind_label or KIND_LABEL.get(p.cls)} and the {o.status} "
+        "checked": f"Horizontal and vertical clearance between the proposed {p.kind_label or KIND_LABEL.get(p.cls)} and the "
+                   f"{'abandoned (existing obstacle)' if o.meta.get('lifecycle') == 'abandoned' else o.meta.get('lifecycle') if o.meta.get('lifecycle') == 'conceptual' else o.status} "
                    f"{o.kind_label or KIND_LABEL.get(o.cls)}" + (" and the Metro 20 m protection zone" if zone_rules else "") + ".",
         "data_used": _data_used(p, o),
         "found": found,
@@ -678,7 +828,7 @@ def cover_check(p: Asset, cfg: dict) -> tuple[Optional[dict], dict]:
         used.append({**m, "value_m": round(v, 2)})
     rules = [{"id": f"cover:{p.cls}", "dim": "V", "value_m": m["value_m"], "type": m["type"], "source": m["source"], "clause": m["clause"],
               "note": cfg["ground_note"]} for m in used]
-    data = [{"dataset": "Design profile (this alternative)", "dataset_id": p.dataset["id"], "quality_level": "design"}]
+    data = [{"dataset": "Design profile (proposal)", "dataset_id": p.dataset["id"], "quality_level": "design"}]
     nc = [cfg["ground_note"], "Owner's own cover standard; road-crossing and casing requirements."]
     found, status = [], None
     if crown is None:
@@ -687,7 +837,9 @@ def cover_check(p: Asset, cfg: dict) -> tuple[Optional[dict], dict]:
         steps = ["Enter the crown depth at every point (and the section size) in the profile editor."]
     else:
         steps = []
-        found.append(f"Shallowest crown (cover) {crown:.2f} m below ground.")
+        found.append(f"Shallowest crown (cover) {crown:.2f} m below ground" + (" (top of pipe)." if p.meta.get("design_type") == "utility" else "."))
+        if defaults_used(p, None, None):
+            found.append(f"{p.meta.get('default_vertices', 0)} point(s) use the typical-cover default for the type, not an entered depth.")
         for m in sorted(used, key=lambda m: -m["value_m"]):
             if crown < m["value_m"] - 1e-6:
                 if m.get("voltage_dependent"):
@@ -969,12 +1121,19 @@ def apply_verifications(db, findings: list[dict]) -> None:
 # ── run ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def classify_objects(objects: list[dict], scenario_id: str) -> tuple[list[Asset], list[Asset], list[dict]]:
-    """Proposed = objects of the checked alternative; existing = baseline objects. In the baseline itself every drawn
-    underground alignment / utility is treated as proposed (there is nothing to compare it with as 'existing')."""
+    """Which side each drawn object is screened on.
+    1. The lifecycle recorded on the object wins (utility `status`, alignment `lifecycle`): proposed / conceptual are
+       checked as proposals wherever they are drawn; existing and abandoned-in-place are existing obstacles (an abandoned
+       pipe is still in the ground). A proposal drawn on the base city is therefore checked in every alternative.
+    2. Not recorded (older objects, 'unknown'): alternative membership — proposed = objects of the checked alternative,
+       existing = baseline objects; in the baseline itself every drawn underground alignment / utility is proposed."""
     proposed, existing, skipped = [], [], []
     for o in objects:
         sid = o.get("scenarioId") or "base"
         is_prop = (sid == scenario_id and scenario_id != "base") or (scenario_id == "base" and o.get("type") in ("underground_alignment", "utility"))
+        side = lifecycle_side(object_lifecycle(o))
+        if side is not None:
+            is_prop = side == "proposed"
         try:
             a = design_asset(o, "proposed" if is_prop else "existing")
         except Exception as e:  # noqa: BLE001
@@ -1248,7 +1407,7 @@ def _layers_report(rec, metro_meta, bld_meta, wc_meta, existing_design, cfg) -> 
     out.append({"id": "buildings", "name": "Building footprints (foundation proxy)", "used": bool(bld_meta.get("available")),
                 "quality_level": "footprint only, depth unknown", "coverage": bld_meta.get("reason") or ("capped read" if bld_meta.get("capped") else "index extent")})
     out.append({"id": "watercourses", "name": "PMC nallas and rivers", "used": bool(wc_meta.get("available")), "quality_level": "QL-D (plan only)"})
-    out.append({"id": "design_existing", "name": "Existing objects drawn in Design (baseline)", "used": True, "records": len(existing_design),
+    out.append({"id": "design_existing", "name": "Existing objects drawn in Design (status existing / abandoned, or older baseline objects)", "used": True, "records": len(existing_design),
                 "quality_level": "user-drawn"})
     gw_ok = _exists("nwdp_groundwater_pune")
     out.append({"id": "nwdp_groundwater_pune", "name": "NWDP groundwater wells", "used": gw_ok, "quality_level": "point observations",
