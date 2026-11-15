@@ -72,3 +72,20 @@ describe('utility Z model', () => {
     expect(e.note).toContain('top of pipe');
   });
 });
+
+describe('OSM metro with an unmapped depth (F12)', () => {
+  const line = (over: Record<string, unknown> = {}) => ({ id: 'm1', type: 'metro_line', name: 'Purple Line', layerId: 'metro', coordinates: [[73.857, 18.497, -6], [73.858, 18.502, -6]], trackCount: 2, trackGauge: 1.435, deckWidth: 8, elevation: -6, pierSpacing: 30, tags: { tunnel: 'yes', layer: '-2' }, createdAt: '', updatedAt: '', ...over }) as unknown as import('../objects/types').MetroLineObject;
+  const station = (over: Record<string, unknown> = {}) => ({ id: 's1', type: 'metro_station', name: 'Swargate', layerId: 'metro', coordinates: [73.8581, 18.5021, 0], stationName: 'Swargate', length: 140, width: 20, height: 8, elevation: 0, capacity: 1, originalOsmTags: { railway: 'station', station: 'subway' }, createdAt: '', updatedAt: '', ...over }) as unknown as import('../objects/types').MetroStationObject;
+  it('a tunnel=yes / layer<0 line is plan-only; an elevated one is not', async () => {
+    const { isUnmappedMetroTunnel } = await import('../underground/metroLevel');
+    expect(isUnmappedMetroTunnel(line())).toBe(true);
+    expect(isUnmappedMetroTunnel(line({ elevation: 12, tags: { bridge: 'yes' } }))).toBe(false);
+  });
+  it('a level-less OSM station on a tunnel section is an underground station (inferred); away from it, or drawn, it is not', async () => {
+    const { unmappedUndergroundStation } = await import('../underground/metroLevel');
+    expect(unmappedUndergroundStation(station(), [line()])).toMatchObject({ inferred: true });
+    expect(unmappedUndergroundStation(station({ coordinates: [73.80, 18.50, 0] }), [line()])).toBeNull();
+    expect(unmappedUndergroundStation(station({ originalOsmTags: undefined }), [line()])).toBeNull();
+    expect(unmappedUndergroundStation(station({ originalOsmTags: { location: 'underground' } }), [])).toMatchObject({ inferred: false });
+  });
+});

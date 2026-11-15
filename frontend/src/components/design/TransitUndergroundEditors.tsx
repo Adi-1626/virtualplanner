@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import { engineInstance } from '../../engine/TwinCityEngine';
-import type { BuildingObject, GatewayObject, MetroLineObject, MetroStationObject, UndergroundAlignmentObject, UtilityObject, ZoneObject } from '../../engine/objects/types';
+import type { BuildingObject, CityObject, GatewayObject, MetroLineObject, MetroStationObject, UndergroundAlignmentObject, UtilityObject, ZoneObject } from '../../engine/objects/types';
 import type { DemandZone } from '../../engine/objects/demandTypes';
 import { findNearestTrack, resolveStationHeading, STATION_TRACK_SNAP_METERS } from '../../engine/objects/stationAlignment';
 import { filterObjectsForScenario } from '../../engine/scenarios/scenarioFilter';
@@ -11,6 +11,7 @@ import { useShellStore } from '../../shell/useShellStore';
 import { useUndergroundStore } from '../underground/undergroundStore';
 import { AlignmentEditor } from '../underground/AlignmentForms';
 import { UtilityZEditor } from '../underground/UtilityForms';
+import { METRO_STATION_LABEL, METRO_TUNNEL_LABEL, isUnmappedMetroTunnel, unmappedUndergroundStation } from '../../engine/underground/metroLevel';
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
 import { SourceBadge } from '../ui/SourceBadge';
 import { sourceOf } from '../ui/dataSource';
@@ -74,9 +75,9 @@ export const MetroLineEditor: React.FC<{ m: MetroLineObject; onUpdate: Update }>
         </select>
       </div>
       <Slider id="metro-deck" testId="metro-deck" label="Deck width" unit="m" min={4} max={12} step={0.5} value={m.deckWidth || 8} onChange={v => onUpdate('deckWidth', v)} />
-      {m.elevation < 0 ? (
+      {isUnmappedMetroTunnel(m as CityObject) ? (
         <p className="text-[11px] flex items-center gap-1.5 flex-wrap" style={note} data-testid="metro-tunnel-note">
-          <CertaintyBadge certainty="unknown" /> Underground section{m.tags?.tunnel ? ' (OpenStreetMap tunnel=yes)' : ''}: plan position only. Tunnel depth is UNKNOWN (no official levels published); it is drawn just below the surface as a placeholder, not at its real depth.
+          <CertaintyBadge certainty="unknown" /> {METRO_TUNNEL_LABEL}{m.tags?.tunnel ? ' (OpenStreetMap tunnel=yes)' : ''}: plan position only. No official levels are published, so it is drawn as a dashed line on the surface, not at a guessed depth. Anything within 20 m of it needs a Maha-Metro NOC (UDCPR 14.2.1.7); the conflict check screens that in plan.
         </p>
       ) : (
         <>
@@ -96,6 +97,7 @@ export const MetroStationEditor: React.FC<{ s: MetroStationObject; onUpdate: Upd
   const orientation = resolveStationHeading(s, all);
   const track = findNearestTrack(s.coordinates, all);
   const heading = Math.round(orientation.heading);
+  const unmapped = unmappedUndergroundStation(s, all);
   const autoAlign = s.alignToTrack !== false;
   const onTrack = !!track && track.distanceMeters < 1;
   return (
@@ -118,10 +120,16 @@ export const MetroStationEditor: React.FC<{ s: MetroStationObject; onUpdate: Upd
           </div>
         )}
       </div>
+      {unmapped ? (
+        <p className="text-[11px] flex items-center gap-1.5 flex-wrap" style={note} data-testid="metro-station-underground-note">
+          <CertaintyBadge certainty="unknown" /> {METRO_STATION_LABEL}{unmapped.inferred ? ` (no level in OpenStreetMap; it sits on the tunnel section ${unmapped.tunnelName ?? ''})` : ' (OpenStreetMap)'}: plan position only, drawn as a dashed outline on the surface. Box depth is UNKNOWN (Pune Line-1 underground station bases are 18–28 m deep per the DPR — context, not this station's value).
+        </p>
+      ) : (<>
       <Slider id="st-len" testId="station-length" label="Platform length" unit="m" min={80} max={200} step={10} value={s.length} onChange={v => onUpdate('length', v)} />
       <Slider id="st-w" label="Width" unit="m" min={12} max={30} step={2} value={s.width} onChange={v => onUpdate('width', v)} />
       <Slider id="st-elev" testId="station-elevation" label="Platform height" unit="m" min={6} max={24} step={1} value={s.elevation} onChange={v => onUpdate('elevation', v)} />
       <p className="text-[11px] flex items-center gap-1.5 flex-wrap" style={note}><CertaintyBadge certainty="hypothetical" /> Design values; the station box is drawn to them.</p>
+      </>)}
     </div>
   );
 };

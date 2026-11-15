@@ -3,6 +3,9 @@ import { isAlignment } from '../../engine/underground/alignmentFactory';
 import { undergroundView } from '../../engine/underground/UndergroundView';
 import { undergroundRenderer } from '../../engine/underground/UndergroundRenderer';
 import { useShellStore } from '../useShellStore';
+import type { MetroStationObject, UtilityObject } from '../../engine/objects/types';
+import { isUnmappedMetroTunnel, unmappedUndergroundStation } from '../../engine/underground/metroLevel';
+import { resolveStationHeading } from '../../engine/objects/stationAlignment';
 
 // ---- runtime: underground view while the workspace is open; alignments always drawn -----------------------------
 let runtimeStarted = false;
@@ -16,13 +19,26 @@ export function startUndergroundRuntime() {
     if (!v) return;
     undergroundRenderer.attach(v);
     const sel = engineInstance.selection.getSelection()[0] ?? null;
-    undergroundRenderer.renderAlignments(engineInstance.objects.getAll().filter(isAlignment), sel);
+    const all = engineInstance.objects.getAll();
+    undergroundRenderer.renderAlignments(all.filter(isAlignment), sel);
+    // Drawn utilities: always in Underground; in other workspaces only when their utility layer is shown
+    const inUg = useShellStore.getState().workspace === 'underground';
+    // Existing metro with an unmapped depth: plan-only, labelled, in every workspace while the metro layer is shown
+    const metroOn = engineInstance.layers.isVisible('metro');
+    const lines = metroOn ? all.filter(isUnmappedMetroTunnel) : [];
+    const stations = metroOn ? all.flatMap(o => {
+      const u = o.type === 'metro_station' ? unmappedUndergroundStation(o, all) : null;
+      return u ? [{ s: o as MetroStationObject, heading: resolveStationHeading(o as MetroStationObject, all).heading, inferred: u.inferred }] : [];
+    }) : [];
+    undergroundRenderer.renderMetroPlanOnly(lines, stations);
+    undergroundRenderer.renderUtilities(all.filter((o): o is UtilityObject => o.type === 'utility' && (inUg || engineInstance.layers.isVisible(o.layerId))), sel);
   };
   const syncView = (ws: string) => { if (ws === 'underground') undergroundView.enter(viewer()); else undergroundView.leave(); };
   engineInstance.objects.onChange(redraw);
   engineInstance.scenarios.onChange(redraw);
   engineInstance.selection.onChange(redraw);
-  useShellStore.subscribe((s, prev) => { if (s.workspace !== prev.workspace) syncView(s.workspace); });
+  engineInstance.layers.onChange(redraw);
+  useShellStore.subscribe((s, prev) => { if (s.workspace !== prev.workspace) { syncView(s.workspace); redraw(); } });
   // The viewer is created after the shell module loads: catch up once it exists
   const wait = window.setInterval(() => {
     if (!viewer()) return;

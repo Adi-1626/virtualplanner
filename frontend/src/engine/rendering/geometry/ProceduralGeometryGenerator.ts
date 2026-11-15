@@ -1,4 +1,5 @@
 import { utilityZ } from '../../underground/utilityModel';
+import { isUnmappedMetroTunnel, unmappedUndergroundStation } from '../../underground/metroLevel';
 import type { CityObject, RoadObject, BuildingObject, FlyoverObject, MetroLineObject, MetroStationObject, UtilityObject, JunctionObject, MetroFlyoverObject } from '../../objects/types';
 import { groundAt, withFlatGround } from '../../terrain/groundHeight';
 import { depressedLevel, elevatedLayer, isOsmBridge } from '../../objects/bridgeElevation';
@@ -84,9 +85,13 @@ export class ProceduralGeometryGenerator {
         return this.generateMetroFlyoverMeshes(obj as MetroFlyoverObject);
       }
       if (obj.type === 'metro_line') {
+        // Existing tunnel with an unmapped depth: no invented −6 m deck; a labelled plan line is drawn on the surface
+        // by the Underground renderer (metroLevel.ts)
+        if (isUnmappedMetroTunnel(obj)) return [];
         return this.generateMetroLineMeshes(obj as MetroLineObject);
       }
       if (obj.type === 'metro_station') {
+        if (unmappedUndergroundStation(obj, allObjects ? allObjects.ofType('metro_line') : [])) return [];
         return this.generateMetroStationMeshes(obj as MetroStationObject, allObjects);
       }
       if (obj.type === 'utility') {
@@ -2351,11 +2356,8 @@ export class ProceduralGeometryGenerator {
   private generateUtilityMesh(utility: UtilityObject): MeshData[] {
     const z = utilityZ(utility);
     const thickness = z.diameterM !== null ? Math.max(0.05, z.diameterM) : 0.5;
-    let color = '#38bdf8'; // water: blue
-    if (utility.utilityType === 'electricity') color = '#eab308'; // electric: yellow
-    if (utility.utilityType === 'sewage') color = '#a1a1aa'; // sewage: grey
-    if (utility.utilityType === 'fiber') color = '#ec4899'; // fiber: pink
-    if (utility.utilityType === 'gas') color = '#f97316'; // gas: orange
+    // Same colours as the Underground legend / records (UndergroundRenderer UTILITY_COLOR)
+    const color = ({ water: '#3b82f6', sewage: '#22c55e', electricity: '#ef4444', gas: '#eab308', fiber: '#f97316' } as Record<string, string>)[utility.utilityType] ?? '#38bdf8';
     const out: MeshData[] = [];
     let run: [number, number, number][] = [];
     const flush = () => {

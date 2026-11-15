@@ -3,8 +3,7 @@ import { Cartesian2, Math as CMath } from 'cesium';
 import { coordinationApi } from '../../lib/coordinationApi';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { undergroundRenderer } from '../../engine/underground/UndergroundRenderer';
-import { isAlignment } from '../../engine/underground/alignmentFactory';
-import { alignmentsRect } from '../../engine/underground/viewRect';
+import { alignmentsRect, isWorkObject } from '../../engine/underground/viewRect';
 import { useUndergroundStore } from './undergroundStore';
 
 export const USER_KEY = 'td-user';
@@ -15,9 +14,9 @@ export const MAX_DRAWN = 4000;
 
 type Box = [number, number, number, number];
 
-/** The work area: around the alignments when there are any, else the map view (null when zoomed out too far). */
+/** The work area: around the drawn alignments and utilities when there are any, else the map view (null when zoomed out too far). */
 export function workArea(): { box: Box | null; source: 'alignments' | 'view' | null; note: string | null } {
-  const al = engineInstance.objects.getAll().filter(isAlignment);
+  const al = engineInstance.objects.getAll().filter(isWorkObject);
   const r = alignmentsRect(al, 250);
   if (r) return { box: r, source: 'alignments', note: null };
   const v = engineInstance.getViewer?.();

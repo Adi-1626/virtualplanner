@@ -10,11 +10,13 @@
  * The first entity of an alignment carries the object's id, so clicking it selects the object like any other.
  */
 import {
-  Cartesian2, Color, ColorMaterialProperty, CornerType, CustomDataSource, PolylineDashMaterialProperty, type Entity, type Viewer,
+  Cartesian2, Color, ColorMaterialProperty, CornerType, CustomDataSource, DistanceDisplayCondition, HeightReference, PolylineDashMaterialProperty, type Entity, type Viewer,
 } from 'cesium';
 import { scenePoint } from '../terrain/groundHeight';
 import type { Certainty } from '../objects/certainty';
-import type { UndergroundAlignmentKind, UndergroundAlignmentObject } from '../objects/types';
+import type { MetroLineObject, MetroStationObject, UndergroundAlignmentKind, UndergroundAlignmentObject, UtilityObject, UtilityType } from '../objects/types';
+import { METRO_STATION_LABEL, METRO_TUNNEL_LABEL } from './metroLevel';
+import { utilityZ } from './utilityModel';
 import { depthsOf, sectionHeightM, sectionWidthM } from './alignmentGeometry';
 import type { SubsurfaceRecord } from '../../lib/coordinationApi';
 import { layerOf } from './recordsSummary';
@@ -24,6 +26,12 @@ export const RECORD_COLOR: Record<string, string> = {
   sewer: '#22c55e', storm_drain: '#14b8a6', water: '#3b82f6', power: '#ef4444', gas: '#eab308', telecom: '#f97316', other_utility: '#38bdf8',
 };
 /** Evidence → opacity (ASCE 38 quality level): how sure the position is, separate from status. */
+/** Drawn utility type → the record colour of the same network (legend). */
+export const UTILITY_COLOR: Record<UtilityType, string> = {
+  water: RECORD_COLOR.water, sewage: RECORD_COLOR.sewer, electricity: RECORD_COLOR.power, gas: RECORD_COLOR.gas, fiber: RECORD_COLOR.telecom,
+};
+/** Minimum on-screen width (px) of a buried utility line, so a 150 mm pipe can be found from 1 km up. */
+export const UTILITY_MIN_PX = 3;
 export const EVIDENCE_ALPHA: Record<string, number> = { 'QL-A': 1, 'QL-B': 0.9, 'QL-C': 0.75, 'QL-D': 0.6, UNKNOWN: 0.5 };
 
 const KIND_COLOR: Record<UndergroundAlignmentKind, string> = {
@@ -62,12 +70,18 @@ export class UndergroundRenderer {
   private ds: CustomDataSource | null = null;
   private viewer: Viewer | null = null;
   private recordsDs: CustomDataSource | null = null;
+  private utilDs: CustomDataSource | null = null;
+  private metroDs: CustomDataSource | null = null;
 
   attach(viewer: Viewer | null) {
     if (!viewer || this.viewer === viewer) return;
     this.viewer = viewer;
     this.ds = new CustomDataSource('underground-alignments');
     this.recordsDs = new CustomDataSource('subsurface-records');
+    this.utilDs = new CustomDataSource('underground-utilities');
+    this.metroDs = new CustomDataSource('metro-plan-only');
+    void viewer.dataSources.add(this.utilDs);
+    void viewer.dataSources.add(this.metroDs);
     void viewer.dataSources.add(this.ds);
     void viewer.dataSources.add(this.recordsDs);
   }
@@ -131,6 +145,110 @@ export class UndergroundRenderer {
         material: lc === 'existing' ? traceColor : new PolylineDashMaterialProperty({ color: traceColor, dashLength: lc === 'conceptual' ? 6 : 18 }),
       },
     });
+  }
+
+  /**
+   * Drawn utilities, on top of their to-scale mesh (ProceduralGeometryGenerator): a buried line at the pipe's centre with a
+   * minimum pixel width that also draws through the ground (depthFailMaterial) when proposed or selected, so it is never
+   * hidden by opaque ground outside the see-through area; spans with an UNKNOWN depth dashed grey on the surface; and a
+   * plan trace on the surface above it (dashed proposed, dotted conceptual, solid existing, long-dash abandoned), so the
+   * line can be found and clicked from above. The first entity carries the object id (click = select).
+   */
+  renderUtilities(utils: UtilityObject[], selectedId: string | null) {
+    if (!this.utilDs || !this.isAttached()) return;
+    const ents = this.utilDs.entities;
+    ents.suspendEvents();
+    ents.removeAll();
+    for (const u of utils) this.addUtility(ents, u, u.id === selectedId);
+    ents.resumeEvents();
+    this.viewer?.scene.requestRender();
+  }
+
+  private addUtility(ents: CustomDataSource['entities'], u: UtilityObject, selected: boolean) {
+    if (u.coordinates.length < 2) return;
+    const z = utilityZ(u);
+    const base = Color.fromCssColorString(UTILITY_COLOR[u.utilityType] ?? '#38bdf8');
+    const st = z.status;
+    const prominent = selected || st === 'proposed' || st === 'conceptual';
+    let first = true;
+    const nextId = (suffix: string) => { if (first) { first = false; return u.id; } return `ug:${u.id}:${suffix}`; };
+    // plan trace first, so the object id sits on the line seen from above
+    const traceColor = (selected ? Color.WHITE : base).withAlpha(selected ? 0.95 : 0.8);
+    ents.add({
+      id: nextId('plan'), name: `${u.name || 'Utility'} (${st}, plan trace on the surface)`,
+      polyline: {
+        positions: u.coordinates.map(c => scenePoint(c[0], c[1], 0)), width: selected ? 5 : 3, clampToGround: true,
+        material: st === 'existing' ? traceColor : new PolylineDashMaterialProperty({ color: traceColor, dashLength: st === 'conceptual' ? 6 : st === 'abandoned' ? 30 : 16 }),
+      },
+    });
+    const half = (z.diameterM ?? 0) / 2;
+    let run: number[] = [];
+    let k = 0;
+    const flush = () => {
+      if (run.length >= 2) {
+        const color = base.withAlpha(z.depths.some(d => d.isDefault) || st === 'conceptual' ? 0.7 : 0.95);
+        ents.add({
+          id: nextId(`buried${k++}`), name: `${u.name || 'Utility'} (buried, top of pipe ${run.map(i => z.depths[i].topDepthM?.toFixed(2)).join('/')} m)`,
+          polyline: {
+            positions: run.map(i => scenePoint(u.coordinates[i][0], u.coordinates[i][1], -((z.depths[i].topDepthM as number) + half))),
+            width: selected ? UTILITY_MIN_PX + 3 : UTILITY_MIN_PX, material: color,
+            ...(prominent ? { depthFailMaterial: color.withAlpha(0.6) } : {}),
+          },
+        } as Entity.ConstructorOptions);
+      }
+      run = [];
+    };
+    z.depths.forEach((d, i) => { if (d.topDepthM !== null && d.topDepthM !== undefined) run.push(i); else flush(); });
+    flush();
+    // segments with an unknown end: on the surface, never at a guessed depth
+    for (let i = 1; i < z.depths.length; i++) {
+      if (z.depths[i - 1].topDepthM == null || z.depths[i].topDepthM == null) {
+        ents.add({
+          id: nextId(`unk${i}`), name: `${u.name || 'Utility'} (depth UNKNOWN: drawn on the surface)`,
+          polyline: { positions: [i - 1, i].map(j => scenePoint(u.coordinates[j][0], u.coordinates[j][1], 0)), width: 3, clampToGround: true,
+            material: new PolylineDashMaterialProperty({ color: Color.fromCssColorString('#94a3b8'), dashLength: 8 }) },
+        });
+      }
+    }
+  }
+
+  /**
+   * Existing OSM metro whose depth is not mapped (metroLevel.ts): a dashed purple plan line on the surface labelled
+   * "Metro tunnel — depth not mapped", and a dashed station outline labelled "Underground station — depth not mapped".
+   * Never placed below ground. The first entity carries the object id (click = select).
+   */
+  renderMetroPlanOnly(lines: MetroLineObject[], stations: { s: MetroStationObject; heading: number; inferred: boolean }[]) {
+    if (!this.metroDs || !this.isAttached()) return;
+    const ents = this.metroDs.entities;
+    ents.suspendEvents();
+    ents.removeAll();
+    const purple = Color.fromCssColorString('#a855f7');
+    const label = (text: string) => ({
+      text, font: '12px sans-serif', fillColor: Color.WHITE, showBackground: true, backgroundColor: Color.fromCssColorString('#3b0764').withAlpha(0.8),
+      pixelOffset: new Cartesian2(0, -14), disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      distanceDisplayCondition: new DistanceDisplayCondition(0, 6000), heightReference: HeightReference.CLAMP_TO_GROUND,
+    });
+    for (const m of lines) {
+      if (m.coordinates.length < 2) continue;
+      ents.add({ id: m.id, name: `${m.name} — ${METRO_TUNNEL_LABEL} (plan position only, OpenStreetMap)`,
+        polyline: { positions: m.coordinates.map(c => scenePoint(c[0], c[1], 0)), width: 4, clampToGround: true,
+          material: new PolylineDashMaterialProperty({ color: purple.withAlpha(0.9), gapColor: Color.BLACK.withAlpha(0.25), dashLength: 20 }) } });
+      const mid = m.coordinates[Math.floor(m.coordinates.length / 2)];
+      ents.add({ id: `ug:${m.id}:label`, name: METRO_TUNNEL_LABEL, position: scenePoint(mid[0], mid[1], 0), label: label(METRO_TUNNEL_LABEL) } as Entity.ConstructorOptions);
+    }
+    for (const { s: st, heading, inferred } of stations) {
+      const [lon, lat] = st.coordinates;
+      const L = (st.length || 140) / 2, W = (st.width || 20) / 2;
+      const h = (heading * Math.PI) / 180, kx = 111320 * Math.cos((lat * Math.PI) / 180), ky = 110574;
+      const corner = (a: number, b: number) => { const e = a * Math.sin(h) + b * Math.cos(h), n = a * Math.cos(h) - b * Math.sin(h); return scenePoint(lon + e / kx, lat + n / ky, 0); };
+      const ring = [corner(L, W), corner(L, -W), corner(-L, -W), corner(-L, W), corner(L, W)];
+      const text = `${METRO_STATION_LABEL}${inferred ? ' (on a tunnel section in OSM)' : ''}`;
+      ents.add({ id: st.id, name: `${st.stationName || st.name} — ${text}`,
+        polyline: { positions: ring, width: 3, clampToGround: true, material: new PolylineDashMaterialProperty({ color: purple.withAlpha(0.9), dashLength: 12 }) } });
+      ents.add({ id: `ug:${st.id}:label`, name: text, position: scenePoint(lon, lat, 0), label: label(`${st.stationName || st.name}: ${METRO_STATION_LABEL}`) } as Entity.ConstructorOptions);
+    }
+    ents.resumeEvents();
+    this.viewer?.scene.requestRender();
   }
 
   renderRecords(records: SubsurfaceRecord[]) {
