@@ -128,3 +128,21 @@ describe('ground opacity default on every entry', () => {
     expect(JSON.stringify(v)).toBe(before);
   });
 });
+
+describe('leave() restores values Cesium copies into its own objects', () => {
+  it('saves copies of the rectangle and underground colour, not the live objects apply() overwrites', () => {
+    class Box { constructor(public w: number) {} clone() { return new Box(this.w); } }
+    const rect = new Box(-3.14);
+    const globe = {
+      translucency: { enabled: false, frontFaceAlpha: 1, backFaceAlpha: 1, get rectangle() { return rect; }, set rectangle(r: unknown) { rect.w = (r as Box).w; } },
+      undergroundColor: 'BLACK', depthTestAgainstTerrain: false,
+    };
+    const v = { scene: { globe, screenSpaceCameraController: { enableCollisionDetection: true } } } as unknown as ViewerLike;
+    const uv = new UndergroundView({ rectangle: d => new Box(d ? d[0] : -3.14), tint: () => 'SLATE' });
+    uv.enter(v);
+    uv.update({ rectangleDeg: [1.29, 0, 2, 1], seeThroughEverywhere: false });
+    expect(rect.w).toBe(1.29);
+    uv.leave();
+    expect(rect.w).toBe(-3.14);
+  });
+});

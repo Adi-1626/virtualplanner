@@ -87,13 +87,16 @@ export class UndergroundView {
     if (this.saved && this.viewer === viewer) { this.apply(); return; }
     const g = viewer.scene.globe, sc = viewer.scene;
     this.viewer = viewer;
+    // Cesium's setters copy INTO the object their getters return (Rectangle / Color / NearFarScalar): save copies, or
+    // leave() restores the values apply() wrote (the translucency rectangle and underground colour leaked into Design)
+    const copy = (x: unknown) => (x && typeof (x as { clone?: unknown }).clone === 'function' ? (x as { clone: () => unknown }).clone() : x);
     this.saved = {
       enabled: g.translucency.enabled, front: g.translucency.frontFaceAlpha, back: g.translucency.backFaceAlpha,
-      rectangle: g.translucency.rectangle, undergroundColor: g.undergroundColor, depthTest: g.depthTestAgainstTerrain,
+      rectangle: copy(g.translucency.rectangle), undergroundColor: copy(g.undergroundColor), depthTest: g.depthTestAgainstTerrain,
       collision: sc.screenSpaceCameraController.enableCollisionDetection,
-      frontByDist: g.translucency.frontFaceAlphaByDistance, backByDist: g.translucency.backFaceAlphaByDistance,
-      ugAlphaByDist: g.undergroundColorAlphaByDistance,
-      background: sc.backgroundColor, sky: [sc.skyBox?.show, sc.skyAtmosphere?.show, sc.sun?.show, sc.moon?.show],
+      frontByDist: copy(g.translucency.frontFaceAlphaByDistance), backByDist: copy(g.translucency.backFaceAlphaByDistance),
+      ugAlphaByDist: copy(g.undergroundColorAlphaByDistance),
+      background: copy(sc.backgroundColor), sky: [sc.skyBox?.show, sc.skyAtmosphere?.show, sc.sun?.show, sc.moon?.show],
     };
     // Every entry starts from the defaults (see DEFAULT_UNDERGROUND_SETTINGS); the work-area rectangle is kept
     this.settings = { ...DEFAULT_UNDERGROUND_SETTINGS, rectangleDeg: this.settings.rectangleDeg };
