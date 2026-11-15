@@ -12,6 +12,7 @@ Every response is screening-grade and carries the DSM warning.
 from __future__ import annotations
 
 import json
+import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,6 +23,9 @@ from sqlalchemy.orm import Session
 from database.connection import get_db
 from terrain import dem as D
 from terrain import evidence as EV
+from datasets.public_text import LOCAL_DEM_NOT_LOADED, redact_paths
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/terrain", tags=["terrain"])
 OVERLAYS = ("hillshade", "slope")
@@ -31,7 +35,9 @@ def _dem():
     try:
         return D.get_dem()
     except D.DemUnavailable as e:
-        raise HTTPException(503, str(e))
+        # the exception names the server's data folder: log it, never send it to the UI
+        log.warning("terrain: %s", e)
+        raise HTTPException(503, LOCAL_DEM_NOT_LOADED)
 
 
 def _meta(db, dem) -> dict:
@@ -88,7 +94,7 @@ def profile(body: ProfileBody, db: Session = Depends(get_db)):
     try:
         prof = dem.profile(body.coordinates, body.step_m)
     except ValueError as e:
-        raise HTTPException(422, str(e))
+        raise HTTPException(422, redact_paths(str(e)))
     return {**prof, "dataset": _meta(db, dem)}
 
 
@@ -131,6 +137,6 @@ def subsurface_evidence(body: EvidenceBody, db: Session = Depends(get_db)):
     try:
         res = EV.evidence(body.coordinates, body.radius_km, body.max_wells, body.sewer_near_m, db=db, dem=dem)
     except ValueError as e:
-        raise HTTPException(422, str(e))
+        raise HTTPException(422, redact_paths(str(e)))
     res["dem"] = _meta(db, dem) if dem else None
     return res

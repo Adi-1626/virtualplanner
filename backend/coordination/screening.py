@@ -43,6 +43,7 @@ from shapely.strtree import STRtree
 
 from . import geometry as G
 from . import screening_config as C
+from datasets.public_text import redact_paths
 
 ENGINE = "underground-screening 1.0 (2026-11-15)"
 STATUSES = ("potential_conflict", "requires_investigation", "insufficient_data", "verified")
@@ -482,7 +483,7 @@ def osm_metro_assets(boxes: list[tuple]) -> tuple[list[Asset], dict]:
         idx = OsmIndex()
         st = idx.status()
     except Exception as e:  # noqa: BLE001
-        return [], {"available": False, "reason": str(e)[:160]}
+        return [], {"available": False, "reason": redact_paths(str(e))[:160]}
     if not st.get("available") or "metro" not in st.get("capabilities", []):
         return [], {"available": False, "reason": "OSM index without metro"}
     out, seen = [], set()
@@ -527,7 +528,7 @@ def infra_assets(layer_id: str, boxes: list[tuple], cls: str, where: Optional[di
         if meta_l is None:
             return [], {"available": False, "reason": st.get("reason") or f"{layer_id} not in the infrastructure index"}
     except Exception as e:  # noqa: BLE001
-        return [], {"available": False, "reason": str(e)[:160]}
+        return [], {"available": False, "reason": redact_paths(str(e))[:160]}
     out, seen, capped = [], set(), False
     for b in boxes:
         for fid, ext, p, g in infra_store.features_near(layer_id, b, where=where, max_features=cap + 1):

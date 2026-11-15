@@ -20,6 +20,7 @@ from feasibility.models import FeasibilityAssessmentEntity
 from models.models import (AreaEntity, CityObjectEntity, ScenarioObjectChangeEntity, ScenarioRunEntity,
                            ScenarioVersionChangeEntity, ScenarioVersionEntity)
 from planning.models import PlanningProjectEntity
+from datasets.public_text import redact_paths
 
 from . import geometry as G
 from .models import (ENGINE_VERSION, ClearanceRuleEntity, CoordinationConflictEntity, CoordinationRunEntity,
@@ -251,7 +252,7 @@ def building_segments(boxes: list[tuple]) -> tuple[list[G.Segment], Optional[dic
             return [], {"available": False, "reason": st.get("reason") or "buildings layer not in the index"}
         meta_l = infra_store.layer("buildings")
     except Exception as e:  # noqa: BLE001
-        return [], {"available": False, "reason": str(e)[:200]}
+        return [], {"available": False, "reason": redact_paths(str(e))[:200]}
     if not boxes:
         return [], {"available": True, "bbox": meta_l.get("bbox")}
     from shapely.geometry import box as sbox, mapping

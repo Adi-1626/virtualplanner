@@ -17,6 +17,7 @@ import math
 from pathlib import Path
 
 from datasets import paths
+from datasets.public_text import public_path, redact_paths
 
 GW_ID = "nwdp_groundwater_pune"
 SOIL_ID = "soil_soilgrids250"
@@ -41,8 +42,8 @@ def _vmeta(dataset_id: str, d: Path | None) -> dict:
     proc = json.loads((d / "processing.json").read_text())
     return {"dataset_id": dataset_id, "version": d.name, "available": True, "pipeline": proc.get("pipeline"),
             "run_at": proc.get("run_at"), "git_commit": proc.get("git_commit"),
-            "outputs": [{"path": o.get("path") or o.get("file"), "sha256": o.get("sha256")} for o in proc.get("outputs", [])],
-            "notes": proc.get("notes", "")}
+            "outputs": [{"path": public_path(o.get("path") or o.get("file"), d), "sha256": o.get("sha256")} for o in proc.get("outputs", [])],
+            "notes": redact_paths(proc.get("notes", ""))}
 
 
 class Alignment:

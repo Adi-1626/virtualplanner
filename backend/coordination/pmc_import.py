@@ -24,6 +24,8 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from datasets import infra_store as IS
+from datasets import paths
+from datasets.public_text import public_path
 
 from .models import REFERENCE_DATASET_PREFIX, SubsurfaceDatasetEntity, SubsurfaceRecordEntity, SubsurfaceRecordExtentEntity
 
@@ -99,8 +101,8 @@ def import_reference_networks(db: Session, imported_by: str, layers: Optional[li
             id=did, project_id=None, record_type="utility", format="json", name=spec["name"], file_name=f"infra_index:{layer}",
             file_sha256="sha256:" + meta["input_sha256"], publisher=f"{meta['publisher']} (via OpenCity)", source_url=meta.get("source_url") or "",
             licence=meta["licence"][:1500], data_date=meta.get("source_updated"), coverage_bbox_json=None,
-            provenance=(f"Imported from the UrbanOS infrastructure index layer '{layer}' (derived from {meta['dataset_dir']}, input sha256 "
-                        f"{meta['input_sha256']}; index {st.get('path')}). ASCE 38 QL-D. Retrieved {meta.get('retrieved_at')}."),
+            provenance=(f"Imported from the UrbanOS infrastructure index layer '{layer}' (derived from {public_path(meta['dataset_dir'], paths.data_dir())}, input sha256 "
+                        f"{meta['input_sha256']}; index {public_path(st.get('path'))}). ASCE 38 QL-D. Retrieved {meta.get('retrieved_at')}."),
             record_count=len(recs), warnings_json=json.dumps(warnings), supersedes_id=prev.id if prev else None, imported_by=imported_by))
         db.flush()
         for i in range(0, len(recs), 5000):

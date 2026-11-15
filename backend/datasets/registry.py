@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session
 
 from .models import (DsDatasetEntity, DsDatasetVersionEntity, DsFeatureDependencyEntity, DsFeatureEntity, DsFileEntity,
                      DsProcessingRunEntity, DsQualityCheckEntity, DsSourceEntity, DsUpdateCheckEntity)
+from . import paths
+from .public_text import public_path
 from .vocab import DATA_CLASSES, SUITABILITY, SUITABILITY_RANK
 
 
@@ -205,8 +207,10 @@ def version_dict(db: Session, v: DsDatasetVersionEntity, full: bool = True) -> d
          "created_at": v.created_at.isoformat() + "Z" if v.created_at else None}
     if full:
         d["coverage_geojson"] = _j(v.coverage_geojson)
-        d["files"] = [{"id": f.id, "role": f.role, "path": f.path, "sha256": f.sha256, "size_bytes": f.size_bytes,
-                       "format": f.format, "url": f.url}
+        # "path" stays as registered (quality checks stat it); "display_path" is what the UI shows: relative to the data
+        # directory, else the file name, never an absolute server path
+        d["files"] = [{"id": f.id, "role": f.role, "path": f.path, "display_path": public_path(f.path, paths.data_dir()),
+                       "sha256": f.sha256, "size_bytes": f.size_bytes, "format": f.format, "url": f.url}
                       for f in db.scalars(select(DsFileEntity).where(DsFileEntity.version_id == v.id))]
         d["processing_runs"] = [processing_dict(p) for p in db.scalars(
             select(DsProcessingRunEntity).where(DsProcessingRunEntity.version_id == v.id))]
