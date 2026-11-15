@@ -80,15 +80,47 @@ ways `tunnel=yes layer=-2`, Swargate station).
 
 | ID | Finding | Root cause | Status |
 |---|---|---|---|
-| F1 | "No records imported · Unknown" shown while 9 187 storm-drain + 44 482 sewer records are listed; none drawn on the map | `useSubsurfaceRecords` calls `GET /subsurface/records` without a bbox; the backend deliberately excludes the bulk reference networks (`ssd_ref_*`) without a bbox, so `records=[]` while `datasets` lists them. The empty state keys on `records.length` only. | see §4 |
-| F2 | Licence/provenance wall per dataset card | `SubsurfaceRecords` prints publisher, full licence text, coverage, importer, sha and warnings inline | see §4 |
-| F3 | No obvious entry state | Empty alignment state is the only call to action; inspecting existing assets is not offered | see §4 |
-| F4 | Tunnel tool settings invisible in Underground | `ToolSettings` is rendered by the Design context only | see §4 |
-| F5 | Two editors for one alignment | `AlignmentInspector` embeds `AlignmentEditor`; the inspector opens beside the Underground panel (dual overlay) | see §4 |
-| F6 | Depth reference unclear / no stored datum | `UndergroundVertexDepth` has only depth + certainty; no ground elevation, datum, ground-model version or z-reference (research §2.3) | see §4 |
-| F7 | Existing vs proposed vs conceptual not distinguishable | Alignments have no lifecycle status; renderer encodes only certainty (alpha); no legend | see §4 |
-| F8 | OSM metro tunnel at an invented −6 m, edited as a "design value", labelled "Metro (elevated)" in sections | OSM import (EditingEngine) writes elevation −6 for tunnels; `verticalExtentOf` / TYPE_LABEL / MetroLineEditor assume elevated | see §4 |
-| F9 | Cutaway is global; no depth readout, no "back to surface" | `UndergroundView` default rectangle = whole globe; no camera HUD | see §4 |
-| F10 | Disclosure says "no terrain / DEM data is loaded" while the Profile uses the DSM | stale text from before DEM v3 | see §4 |
+| F1 | "No records imported · Unknown" shown while 9 187 storm-drain + 44 482 sewer records are listed; none drawn on the map | `useSubsurfaceRecords` calls `GET /subsurface/records` without a bbox; the backend deliberately excludes the bulk reference networks (`ssd_ref_*`) without a bbox, so `records=[]` while `datasets` lists them. The empty state keys on `records.length` only. | fixed (§4) |
+| F2 | Licence/provenance wall per dataset card | `SubsurfaceRecords` prints publisher, full licence text, coverage, importer, sha and warnings inline | fixed (§4) |
+| F3 | No obvious entry state | Empty alignment state is the only call to action; inspecting existing assets is not offered | fixed (§4) |
+| F4 | Tunnel tool settings invisible in Underground | `ToolSettings` is rendered by the Design context only | fixed (§4) |
+| F5 | Two editors for one alignment | `AlignmentInspector` embeds `AlignmentEditor`; the inspector opens beside the Underground panel (dual overlay) | fixed (§4) |
+| F6 | Depth reference unclear / no stored datum | `UndergroundVertexDepth` has only depth + certainty; no ground elevation, datum, ground-model version or z-reference (research §2.3) | fixed (§4) |
+| F7 | Existing vs proposed vs conceptual not distinguishable | Alignments have no lifecycle status; renderer encodes only certainty (alpha); no legend | fixed (§4) |
+| F8 | OSM metro tunnel at an invented −6 m, edited as a "design value", labelled "Metro (elevated)" in sections | OSM import (EditingEngine) writes elevation −6 for tunnels; `verticalExtentOf` / TYPE_LABEL / MetroLineEditor assume elevated | fixed (§4) |
+| F9 | Cutaway is global; no depth readout, no "back to surface" | `UndergroundView` default rectangle = whole globe; no camera HUD | fixed (§4) |
+| F10 | Disclosure says "no terrain / DEM data is loaded" while the Profile uses the DSM | stale text from before DEM v3 | fixed (§4) |
 | F11 | Backend conflict detection ignores Design-drawn utilities | coordination/service.py run_detection | needs backend (other work stream) |
 | F12 | Underground stations imported at elevation 0 | OSM import ignores `station=subway` depth (none published) | needs design decision (Design import code) |
+
+## 4. Fixes (branch ug-audit) and retest
+
+Commits: 1b7e6bc (records, entry, single editor, metro tunnel, legend) · 70b650c (Z model, depth reference, lifecycle) ·
+0b8538c + 5bb9d51 (cutaway) · 720c37b (finish drawing → editor) · merge of 77edeb4 (screening engine) · 5f6af8a (conflict check placement).
+
+| ID | What changed | Retest (headless, Swargate / Karve Rd; shots/underground/fix*-*.png) |
+|---|---|---|
+| F1 | Records are always listed for a **work area** (250 m around the alignments, else the map view; centre box when oblique) with `?bbox=`, so the PMC networks come back and are drawn (≤4 000 polylines; colour = type, opacity = QL, no-depth records on the surface). One row per layer: count here, QL, "depth known for n of N"; water, power, gas, telecom, boreholes, foundations listed as **Not available** with who holds them (`engine/underground/recordsSummary.ts`). "Look here" re-lists. | Swargate view: sewers 2 021, storm drains 440, 2 461 drawn; Karve Rd: sewers 1 716, 1 895 drawn; six layers "Not available". No "No records imported" anywhere. |
+| F2 | Each dataset = one line "publisher · data date · licence in a phrase · details"; licence text, coverage, sha, warnings behind the disclosure. | fix1-view-default |
+| F3 | Get-started card: 1 see records, 2 draw tunnel / lay pipe, 3 check conflicts; Undo/Redo in the panel; primary "Check conflicts" button at the top once anything is proposed. | fix1-enter |
+| F4 | While drawing in Underground the panel shows the hint, the tool settings (type, depth, section) and "Stop drawing"; finishing a line selects it and opens its editor. | fix2 draw/edit |
+| F5 | In Underground the inspector shows the section sketch + "edit in the Underground panel"; the panel editor is the only editing surface (Design keeps its inspector editor). | 1 editor (was 2) |
+| F6 | `UndergroundVertexDepth` keeps the typed crown depth and adds `elevationM`, `datum: 'EGM2008'`, `zRef: 'crown'`, `groundM`, `groundModel` (e.g. "Copernicus GLO-30 DSM v3 (dsv_0d0e82a8c181)"); written on every edit and once when the ground loads (no undo entry, only in the object's own alternative). A depth change drops the stale elevation and re-derives it; section/type/status/certainty edits keep it. Editor shows a "Depth reference" box (DSM incl. roofs/trees, screening) and the EGM2008 elevation under every depth. | V1 18 m below DSM 574.18 → 556.18 m EGM2008; persisted through reload; undo/redo of a depth edit OK |
+| F7 | `lifecycle` (proposed default / conceptual / existing) on alignments; plan trace dashed / dotted / solid, conceptual paler; legend (status line styles, utility colours, opacity = evidence). | fix2-tunnel-3d |
+| F8 | OSM tunnel metro: inspector says "Underground section… depth UNKNOWN, drawn as a placeholder" (no track-height/pier sliders, UNKNOWN badge); profile/section treat it as depth UNKNOWN (was 6 m) and label "Metro". | fix1 inspect |
+| F9 | See-through ground limited to the work area by default ("See-through everywhere" opt-in); camera height/depth readout; "Look from below" (camera 8 m below ground facing the work area); "Back to surface" (highlighted when below). | below: "Camera 15 m below ground" → Back: "413 m above ground"; look-below: tunnel visible under the road (fix2-look-below) |
+| F10 | Technical-details text now describes the DSM ground, its limits and PMC datum. | — |
+| — | Conflict check (other stream's component) mounted unconditionally as "Check for conflicts", right after the proposal list. | utilities only: 1 object checked → 3 Requires investigation (Maha-Metro NOC), 6 Insufficient data (fix3-check) |
+
+## 5. Not fixed / open
+
+| Item | Why | Owner |
+|---|---|---|
+| F11 Design utilities in `run_detection` | backend coordination logic (the new screening endpoint does include them) | backend / coordination stream |
+| F12 Underground stations at elevation 0; OSM tunnel still **rendered** at −6 m by the Design geometry generator | Design import/renderer; real depth unpublished — needs a decision: draw plan-only (dashed on surface) vs a labelled placeholder | design decision |
+| Drawn utilities: depth is "cover" with no z-reference or elevation; `depth` is a non-null number (1.5 m default) | utility model is Design's; should get the same Z fields as alignments | needs design decision |
+| A proposed utility is hard to see from above (thin tube 1.5 m down, outside the see-through area) | renderer LOD / surface trace for utilities | follow-up |
+| 3D scene ground is the ellipsoid (Cesium ion terrain 401), Profile uses the DSM: 3D depths are relative to scene ground, Profile to DSM (labelled) | no terrain provider without an ion token | needs backend / config |
+| Row summary "deepest 25.2 m" is the invert | wording only (tested string) | minor |
+| PMC sewer "depth known" counts `depth_m` = published top depth (design levels, datum not stated) | as published, QL-D | data |
+| Headless only: frame timing not measured here | — | — |
