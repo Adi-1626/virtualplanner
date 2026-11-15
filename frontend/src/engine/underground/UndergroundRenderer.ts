@@ -177,7 +177,10 @@ export class UndergroundRenderer {
     ents.add({
       id: nextId('plan'), name: `${u.name || 'Utility'} (${st}, plan trace on the surface)`,
       polyline: {
-        positions: u.coordinates.map(c => scenePoint(c[0], c[1], 0)), width: selected ? 5 : 3, clampToGround: true,
+        // 0.3 m above the scene ground at each vertex (not clamped: a ground-clamped line is rebuilt asynchronously on every
+        // redraw and was often missing right after an edit); drawn through the ground so it is never hidden
+        positions: u.coordinates.map(c => scenePoint(c[0], c[1], 0.3)), width: selected ? 5 : 3,
+        depthFailMaterial: st === 'existing' ? traceColor : new PolylineDashMaterialProperty({ color: traceColor, dashLength: st === 'conceptual' ? 6 : st === 'abandoned' ? 30 : 16 }),
         material: st === 'existing' ? traceColor : new PolylineDashMaterialProperty({ color: traceColor, dashLength: st === 'conceptual' ? 6 : st === 'abandoned' ? 30 : 16 }),
       },
     });

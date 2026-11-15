@@ -202,11 +202,11 @@ export function verticalExtentOf(o: CityObject, otherChainageM = 0): VerticalExt
       // Per-vertex depths (utilityModel; legacy objects migrated on read), interpolated at the crossing chainage
       const e = utilityExtentAt(o, otherChainageM);
       const z = utilityZ(o);
-      const dflt = z.depths.some(d => d.isDefault);
+      const dflt = e.fromDefault;
       return {
         topDepthM: e.topM, bottomDepthM: e.bottomM, certainty: e.certainty,
         note: `${UTILITY_LABEL[o.utilityType] ?? o.utilityType} utility (drawn, ${STATUS_LABEL[z.status].toLowerCase()}; depths to ${ZREF_LABEL[z.zRef].toLowerCase()})`
-          + `${z.diameterM === null ? '; diameter UNKNOWN' : ''}${dflt ? '; depth is a typical-cover default, not measured' : ''}`,
+          + `${z.diameterM === null ? '; diameter UNKNOWN' : ''}${dflt ? '; depth here is a typical-cover default, not measured' : ''}`,
       };
     }
     case 'underground_alignment': {

@@ -219,7 +219,7 @@ export function withUtilityGroundReference(u: UtilityObject, groundM: readonly (
 }
 
 /** Top / bottom-of-pipe depth at a chainage along the utility: linear between known vertices, else null. */
-export function utilityExtentAt(u: UtilityObject, chainageM: number): { topM: number | null; bottomM: number | null; certainty: Certainty } {
+export function utilityExtentAt(u: UtilityObject, chainageM: number): { topM: number | null; bottomM: number | null; certainty: Certainty; fromDefault: boolean } {
   const z = utilityZ(u);
   const ch = chainages(u.coordinates);
   const at = (k: 'top' | 'bottom') => (i: number) => (k === 'top' ? z.depths[i].topDepthM ?? null : bottomDepthFrom(z.depths[i].depthM, z.zRef, z.diameterM));
@@ -238,7 +238,7 @@ export function utilityExtentAt(u: UtilityObject, chainageM: number): { topM: nu
   };
   const top = interp(at('top')), bottom = interp(at('bottom'));
   const cert = top.v === null ? 'unknown' : worstCertainty([z.depths[top.i].certainty, z.depths[top.j].certainty]);
-  return { topM: top.v, bottomM: bottom.v, certainty: cert };
+  return { topM: top.v, bottomM: bottom.v, certainty: cert, fromDefault: top.v !== null && !!(z.depths[top.i]?.isDefault || z.depths[top.j]?.isDefault) };
 }
 
 /** Shallowest / deepest top-of-pipe depth and how many vertex depths are defaults or unknown (for lists). */
