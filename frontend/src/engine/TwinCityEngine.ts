@@ -13,7 +13,6 @@ import {
   LabelStyle,
   HorizontalOrigin,
   VerticalOrigin,
-  HeightReference,
   PolylineDashMaterialProperty,
   EllipsoidTerrainProvider,
   createWorldTerrainAsync,
@@ -23,6 +22,7 @@ import {
 } from 'cesium';
 import { TerrainHeightField, cellsFor, type GroundSampler } from './terrain/TerrainHeightField';
 import { setGroundField, getGroundField, scenePoint } from './terrain/groundHeight';
+import { undergroundView } from './underground/UndergroundView';
 import { cesiumIonToken } from '../lib/cesiumToken';
 import { ObjectManager } from './objects/ObjectManager';
 import type { CityObject, RoadObject, ZoneObject, GatewayObject, BuildingObject } from './objects/types';
@@ -692,6 +692,30 @@ export class TwinCityEngine {
           return typeof id === 'string' && id !== topId && !!this.objects.getById(id.startsWith('junction_edit_') ? id.slice('junction_edit_'.length) : id);
         });
         if (under) picked = under;
+      }
+      // Underground: secondary pieces of an underground object carry 'ug:<objectId>:<part>' ids, and the buried
+      // network usually lies under buildings and roads. A click there selects the underground object (metro, tunnel,
+      // utility) under the cursor, not the building on top; an existing record shows what it is.
+      if (undergroundView.isActive()) {
+        const resolve = (p: any): string | null => {
+          const raw = p?.id?.id ?? p?.id;
+          if (typeof raw !== 'string') return null;
+          if (raw.startsWith('ug:')) return raw.slice(3, raw.lastIndexOf(':') > 2 ? raw.lastIndexOf(':') : undefined);
+          return raw;
+        };
+        const UG = new Set(['metro_line', 'metro_station', 'utility', 'underground_alignment']);
+        const hits = this.viewer.scene.drillPick(click.position, 12);
+        const ug = hits.find((p: any) => { const id = resolve(p); const o = id ? this.objects.getById(id) : undefined; return !!o && UG.has(o.type); });
+        if (ug) {
+          this.selection.selectSingle(resolve(ug));
+          return;
+        }
+        const rec = hits.find((p: any) => typeof (p?.id?.id ?? p?.id) === 'string' && String(p.id.id ?? p.id).startsWith('rec:'));
+        if (rec) {
+          this.selection.selectSingle(null);
+          (window as any).showToast?.(`${rec.id.name || 'Existing record'} — existing record (not editable). Details: "Already recorded here" → List the records.`, 'info');
+          return;
+        }
       }
       if (defined(picked) && picked.id) {
         const pickedObject = picked;
@@ -1589,7 +1613,9 @@ export class TwinCityEngine {
             outlineColor: Color.BLACK,
             outlineWidth: 3,
             style: LabelStyle.FILL_AND_OUTLINE,
-            heightReference: HeightReference.CLAMP_TO_GROUND,
+            // Not ground-clamped: scenePoint already puts it on the ground. A clamped label far off-screen kept the
+            // height sampled from a coarse root tile (~21 km below the ellipsoid) and, drawn without depth test,
+            // showed up in the middle of other districts (e.g. 'Baner' over Swargate)
             horizontalOrigin: HorizontalOrigin.CENTER,
             verticalOrigin: VerticalOrigin.BOTTOM,
             disableDepthTestDistance: Number.POSITIVE_INFINITY

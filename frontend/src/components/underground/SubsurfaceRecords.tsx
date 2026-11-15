@@ -7,6 +7,8 @@ import { LAYER_HOLDER, licenceShort, sourceLine, summariseRecords, type LayerSum
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
 import { field, fmtM, input, inputStyle, lbl, labelStyle, note } from './common';
 import { MAX_DRAWN, USER_KEY, useSubsurfaceRecords } from './useSubsurfaceRecords';
+import { showConflictHighlight } from './conflictHighlight';
+import { focusBounds } from './conflictClasses';
 
 const QL_NOTE: Record<string, string> = {
   'QL-A': 'ASCE 38 QL-A: exposed / potholed (horizontal and vertical measured)',
@@ -23,11 +25,19 @@ const RecordRow: React.FC<{ r: SubsurfaceRecord; datasetName: string }> = ({ r, 
     if (!g || !v) return;
     const pts = g.type === 'Point' ? [g.coordinates] : g.type === 'LineString' ? g.coordinates : g.coordinates[0];
     const lon = pts.reduce((s, p) => s + p[0], 0) / pts.length, lat = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+    // A line record is marked (amber, as in the conflict check) so the user can tell which of the many lines it is
+    if (g.type === 'LineString' && pts.length >= 2) {
+      const b = focusBounds([lon, lat], 80);
+      showConflictHighlight(`record:${r.id}`, [], [pts.map(p => [p[0], p[1]] as [number, number])], {
+        minLng: Math.min(b.minLng, ...pts.map(p => p[0])), maxLng: Math.max(b.maxLng, ...pts.map(p => p[0])),
+        minLat: Math.min(b.minLat, ...pts.map(p => p[1])), maxLat: Math.max(b.maxLat, ...pts.map(p => p[1])) });
+      return;
+    }
     import('cesium').then(({ Cartesian3 }) => v.camera.flyTo({ destination: Cartesian3.fromDegrees(lon, lat - 0.004, 450), orientation: { heading: 0, pitch: -0.6, roll: 0 } }));
   };
   return (
     <li>
-      <button type="button" className="uos-row w-full text-left" onClick={fly} disabled={!r.geometry} title={r.geometry ? 'Fly to record' : r.location_note || 'Location UNKNOWN'}>
+      <button type="button" className="uos-row w-full text-left" onClick={fly} disabled={!r.geometry} title={r.geometry ? 'Fly to record (marked in amber)' : r.location_note || 'Location UNKNOWN'}>
         <span className="min-w-0 flex-1">
           <span className="block text-body text-text-1 truncate">{r.record_type === 'borehole' ? 'Borehole' : (r.utility_type ?? 'Utility')} {r.external_id}</span>
           <span className="block text-meta text-text-2">

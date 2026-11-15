@@ -10,7 +10,7 @@
  * The first entity of an alignment carries the object's id, so clicking it selects the object like any other.
  */
 import {
-  Cartesian2, Color, ColorMaterialProperty, CornerType, CustomDataSource, DistanceDisplayCondition, HeightReference, PolylineDashMaterialProperty, type Entity, type Viewer,
+  Cartesian2, Color, ColorMaterialProperty, CornerType, CustomDataSource, DistanceDisplayCondition, PolylineDashMaterialProperty, type Entity, type Viewer,
 } from 'cesium';
 import { scenePoint } from '../terrain/groundHeight';
 import type { Certainty } from '../objects/certainty';
@@ -228,15 +228,26 @@ export class UndergroundRenderer {
     const purple = Color.fromCssColorString('#a855f7');
     const label = (text: string) => ({
       text, font: '12px sans-serif', fillColor: Color.WHITE, showBackground: true, backgroundColor: Color.fromCssColorString('#3b0764').withAlpha(0.8),
+      // Not ground-clamped (scenePoint is already on the ground): a clamped label keeps whatever height a coarse
+      // tile gave it and, without depth test, can be drawn far from its place
       pixelOffset: new Cartesian2(0, -14), disableDepthTestDistance: Number.POSITIVE_INFINITY,
-      distanceDisplayCondition: new DistanceDisplayCondition(0, 6000), heightReference: HeightReference.CLAMP_TO_GROUND,
+      distanceDisplayCondition: new DistanceDisplayCondition(0, 6000),
     });
-    for (const m of lines) {
+    // OSM splits one tunnel into many short ways: one label per ~400 m of tunnel (longest ways first), not one per
+    // way, which stacked several identical labels on top of each other
+    const kx0 = 111320 * Math.cos((18.5 * Math.PI) / 180), ky0 = 110574;
+    const lenOf = (m: MetroLineObject) => m.coordinates.reduce((a, c, i) => i ? a + Math.hypot((c[0] - m.coordinates[i - 1][0]) * kx0, (c[1] - m.coordinates[i - 1][1]) * ky0) : 0, 0);
+    const placed: number[][] = [];
+    const stationAt = stations.map(({ s: st }) => [st.coordinates[0], st.coordinates[1]]); // stations keep their own label
+    const near = (pts: number[][], p: number[], m: number) => pts.some(q => Math.hypot((q[0] - p[0]) * kx0, (q[1] - p[1]) * ky0) < m);
+    for (const m of [...lines].sort((a, b) => lenOf(b) - lenOf(a))) {
       if (m.coordinates.length < 2) continue;
       ents.add({ id: m.id, name: `${m.name} — ${METRO_TUNNEL_LABEL} (plan position only, OpenStreetMap)`,
         polyline: { positions: m.coordinates.map(c => scenePoint(c[0], c[1], 0)), width: 4, clampToGround: true,
           material: new PolylineDashMaterialProperty({ color: purple.withAlpha(0.9), gapColor: Color.BLACK.withAlpha(0.25), dashLength: 20 }) } });
       const mid = m.coordinates[Math.floor(m.coordinates.length / 2)];
+      if (near(placed, mid, 400) || near(stationAt, mid, 150)) continue;
+      placed.push(mid);
       ents.add({ id: `ug:${m.id}:label`, name: METRO_TUNNEL_LABEL, position: scenePoint(mid[0], mid[1], 0), label: label(METRO_TUNNEL_LABEL) } as Entity.ConstructorOptions);
     }
     for (const { s: st, heading, inferred } of stations) {
@@ -282,7 +293,7 @@ export class UndergroundRenderer {
         lines.forEach((line, k) => {
           if (line.length < 2) return;
           ents.add({
-            id: k === 0 ? `rec:${r.id}` : `rec:${r.id}:${k}`, name: `${r.utility_type ?? 'Utility'} record ${r.external_id}${d === null ? ' (depth UNKNOWN: drawn on the surface)' : ''}`,
+            id: k === 0 ? `rec:${r.id}` : `rec:${r.id}:${k}`, name: `${r.utility_type ?? 'Utility'} record ${r.external_id}${d === null ? ' (depth UNKNOWN: drawn on the surface)' : ` · ~${Math.round(d * 10) / 10} m below ground as recorded`} · ${r.quality_level ?? 'quality UNKNOWN'}`,
             polyline: d === null
               ? { positions: line.map(c => scenePoint(c[0], c[1], 0)), width: 2, clampToGround: true, material: color }
               : { positions: line.map(c => scenePoint(c[0], c[1], -d)), width: 3, material: color },
