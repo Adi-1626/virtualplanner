@@ -44,6 +44,7 @@ pyproj 3.8.0; EPSG:32643 transform works offline). Distances are computed in **U
 | `POST /subsurface/import` | `{record_type: borehole\|utility, format: ags4\|csv\|json, content \| records, name, file_name, publisher, source_url, licence, data_date, coverage_bbox, provenance, project_id, grid_epsg, supersedes_id, imported_by}` |
 | `GET /subsurface/datasets[?project_id]`, `GET /subsurface/datasets/{id}`, `GET /subsurface/records[?bbox&record_type]` | records with provenance via their dataset |
 | `GET /environment-layers` | catalogue with live status for OSM-derived layers |
+| `POST /underground/screen`, `GET /underground/screening-config`, `POST/GET /underground/verifications` | underground screening of an alternative (read-only; statuses, rules table, person-recorded verification) — see `UNDERGROUND_CHECKS.md` |
 
 ## 3. Detection algorithm (EGR §D3; `coordination/geometry.py`, `coordination/service.py`)
 
@@ -152,6 +153,8 @@ cover, tree census, drainage, seismic zone (TO VERIFY), DEM — all **Not import
 OSM water / heritage (locator only) / trees / railway (from `feasibility_layers.db`) and OSM metro (from the OSM index) —
 status **computed on read** (available only when the file exists). There is **no import path** for raster/vector environment
 layers in this work (none implemented → none offered).
+
+Engine 1.2 (2026-11-15): side-B layer `design_object` — objects drawn in Design (UNDERGROUND_CHECKS.md §2.6).
 
 ## 8. What is UNKNOWN / not done
 

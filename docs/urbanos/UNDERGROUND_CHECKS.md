@@ -56,18 +56,125 @@ Honest (no "clear"/"safe"), but:
 Flat list sorted by class (max 100), plan distance / vertical gap / certainty, two reasons. No grouping by severity, no
 "what wasn't checked", no fly-to or highlight of the two assets, project + name required before anything happens.
 
-## 2. Redesign (implemented in this branch — see §3 onward when filled)
+## 2. Redesign (implemented, commits on `ug-checks`)
 
-Planned:
-1. **Inputs**: every proposed underground object of the alternative (alignments + Design-drawn utilities) vs existing:
-   PMC sewer / storm records, OSM metro tunnels / stations / lines, Design-drawn existing (baseline) objects, building
-   footprints (foundation proxies, depth UNKNOWN), NWDP groundwater wells, imported boreholes. Proposed-vs-proposed pairs
-   inside the alternative too.
-2. **Checks**: true 3D clearance (crown/invert from depth + section at the stretch where the two assets come within the
-   clearance distance), horizontal distance via STRtree, metro protection zone, building foundations ("Insufficient
-   data"), cover / depth constraints per asset type (labelled rule-of-thumb defaults, one config module), groundwater and
-   geology only where data exists, otherwise "not checked".
-3. **Result model**: status ∈ {Verified, No conflict found in available data, Potential conflict, Insufficient data,
-   Requires investigation}; every finding carries what was checked, data used (dataset + quality level), what was found
-   (distances in m), what was NOT checked, next investigation.
-4. **UI**: summary counts, grouped by severity, click → fly to + highlight both assets, "what wasn't checked" visible.
+Rules aligned with `/workspace/work/underground-research/UNDERGROUND_RESEARCH.md` §3 (checks C1–C22), §4 (statuses,
+wording) and Top 12. Code: `backend/coordination/screening_config.py` (rules table, the only place values live),
+`backend/coordination/screening.py` (engine), `POST /api/coordination/underground/screen`, UI
+`frontend/src/components/underground/{ConflictCheck.tsx, conflictClasses.ts, conflictHighlight.ts, screeningStore.ts}`.
+
+### 2.1 Inputs (UNIT-TESTED)
+- **Proposed**: every `underground_alignment` (tunnel, underground metro, cut-and-cover, trunk, storm drain) and `utility`
+  of the active alternative, sent by the UI as Design holds them (unsaved edits included) or read from the database
+  (`objects` omitted: baseline + the alternative's own objects, its modifies and deletes applied). In the baseline itself
+  every drawn alignment / utility counts as proposed. Proposed × proposed pairs are checked once.
+- **Existing**: Design-drawn baseline objects (utilities, alignments, elevated `metro_line`, `metro_station`; quality
+  "user-drawn"); utility records (PMC sewer 44,482 + storm drains 9,187 = 53,669 with geometry, plus anything imported);
+  OSM metro (tunnel / viaduct / unknown-level lines, stations); building footprints (infra index, foundation proxy);
+  PMC nallas + rivers; NWDP groundwater wells (3 km); imported boreholes (500 m).
+- Depth model: crown from the typed depth, invert = crown + section height / diameter. A utility whose `depthCertainty`
+  is `unknown` (drawing placeholder) has depth UNKNOWN.
+
+### 2.2 Statuses (UNIT-TESTED)
+Only **Potential conflict · Requires investigation · Insufficient data · Verified**. The engine assigns the first three;
+**Verified** only when a person has recorded QL-A field evidence (`POST /underground/verifications`, methods trial pit /
+vacuum excavation / survey of exposed asset; table `underground_verifications`, audited, insert-only) for that pair and the
+fingerprint of both assets (geometry, size, depths) is unchanged — otherwise the finding says "re-verify". "No records" is
+**Insufficient data** (one `data_gap` finding per object lists networks with no records: water, power, gas, telecom).
+Checks that flag nothing appear in the object's checklist as "nothing found in the available data" — never a status,
+never green. Banner: **"Automated screening — not an engineering assessment"**. Output never contains safe / feasible /
+construction-ready / passed / compliant (tested).
+
+Every finding carries, in fixed order: **checked**, **data used** (dataset, quality level, datum), **found** (numbers in m,
+requirement with every rule cited, uncertainty added), **not checked**, **next investigation** (Indian ladder: owner
+as-builts → Call Before u Dig → GPR (QL-B) → trial pits (QL-A) → Maha-Metro NOC → boreholes → specialist), plus
+`measurements`, `rules`, `location`, `pair_key`, `fingerprint`.
+
+### 2.3 Rules table (by asset-type pair; stricter wins, both cited)
+| Pair | Rows used (value, direction, type, source) |
+|---|---|
+| water × sewer/storm | C1 3.0 m H normative (CPHEEO 2024 §12.9.1); C2 0.5 m V water above (CPHEEO §12.9.2); C2b-H 2.0 m H draft (IRC:98-2024 §3.2.3); C2b-V 1.0 m V water above (IRC draft §3.3.3) → **3.0 m H / 1.0 m V**; C20 3 m / 0.45 m international, comparison only |
+| power × water | C3 0.3 m 3D normative (IS 1255 §6.3.3); C3b 1.0 m H and V draft (IRC) → **1.0 / 1.0** |
+| power × gas | C3 0.3 m 3D (IS 1255) |
+| power × telecom | C4 0.3 m 3D, power below (IS 1255); C4b 1.0 m H and V (IRC draft) → **1.0 / 1.0**, order enforced |
+| gas × services | C5 0.3 m V, gas below (PNGRB T4S (a)); C6 0.3 m H (T4S (b)) |
+| gas × building | C7 3.0 m H (T4S (g)) — a footprint closer than 3 m is a Potential conflict |
+| tunnel × tunnel | C16 1 × larger diameter, rule of thumb (Maha-Metro DPR) → breach = specialist (Requires investigation) |
+| tunnel × anything | C19 no Indian norm: 1 × diameter **referral distance, not a clearance** → specialist; only physical intersection = Potential conflict |
+| any other pair | U0 0.3 m 3D rule of thumb (no code value found) |
+| any × Metro structure | C15 20 m from edge (UDCPR 14.2.1.7, Pune Metro notice) → Requires investigation, Maha-Metro NOC |
+| cover | gas 1.0 (T4S Table 3) · power 0.75 LV / 1.05 at unknown voltage (IS 1255 §6.3.2) · sewer 1.0 / storm 0.5 (CPHEEO 2013, excerpt) · water / telecom / other 0.6 (IRC draft §3.3.1) · bored tunnel 2 × D (DPR, rule of thumb); depth bands C14 → "unusual depth, verify". Below a normative minimum → Potential conflict; below guideline / rule of thumb → Requires investigation. Caveat on every cover finding: ground in 3D is a DSM, not bare earth |
+
+Positional uncertainty (added to H thresholds, and to V where usable): QL-A 0.05 / 0.03 m; QL-B 0.3 m, V not usable;
+QL-C 1.0 m; QL-D and unknown 3.0 m, V not usable; user-drawn 3.0 m (V usable only when the user marks the depth
+measured: 0.3 / 0.3 m); proposed design 0. **PMC sewer levels have no datum** → their Z is relative only: "vertical not
+checkable" (pairs within the horizontal threshold become Insufficient data, with the recorded relative gap shown).
+Footprint width unknown (storm drains, OSM metro) → 1.0 m half-width assumed per unknown side (rule of thumb).
+
+### 2.4 Geometry (UNIT-TESTED)
+UTM 43N. STRtree (`dwithin`) over Design + OSM metro assets and one cached STRtree over all utility records. Per pair:
+edge-to-edge plan distance (centreline distance − half widths − unknown-width allowance); the depth envelope of each asset
+is taken only over the stretch within the threshold of the other (`test_depth_envelope_is_taken_where_they_meet`); vertical
+gap from crown/invert ranges; 3D separation = hypot(plan, vertical). Clearance met when H **or** V meets requirement +
+uncertainty; met but inside the uncertainty band → Requires investigation; ordering rules (water above sewer, gas below,
+power below telecom) → Potential conflict when reversed. OSM pieces of one metro line are merged into one finding.
+
+### 2.5 Other checks
+Buildings (influence zone max(2 m, 1 × invert depth), Insufficient data — foundations unknown, up to 25 listed with
+distances; gas C7), nallas / rivers within 5 m (Requires investigation), groundwater (base below the shallowest reading of
+the last 5 years at wells within 3 km → Requires investigation; no well → listed under data gaps), boreholes (tunnels /
+cut-and-cover: none within 500 m → data gap; logs not reaching the invert → Requires investigation).
+
+### 2.6 Project coordination (backward compatible)
+`run_detection` (Projects → Conflicts, `POST /projects/{pid}/detect`) gained side-B layer **`design_object`**: Design-drawn
+objects of the baseline and of the scenarios the project's elements belong to (own elements' `element_ref` and
+conflict-check registrations are excluded). `ENGINE_VERSION` → 1.2, so earlier runs show `engine_version_changed`.
+Old classes and endpoints unchanged. The Underground UI keeps "Share … with a planning project" as a disclosure.
+
+### 2.7 UI
+Banner → one-sentence plain summary → "Show findings for" (all objects / one; the open alignment is preselected) →
+status count badges (click filters) → groups by severity (Insufficient data collapsed when > 6, 40 per page) → finding
+row: title, category, key numbers ("Plan distance 6.7 m (needs 6.0 m) · Vertical: not checkable", "Maha-Metro NOC") → click
+= camera flies to the finding (±60 m box) and highlights proposed (magenta) + other asset / buildings (amber), lifted,
+no depth test, not pickable (`conflictHighlight.ts`, engine public viewer + `simMode.flyToBounds` only) → detail in the
+five fixed parts + rules applied + "Record field verification". Below: the object's checklist, **What wasn't checked**
+(always visible), Data used, the rules table. Results are kept per alternative across panel remounts; edits after a check
+show "check again".
+
+## 3. Numbers (MEASURED, copy of twincity.db + real indexes, 2 CPU sandbox)
+- All 53,669 utility records (sewer + 9,187 storm drains) parsed + projected + STRtree: **0.6–0.9 s once** per data
+  fingerprint (cached); full-extent tree query 5 ms.
+- 3 objects near Swargate–Shivajinagar (tunnel, storm drain, water main): 2.1 s cold / 0.8–0.95 s warm.
+- 15 km bored tunnel across the city: 7.2 s cold (OSM metro 2.8 s + building index 3.5 s cold reads) / **1.9 s warm**;
+  854 existing assets read, 322 findings.
+- 20 water mains × 3.3 km: 2.3 s cold / 1.5 s warm; 3,303 assets read, 981 findings. Tunnel + mains: 1.8–2.2 s, 1,283 findings,
+  JSON 6.2 MB (geometries hoisted, 0.2 MB; text dominates) — no gzip middleware in the app.
+- Browser (headless Chromium, swiftshader, built app on 4591 + backend 8391): tunnel crossing Pune Metro Line 1 near
+  Shivajinagar + a water main → check returns in 2.1–3.3 s; 5 Requires investigation (Metro crossing with NOC, two storm
+  drains within the referral distance + QL-D uncertainty, cover 10 m < 2 × 6 m, nalla), 18 Insufficient data; click flies
+  the camera to the finding and draws both assets. Screenshots: `/workspace/work/urbanos/shots/underground/checks_*.png`.
+
+## 4. Tests
+- `backend/tests/test_underground_screening.py` (26, SYNTHETIC): depth-range gap math; stricter-wins + both cited +
+  comparison-only row + ordering; tunnel referral rules; 3D crossing clear vs potential conflict; wrong-way-round; envelope
+  where they meet; uncertainty widening; no-datum → not checkable; tunnel specialist vs physical clash; Metro 20 m zone and
+  NOC; ladder order; cover per type (normative / guideline / voltage / placeholder); bored-tunnel 2 × D; whole run (statuses,
+  banner, Design utility included, proposed × proposed once, data gaps, forbidden words); missing depth + skipped objects;
+  empty alternative; QL-A record → potential conflict → person verification → Verified → design edit → re-verify; objects
+  read from the DB; `run_detection` sees a Design-drawn gas main (`design_object`).
+- `frontend/src/engine/testing/UndergroundScreening.test.ts` (7): statuses / banner / no green / no forbidden words, counts
+  and grouping, plain summary, key numbers, highlight targets and focus box, staleness, `sideBLabel` for `design_object`.
+- Regression: `test_coordination.py`, `test_infra_data.py`, `test_terrain.py` pass with and without the real data dirs.
+
+## 5. Open issues / not done
+- The Underground panel (other agent) mounts `<ConflictCheck a={active} />` only when an alignment is open: a
+  utilities-only alternative cannot reach the check. `a` is optional now — mount it unconditionally.
+- Findings are not persisted (screening is read-only apart from verifications); report export (CSV/PDF) not done.
+- Large results (≈1,000 findings) are long; grouping by severity + paging helps, but grouping Insufficient-data pairs per
+  dataset would be better. Response is not gzip-compressed (main.py has no GZipMiddleware).
+- Datum: Design depths are relative to local ground; no conversion via the DEM (research §2.3 asks for absolute Z + datum).
+- Cable voltage, gas material (steel vs PE), road-crossing locations are not modelled → the stricter or voltage-dependent
+  values are reported as "Requires investigation", not decided.
+- Owners' own standards, protected monuments, trees, pavement, settlement and construction method are listed as not checked.
+- Groundwater uses quarterly manual readings at wells ≥ hundreds of metres away; most of central Pune has no well within
+  3 km → data gap.
