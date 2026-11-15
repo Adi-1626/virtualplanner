@@ -89,6 +89,12 @@ export const Viewport3D: React.FC = () => {
       {/* Target element for Cesium container */}
       <div ref={containerRef} className="w-full h-full absolute inset-0" />
 
+      {/* Roads, buildings, metro and signals come from OpenStreetMap (ODbL): attribution is required on the map.
+          Cesium's own credit bar is hidden (index.css), so this is the map's attribution. */}
+      <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" data-testid="osm-attribution"
+        className="absolute right-1 bottom-0.5 z-10 rounded px-1.5 py-px text-[10px] leading-tight no-underline"
+        style={{ background: 'rgba(15,20,28,0.6)', color: 'var(--text-2, #a9b3c1)' }}>© OpenStreetMap contributors</a>
+
       {imageryError && (
         <div role="status" data-testid="base-imagery-notice"
           className="uos-imagery-notice rounded px-2 py-1 text-[11px] leading-snug pointer-events-none"
@@ -116,9 +122,10 @@ const HUD_TEXT: Record<Exclude<EditingMode, 'select'>, (n: number) => string> = 
   draw_junction: () => 'Junction: click where two or more roads meet',
   place_station: () => 'Station: click on or near a metro line',
   draw_gateway: () => 'Gateway: click on or near a road where traffic enters the area',
-  import_osm: n => n > 0
-    ? `Draw Area: ${n} boundary points. Drag points to move them, drag a midpoint to add one, then choose "Map Selected Area" in the tool panel`
-    : 'Draw Area: click 3+ points to outline a polygon, then choose Map Selected Area',
+  // Study area: the outline's data loads as soon as it is finished (no "Map Selected Area" step any more)
+  import_osm: n => engineInstance.editing.getAreaShape() === 'rectangle'
+    ? (n > 0 ? 'Study area: click the opposite corner' : 'Study area: click one corner, then the opposite corner. Its data loads automatically')
+    : (n > 0 ? `Study area: ${n} corner${n === 1 ? '' : 's'}. Double-click to finish (3 or more); drag a corner to move it` : 'Study area: click the corners, double-click to finish. Its data loads automatically'),
 };
 
 const DrawingHUD: React.FC = () => {

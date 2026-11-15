@@ -11,23 +11,23 @@ import {
   TrainFrontTunnel,
   Shapes,
   DoorOpen,
-  Download,
+  SquareDashed,
   type LucideIcon
 } from 'lucide-react';
 import type { EditingMode } from '../engine/editing/EditingEngine';
 
 /** Palette groups (docs/urbanos/UX_ARCHITECTURE.md §3), in display order. */
-export type ToolCategory = 'select' | 'roads' | 'junctions' | 'grade_separation' | 'transit' | 'underground' | 'land_demand' | 'data';
+export type ToolCategory = 'select' | 'study' | 'roads' | 'junctions' | 'grade_separation' | 'transit' | 'underground' | 'land_demand';
 
 export const TOOL_CATEGORIES: { id: ToolCategory; label: string }[] = [
   { id: 'select', label: 'Select' },
+  { id: 'study', label: 'Study area' },
   { id: 'roads', label: 'Roads & lanes' },
   { id: 'junctions', label: 'Junctions & signals' },
   { id: 'grade_separation', label: 'Grade separation' },
   { id: 'transit', label: 'Transit' },
   { id: 'underground', label: 'Underground' },
   { id: 'land_demand', label: 'Land & demand' },
-  { id: 'data', label: 'Data' },
 ];
 
 export interface ToolDef {
@@ -79,8 +79,8 @@ export const TOOLS: ToolDef[] = [
     description: 'Traffic demand zone (residents and jobs feed the trip model). Not a land-use zoning plan.' }),
   t({ mode: 'draw_gateway', label: 'Place traffic gateway', shortLabel: 'Gateway', icon: DoorOpen, category: 'land_demand',
     description: 'Where traffic enters/leaves the study area; snaps to the nearest road node. Default flows are placeholders.' }),
-  t({ mode: 'import_osm', label: 'Import area (OSM)', shortLabel: 'Import area', icon: Download, category: 'data',
-    description: 'Outline or pick a study area and import OpenStreetMap roads, buildings, metro and signals inside it from the local index.' }),
+  t({ mode: 'import_osm', label: 'Study area', shortLabel: 'Study area', icon: SquareDashed, category: 'study',
+    description: 'Draw an area on the map; its roads, junctions, signals, buildings and metro load automatically from OpenStreetMap and become editable.' }),
 ];
 
 export const toolByHotkey = (key: string): ToolDef | undefined =>

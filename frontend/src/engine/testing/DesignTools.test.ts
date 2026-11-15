@@ -37,11 +37,13 @@ describe('design tools', () => {
     for (const t of TOOLS) expect([Compass, Layers, Hammer, Settings]).not.toContain(t.icon);
     expect(new Set(TOOLS.map(t => t.icon)).size).toBe(TOOLS.length);
   });
-  it('the OSM import is a Data tool named "Import area (OSM)", not a drawing tool', () => {
+  it('the OSM import is the first-class "Study area" tool, in its own group right after Select', () => {
     const imp = TOOLS.find(t => t.mode === 'import_osm')!;
-    expect(imp.category).toBe('data');
-    expect(imp.label).toBe('Import area (OSM)');
-    expect(TOOLS.some(t => /Draw area/i.test(t.label + t.shortLabel))).toBe(false);
+    expect(imp.category).toBe('study');
+    expect(imp.label).toBe('Study area');
+    expect(imp.shortLabel).toBe('Study area');
+    expect(TOOL_CATEGORIES.map(c => c.id).slice(0, 2)).toEqual(['select', 'study']);
+    expect(TOOLS.some(t => /Draw area|Import area/i.test(t.label + t.shortLabel))).toBe(false);
   });
   it('the utility tool is in the Underground group and the metro is labelled elevated', () => {
     expect(TOOLS.find(t => t.mode === 'draw_utility')!.category).toBe('underground');

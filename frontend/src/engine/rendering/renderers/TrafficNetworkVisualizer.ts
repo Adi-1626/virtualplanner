@@ -1,98 +1,102 @@
-import { Viewer, CustomDataSource, Color, HeightReference, PolylineArrowMaterialProperty } from 'cesium';
+import { Viewer, PointPrimitiveCollection, Color, NearFarScalar, DistanceDisplayCondition } from 'cesium';
 import { scenePoint } from '../../terrain/groundHeight';
-import type { TrafficNetwork } from '../../objects/trafficTypes';
+import type { TrafficEdge, TrafficNetwork, TrafficNode } from '../../objects/trafficTypes';
 
-export class TrafficNetworkVisualizer {
-  private dataSource: CustomDataSource | null = null;
-  private viewer: Viewer | null = null;
+/** Node classes shown by the "Junction points" layer (docs/urbanos/DESIGN_WORKSPACE.md, Points layer). */
+export type JunctionPointKind = 'dead_end' | 't_junction' | 'x_junction' | 'complex' | 'roundabout';
 
-  constructor() {
-    this.dataSource = new CustomDataSource('traffic-network-debug');
+export const JUNCTION_POINT_COLORS: Record<JunctionPointKind, string> = {
+  dead_end: '#facc15',
+  t_junction: '#fb923c',
+  x_junction: '#ef4444',
+  complex: '#a855f7',
+  roundabout: '#22d3ee',
+};
+
+/**
+ * A node's class from its arms (distinct neighbouring nodes reached by a road
+ * segment in or out), or null for a plain link node: two road pieces joined
+ * end to end or a shape vertex, which is not a junction and was most of the
+ * dots of the old "Show Traffic Network" layer. Arms, not road ids, are
+ * counted so a side road joining the middle of another road is a T (the old
+ * layer counted it as a link because only two road ids meet there).
+ */
+export function junctionPointKind(node: Pick<TrafficNode, 'id' | 'incomingSegments' | 'outgoingSegments'>, edges: ReadonlyMap<string, Pick<TrafficEdge, 'fromNodeId' | 'toNodeId' | 'roadId'>>, isRoundaboutRoad: (roadId: string) => boolean = () => false): JunctionPointKind | null {
+  const arms = new Set<string>();
+  let roundabout = false;
+  for (const id of [...node.incomingSegments, ...node.outgoingSegments]) {
+    const e = edges.get(id);
+    if (!e) continue;
+    if (isRoundaboutRoad(e.roadId)) roundabout = true;
+    const other = e.fromNodeId === node.id ? e.toNodeId : e.fromNodeId;
+    if (other !== node.id) arms.add(other);
   }
+  const degree = arms.size;
+  // An entry or exit of a roundabout (its plain ring vertices have two arms and are skipped)
+  if (roundabout && degree >= 3) return 'roundabout';
+  if (degree === 1) return 'dead_end';
+  if (degree === 3) return 't_junction';
+  if (degree === 4) return 'x_junction';
+  if (degree > 4) return 'complex';
+  return null;
+}
+
+/** Points shrink with distance and are not drawn from higher than this (they hid the roads from far away). */
+const VISIBLE = new DistanceDisplayCondition(0, 9000);
+const SCALE = new NearFarScalar(300, 1.0, 6000, 0.45);
+
+/**
+ * "Junction points" layer: one point per junction / dead end / roundabout of
+ * the traffic network, coloured by how many roads meet there. Off by default.
+ *
+ * Drawn as ONE PointPrimitiveCollection (a single draw call) instead of one
+ * Cesium Entity per node plus an arrow polyline per edge: the entity version
+ * made ~29k entities for the full Pune network. When the layer is off the
+ * collection is destroyed, so nothing is created or drawn.
+ */
+export class TrafficNetworkVisualizer {
+  private viewer: Viewer | null = null;
+  private points: PointPrimitiveCollection | null = null;
+  /** How many points the last render drew (0 when the layer is off). */
+  public pointCount = 0;
 
   public setViewer(viewer: Viewer) {
     this.viewer = viewer;
   }
 
   public clear() {
-    if (this.dataSource) {
-      this.dataSource.entities.removeAll();
-      if (this.viewer && this.viewer.dataSources.contains(this.dataSource)) {
-        this.viewer.dataSources.remove(this.dataSource);
-      }
+    if (this.points && this.viewer && !this.viewer.isDestroyed()) {
+      this.viewer.scene.primitives.remove(this.points); // remove() destroys it
     }
+    this.points = null;
+    this.pointCount = 0;
+    this.viewer?.scene.requestRender();
   }
 
-  public render(network: TrafficNetwork) {
+  public render(network: TrafficNetwork, isRoundaboutRoad?: (roadId: string) => boolean) {
     this.clear();
-    if (!this.viewer || !this.dataSource || !network) return;
-
-    // Render nodes
+    if (!this.viewer || !network) return;
+    const colors = Object.fromEntries(Object.entries(JUNCTION_POINT_COLORS).map(([k, css]) => [k, Color.fromCssColorString(css)])) as Record<JunctionPointKind, Color>;
+    const outline = Color.fromCssColorString('#0f172a');
+    const points = new PointPrimitiveCollection();
+    let count = 0;
     network.nodes.forEach(node => {
-      let color = Color.YELLOW; // Default/dead-end
-      
-      const associatedRoads = new Set<string>();
-      node.incomingSegments.forEach(eId => {
-        const segIdx = eId.indexOf('_seg_');
-        if (segIdx !== -1) associatedRoads.add(eId.substring(0, segIdx));
-      });
-      node.outgoingSegments.forEach(eId => {
-        const segIdx = eId.indexOf('_seg_');
-        if (segIdx !== -1) associatedRoads.add(eId.substring(0, segIdx));
-      });
-
-      const degree = associatedRoads.size;
-
-      // Check roundabout node
-      const isRoundabout = node.incomingSegments.some(eId => eId.includes('roundabout')) || 
-                           node.outgoingSegments.some(eId => eId.includes('roundabout'));
-
-      if (isRoundabout) {
-        color = Color.CYAN; // Roundabout node
-      } else if (degree === 1) {
-        color = Color.YELLOW; // Dead-end
-      } else if (degree === 2) {
-        color = Color.GREEN; // Simple link
-      } else if (degree === 3) {
-        color = Color.ORANGE; // T-junction
-      } else if (degree === 4) {
-        color = Color.RED; // X-junction
-      } else if (degree > 4) {
-        color = Color.PURPLE; // Complex junction
-      }
-
-      this.dataSource!.entities.add({
+      const kind = junctionPointKind(node, network.edges, isRoundaboutRoad);
+      if (!kind) return;
+      count++;
+      points.add({
         id: `debug_node_${node.id}`,
-        name: `Node: ${node.id}`,
-        position: scenePoint(node.coordinates[0], node.coordinates[1], node.coordinates[2] + 1.0),
-        point: {
-          pixelSize: 10,
-          color: color,
-          outlineColor: Color.BLACK,
-          outlineWidth: 2,
-          heightReference: HeightReference.RELATIVE_TO_GROUND
-        }
+        position: scenePoint(node.coordinates[0], node.coordinates[1], (node.coordinates[2] || 0) + 1.0),
+        pixelSize: kind === 'dead_end' ? 6 : 9,
+        color: colors[kind],
+        outlineColor: outline,
+        outlineWidth: 1.5,
+        scaleByDistance: SCALE,
+        distanceDisplayCondition: VISIBLE,
       });
     });
-
-    // Render edges
-    network.edges.forEach(edge => {
-      const positions = edge.coordinates.map(c => 
-        scenePoint(c[0], c[1], c[2] + 0.5)
-      );
-
-      this.dataSource!.entities.add({
-        id: `debug_edge_${edge.id}`,
-        name: `Edge: ${edge.id}`,
-        polyline: {
-          positions: positions,
-          width: 3.5,
-          material: new PolylineArrowMaterialProperty(Color.WHITE.withAlpha(0.7)),
-          clampToGround: false
-        }
-      });
-    });
-
-    this.viewer.dataSources.add(this.dataSource);
+    this.pointCount = count;
+    this.points = this.viewer.scene.primitives.add(points);
+    this.viewer.scene.requestRender();
   }
 }

@@ -224,6 +224,21 @@ def save_area(area: AreaSchema, db: Session = Depends(get_db)):
     existing = db.query(AreaEntity).filter(AreaEntity.id == area.id).first()
     geom_str = json.dumps(area.polygonCoordinates)
 
+    # "Roads loaded for a study area" boxes (area_osmroads_*) are coverage bookkeeping written by Simulate's road
+    # top-up with a fresh random id each time; the same tile was recorded again from every new browser profile and
+    # after every fortnightly re-check (1,300+ identical rows). An identical box already held is not added again.
+    if not existing and area.id.startswith("area_osmroads_"):
+        eps = 1e-9
+        same = db.query(AreaEntity).filter(
+            AreaEntity.id.like("area\\_osmroads\\_%", escape="\\"),
+            AreaEntity.min_lat.between(area.minLat - eps, area.minLat + eps),
+            AreaEntity.max_lat.between(area.maxLat - eps, area.maxLat + eps),
+            AreaEntity.min_lon.between(area.minLon - eps, area.minLon + eps),
+            AreaEntity.max_lon.between(area.maxLon - eps, area.maxLon + eps),
+        ).first()
+        if same:
+            return {"status": "success", "message": "Same box already recorded", "id": same.id, "duplicate": True}
+
     if existing:
         existing.name = area.name
         existing.polygon_geojson = geom_str

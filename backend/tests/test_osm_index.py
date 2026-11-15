@@ -80,7 +80,8 @@ def test_serves_roads_like_overpass(tmp_path, client, monkeypatch):
 
 def test_reports_a_missing_index(tmp_path, client, monkeypatch):
     monkeypatch.setattr(osm_router, "index", OsmIndex(str(tmp_path / "none.db")))
-    assert client.get("/api/osm/status").json() == {"available": False}
+    status = client.get("/api/osm/status").json()
+    assert status["available"] is False and "osm.build_index" in status["buildCommand"]
     assert client.get("/api/osm/ways", params={"bbox": "73.80,18.50,73.90,18.60"}).status_code == 404
 
 

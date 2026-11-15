@@ -10,17 +10,16 @@ export type TreeGroupId = 'base' | 'buildings' | 'transport' | 'utilities' | 'la
 export const TREE_GROUPS: { id: TreeGroupId; label: string; layers: string[] }[] = [
   { id: 'base', label: 'Base map', layers: ['satellite', 'terrain'] },
   { id: 'buildings', label: 'Buildings', layers: ['buildings'] },
-  { id: 'transport', label: 'Transport', layers: ['roads', 'junctions', 'metro', 'gateways'] },
+  { id: 'transport', label: 'Transport', layers: ['roads', 'junctions', 'traffic_network_debug', 'metro', 'gateways'] },
   { id: 'utilities', label: 'Utilities', layers: ['water_util', 'electric_util', 'sewage_util', 'gas_util', 'fiber_util'] },
   { id: 'landuse', label: 'Land use / demand zones', layers: ['demand_zones'] },
-  { id: 'debug', label: 'Simulation', layers: ['traffic_network_debug'] },
 ];
 
 export interface LayerLike { id: string; name: string; category: string; visible: boolean }
 
 /** Every registry layer lands in one group; one not listed above goes to the group of its registry category. */
 export function groupLayers<L extends LayerLike>(layers: L[]): { id: TreeGroupId; label: string; layers: L[] }[] {
-  const byCat: Record<string, TreeGroupId> = { base: 'base', infrastructure: 'transport', utilities: 'utilities', simulations: 'debug' };
+  const byCat: Record<string, TreeGroupId> = { base: 'base', infrastructure: 'transport', utilities: 'utilities', simulations: 'transport' };
   const out = TREE_GROUPS.map(g => ({ id: g.id, label: g.label, layers: [] as L[] }));
   for (const l of layers) {
     const gi = TREE_GROUPS.findIndex(g => g.layers.includes(l.id));
