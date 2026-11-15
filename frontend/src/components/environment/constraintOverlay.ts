@@ -13,6 +13,7 @@ import { fetchSiteData } from '../../engine/feasibility/feasibilityApi';
 import type { OsmElement } from '../../engine/feasibility/types';
 import { API_BASE } from '../../lib/api';
 import type { OverlayKey } from './envCatalogue';
+import { redactPaths } from '../../lib/redactPaths';
 
 export interface OverlayState {
   status: 'off' | 'loading' | 'shown' | 'error';
@@ -124,7 +125,7 @@ export async function setOverlayVisible(key: OverlayKey, visible: boolean): Prom
     const res = await fetchSiteData(cov.bbox, [x0, y0, x0 + 0.0001, y0 + 0.0001]);
     if (seq !== requestSeq && useEnvOverlayStore.getState().overlays[key].status !== 'loading') return;
     const layerStatus = res.layers[key];
-    if (!layerStatus?.available) throw new Error(layerStatus?.reason ?? 'Layer not available');
+    if (!layerStatus?.available) throw new Error(redactPaths(layerStatus?.reason) ?? 'Layer not available');
     const prev = sources.get(key);
     if (prev) v.dataSources.remove(prev, true);
     const ds = new CustomDataSource(`env-overlay-${key}`);

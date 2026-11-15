@@ -8,6 +8,7 @@
  * matrix estimator (odmeConstraints.ts).
  */
 import { apiGet, apiPost, apiDelete, API_BASE } from '../../lib/api';
+import { redactPaths } from '../../lib/redactPaths';
 
 export type DatasetKind = 'measured' | 'estimated' | 'manual';
 export type DatasetRole = 'validation' | 'calibration' | 'unused';
@@ -103,7 +104,7 @@ export class TrafficApiError extends Error {
   readonly status: number;
   readonly detail: unknown;
   constructor(status: number, detail: unknown) {
-    super(typeof detail === 'string' ? detail : (detail as { message?: string })?.message ?? `HTTP ${status}`);
+    super(redactPaths(typeof detail === 'string' ? detail : (detail as { message?: string })?.message ?? `HTTP ${status}`));
     this.status = status; this.detail = detail;
   }
 }

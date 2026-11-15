@@ -1,5 +1,6 @@
 /** Client for /api/planning (backend/api/planning_router.py, docs/PLANNING_WORKSPACE.md). */
 import { API_BASE } from '../../lib/api';
+import { redactPaths } from '../../lib/redactPaths';
 
 export type ProjectStatus = 'draft' | 'under_study' | 'under_review' | 'decision_recorded';
 export type LinkType = 'scenario' | 'scenario_version' | 'run' | 'dataset' | 'assessment';
@@ -33,7 +34,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   if (!res.ok) {
     let msg = res.statusText;
     try { const j = await res.json(); msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail); } catch { /* keep statusText */ }
-    throw new Error(`${res.status}: ${msg}`);
+    throw new Error(`${res.status}: ${redactPaths(msg)}`);
   }
   return res.json() as Promise<T>;
 }
