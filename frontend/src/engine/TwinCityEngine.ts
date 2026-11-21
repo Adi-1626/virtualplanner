@@ -58,6 +58,8 @@ import { findRoadEndGaps, type RoadEndGap } from './editing/roadGaps';
 import type { NonDrivableRoad } from './editing/osmDrivability';
 import { HistoryManager, deleteWithHistory } from './history/HistoryManager';
 import { EditingEngine } from './editing/EditingEngine';
+import { AlignmentEditSession, HANDLE_PREFIX, commitGeometry } from './editing/AlignmentEditor';
+import { AlignmentEditorView } from './editing/AlignmentEditorView';
 import { runProgressivePerformanceTest, runRoadPerformanceTest } from './testing/PerformanceTester';
 import { apiGet, apiPost } from '../lib/api';
 import { directionOfArrowId } from './rendering/renderers/DirectionArrows';
@@ -143,6 +145,11 @@ export class TwinCityEngine {
   private zoneDragCoords: [number, number, number][] | null = null;
   private zoneDragFrameHandle: number | null = null;
 
+  /** Shape editor after drawing (GEOMETRY_EDITOR_DESIGN.md §4.2): grips on the selected line object, one undo step per change. */
+  public readonly alignmentEditor: AlignmentEditSession;
+  private alignmentView: AlignmentEditorView | null = null;
+  private alignmentDragFrame: number | null = null;
+
   constructor() {
     console.log('[STARTUP] BEGIN');
     this.objects = new ObjectManager();
@@ -170,6 +177,21 @@ export class TwinCityEngine {
     this.objects.setScenarioSource(() => this.scenarios.getActiveScenarioId());
     this.history = new HistoryManager(this.objects);
     this.editing = new EditingEngine(this.objects, this.history, () => this.getTrafficNetwork(), localOsm);
+    this.alignmentEditor = new AlignmentEditSession({
+      getObject: id => this.objects.getById(id),
+      // TODO(merge with agent D): commitGeometry comes from ./editing/geometryCommit (same signature)
+      commit: (obj, alignment) => commitGeometry(obj, alignment, { objects: this.objects, history: this.history, editing: this.editing, scenarioId: this.scenarios.getActiveScenarioId() }),
+      canEdit: () => !this.simMode.isActive() && !this.editing.isLocked(),
+      snapEnd: (lon, lat, objId) => {
+        const o = this.objects.getById(objId);
+        if (!o || o.type === 'underground_alignment' || o.type === 'utility') return null;
+        const snap = this.editing.findSnap([lon, lat, 0]);
+        return snap && snap.type !== 'none' && snap.targetObjId !== objId ? [snap.point[0], snap.point[1]] : null;
+      },
+      toast: (m, k) => (window as any).showToast?.(m, k),
+      autoCurve: () => this.editing.autoCurve,
+    });
+    this.alignmentEditor.onChange(() => this.alignmentView?.render(this.alignmentEditor.getSnapshot()));
     // Placing a gateway snaps it to the city-wide graph
     this.editing.onChange(() => {
       if (this.editing.getMode() === 'draw_gateway') this.requestTrafficNetwork();
@@ -181,6 +203,8 @@ export class TwinCityEngine {
     this.startTrafficWorker();
 
     this.objects.onChange((changedTypes: Set<string>) => {
+      // Undo / redo / a panel edit of the object being reshaped: its grips follow
+      this.alignmentEditor.refresh();
       const kind = classifyObjectChange(changedTypes);
       if (kind === 'view') {
         // Nothing changed (a workspace switch): redraw only. Treating it as "everything changed" rebuilt the city
@@ -230,10 +254,12 @@ export class TwinCityEngine {
         this.emitJunction();
       }
       renderManagerInstance.setSelection(activeSel[0] || null, true);
+      this.syncAlignmentEditor();
       this.syncSavedAreasWithCesium();
       this.syncZonesAndGatewaysWithCesium();
     });
     this.editing.onChange(() => {
+      this.syncAlignmentEditor();
       this.updateDrawPreview();
       // Typed length / radius, a removed point: the tentative curve follows without waiting for the mouse to move
       if (this.editing.isAlignableDrawing() && this.editing.getDrawingPoints().length > 0 && this.pendingSnapPoint) {
@@ -352,6 +378,10 @@ export class TwinCityEngine {
 
     this.trafficVisualizer.clear();
     this.simMode.dispose();
+    this.alignmentView?.clear();
+    this.alignmentView = null;
+    if (this.alignmentDragFrame !== null) cancelAnimationFrame(this.alignmentDragFrame);
+    this.alignmentDragFrame = null;
     renderManagerInstance.clear();
 
     this.modsCleanup?.();
@@ -384,6 +414,7 @@ export class TwinCityEngine {
     this.junctionHighlight.setViewer(viewer);
     renderManagerInstance.initialize(viewer);
     this.simMode.setViewer(viewer);
+    this.alignmentView = new AlignmentEditorView(viewer);
 
     // Listen for the first frame render
     viewer.scene.postRender.addEventListener(function onPostRender() {
@@ -588,7 +619,17 @@ export class TwinCityEngine {
     window.addEventListener('keydown', readMods, { capture: true });
     window.addEventListener('keyup', readMods, { capture: true });
     window.addEventListener('blur', onBlur);
+    // Esc during a shape drag puts the shape back (before the global shortcuts clear the selection)
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !this.alignmentEditor.isDragging()) return;
+      this.alignmentEditor.cancelDrag();
+      if (this.viewer) this.viewer.scene.screenSpaceCameraController.enableInputs = true;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    };
+    window.addEventListener('keydown', onEsc, { capture: true });
     this.modsCleanup = () => {
+      window.removeEventListener('keydown', onEsc, { capture: true });
       window.removeEventListener('keydown', readMods, { capture: true });
       window.removeEventListener('keyup', readMods, { capture: true });
       window.removeEventListener('blur', onBlur);
@@ -600,6 +641,11 @@ export class TwinCityEngine {
       const pickedObject = this.viewer.scene.pick(click.position);
       if (defined(pickedObject) && pickedObject.id && typeof pickedObject.id.id === 'string') {
         const idStr = pickedObject.id.id;
+        // Shape editor grip (PI / midpoint / radius / end) of the selected line object
+        if (idStr.startsWith(HANDLE_PREFIX) && this.alignmentEditor.pointerDown(idStr)) {
+          this.viewer.scene.screenSpaceCameraController.enableInputs = false;
+          return;
+        }
         if (idStr.startsWith('draw_point_') || idStr.startsWith('draw_pi_')) {
           this.draggingPointIdx = parseInt(idStr.split('_')[2]);
           this.viewer.scene.screenSpaceCameraController.enableRotate = false;
@@ -636,6 +682,18 @@ export class TwinCityEngine {
       const [lng, lat, alt] = ground;
       // Snap tolerances are in screen pixels: metres per pixel at the cursor, from the camera distance and field of view
       if (this.editing.getMode() !== 'select') this.editing.setMetresPerPixel(this.metresPerPixelAt(ground));
+
+      if (this.alignmentEditor.isDragging()) {
+        // Preview at most once per frame; nothing is written until release
+        const shift = this.mods.shift;
+        if (this.alignmentDragFrame === null) {
+          this.alignmentDragFrame = requestAnimationFrame(() => {
+            this.alignmentDragFrame = null;
+            this.alignmentEditor.pointerMove(lng, lat, { shift });
+          });
+        }
+        return;
+      }
 
       if (this.draggingPointIdx !== null || this.draggingZonePointIdx !== null) {
         if (this.draggingPointIdx !== null) {
@@ -693,6 +751,12 @@ export class TwinCityEngine {
 
     // 3. LEFT_UP: Release drag action
     on(() => {
+      if (this.alignmentEditor.isDragging()) {
+        if (this.alignmentDragFrame !== null) { cancelAnimationFrame(this.alignmentDragFrame); this.alignmentDragFrame = null; }
+        this.alignmentEditor.pointerUp();
+        if (this.viewer) this.viewer.scene.screenSpaceCameraController.enableInputs = true;
+        return;
+      }
       if (this.draggingPointIdx !== null || this.draggingZonePointIdx !== null) {
         this.draggingPointIdx = null;
         this.draggingZonePointIdx = null;
@@ -727,6 +791,8 @@ export class TwinCityEngine {
         if (editMode === 'import_osm' && (pickedId.startsWith('draw_point_') || pickedId.startsWith('draw_mid_'))) return;
         // A placed PI's handle (drag it to move, right-click to remove) does not add a point on top of it
         if (pickedId.startsWith('draw_pi_')) return;
+        // A shape-editor grip is dragged, not clicked: it neither adds a point nor clears the selection
+        if (pickedId.startsWith(HANDLE_PREFIX)) return;
         if (editMode !== 'select') {
           // Ctrl+click: a sharp corner (no curve) at this point
           this.editing.addDrawingPoint([lng, lat, alt], { sharp: this.mods.ctrl });
@@ -840,6 +906,10 @@ export class TwinCityEngine {
         const idStr: string = pickedObject.id.id;
         if (idStr.startsWith('draw_point_') || idStr.startsWith('draw_pi_')) {
           this.editing.removeDrawingPoint(parseInt(idStr.split('_')[2]));
+        } else if (idStr.startsWith(HANDLE_PREFIX)) {
+          // Shape editor: delete / sharp corner / curve menu at the cursor
+          const r = this.viewer.scene.canvas.getBoundingClientRect();
+          this.alignmentEditor.openMenu(idStr, r.left + click.position.x, r.top + click.position.y);
         }
       }
     }, ScreenSpaceEventType.RIGHT_CLICK);
@@ -939,7 +1009,15 @@ export class TwinCityEngine {
     };
   };
 
+  /** The shape editor follows a single selected line object in Build mode with the Select tool. */
+  private syncAlignmentEditor() {
+    const sel = this.selection.getSelection();
+    const id = this.isPlanningMode && !this.simMode.isActive() && this.editing.getMode() === 'select' && sel.length === 1 ? sel[0] : null;
+    if (id !== this.alignmentEditor.getObjectId()) this.alignmentEditor.setTarget(id);
+  }
+
   private emitMode() {
+    this.syncAlignmentEditor();
     this.modeListeners.forEach(cb => cb());
   }
 
