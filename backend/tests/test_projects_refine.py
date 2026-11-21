@@ -290,3 +290,30 @@ def test_a_check_is_not_stale_at_birth_when_another_project_pins_an_older_versio
     assert run["stale"]["stale"] is False, run["stale"]["reasons"]
     client.post(f"/api/scenarios/{sid}/versions", json={"label": "v3"})
     assert f"scenario_version_superseded:{sid}" in client.get(f"/api/coordination/stale/coordination_run/{run['id']}").json()["reasons"]
+
+
+def test_project_report_lists_elements_and_conflict_findings(client):
+    """A19: the project report (PDF/DOCX) carries the proposal elements and the conflict check, with UNKNOWN never shown as 0."""
+    a = client.post("/api/planning/projects", json={"name": "SYNTHETIC report A", "description": "", "created_by": "A"}).json()
+    b = client.post("/api/planning/projects", json={"name": "SYNTHETIC report B", "description": "", "created_by": "B"}).json()
+    line = {"type": "LineString", "coordinates": [[73.85, 18.50], [73.852, 18.50]]}
+    cross = {"type": "LineString", "coordinates": [[73.851, 18.499], [73.851, 18.501]]}
+    client.post(f"/api/coordination/projects/{a['id']}/elements", json={"kind": "tunnel", "name": "SYNTHETIC tunnel", "geometry": line, "width_m": 4,
+                                                                      "z_min_m": -14, "z_max_m": -10, "certainty": "hypothetical", "created_by": "A"})
+    client.post(f"/api/coordination/projects/{b['id']}/elements", json={"kind": "pipeline", "name": "SYNTHETIC gas main", "geometry": cross, "width_m": 0.3,
+                                                                      "z_min_m": None, "z_max_m": None, "certainty": "unknown", "created_by": "B"})
+    r = client.post(f"/api/coordination/projects/{a['id']}/detect", json={"run_by": "A"})
+    assert r.status_code == 201
+    pdf = client.get(f"/api/planning/projects/{a['id']}/report?format=pdf")
+    assert pdf.status_code == 200 and pdf.content[:5] == b"%PDF-"
+    docx = client.get(f"/api/planning/projects/{a['id']}/report?format=docx")
+    assert docx.status_code == 200
+    import io, zipfile
+    xml = zipfile.ZipFile(io.BytesIO(docx.content)).read("word/document.xml").decode("utf8")
+    assert "Proposal elements and conflict check" in xml
+    assert "SYNTHETIC tunnel" in xml
+    assert ("Project &apos;SYNTHETIC report B&apos;: SYNTHETIC gas main" in xml) or ("Project 'SYNTHETIC report B': SYNTHETIC gas main" in xml)
+    assert "Potential conflict" in xml and "UNKNOWN" in xml
+    # the other project sees the shared finding in its own report, raised by A's check
+    xb = zipfile.ZipFile(io.BytesIO(client.get(f"/api/planning/projects/{b['id']}/report?format=docx").content)).read("word/document.xml").decode("utf8")
+    assert "raised by other projects" in xb and "SYNTHETIC gas main" in xb
