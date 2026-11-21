@@ -409,6 +409,19 @@ def _alternative_name(db: Session, sid: str) -> str:
     return sc.name if sc and sc.name else ("Baseline" if sid == "base" else sid)
 
 
+IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30), "IST")
+
+
+def report_stamp(generated_at: str) -> str:
+    """File-name stamp of a report in Indian Standard Time, the planners' clock (the server may run on UTC):
+    '2026-11-21T14:25:00Z' -> '2026-11-21-1955IST'. The report body states the time in IST and UTC."""
+    try:
+        t = datetime.datetime.fromisoformat(generated_at.rstrip("Z")).replace(tzinfo=datetime.timezone.utc).astimezone(IST)
+    except ValueError:
+        return generated_at[:16].replace(":", "").replace("T", "-")
+    return t.strftime("%Y-%m-%d-%H%MIST")
+
+
 @router.post("/underground/screen/report")
 def underground_screen_report(body: ScreenIn, format: Literal["pdf", "docx", "csv"] = "pdf", db: Session = Depends(get_db)):
     """Screening report: runs the screening on the objects given (as the check does) and returns it as PDF / DOCX (header,
@@ -421,7 +434,7 @@ def underground_screen_report(body: ScreenIn, format: Literal["pdf", "docx", "cs
     data = REP.to_csv(run, alt) if format == "csv" else REP.render(REP.build_model(run, alt), format)
     sha = hashlib.sha256(data).hexdigest()
     safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in alt)[:60] or "alternative"
-    stamp = run["generated_at"][:16].replace(":", "").replace("T", "-")
+    stamp = report_stamp(run["generated_at"])
     mt = {"pdf": "application/pdf", "csv": "text/csv; charset=utf-8",
           "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}[format]
     return Response(content=data, media_type=mt, headers={
