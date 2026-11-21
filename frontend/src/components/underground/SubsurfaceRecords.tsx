@@ -6,7 +6,7 @@ import { Disclosure } from '../ui/Disclosure';
 import { LAYER_HOLDER, licenceShort, sourceLine, summariseRecords, type LayerSummary } from '../../engine/underground/recordsSummary';
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
 import { field, fmtM, input, inputStyle, lbl, labelStyle, note } from './common';
-import { MAX_DRAWN, USER_KEY, useSubsurfaceRecords } from './useSubsurfaceRecords';
+import { MAX_DRAWN, USER_KEY, WORK_MARGIN_M, useSubsurfaceRecords } from './useSubsurfaceRecords';
 import { showConflictHighlight } from './conflictHighlight';
 import { focusBounds } from './conflictClasses';
 import { redactPaths } from '../../lib/redactPaths';
@@ -119,7 +119,7 @@ export const SubsurfaceRecords: React.FC = () => {
       <div className="flex items-center gap-2 text-meta text-text-2" data-testid="ug-records-area">
         <span className="flex-1">
           {recordsArea
-            ? <>Within {recordsAreaSource === 'alignments' ? '250 m of your alignments' : 'the map view'}{recordsState === 'loaded' && records.length > 0 ? ` · ${shownOnMap.toLocaleString('en-IN')} drawn on the map${shownOnMap < records.length ? ` (first ${MAX_DRAWN})` : ''}` : ''}</>
+            ? <>Within {recordsAreaSource === 'alignments' ? `${WORK_MARGIN_M} m (in plan) of what you drew` : 'the map view'}{recordsState === 'loaded' && records.length > 0 ? ` · ${shownOnMap.toLocaleString('en-IN')} drawn on the map${shownOnMap < records.length ? ` (first ${MAX_DRAWN})` : ''}` : ''}</>
             : recordsAreaNote ?? 'No area yet'}
         </span>
         <button type="button" className="uos-btn uos-btn-sm" onClick={() => void reload()} data-testid="ug-records-refresh" title="List the records for the area now on the map">
