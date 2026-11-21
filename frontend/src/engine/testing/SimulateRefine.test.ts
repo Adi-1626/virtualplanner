@@ -7,7 +7,7 @@ import { SimulationMode } from '../simulation/SimulationMode';
 import { ObjectManager, classifyObjectChange, VIEW_ONLY_CHANGE } from '../objects/ObjectManager';
 import { emissionDeltas, type Delta } from '../simulation/ScenarioComparison';
 import { DeltaRows } from '../../components/ScenarioDeltaTable';
-import { fmtDeltaValue } from '../../components/simulate/format';
+import { fmtDeltaValue, readableLoadError } from '../../components/simulate/format';
 import { EmissionsCompare, GetStartedCard, ComparisonHourNote, EvidenceTag } from '../../components/simulate/SimulatePieces';
 
 /**
@@ -192,5 +192,14 @@ describe('units, emissions, hour and evidence labels', () => {
     expect(renderToStaticMarkup(createElement(EvidenceTag, { kind: 'measured' }))).toContain('Measured');
     expect(renderToStaticMarkup(createElement(EvidenceTag, { kind: 'modelled' }))).toContain('fails validation');
     expect(renderToStaticMarkup(createElement(EvidenceTag, { kind: 'hypothetical' }))).toContain('Hypothetical');
+  });
+});
+
+describe('load errors in plain words', () => {
+  it('a network failure says the server could not be reached; other messages are kept', () => {
+    expect(readableLoadError('Failed to fetch')).toBe('the server could not be reached.');
+    expect(readableLoadError('NetworkError when attempting to fetch resource.')).toBe('the server could not be reached.');
+    expect(readableLoadError('HTTP 500: overpass timeout')).toBe('HTTP 500: overpass timeout');
+    expect(readableLoadError(null)).toBe('');
   });
 });

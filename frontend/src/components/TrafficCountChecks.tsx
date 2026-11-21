@@ -6,6 +6,7 @@ import { checkCounts, countChecksCsv } from '../engine/data/countValidation';
 import { GEH_PASS, GEH_TARGET_SHARE, type GehSummary } from '../engine/calibration/geh';
 import { Notice, Button } from './ui/kit';
 import { ProvenanceBadge } from './TrafficDataPanel';
+import { readableLoadError } from './simulate/format';
 
 const fmt = (v: number | null) => (v === null ? '–' : Math.round(v).toLocaleString());
 const gehCls = (g: number | null) => (g === null ? 'text-slate-500' : g < GEH_PASS ? 'text-emerald-300' : g < 10 ? 'text-amber-300' : 'text-rose-300');
@@ -54,7 +55,7 @@ export const TrafficCountChecks: React.FC<{ sim: SimulationModeState }> = ({ sim
           ))}
         </div>
       </div>
-      {error && <Notice tone="warn" icon={AlertTriangle}>Traffic data could not be read: {error}</Notice>}
+      {error && <Notice tone="warn" icon={AlertTriangle}>Traffic data could not be read: {readableLoadError(error)}</Notice>}
       {!rows && !error && <p className="flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Reading counts…</p>}
       {res && !result && <p>Run the analysis to compare.</p>}
       {res && result && res.rows.length === 0 && <p>No validation count matches this area and hour{res.skipped.length ? ` (${res.skipped.length} not compared, reasons below)` : ''}.</p>}

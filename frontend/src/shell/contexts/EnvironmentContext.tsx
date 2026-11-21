@@ -142,8 +142,8 @@ const EmissionsChange: React.FC = () => {
           {rows.map(r => (
             <tr key={r.label}>
               <td className="text-text-2 py-0.5">{r.label}</td>
-              <td className="text-right text-text-1" data-testid="env-emissions-pct">{fmtPct(r.change)}</td>
-              <td className="text-right text-text-3 w-20">{r.agreement ? `${r.agreement.same}/${r.agreement.of} seeds` : ''}</td>
+              <td className="text-right text-text-1 whitespace-nowrap pl-2" data-testid="env-emissions-pct">{fmtPct(r.change)}</td>
+              <td className="text-right text-text-3 w-20 whitespace-nowrap">{r.agreement ? `${r.agreement.same}/${r.agreement.of} seeds` : ''}</td>
             </tr>
           ))}
         </tbody>

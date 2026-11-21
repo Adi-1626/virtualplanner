@@ -20,6 +20,8 @@ import { SidePanel, PanelHeader, PanelBody, Section, Figure, Button, Segmented, 
 import { UnderstandView, ImproveView, DemandEvidence } from './RoadAnalysisPanel';
 import { openSimulateDrawer, type SimulateDrawerTabId } from '../shell/contexts/SimulateDrawerNav';
 import { GetStartedCard } from './simulate/SimulatePieces';
+import { readableLoadError } from './simulate/format';
+const capitalise = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 const roadName = (id: string) => engineInstance.objects.getById(id)?.name || 'Unnamed road';
 
@@ -175,7 +177,7 @@ const Study: React.FC<{ sim: SimulationModeState; tab: Tab; setTab: (t: Tab) => 
       )}
       {osmRoads.status === 'error' && (
         <Notice tone="warn" icon={AlertTriangle} action={<Button variant="ghost" size="sm" onClick={() => mode.retryOsmRoads()}>Retry</Button>}>
-          Some roads around this area could not be loaded, so it may stop short. {osmRoads.error}
+          Some roads around this area could not be loaded, so it may stop short. {capitalise(readableLoadError(osmRoads.error))}
         </Notice>
       )}
       {sim.error && <Notice tone="bad" icon={AlertOctagon}>{sim.error}</Notice>}
