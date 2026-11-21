@@ -1,5 +1,5 @@
 /** Client for /api/planning (backend/api/planning_router.py, docs/PLANNING_WORKSPACE.md). */
-import { API_BASE } from '../../lib/api';
+import { API_BASE, trackedFetch } from '../../lib/api';
 import { redactPaths } from '../../lib/redactPaths';
 
 export type ProjectStatus = 'draft' | 'under_study' | 'under_review' | 'decision_recorded';
@@ -30,7 +30,7 @@ export interface AuditEvent {
 export type Linkable = Record<LinkType, { id: string; label: string; kind?: string; synthetic?: boolean; scenario_id?: string }[]>;
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${API_BASE}/api/planning${path}`, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
+  const res = await trackedFetch(`${API_BASE}/api/planning${path}`, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
   if (!res.ok) {
     let msg = res.statusText;
     try { const j = await res.json(); msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail); } catch { /* keep statusText */ }
