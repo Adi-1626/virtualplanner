@@ -409,9 +409,17 @@ def design_asset(obj: dict, status: str) -> Optional[Asset]:
     if t == "metro_line" and len(pts) >= 2 and status == "existing":
         line = G.project_geojson({"type": "LineString", "coordinates": pts})
         w = _num(p.get("deckWidth"))
+        osm = _osm_ref(obj)
+        if metro_line_is_tunnel(p):
+            # An OSM tunnel imported into Design: plan position only, depth not mapped (it used to be screened as an
+            # "Elevated metro (drawn)", with the import's invented -6 m)
+            return Asset(str(obj.get("id")), obj.get("name") or "", layer, status, "metro_tunnel", line, None, [(0.0, None, None)],
+                         "UNKNOWN", "unknown", ds, kind_label="Metro tunnel (imported from OpenStreetMap; depth not mapped)" if osm else "Metro tunnel (drawn; depth not mapped)",
+                         meta={"design_type": t, "osm_ref": osm})
         return Asset(str(obj.get("id")), obj.get("name") or "", layer, status, "metro_viaduct", line, (w / 2) if w else None,
-                     [(0.0, None, None)], "UNKNOWN", "unknown", ds, kind_label="Elevated metro (drawn; pier foundations UNKNOWN)",
-                     meta={"design_type": t})
+                     [(0.0, None, None)], "UNKNOWN", "unknown", ds,
+                     kind_label="Elevated metro (imported from OpenStreetMap; pier foundations UNKNOWN)" if osm else "Elevated metro (drawn; pier foundations UNKNOWN)",
+                     meta={"design_type": t, "osm_ref": osm})
     if t == "metro_station" and pts and status == "existing":
         pt = G.project_geojson({"type": "Point", "coordinates": pts[0]})
         ln, wd = _num(p.get("length")) or 0.0, _num(p.get("width")) or 0.0
@@ -420,6 +428,30 @@ def design_asset(obj: dict, status: str) -> Optional[Asset]:
                      0.0 if (ln or wd) else None, [(0.0, None, None)], "UNKNOWN", "unknown", ds, kind_label="Metro station (drawn)",
                      meta={"design_type": t})
     return None
+
+
+def _osm_ref(obj: dict) -> Optional[str]:
+    """'osm_way_123' for a Design object imported from OpenStreetMap (same id as osm_metro_assets), else None."""
+    p = obj.get("properties") or {}
+    et, oid = p.get("osmElementType"), p.get("osmId")
+    if not et or oid is None:
+        m = str(obj.get("id") or "")
+        if m.startswith("osm_m_"):
+            return "osm_" + m[len("osm_m_"):]
+        return None
+    return f"osm_{et}_{oid}"
+
+
+def metro_line_is_tunnel(p: dict) -> bool:
+    """A metro line stored by Design is a tunnel when its OSM tags say so (tunnel / negative layer) or its level is below
+    ground (older imports stored an invented -6 m)."""
+    tags = {**(p.get("originalOsmTags") or {}), **(p.get("tags") or {})}
+    try:
+        layer = int(str(tags.get("layer", "0")).split(";")[0])
+    except ValueError:
+        layer = 0
+    elev = _num(p.get("elevation"))
+    return (bool(tags.get("tunnel")) and tags.get("tunnel") != "no") or layer < 0 or (elev is not None and elev < 0)
 
 
 def _drawn_quality(cert: str) -> str:
@@ -1232,6 +1264,9 @@ def screen(db, scenario_id: str, objects: Optional[list[dict]] = None, focus_ids
     wc_tree = STRtree([w.geom for w in wcs]) if wcs else None
     lap("watercourses")
 
+    # An OSM metro way imported into Design and the same way from the OSM index are one asset: keep the index copy
+    osm_ids = {m.id for m in metro}
+    existing_design = [a for a in existing_design if not (a.meta.get("osm_ref") and a.meta["osm_ref"] in osm_ids)]
     others: list[Asset] = existing_design + metro + proposed
     other_tree = STRtree([o.geom for o in others]) if others else None
     findings: list[dict] = []
