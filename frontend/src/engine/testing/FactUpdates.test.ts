@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Fact, FactsVersion, Proposal } from '../../lib/freshnessApi';
 import { ApplyBar, ProposalCard, type ProposalActions } from '../../components/data/FactUpdatesPane';
-import { approvedNotApplied, changeLine, conflictSummary, groupProposals, needsNote, proposalIsOfficial, rollbackTargets, versionNote } from '../../components/data/factUpdatesModel';
+import { approvedNotApplied, changeLine, flagLabel, conflictSummary, groupProposals, needsNote, proposalIsOfficial, rollbackTargets, versionNote } from '../../components/data/factUpdatesModel';
 import { loadReportedFacts, reportedDepthFor, reportedDepthText, reportedFacts, setReportedFacts } from '../underground/reportedFacts';
 import { DEPTH_NOT_MAPPED, NO_OFFICIAL_STATION_DEPTH, NO_OFFICIAL_TUNNEL_DEPTH, objectTip } from '../underground/hoverInfo';
 import { allOfficial, isOfficialUrl, officialDomain } from '../../lib/officialSources';
@@ -209,5 +209,14 @@ describe('Underground: official tunnel depth in the metro tooltip (official sour
     await fresh.loadReportedFacts(async () => ({ facts: [fact, newsFact], sha256_ok: true }));
     expect(fresh.reportedFacts()).toEqual([fact]);
     expect(mod).toBeTruthy();
+  });
+});
+
+describe('flag labels', () => {
+  it('a flag code this build does not know shows its sentence, never the raw code', () => {
+    expect(flagLabel({ code: 'stale_source', detail: 'x' })).toBe('Old official source');
+    expect(flagLabel({ code: 'official_may_be_outdated', detail: 'newer press reports disagree with the official page; the page may not have been updated' }))
+      .toBe('Newer press reports disagree with the official page');
+    expect(flagLabel({ code: 'something_new', detail: '' })).toBe('Needs a check');
   });
 });

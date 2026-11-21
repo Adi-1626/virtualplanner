@@ -28,6 +28,14 @@ export const FLAG_LABEL: Record<string, string> = {
   not_official: 'Not an official source', dataset_date_passed: 'Dataset date has passed',
 };
 
+/** A flag in words; a code this build does not know (a database written by an older updater, before `migrate-official-only`)
+ * shows its own sentence instead of the raw code ("official_may_be_outdated" was on screen in Final QA 2026-11-21). */
+export function flagLabel(f: { code: string; detail: string }): string {
+  if (FLAG_LABEL[f.code]) return FLAG_LABEL[f.code];
+  const d = (f.detail || '').split(';')[0].trim();
+  return d ? d.charAt(0).toUpperCase() + d.slice(1) : 'Needs a check';
+}
+
 /** Every piece of evidence is from an official site (government / agency; lib/officialSources.ts mirrors the backend). */
 export function proposalIsOfficial(p: Proposal): boolean {
   return p.confidence !== 'not_official' && allOfficial(p.evidence ?? []);

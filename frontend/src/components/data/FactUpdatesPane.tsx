@@ -5,7 +5,7 @@ import { EmptyState } from '../ui/EmptyState';
 import { inputCls } from '../projects/projectData';
 import { Disclosure } from '../ui/Disclosure';
 import {
-  CONFIDENCE_HELP, CONFIDENCE_LABEL, CONFIDENCE_TONE, FLAG_LABEL, STATUS_LABEL, approvedNotApplied, changeLine,
+  CONFIDENCE_HELP, CONFIDENCE_LABEL, CONFIDENCE_TONE, STATUS_LABEL, flagLabel, approvedNotApplied, changeLine,
   conflictSummary, evidenceDate, evidenceSource, groupProposals, needsNote, proposalIsOfficial, rollbackTargets, sourceCount, versionNote,
 } from './factUpdatesModel';
 
@@ -64,7 +64,7 @@ export const ProposalCard: React.FC<{ p: Proposal; actions: ProposalActions }> =
       </ul>
       {p.flags.length > 0 && (
         <ul className="flex flex-wrap gap-1" data-testid="proposal-flags">
-          {p.flags.map(f => <li key={f.code} className="uos-data-chip" title={f.detail} style={{ color: TONE_COLOR.warn, borderColor: TONE_COLOR.warn }}>{FLAG_LABEL[f.code] ?? f.code}</li>)}
+          {p.flags.map(f => <li key={f.code} className="uos-data-chip" title={f.detail} style={{ color: TONE_COLOR.warn, borderColor: TONE_COLOR.warn }}>{flagLabel(f)}</li>)}
         </ul>
       )}
       {p.decided_by && <p className="text-meta text-text-3">Decided by {p.decided_by}{p.decision_note ? ` — ${p.decision_note}` : ''}</p>}
