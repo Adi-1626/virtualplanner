@@ -193,6 +193,8 @@ export interface RoadAnalysisState {
    * demand is the peak hour's (factor 1) whatever the clock shows (docs/OVERHAUL.md §19).
    */
   timeProfile?: 'loaded' | 'unavailable';
+  /** Inputs the output was computed from (SimulationMode.runFingerprint); a baseline or proposal run with the same fingerprint reuses it. */
+  fingerprint?: string;
 }
 
 /** Demand options the user can change. */
@@ -751,7 +753,10 @@ export class SimulationMode {
 
   /** Roads changed or the scenario switched. Re-maps the current area shortly after. */
   public networkChanged() {
-    this.invalidateComparison('The network changed. Run the comparison again.');
+    // Editing the network after saving the baseline is the intended step: only a comparison already on show (or
+    // running) is out of date. "Run the comparison again" before any comparison had run read as an error.
+    const c = this.state.comparison;
+    this.invalidateComparison(c.result || c.running ? 'The network changed since this comparison. Press Compare to test the proposal as it is now.' : null);
     this.revision++;
     if (!this.state.active || this.state.seedRoadIds.length === 0) return;
     this.cancelPendingRecompute();
@@ -1081,12 +1086,12 @@ export class SimulationMode {
     return demandContextKey(this.getContext());
   }
 
-  private invalidateComparison(reason: string) {
-    this.invalidateCalibration(reason);
+  private invalidateComparison(reason: string | null) {
+    this.invalidateCalibration(reason ?? 'The network changed. Measure again.');
     this.comparisonGeneration++;
     if (!this.state.comparison.baseline && !this.state.comparison.running) return;
     if (this.state.comparison.running) this.comparisonRun?.cancel();
-    this.setState({ comparison: { ...this.state.comparison, current: null, result: null, staleReason: reason, running: false } });
+    this.setState({ comparison: { ...this.state.comparison, current: null, result: null, staleReason: reason ?? this.state.comparison.staleReason, running: false } });
   }
 
   /** A trial must run on the area mapped from the current roads, not one still waiting out its debounce. */
@@ -1208,6 +1213,7 @@ export class SimulationMode {
     this.analysisTimer = null;
     this.analysisRun?.cancel();
     this.analysisRun = null;
+    this.runningAnalysis = null;
   }
 
   /**
@@ -1242,19 +1248,22 @@ export class SimulationMode {
     const key = this.analysisKey();
     this.setState({ analysis: { ...this.state.analysis, status: 'running', progress: 0, error: null, hour, demandVph } });
     const networkKey = this.currentNetworkKey();
+    const fingerprint = this.runFingerprint(plan, DEFAULT_ANALYSIS.measureS, this.analysisSeeds, hourFactor);
     const run = startAnalysisJob(this.analysisJob(plan, area, section), progress => {
       if (this.analysisRun !== run) return;
       this.setState({ analysis: { ...this.state.analysis, progress } });
       if (this.pendingStart) this.setTraffic({ preparing: { stage: 'analysis', progress } });
     });
     this.analysisRun = run;
+    this.runningAnalysis = { fingerprint, promise: run.promise };
     try {
       const output = await run.promise;
       if (this.analysisRun !== run) return null;
       this.analysisRun = null;
+      this.runningAnalysis = null;
       this.analysisNetworkKey = networkKey;
-      this.keepResult(key, networkKey, { status: 'ready', progress: 1, output, error: null, hour, demandVph, key, hourFactor, timeProfile });
-      this.setState({ analysis: { status: 'ready', progress: 1, output, error: null, hour, demandVph, key, hourFactor, timeProfile },
+      this.keepResult(key, networkKey, { status: 'ready', progress: 1, output, error: null, hour, demandVph, key, hourFactor, timeProfile, fingerprint });
+      this.setState({ analysis: { status: 'ready', progress: 1, output, error: null, hour, demandVph, key, hourFactor, timeProfile, fingerprint },
         comparison: { ...this.state.comparison, showingProposal: this.showsProposal(this.state.comparison.baseline) } });
       this.clearAnalysisStopNotice();
       this.redrawOverlay();
@@ -1262,6 +1271,7 @@ export class SimulationMode {
       if (this.pendingStart && this.state.traffic.status === 'preparing') { this.setTraffic({ status: 'idle' }); this.startTraffic(); }
       return output;
     } catch (err) {
+      if (this.runningAnalysis?.promise === run.promise) this.runningAnalysis = null;
       if (this.analysisRun !== run) return null;
       this.analysisRun = null;
       this.setState({ analysis: { ...this.state.analysis, status: 'error', error: err instanceof Error ? err.message : String(err) } });
@@ -1385,19 +1395,69 @@ export class SimulationMode {
     };
   }
 
+  /**
+   * The network key hashes every road (about 0.5 s for the full Pune network, headless): it is kept until the roads
+   * (a new array after every change, see getRoads), the junction settings or the mapped signals change.
+   */
+  private netKeyCache: { roads: unknown; signals: unknown; junctions: string; key: string } | null = null;
   private currentNetworkKey() {
-    return networkContentKey(this.getRoads(), this.getContext().junctions, this.signalPoints);
+    const roads = this.getRoads(), junctions = this.getContext().junctions, signals = this.signalPoints;
+    const jKey = contentKey(junctions ?? null);
+    const c = this.netKeyCache;
+    if (c && c.roads === roads && c.signals === signals && c.junctions === jKey) return c.key;
+    const key = networkContentKey(roads, junctions, signals);
+    this.netKeyCache = { roads, signals, junctions: jKey, key };
+    return key;
   }
+
+  /**
+   * Everything a run's output depends on (docs/urbanos/SIMULATE_AUDIT.md): the demand's content, the network, the
+   * study road and range, the hour factor, seeds, warm-up and measured window, and the simulator options. Runs with
+   * the same fingerprint give the same output (the analysis is deterministic), so one is never computed twice.
+   */
+  private runFingerprint(plan: DemandPlan, measureS: number, seeds: readonly number[], hourFactor: number = this.state.timeOfDay.factor): string {
+    const t = this.state.traffic;
+    return contentKey({ plan: this.keyOfPlan(plan), net: this.currentNetworkKey(), study: this.studyKey(), section: this.state.section?.segmentKeys ?? null,
+      hourFactor, seeds: [...seeds], measureS, warmupS: DEFAULT_ANALYSIS.warmupS, demandLevel: t.demandLevel, seed: t.seed, signalTiming: this.signalTiming,
+      counts: this.state.calibration.dataset ? true : false });
+  }
+  /** Fingerprint of the road analysis now running (null when none). */
+  private runningAnalysis: { fingerprint: string; promise: Promise<AnalysisOutput> } | null = null;
 
   /** Whether the analysis on show ran on a network other than the baseline's. */
   private showsProposal(baseline: TrafficRunSnapshot | null) {
     return !!baseline && this.analysisNetworkKey !== null && this.analysisNetworkKey !== baseline.networkKey;
   }
 
+  /**
+   * A baseline or proposal run. The same inputs give the same output, so when the road analysis already computed (or
+   * is computing) exactly this run, its output is used instead of running it again: "Save existing city" right after
+   * an analysis, and Compare right after the re-analysis of the edited network, re-ran a full analysis each (143 s and
+   * 94 s headless), and Compare during that re-analysis ran two analyses at once (docs/urbanos/SIMULATE_AUDIT.md).
+   * Otherwise the automatic analysis is cancelled first (never two analysis jobs at once), and the run's output is
+   * shown as the road analysis when it is the run that analysis would make.
+   */
   private async runJob(plan: DemandPlan, measureS: number, generation: number, seeds?: readonly number[]): Promise<AnalysisOutput> {
     const area = this.state.area, section = this.state.section;
     if (!area || !section) throw new Error('Select a study road before running a trial.');
     this.comparisonRun?.cancel();
+    const runSeeds = seeds ?? this.analysisSeeds;
+    const fingerprint = this.runFingerprint(plan, measureS, runSeeds);
+    const shown = this.state.analysis;
+    if (shown.status === 'ready' && shown.output && shown.fingerprint === fingerprint) { this.lastRunReused = true; return shown.output; }
+    const pending = this.runningAnalysis;
+    if (pending && pending.fingerprint === fingerprint) {
+      const out = await pending.promise.catch(() => null);
+      if (generation !== this.comparisonGeneration) throw new Error('The project changed while the run was being captured. Run it again.');
+      if (out) { this.lastRunReused = true; return out; }
+    }
+    this.lastRunReused = false;
+    // One analysis job at a time: the automatic one is re-scheduled after this run when this run does not stand for it
+    if (this.analysisRun || this.analysisTimer) {
+      this.cancelAnalysis();
+      this.analysisStale = true;
+      if (this.state.analysis.status === 'running') this.setState({ analysis: { ...this.state.analysis, status: this.state.analysis.output ? 'ready' : 'idle', progress: 0 } });
+    }
     const run = startAnalysisJob(this.analysisJob(plan, area, section, measureS, { seeds }), progress => {
       if (generation === this.comparisonGeneration) this.setState({ comparison: { ...this.state.comparison, progress } });
     });
@@ -1405,10 +1465,32 @@ export class SimulationMode {
     try {
       const out = await run.promise;
       if (generation !== this.comparisonGeneration) throw new Error('The project changed while the run was being captured. Run it again.');
+      this.adoptAsAnalysis(out, fingerprint, plan);
       return out;
     } finally {
       if (this.comparisonRun === run) this.comparisonRun = null;
+      if (this.analysisStale && !this.analysisRun) this.maybeAutoStart();
     }
+  }
+  /** Whether the last baseline or proposal run reused an analysis output instead of running (for the panel and tests). */
+  public lastRunReused = false;
+
+  /** A baseline or proposal run that is exactly the road analysis the panel would run now becomes that analysis's result. */
+  private adoptAsAnalysis(output: AnalysisOutput, fingerprint: string, plan: DemandPlan) {
+    const current = this.studyPlan();
+    if (!current || this.state.analysis.fingerprint === fingerprint) return;
+    if (this.runFingerprint(current, DEFAULT_ANALYSIS.measureS, this.analysisSeeds) !== fingerprint) return;
+    void plan;
+    const key = this.analysisKey(), networkKey = this.currentNetworkKey(), t = this.state.timeOfDay;
+    const analysis: RoadAnalysisState = { status: 'ready', progress: 1, output, error: null, hour: t.hour, demandVph: current.provenance.vehiclesPerHour * t.factor, key,
+      hourFactor: t.factor, timeProfile: t.status === 'ready' ? 'loaded' : 'unavailable', fingerprint };
+    this.cancelAnalysis();
+    this.analysisStale = false;
+    this.analysisNetworkKey = networkKey;
+    this.keepResult(key, networkKey, analysis);
+    this.setState({ analysis, comparison: { ...this.state.comparison, showingProposal: this.showsProposal(this.state.comparison.baseline) } });
+    this.clearAnalysisStopNotice();
+    this.redrawOverlay();
   }
 
   /**
