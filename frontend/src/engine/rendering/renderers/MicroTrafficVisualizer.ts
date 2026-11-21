@@ -1,6 +1,7 @@
 import { Viewer, Cartesian3, Color, Model, Matrix4, ColorBlendMode, ShadowMode } from 'cesium';
 import { scenePoint } from '../../terrain/groundHeight';
-import type { TrafficMicroSim, SignalState, VehicleView } from '../../simulation/TrafficMicroSim';
+import type { SignalState, VehicleView } from '../../simulation/TrafficMicroSim';
+import type { VehicleSource } from '../../simulation/liveTrafficRun';
 import { variantFor, vehicleModelUrl, trafficLightUrl, type VehicleVariant } from '../vehicles/vehicleModels';
 
 /** Road colour by traffic speed as a share of the speed limit (shared with the panel legend). */
@@ -120,7 +121,7 @@ export class MicroTrafficVisualizer {
    * time since the last step (vehicles are carried on by it); `dtS` is
    * simulated time since the previous draw (retained for API compatibility).
    */
-  public draw(sim: TrafficMicroSim, aheadS = 0, _dtS = 0) {
+  public draw(sim: VehicleSource, aheadS = 0, _dtS = 0) {
     if (!this.ready()) return;
     const frame = ++this.frame;
     const camera = this.viewer!.camera.positionWC;
@@ -244,7 +245,7 @@ export class MicroTrafficVisualizer {
    * heads near the camera only (when they first come near), and hidden again
    * when the camera moves away.
    */
-  private drawSignals(sim: TrafficMicroSim) {
+  private drawSignals(sim: VehicleSource) {
     const camera = this.viewer!.camera.positionWC;
     const range2 = SIGNAL_RANGE_M * SIGNAL_RANGE_M;
     sim.forEachSignal((linkId, at, state) => {

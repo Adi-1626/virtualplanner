@@ -25,6 +25,8 @@ const junctionOptions = (junctions: readonly JunctionObject[] | undefined) => {
   const { placed, edits } = splitJunctionObjects(junctions);
   return { junctions: placed, junctionEdits: edits.length ? edits : undefined };
 };
+import { createLiveRun, type LiveRun } from './liveTrafficRun';
+import type { LiveInit } from './liveTrafficCore';
 import { snapDemandPlan, contentKey, networkContentKey, demandContextKey, type SimulationContext, type DemandPlan, type DemandProvenance } from './StudyDemand';
 export type { SimulationContext } from './StudyDemand';
 import { fetchCountDataset, DEFAULT_COUNT_DATASET, type CountDataset } from '../calibration/observedCounts';
@@ -74,6 +76,8 @@ export interface TrafficRunState {
   hour: number | null;
   /** Simulated seconds of warm-up run before the live view is shown. */
   warmupS: number;
+  /** The machine cannot step the live view as fast as the chosen speed: it runs slower than that (the figures stay correct). */
+  behind?: boolean;
 }
 
 /** Time-of-day periods offered in the main controls (hourly detail stays under Details). */
@@ -122,7 +126,9 @@ export interface TimelineRow {
 }
 
 /** What is computing right now, for the panel and for tests: nothing should be listed while Simulate is closed or stopped. */
-export interface ResourceReport { liveSim: boolean; animationFrame: boolean; warmup: boolean; analysisRunning: boolean; comparisonRunning: boolean; timelineRunning: boolean; timers: number; vehicles: number }
+export interface ResourceReport { liveSim: boolean; animationFrame: boolean; warmup: boolean; analysisRunning: boolean; comparisonRunning: boolean; timelineRunning: boolean; timers: number; vehicles: number;
+  /** Where the live simulation runs: true in a Web Worker, false on the main thread, null when there is none. */
+  liveThreaded?: boolean | null }
 
 export type MapOverlay = 'none' | 'select-link' | 'area-vc' | 'cause' | 'comparison';
 
@@ -350,8 +356,6 @@ const EMPTY_ANALYSIS: RoadAnalysisState = { status: 'idle', progress: 0, output:
 const EMPTY_TIMELINE: TimelineState = { status: 'idle', progress: 0, rows: [], error: null, key: null };
 /** The live view starts from the same warm-up the analysis counts from: vehicles already on the roads, in a state the model reached itself. */
 export const LIVE_WARMUP_S = 300;
-/** Real milliseconds of warm-up simulation per frame, so the page stays responsive. */
-const WARMUP_SLICE_MS = 14;
 
 const EMPTY_CALIBRATION: CalibrationState = {
   datasetStatus: 'idle', dataset: null, datasetError: null, junctions: [], rows: [], before: null, after: null, fit: null,
@@ -366,8 +370,6 @@ const KEPT_RESULTS = 6;
 /** How often live figures reach the UI, and how often road stretches are recoloured (real ms). */
 const METRICS_EVERY_MS = 500;
 const RECOLOUR_EVERY_MS = 1000;
-/** Most simulation steps run in one frame; beyond this the run falls behind real time rather than freezing. */
-const MAX_STEPS_PER_FRAME = 200;
 
 /**
  * State of Simulation mode: which roads the study area grows from, how far,
@@ -432,10 +434,11 @@ export class SimulationMode {
   private revision = 0;
   private recomputeTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly trafficVisualizer = new MicroTrafficVisualizer();
-  private sim: TrafficMicroSim | null = null;
+  /** The live run (its simulation in a Web Worker when the browser has them; liveTrafficRun.ts). */
+  private live: LiveRun | null = null;
+  /** Test hook: builds the live run's worker (null: the browser's own worker, or none). */
+  public liveWorkerFactory: (() => Worker) | null = null;
   private frameHandle: number | null = null;
-  private lastFrameAt = 0;
-  private stepDebt = 0;
   private lastMetricsAt = 0;
   private lastRecolourAt = 0;
 
@@ -465,8 +468,6 @@ export class SimulationMode {
   private signalTiming: 'webster' | 'equal' = 'webster';
   private roadsCache: { n: number; layer: NetworkCorrectionLayer | null; enabled: boolean; rev: number; roads: DrivableObject[] } | null = null;
   private speedReport: SpeedReport | null = null;
-  /** Live warm-up in progress (cancelled by Stop, a new area, or leaving Simulate). */
-  private warmupHandle: ReturnType<typeof setTimeout> | null = null;
   private timelineRun: RunningAnalysis | null = null;
   private timelineGeneration = 0;
   /** Start was pressed before the analysis was ready: start once it is. */
@@ -650,11 +651,11 @@ export class SimulationMode {
 
   /** What is computing now (nothing, once stopped or closed). */
   public resources(): ResourceReport {
-    let vehicles = 0;
-    this.sim?.forEachVehicle(() => { vehicles++; });
-    return { liveSim: this.sim !== null, animationFrame: this.frameHandle !== null, warmup: this.warmupHandle !== null, analysisRunning: this.analysisRun !== null,
+    const warmup = this.live?.warming() ?? false;
+    return { liveSim: this.live !== null, animationFrame: this.frameHandle !== null, warmup, analysisRunning: this.analysisRun !== null,
       comparisonRunning: this.comparisonRun !== null, timelineRunning: this.timelineRun !== null,
-      timers: [this.analysisTimer, this.recomputeTimer, this.warmupHandle].filter(t => t !== null).length, vehicles };
+      timers: [this.analysisTimer, this.recomputeTimer].filter(t => t !== null).length + (warmup && !this.live?.threaded ? 1 : 0), vehicles: this.live?.vehicleCount() ?? 0,
+      liveThreaded: this.live?.threaded ?? null };
   }
 
   public dismissNotice() { if (this.state.notice) this.setState({ notice: null }); }
@@ -981,54 +982,63 @@ export class SimulationMode {
       return;
     }
     this.pendingStart = false;
-    const roads = new Map(this.getRoads().map(r => [r.id, r]));
+    // Only the roads of the corridor's network go to the run (not the whole city): less to copy to its worker
+    const all = new Map(this.getRoads().map(r => [r.id, r]));
+    const roads = new Map<string, DrivableObject>();
+    corridor.network.edges.forEach(e => { const r = all.get(e.roadId); if (r) roads.set(e.roadId, r); });
     const context = this.getContext();
     const plan = out.corridorPlan;
-    const sim = new TrafficMicroSim(corridor, roads, {
-      demandLevel: this.state.traffic.demandLevel,
-      seed: this.state.traffic.seed,
-      watchRoadIds: area.seedRoadIds, watchSegmentKeys: this.state.section?.segmentKeys,
-      signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming,
-      ...junctionOptions(context.junctions),
-      demandTrips: snapDemandPlan(plan, corridor.network, 60, new Set(corridor.segments.map(s => s.key))),
-    });
-    sim.setHourFactor(1);
-    const metrics = sim.getMetrics();
-    this.setTraffic({ demand: { ...plan.provenance }, hour: this.state.analysis.hour });
-    if (metrics.entries === 0) {
-      this.setTraffic({ status: 'idle', preparing: null, error: 'No traffic is routed through this road\'s neighbourhood at this hour, so there is nothing to show.' });
+    this.setTraffic({ demand: { ...plan.provenance }, hour: this.state.analysis.hour, behind: false });
+    const init: LiveInit = {
+      corridor, roads, plan, warmupS: this.state.traffic.warmupS,
+      options: {
+        demandLevel: this.state.traffic.demandLevel, seed: this.state.traffic.seed,
+        watchRoadIds: area.seedRoadIds, watchSegmentKeys: this.state.section?.segmentKeys,
+        signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming,
+        ...junctionOptions(context.junctions),
+      },
+    };
+    let live: LiveRun;
+    const mine = () => this.live === live;
+    try {
+      live = createLiveRun(this.liveWorkerFactory ? structuredClone(init) : init, this.state.traffic.speed, {
+        progress: share => { if (mine()) this.setTraffic({ preparing: { stage: 'warmup', progress: share } }); },
+        ready: metrics => {
+          if (!mine()) return;
+          this.setTraffic({ status: 'running', preparing: null, metrics });
+          live.run();
+          this.startLoop();
+        },
+        empty: () => {
+          if (!mine()) return;
+          this.live = null;
+          this.visualizer.setMarkersVisible(true);
+          this.setTraffic({ status: 'idle', preparing: null, error: 'No traffic is routed through this road\'s neighbourhood at this hour, so there is nothing to show.' });
+        },
+        metrics: (metrics, behind) => { if (mine()) this.setTraffic({ metrics, behind }); },
+        error: message => { if (mine()) { this.stopTraffic(); this.setTraffic({ error: `The live view stopped: ${message}` }); } },
+      }, this.liveWorkerFactory ?? undefined);
+    } catch (err) {
+      this.setTraffic({ status: 'idle', preparing: null, error: `The live view could not start: ${err instanceof Error ? err.message : String(err)}` });
       return;
     }
-    this.sim = sim;
+    this.live = live;
     this.visualizer.setMarkersVisible(false);
-    this.setTraffic({ status: 'preparing', preparing: { stage: 'warmup', progress: 0 }, metrics, error: null });
-    const target = Math.round(this.state.traffic.warmupS / STEP_S);
-    let done = 0;
-    const slice = () => {
-      this.warmupHandle = null;
-      if (this.sim !== sim) return;
-      const t0 = performance.now();
-      while (done < target && performance.now() - t0 < WARMUP_SLICE_MS) { sim.step(); done++; }
-      if (done < target) {
-        this.setTraffic({ preparing: { stage: 'warmup', progress: done / target } });
-        this.warmupHandle = setTimeout(slice, 0);
-        return;
-      }
-      this.setTraffic({ status: 'running', preparing: null, metrics: sim.getMetrics() });
-      this.startLoop();
-    };
-    this.warmupHandle = setTimeout(slice, 0);
+    this.setTraffic({ status: 'preparing', preparing: { stage: 'warmup', progress: 0 }, error: null });
+    live.start();
   }
 
   public pauseTraffic() {
     if (this.state.traffic.status !== 'running') return;
     this.stopLoop();
-    this.setTraffic({ status: 'paused', metrics: this.sim?.getMetrics() ?? null });
+    this.live?.pause();
+    this.setTraffic({ status: 'paused', metrics: this.live?.metrics() ?? this.state.traffic.metrics });
   }
 
   public resumeTraffic() {
     if (this.state.traffic.status !== 'paused') return;
     this.setTraffic({ status: 'running' });
+    this.live?.run();
     this.startLoop();
   }
 
@@ -1038,16 +1048,17 @@ export class SimulationMode {
    */
   public stopTraffic() {
     this.pendingStart = false;
-    if (this.warmupHandle !== null) { clearTimeout(this.warmupHandle); this.warmupHandle = null; }
-    const wasRunning = this.sim !== null;
+    const wasRunning = this.live !== null;
     this.stopLoop();
-    this.sim = null;
+    // Ends the worker (or the inline warm-up) and drops the simulation
+    this.live?.dispose();
+    this.live = null;
     if (this.state.selectedVehicleId !== null) this.setState({ selectedVehicleId: null });
     this.trafficVisualizer.clear();
     this.visualizer.setMarkersVisible(true);
     if (wasRunning && this.state.area && this.state.active) { this.visualizer.render(this.state.area, false, new Set(this.state.section?.segmentKeys ?? [])); this.redrawOverlay(); }
     const t = this.state.traffic;
-    if (t.status !== 'idle' || t.metrics || t.error || t.preparing) this.setTraffic({ status: 'idle', metrics: null, error: null, preparing: null, hour: null });
+    if (t.status !== 'idle' || t.metrics || t.error || t.preparing || t.behind) this.setTraffic({ status: 'idle', metrics: null, error: null, preparing: null, hour: null, behind: false });
   }
 
   /** Earlier name of stopTraffic. */
@@ -1060,22 +1071,22 @@ export class SimulationMode {
   }
 
   public setTrafficSpeed(speed: number) {
+    this.live?.setSpeed(speed);
     this.setTraffic({ speed });
   }
 
   public setDemandLevel(level: number) {
     const demandLevel = Math.max(0, Math.min(1, level));
     this.invalidateComparison('Demand settings changed. Restore the baseline settings or capture a new baseline.');
-    this.sim?.setDemandLevel(demandLevel);
-    this.sim?.setFocusLoad(focusLoadFor({ focus: this.state.traffic.focus, demandLevel }));
-    this.setTraffic({ demandLevel, metrics: this.sim?.getMetrics() ?? this.state.traffic.metrics });
+    this.live?.setDemand(demandLevel, focusLoadFor({ focus: this.state.traffic.focus, demandLevel }));
+    this.setTraffic({ demandLevel, metrics: this.live?.metrics() ?? this.state.traffic.metrics });
   }
 
   /** Turns the extra through traffic on the selected roads on or off. */
   public setFocus(focus: boolean) {
     this.invalidateComparison('Focus settings changed. Restore the baseline settings or capture a new baseline.');
-    this.sim?.setFocusLoad(focusLoadFor({ focus, demandLevel: this.state.traffic.demandLevel }));
-    this.setTraffic({ focus, metrics: this.sim?.getMetrics() ?? this.state.traffic.metrics });
+    this.live?.setDemand(this.state.traffic.demandLevel, focusLoadFor({ focus, demandLevel: this.state.traffic.demandLevel }));
+    this.setTraffic({ focus, metrics: this.live?.metrics() ?? this.state.traffic.metrics });
   }
 
   private studyKey() {
@@ -1966,13 +1977,13 @@ export class SimulationMode {
 
   public getVehicleViews(): VehicleView[] {
     const vehicles: VehicleView[] = [];
-    this.sim?.forEachVehicle(v => vehicles.push({ ...v }), this.stepDebt);
+    this.live?.forEachVehicle(v => vehicles.push({ ...v }));
     return vehicles;
   }
 
   public inspectVehicle(id: number): VehicleView | null {
     let result: VehicleView | null = null;
-    this.sim?.forEachVehicle(v => { if (v.id === id) result = { ...v }; }, this.stepDebt);
+    this.live?.forEachVehicle(v => { if (v.id === id) result = { ...v }; });
     return result;
   }
 
@@ -1983,41 +1994,32 @@ export class SimulationMode {
   public pickVehicleAt(lng: number, lat: number, maxDistanceM = 8): VehicleView | null {
     let selected: VehicleView | null = null, best = maxDistanceM;
     const kx = 111320 * Math.cos(lat * Math.PI / 180);
-    this.sim?.forEachVehicle(v => {
+    this.live?.forEachVehicle(v => {
       const distance = Math.hypot((v.lng - lng) * kx, (v.lat - lat) * 111320);
       if (v.opacity > .1 && distance < best) { best = distance; selected = { ...v }; }
-    }, this.stepDebt);
+    });
     return selected;
   }
 
+  /**
+   * The live view's animation frame: draws the run's vehicles (the worker steps on its own; the inline run steps here
+   * within a budget), recolours the roads once a second and passes the figures twice a second.
+   */
   private startLoop() {
     this.stopLoop();
-    this.lastFrameAt = performance.now();
-    this.stepDebt = 0;
     const frame = (now: number) => {
-      const sim = this.sim;
-      if (!sim) return;
-      // Clamp long gaps (a background tab) instead of simulating them all at once
-      const realDt = Math.min(0.25, (now - this.lastFrameAt) / 1000);
-      this.lastFrameAt = now;
-      const simDt = realDt * this.state.traffic.speed;
-      this.stepDebt += simDt;
-      let steps = Math.floor(this.stepDebt / STEP_S);
-      this.stepDebt -= steps * STEP_S;
-      if (steps > MAX_STEPS_PER_FRAME) {
-        steps = MAX_STEPS_PER_FRAME;
-        this.stepDebt = 0;
-      }
-      for (let i = 0; i < steps; i++) sim.step();
-      // Drawn between steps too: vehicles carry on by the time since the last one
-      this.trafficVisualizer.draw(sim, this.stepDebt, simDt);
+      const live = this.live;
+      if (!live) return;
+      live.advance(now);
+      this.trafficVisualizer.draw(live);
       if (now - this.lastRecolourAt > RECOLOUR_EVERY_MS) {
-        this.lastRecolourAt = now;
-        this.visualizer.setSegmentSpeeds(sim.segmentSpeedRatios());
+        const ratios = live.ratios();
+        if (ratios) { this.lastRecolourAt = now; this.visualizer.setSegmentSpeeds(ratios); }
       }
-      if (now - this.lastMetricsAt > METRICS_EVERY_MS) {
+      if (!live.threaded && now - this.lastMetricsAt > METRICS_EVERY_MS) {
         this.lastMetricsAt = now;
-        this.setTraffic({ metrics: sim.getMetrics() });
+        const metrics = live.metrics();
+        if (metrics) this.setTraffic({ metrics, behind: live.behind() });
       }
       this.frameHandle = requestAnimationFrame(frame);
     };
