@@ -332,3 +332,20 @@ as surveyed depths, which keeps the honesty rule used in Underground: a reported
 | D13 | Underground shows a reported depth in the tooltip and keeps the 3D tunnel "depth not mapped" | A press figure is not a surveyed crown level; the honesty rule of the Underground workspace |
 | D14 | Review queue lives in Data catalogue → "Fact updates" | Dataset versions and reviews already live there; same design components |
 | D15 | Ask nothing during the run; every ambiguity becomes a flag on the proposal | The user asked for a service that runs on its own; the human step is review |
+
+## 10. Changes after implementation (2026-11-21)
+
+These points supersede earlier sections where they differ:
+- **GDELT is off by default.** On 2026-11-21 it returned HTTP 429 even at 6–8 s spacing and empty results for Pune queries. It stays available as an opt-in source.
+- **Versions record lineage in `provenance.json`** in each facts-dataset version folder, not in `processing.json`.
+- **Attribution is tightened after the first live run:**
+  - Only the `<article>` text is read (sidebars and footers are dropped).
+  - Article-context attribution applies only when the page names a single project and the sentence is not national or network-wide.
+  - Values from multiple projects or other phases are skipped.
+  - Completion targets for parts of a project (some stations, ramps, phases) are ignored.
+- **The confidence vocabulary matches the seed list:** official / corroborated / single_source / conflicting / unverified, plus `slipped`.
+  - A planned date that has passed and has been replaced by a later one is *slipped*, not *conflicting*.
+  - Two future dates that disagree are *conflicting*.
+- **The seed baseline** (`seed-baseline`) loads `pune_project_facts.json` as the first reviewed version, recorded under the reviewer named at load time.
+- **`add-evidence <url>`** adds a specific article that has left the RSS window, so it can corroborate a claim.
+- **Golden evaluation:** 34 of 60 seed quotes reproduced, 0 wrong values.
