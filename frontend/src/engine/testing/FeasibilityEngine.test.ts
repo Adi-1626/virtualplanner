@@ -119,7 +119,16 @@ describe('known vs unknown constraints', () => {
     expect(close.plan.flags.some(f => f.ruleId === 'R06' && f.severity === 'critical')).toBe(true);
     const far = assessFeasibility(proposal('flyover', 'elevated'), site({ metro: [metro(800)] }), []);
     expect(rule(far, 'R06').result).toBe(false);
-    expect(rule(far, 'R07').result).toBe(false);
+    expect(far.plan.ruleResults.some(r => r.id === 'R07')).toBe(false);   // retired: the 500 m metro planning area has no official figure
+  });
+
+  it('the metro NOC rule cites official sources only (UDCPR 14.2.1.7 + Maha-Metro notice), no news', () => {
+    const close = assessFeasibility(proposal('flyover', 'elevated'), site({ metro: [metro(15)] }), []);
+    const ids = close.plan.sources.map(s => s.id);
+    expect(ids).toEqual(expect.arrayContaining(['S9', 'S28']));
+    for (const s of close.plan.sources) expect(`${s.title} ${s.url ?? ''}`).not.toMatch(/indianexpress|indian express|hindustan ?times|times ?of ?india|pune ?mirror|punekar|themetrorailguy/i);
+    expect(close.plan.sources.find(s => s.id === 'S9')?.title).toContain('14.2.1.7');
+    expect(close.findings.find(f => f.topic === 'metro')?.statement).not.toMatch(/planning area/);
   });
 
   it('railway crossing is verified from the layer', () => {

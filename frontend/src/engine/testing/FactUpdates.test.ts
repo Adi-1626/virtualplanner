@@ -115,25 +115,35 @@ describe('Fact updates review card', () => {
   });
 });
 
-describe('Underground: reviewed published depth in the metro tooltip', () => {
+describe('Underground: reviewed published depth in the metro tooltip (official sources only)', () => {
+  // SYNTHETIC publishers. Tier 1 = the authority's own page/document; tier 2 = press.
+  const official = { url: 'u0', publisher: 'SYNTHETIC Metro authority', tier: 1, published_at: '2026-08-21', quote: 'q' };
+  const press = (n: number) => ({ url: `u${n}`, publisher: `SYNTHETIC press ${n}`, tier: 2, published_at: '2026-11-04', quote: 'q' });
   const fact: Fact = {
     project_id: 'pune_metro_line_1b_swargate_katraj', project_name: 'Line 1B', project_kind: 'metro_underground', osm_name_patterns: ['katraj'],
     attribute: 'tunnel_depth_m', attribute_label: 'Tunnel depth below ground', value_num: 28, value_text: null, unit: 'm', qualifier: 'approx',
-    temporal: 'planned', label: '~28 m', confidence: 'corroborated', proposal_id: 'fup_1', certainty: 'reported', suitability: 'screening',
-    evidence: [{ url: 'u1', publisher: 'Hindustan Times', tier: 2, published_at: '2026-08-21', quote: 'q' }, { url: 'u2', publisher: 'Punekar News', tier: 2, published_at: '2026-11-04', quote: 'q' }],
+    temporal: 'planned', label: '~28 m', confidence: 'official', proposal_id: 'fup_1', certainty: 'reported', suitability: 'screening',
+    evidence: [official, press(1)],
   };
+  const pressOnly: Fact = { ...fact, confidence: 'corroborated', evidence: [press(1), press(2)] };
   const line = { id: 'm1', type: 'metro_line', name: 'Swargate - Katraj (under construction)', elevation: -6, coordinates: [[73.86, 18.5, 0], [73.86, 18.45, 0]], tags: { tunnel: 'yes' }, status: 'under_construction' } as unknown as CityObject;
   const other = { ...line, id: 'm2', name: 'Purple Line: PCMC - Swargate' } as unknown as CityObject;
 
-  it('matches by the project OSM name patterns and words it as reported, not surveyed', () => {
+  it('matches by the project OSM name patterns, names only the official source and words it as reported, not surveyed', () => {
     expect(reportedDepthFor(line, [fact])).toBe(fact);
     expect(reportedDepthFor(other, [fact])).toBeNull();
-    expect(reportedDepthText(fact)).toBe('reported ~28 m below ground (Hindustan Times 2026-08-21, Punekar News 2026-11-04 · 2 independent outlets · not surveyed)');
+    expect(reportedDepthText(fact)).toBe('reported ~28 m below ground (SYNTHETIC Metro authority 2026-08-21 · official source · not surveyed)');
+    expect(reportedDepthText(fact)).not.toContain('press');
+  });
+
+  it('a fact backed only by press reports is never shown (no news-based facts)', () => {
+    expect(reportedDepthFor(line, [pressOnly])).toBeNull();
+    expect(objectTip(line, { unmappedMetro: () => ({ inferred: false }), reportedDepth: o => (reportedDepthFor(o, [pressOnly]) ? 'x' : null) })?.depth).toBe(DEPTH_NOT_MAPPED);
   });
 
   it('tooltip keeps "Depth not mapped" and adds the reported figure only for an unmapped tunnel', () => {
     const tip = objectTip(line, { unmappedMetro: () => ({ inferred: false }), reportedDepth: o => (reportedDepthFor(o, [fact]) ? reportedDepthText(fact) : null) });
-    expect(tip?.depth).toBe(`${DEPTH_NOT_MAPPED} in OSM · reported ~28 m below ground (Hindustan Times 2026-08-21, Punekar News 2026-11-04 · 2 independent outlets · not surveyed)`);
+    expect(tip?.depth).toBe(`${DEPTH_NOT_MAPPED} in OSM · reported ~28 m below ground (SYNTHETIC Metro authority 2026-08-21 · official source · not surveyed)`);
     const plain = objectTip(other, { unmappedMetro: () => ({ inferred: false }), reportedDepth: o => (reportedDepthFor(o, [fact]) ? 'x' : null) });
     expect(plain?.depth).toBe(DEPTH_NOT_MAPPED);
     const elevated = objectTip({ ...line, elevation: 12, tags: {} } as unknown as CityObject, { unmappedMetro: () => null, reportedDepth: () => 'x' });
@@ -143,9 +153,9 @@ describe('Underground: reviewed published depth in the metro tooltip', () => {
   it('the real OSM Purple Line tunnel matches the Line 1 fact (watch-list patterns)', () => {
     const purple = { ...line, id: 'w586112436', name: 'Pune Metro Line 1: Purple Line', tags: { tunnel: 'yes', layer: '-2' } } as unknown as CityObject;
     const f1: Fact = { ...fact, project_id: 'pune_metro_line_1_purple', osm_name_patterns: ['purple', 'pcmc.*swargate', 'swargate.*pcmc', 'line 1\\b'],
-      qualifier: 'max', label: 'up to 30 m', confidence: 'single_source', evidence: [{ url: 'u', publisher: 'Hindustan Times', tier: 2, published_at: '2019-12-24', quote: 'q' }] };
+      qualifier: 'max', label: 'up to 30 m', evidence: [{ ...official, published_at: '2019-12-24' }] };
     expect(reportedDepthFor(purple, [fact, f1])).toBe(f1);
-    expect(reportedDepthText(f1)).toBe('reported up to 30 m below ground (Hindustan Times 2019-12-24 · single source · not surveyed)');
+    expect(reportedDepthText(f1)).toBe('reported up to 30 m below ground (SYNTHETIC Metro authority 2019-12-24 · official source · not surveyed)');
     expect(reportedDepthFor({ ...purple, name: 'Pune Metro Line 2: Aqua Line' } as unknown as CityObject, [fact, f1])).toBeNull();
   });
 

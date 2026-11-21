@@ -2,9 +2,11 @@
  * Reviewed published facts (data-freshness service, /api/updater/facts) used by Underground.
  *
  * OpenStreetMap never maps a metro tunnel's depth, so an underground line stays "Depth not mapped". When a reviewer has
- * approved a published tunnel depth for the project (e.g. Swargate–Katraj "around 28 metres below ground level",
- * Hindustan Times + Punekar News), the hover tooltip adds it as a REPORTED figure with its sources. It is never used to
- * draw the tunnel at that depth: a press or authority figure is not a surveyed crown level (UNDERGROUND_WORKSPACE.md).
+ * approved a published tunnel depth for the project AND at least one of its sources is an official one (tier 1: the
+ * authority's own page or document), the hover tooltip adds it as a REPORTED figure naming the official source(s). Press
+ * evidence is never shown in the app (user rule 2026-11-21: no news-based facts, official sources only): a fact backed
+ * only by press reports is not shown, and press sources of an official fact are not listed. The figure is never used to
+ * draw the tunnel at that depth: an authority figure is not a surveyed crown level (UNDERGROUND_WORKSPACE.md).
  *
  * Matching: a fact's project carries `osm_name_patterns` (watch-list); the metro object's name, ref and OSM name tags
  * are tested against them (case-insensitive).
@@ -31,22 +33,24 @@ function matches(names: string, patterns: string[]): boolean {
   });
 }
 
-/** The approved tunnel-depth fact for this metro line / station, or null. */
+/** Only official (tier 1) evidence may be shown in the app; press (tier 2) and other (tier 3) sources never are. */
+export const officialEvidence = (f: Fact): Fact['evidence'] => f.evidence.filter(e => e.tier === 1);
+export const hasOfficialSource = (f: Fact): boolean => officialEvidence(f).length > 0;
+
+/** The approved tunnel-depth fact for this metro line / station backed by an official source, or null. */
 export function reportedDepthFor(o: CityObject, facts: readonly Fact[]): Fact | null {
   if (o.type !== 'metro_line' && o.type !== 'metro_station') return null;
   const names = metroNames(o);
   if (!names) return null;
-  return facts.find(f => f.attribute === 'tunnel_depth_m' && f.osm_name_patterns?.length && matches(names, f.osm_name_patterns)) ?? null;
+  return facts.find(f => f.attribute === 'tunnel_depth_m' && hasOfficialSource(f) && f.osm_name_patterns?.length && matches(names, f.osm_name_patterns)) ?? null;
 }
 
-const CONF: Record<string, string> = { official: 'official source', corroborated: '2 independent outlets', single_source: 'single source', conflicting: 'sources disagree' };
-
-/** "reported ~28 m below ground (Hindustan Times 2026-08-21, Punekar News 2026-11-04 · 2 independent outlets · not surveyed)" */
+/** "reported ~28 m below ground (Maha-Metro 2026-08-21 · official source · not surveyed)" — official sources only. */
 export function reportedDepthText(f: Fact): string {
-  const srcs = f.evidence.slice(0, 2).map(e => `${e.publisher}${e.published_at ? ` ${e.published_at.slice(0, 10)}` : ''}`).join(', ');
-  const more = f.evidence.length > 2 ? ` +${f.evidence.length - 2}` : '';
-  const conf = f.confidence ? CONF[f.confidence] ?? f.confidence : null;
-  return `reported ${f.label} below ground (${srcs}${more}${conf ? ` · ${conf}` : ''} · not surveyed)`;
+  const ev = officialEvidence(f);
+  const srcs = ev.slice(0, 2).map(e => `${e.publisher}${e.published_at ? ` ${e.published_at.slice(0, 10)}` : ''}`).join(', ');
+  const more = ev.length > 2 ? ` +${ev.length - 2}` : '';
+  return `reported ${f.label} below ground (${srcs}${more} · official source${ev.length > 1 ? 's' : ''} · not surveyed)`;
 }
 
 // ── session cache (the tooltip resolves synchronously) ────────────────────────────────────────────────────────────────

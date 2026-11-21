@@ -217,19 +217,11 @@
     "metroNocM": {
       "value": 20,
       "unit": "m",
-      "basis": "authority_statement",
-      "note": "Pune Metro public statement (Apr 2026) as reported; confirm with MahaMetro",
+      "basis": "statutory",
+      "note": "UDCPR 2020 cl. 14.2.1.7: the Planning Authority seeks prior NOC from the Metro Railway Authority for development within 20 m on either side of the edge of the Metro Rail; Maha-Metro public notice 15.04.2026 applies it to construction, excavation, geotechnical investigation, borewells and utility laying near viaducts, stations and tunnels. Measured here from the mapped centreline, not the structure edge.",
       "sourceRefs": [
-        "S9"
-      ]
-    },
-    "metroPlanningAuthorityM": {
-      "value": 500,
-      "unit": "m",
-      "basis": "authority_statement",
-      "note": "Reported metro planning-authority extent either side of route; confirm",
-      "sourceRefs": [
-        "S9"
+        "S9",
+        "S28"
       ]
     },
     "waterProximityM": {
@@ -577,36 +569,18 @@
         "Geotechnical engineer"
       ],
       "standards": [
-        "Metro Railways (Construction of Works) Act 1978 and UDCPR provisions as cited by MahaMetro to identify and verify"
+        "Metro Railways (Construction of Works) Act 1978, ss. 19(f), 19(g) and 20 (as cited in the Maha-Metro public notice 15.04.2026)",
+        "UDCPR 2020 cl. 14.2.1.7"
       ],
       "authorities": [
         "MahaMetro (Pune Metro) planning department",
         "PMRDA / Line 3 concessionaire for Line 3 to identify and verify"
       ],
       "sourceRefs": [
-        "S9"
+        "S9",
+        "S28"
       ],
       "id": "metro_interface"
-    },
-    "metro_planning_check": {
-      "name": "Metro planning-authority check",
-      "methods": [
-        "Confirm whether the site is within the metro planning-authority area (reported 500 m either side) and what permissions apply"
-      ],
-      "deliverables": [
-        "Written confirmation from MahaMetro"
-      ],
-      "disciplines": [
-        "Town planner"
-      ],
-      "standards": [],
-      "authorities": [
-        "MahaMetro to identify and verify"
-      ],
-      "sourceRefs": [
-        "S9"
-      ],
-      "id": "metro_planning_check"
     },
     "hydrology_hydraulics": {
       "name": "Hydrology and hydraulic study",
@@ -1138,46 +1112,12 @@
       "flags": [
         {
           "severity": "critical",
-          "text": "MahaMetro NOC needed before any works, including boreholes/geotechnical study and utility laying (as reported Apr 2026). Sequence: metro NOC -> investigation -> design."
+          "text": "Maha-Metro NOC needed before any works within 20 m of a metro structure, including geotechnical investigations/boreholes, excavation and utility laying (UDCPR 2020 cl. 14.2.1.7; Maha-Metro public notice 15.04.2026). Sequence: metro NOC -> investigation -> design."
         }
       ],
       "sourceRefs": [
-        "S9"
-      ],
-      "defaultCertainty": "requires_field_investigation"
-    },
-    {
-      "id": "R07",
-      "title": "Within metro planning-authority area",
-      "proposalTypes": [
-        "junction_redesign",
-        "road_widening",
-        "additional_lane",
-        "new_road",
-        "bridge",
-        "flyover",
-        "underpass",
-        "elevated_corridor",
-        "interchange",
-        "ramp_link",
-        "tunnel",
-        "underground_road"
-      ],
-      "when": {
-        "all": [
-          {
-            "attr": "distanceToMetroM",
-            "op": "lte",
-            "threshold": "metroPlanningAuthorityM"
-          }
-        ]
-      },
-      "require": [
-        "metro_planning_check"
-      ],
-      "flags": [],
-      "sourceRefs": [
-        "S9"
+        "S9",
+        "S28"
       ],
       "defaultCertainty": "requires_field_investigation"
     },
@@ -1809,8 +1749,8 @@
       "evidence": "SECONDARY"
     },
     "S9": {
-      "title": "Indian Express 17 Apr 2026: Pune Metro NOC required within 20 m of elevated/underground route incl. geotechnical study, borewells, utilities; metro planning authority 500 m",
-      "url": "https://indianexpress.com/article/cities/pune/noc-mandatory-pune-metro-warns-of-action-over-borewell-drilling-near-tunnels-10641841/",
+      "title": "UDCPR 2020 cl. 14.2.1.7 (Govt of Maharashtra, Urban Development Dept; consolidated text updated to 30.01.2024, printed p. 268 / PDF p. 284): NOC from the Metro Railway Authority for development within 20 m on either side of the edge of the Metro Rail",
+      "url": "https://cdnbbsr.s3waas.gov.in/s3524e7ce0a1c6e07eab12cfa2ff7d8865/uploads/2025/09/20250929387489217.pdf",
       "evidence": "READ"
     },
     "S10": {
@@ -1877,6 +1817,18 @@
       "title": "IRC:SP:90-2023 grade separators; IRC:92-2017 interchanges; IRC:6-2017; IRC:78 Part 1-2024 / Part 2-2020",
       "url": "https://law.resource.org/pub/in/bis/irc/irc.gov.in.sp.142.2024.pdf",
       "evidence": "EXCERPT"
+    },
+    "S28": {
+      "title": "Maha-Metro (Pune Metro Rail Project) Public Notice No. Maha Metro/Pune/Plng/NOC/9549/2026 dated 15.04.2026: prior approval/NOC within 20 m on either side of Metro structures (viaducts, piers, stations, tunnels) for construction, excavation, geotechnical investigations, borewells, utility laying",
+      "url": "https://punemetrorail.org/download/PUBLIC-NOTICE-ENGLISH.pdf",
+      "evidence": "READ"
     }
-  }
+  },
+  "retired": [
+    {
+      "id": "R07",
+      "was": "Within metro planning-authority area (500 m either side of the route) -> metro_planning_check",
+      "why": "No official figure. The 500 m came from a press report, not an official source. The official UDCPR 2020 has a TOD zone of 500 m around a proposed metro station boundary in PMC (cl. 14.2.1.1(i)) and a 500 m Nagpur Metro Rail Corridor (cl. 14.2.3), neither of which is a 500 m metro planning area either side of a Pune route. Retired 2026-11-21 (user rule: official sources only)."
+    }
+  ]
 }

@@ -16,15 +16,24 @@ from .models import ClearanceRuleEntity, EnvironmentLayerEntity
 SEED_ACTOR = "system (seed)"
 
 METRO_KINDS = "metro,metro_tunnel,metro_viaduct,metro_station"
-# Official source only (user rule 2026-11-21: no news-based facts). UDCPR 2020 cl. 14.2.1.7 (Urban Development Dept, Govt of
-# Maharashtra; consolidated text published by the Directorate of Town Planning, as amended to 30.01.2025, p. 269).
-_S9 = ("UDCPR 2020 cl. 14.2.1.7 (Govt of Maharashtra, Urban Development Dept; consolidated text, Directorate of Town Planning, "
-       "as amended to 30.01.2025, p. 269): for development within 20 m on either side of the edge of the Metro Rail the Planning "
-       "Authority seeks prior NOC from the Metro Railway Authority under the Metro Railways (Construction of Works) Act, 1978. "
-       "https://dtp.maharashtra.gov.in/wp-content/uploads/2025/01/UDCPR%20Updated%2030.01.25%20with%20earlier%20provisions%20&%20corrections_compressed.pdf "
-       "(clause text read via https://citiwise.in/udcpr/14-2-1-7, 2026-11-21; the official PDF itself not opened in this session).")
-# Citations seeded earlier that are not official sources; replaced on start-up when the row still carries them unchanged.
-_RETIRED_CITATIONS = {"metro_noc_20m": ("Indian Express",)}
+# Official sources only (user rule 2026-11-21: no news-based facts). Both documents were opened and read on 2026-11-21:
+# - UDCPR 2020 cl. 14.2.1.7, Govt of Maharashtra Urban Development Dept, consolidated text "updated up to 30.01.2024", printed
+#   p. 268 (PDF p. 284), linked from urban.maharashtra.gov.in (dtp.maharashtra.gov.in did not respond that day);
+# - Maha-Metro (Pune Metro Rail Project) Public Notice No. Maha Metro/Pune/Plng/NOC/9549/2026 dated 15.04.2026.
+_S9 = ("UDCPR 2020 cl. 14.2.1.7 (Govt of Maharashtra, Urban Development Dept; consolidated text updated to 30.01.2024, printed "
+       "p. 268): \"In case of development or redevelopment … from the edge of the Metro Rail, within 20 mt. distance on its either "
+       "side, the concerned Planning Authority before granting such permission … shall seek prior NOC from the concerned Metro "
+       "Railway Authority as required under the Metro Railways (Construction of Works) Act, 1978\". "
+       "https://cdnbbsr.s3waas.gov.in/s3524e7ce0a1c6e07eab12cfa2ff7d8865/uploads/2025/09/20250929387489217.pdf (READ 2026-11-21). "
+       "Applied by Maha-Metro Public Notice No. Maha Metro/Pune/Plng/NOC/9549/2026 (15.04.2026) to construction, excavation, "
+       "geotechnical investigations, borewells and utility laying within 20 m of viaducts, piers, stations and tunnels: "
+       "https://punemetrorail.org/download/PUBLIC-NOTICE-ENGLISH.pdf (READ 2026-11-21).")
+# Citations seeded earlier that are not official sources, or whose official text had not been opened; replaced on start-up
+# when the row still carries them unchanged.
+_RETIRED_CITATIONS = {"metro_noc_20m": (
+    "Indian Express",  # retired-news-marker: an old seeded citation to replace, never shown
+    "UDCPR 2020 cl. 14.2.1.7 (Govt of Maharashtra, Urban Development Dept; consolidated text, Directorate of Town Planning",
+)}
 _AMASR = ("AMASR Act 1958 as amended 2010, s.20A (prohibited area 100 m) and s.20B (regulated area, a further 200 m, i.e. 100–300 m) — "
           "NMA FAQ https://nma.gov.in/show_content.php?lang=1&level=0&lid=9&ls_id=14&nma_type=0 (NMA, updated 24 Feb 2025, READ); "
           "Act text https://prsindia.org/files/bills_acts/acts_parliament/2010/ancient-monuments-and-archaeological-sites-and-remains-act-2010.pdf "

@@ -229,6 +229,16 @@ def test_metro_noc_rule_cites_the_official_regulation_not_news(client):
         db.commit()
         assert db.get(ClearanceRuleEntity, "metro_noc_20m").citation.startswith("UDCPR 2020")
         assert db.get(ClearanceRuleEntity, "metro_noc_20m").horizontal_m == 20.0
+        # the earlier UDCPR citation (read through a third-party mirror, official PDF not opened) is replaced as well
+        row = db.get(ClearanceRuleEntity, "metro_noc_20m")
+        row.citation = ("UDCPR 2020 cl. 14.2.1.7 (Govt of Maharashtra, Urban Development Dept; consolidated text, Directorate of Town "
+                        "Planning, as amended to 30.01.2025, p. 269) … (clause text read via https://citiwise.in/udcpr/14-2-1-7)")
+        db.commit()
+        _seed(db)
+        db.commit()
+        cit = db.get(ClearanceRuleEntity, "metro_noc_20m").citation
+        assert "citiwise" not in cit and "printed p. 268" in cit
+        assert "punemetrorail.org/download/PUBLIC-NOTICE-ENGLISH.pdf" in cit and "READ 2026-11-21" in cit
 
 
 @pytest.mark.parametrize("n", [12])

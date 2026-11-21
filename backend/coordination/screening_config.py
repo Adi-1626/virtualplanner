@@ -31,7 +31,7 @@ CPHEEO_W = "CPHEEO Manual on Water Supply & Treatment Systems, Part A (Mar 2024)
 IRC98 = "IRC:98-2024 DRAFT (Accommodation of Utility Services on Roads in Urban Areas; IRC:98-2011 is the published edition)"
 IS1255 = "IS 1255:1983 Installation and maintenance of power cables up to 33 kV"
 T4S = "PNGRB CGD T4S Regulations (consolidated 23-12-2024)"
-UDCPR = "UDCPR 2020 cl. 14.2.1.7 (Metro NOC) + Pune Metro public notice [notice UNVERIFIED]"
+UDCPR = "UDCPR 2020 cl. 14.2.1.7 (Metro NOC, 20 m from the edge of the Metro Rail) + Maha-Metro Public Notice 9549/2026 (15.04.2026), both read 2026-11-21"
 DPR = "Maha-Metro Swargate–Katraj Revised Final DPR (21-12-2022)"
 
 RULES: list[dict[str, Any]] = [
