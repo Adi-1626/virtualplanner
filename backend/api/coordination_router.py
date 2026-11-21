@@ -16,7 +16,7 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from coordination import geometry as G
@@ -30,7 +30,7 @@ from coordination.seed import live_status
 from database.connection import get_db
 from datasets.public_text import public_path, redact_paths
 from feasibility.models import FeasibilityAssessmentEntity
-from models.models import ScenarioEntity, ScenarioRunEntity, ScenarioVersionEntity
+from models.models import AreaEntity, ScenarioEntity, ScenarioRunEntity, ScenarioVersionEntity
 from planning.audit import acting_as
 from planning.models import PlanningProjectLinkEntity
 
@@ -495,23 +495,104 @@ def _latest_runs(db: Session) -> dict[str, CoordinationRunEntity]:
     return out
 
 
+def _dedupe_findings(rows: list, latest: dict) -> tuple[list, dict, int]:
+    """When both projects ran the check, the same pair appears in each one's latest run (the pair key is symmetric for
+    project-element pairs). Keep it once, from the newer run (detection carries an earlier response forward); when a person
+    responded on the older copy after the newer run was made, that response is shown (overlay). Returns (rows, overlay, merged)."""
+    run_at = {r.id: r.created_at for r in latest.values()}
+    rows = sorted(rows, key=lambda c: run_at.get(c.run_id) or datetime.datetime.min, reverse=True)
+    seen: dict[str, CoordinationConflictEntity] = {}
+    overlay: dict[str, CoordinationConflictEntity] = {}
+    uniq = []
+    for c in rows:
+        k = seen.get(c.pair_key)
+        if k is None:
+            seen[c.pair_key] = c
+            uniq.append(c)
+        elif (c.conflict_class == k.conflict_class and c.status_at is not None
+              and (k.status_at is None or c.status_at > k.status_at)
+              and (overlay.get(k.id) is None or c.status_at > overlay[k.id].status_at)):
+            overlay[k.id] = c
+    return uniq, overlay, len(rows) - len(uniq)
+
+
+def _status_of(c: CoordinationConflictEntity, overlay: dict) -> str:
+    o = overlay.get(c.id)
+    return o.status if o is not None else c.status
+
+
 @router.get("/projects/{pid}/conflicts")
 def project_conflicts(pid: str, include_clear: bool = False, db: Session = Depends(get_db)):
-    """Issues visible to BOTH projects: findings of every project's latest run where this project is side A or side B."""
+    """Issues visible to BOTH projects: findings of every project's latest run where this project is side A or side B,
+    one row per pair (see _dedupe_findings)."""
     _project(db, pid)
     latest = _latest_runs(db)
     run_ids = [r.id for r in latest.values()]
     q = db.query(CoordinationConflictEntity).filter(CoordinationConflictEntity.run_id.in_(run_ids),
                                                     or_(CoordinationConflictEntity.project_a_id == pid, CoordinationConflictEntity.project_b_id == pid))
-    rows = q.order_by(CoordinationConflictEntity.created_at).all()
+    rows, overlay, merged = _dedupe_findings(q.all(), latest)
     if not include_clear:
         rows = [c for c in rows if c.conflict_class != "no_conflict_within_available_data" or _load(c.permission_triggers_json, [])]
-    stale = {r.id: S.stale_coordination_run(db, r) for r in latest.values() if r.id in {c.run_id for c in rows}}
+    cache: dict = {}
+    stale = {r.id: S.stale_coordination_run(db, r, cache) for r in latest.values() if r.id in {c.run_id for c in rows}}
     rows.sort(key=lambda c: (G.SEVERITY.get(c.conflict_class, 9), c.horizontal_distance_m if c.horizontal_distance_m is not None else 1e9))
-    return {"project_id": pid, "issues": [{**_conflict_dict(c), "raised_by_project": c.project_a_id,
+
+    def _with_overlay(c: CoordinationConflictEntity) -> dict:
+        d = _conflict_dict(c)
+        o = overlay.get(c.id)
+        if o is not None:
+            d.update({"status": o.status, "status_by": o.status_by, "status_note": o.status_note, "status_at": _iso(o.status_at),
+                      "status_from_finding": o.id})
+        return d
+
+    return {"project_id": pid, "issues": [{**_with_overlay(c), "raised_by_project": c.project_a_id,
                                            "other_project": c.project_b_id if c.project_a_id == pid else c.project_a_id,
                                            "run_stale": stale.get(c.run_id)} for c in rows],
+            "duplicates_merged": merged,
             "note": "Findings never edit either project. 'No conflict within available data' is not proof of no conflict."}
+
+
+ACTIONABLE_CLASSES = ("conflict", "potential_conflict")
+
+
+@router.get("/projects-summary")
+def projects_summary(db: Session = Depends(get_db)):
+    """One call for the project list and Reports: per project its alternatives, proposal elements, study area, open
+    actionable findings (conflict / potential conflict with status open, de-duplicated as in /conflicts), whether any
+    conflict check involves it, and its latest check with a stale verdict (computed once per run, shared hashes)."""
+    from planning.models import PlanningProjectEntity
+    projects = db.query(PlanningProjectEntity).order_by(PlanningProjectEntity.created_at.desc()).all()
+    links = db.query(PlanningProjectLinkEntity.project_id, PlanningProjectLinkEntity.entity_type, func.count(PlanningProjectLinkEntity.id)) \
+        .group_by(PlanningProjectLinkEntity.project_id, PlanningProjectLinkEntity.entity_type).all()
+    n_links: dict[str, dict[str, int]] = {}
+    for pid_, t, n in links:
+        n_links.setdefault(pid_, {})[t] = n
+    n_el = dict(db.query(ProposalElementEntity.project_id, func.count(ProposalElementEntity.id)).group_by(ProposalElementEntity.project_id).all())
+    areas = {a.id: a.name for a in db.query(AreaEntity)}
+    latest = _latest_runs(db)
+    rows = db.query(CoordinationConflictEntity).filter(CoordinationConflictEntity.run_id.in_([r.id for r in latest.values()]),
+                                                       CoordinationConflictEntity.conflict_class.in_(ACTIONABLE_CLASSES)).all() if latest else []
+    rows, overlay, _ = _dedupe_findings(rows, latest)
+    involved: set[str] = set(latest)
+    open_n: dict[str, int] = {}
+    for c in rows:
+        for side in {c.project_a_id, c.project_b_id} - {None}:
+            involved.add(side)
+            if _status_of(c, overlay) == "open":
+                open_n[side] = open_n.get(side, 0) + 1
+    for (pa, pb) in db.query(CoordinationConflictEntity.project_a_id, CoordinationConflictEntity.project_b_id) \
+            .filter(CoordinationConflictEntity.run_id.in_([r.id for r in latest.values()]), CoordinationConflictEntity.project_b_id.isnot(None)).distinct():
+        involved.update({pa, pb})
+    cache: dict = {}
+    out = []
+    for p in projects:
+        r = latest.get(p.id)
+        out.append({"id": p.id, "name": p.name, "status": p.status, "created_by": p.created_by, "created_at": _iso(p.created_at),
+                    "area": areas.get(p.area_id) if p.area_id else None, "has_bbox": p.min_lon is not None,
+                    "alternatives": n_links.get(p.id, {}).get("scenario", 0), "links": sum(n_links.get(p.id, {}).values()),
+                    "elements": n_el.get(p.id, 0), "checked": p.id in involved, "open_conflicts": open_n.get(p.id, 0) if p.id in involved else None,
+                    "last_check": None if r is None else {"id": r.id, "created_at": _iso(r.created_at), **S.stale_coordination_run(db, r, cache)}})
+    return {"projects": out, "note": "open_conflicts is null when no conflict check involves the project (not checked, not 0)."}
 
 
 CONFLICT_EXPORT_DISCLAIMER = ("Coordination screening findings from records in this tool. Not an engineering assessment, statutory approval, "

@@ -265,8 +265,9 @@ def build_model(db: Session, p: PlanningProjectEntity, now: datetime.datetime | 
     cnt = Counter((e.entity_type, e.action) for e in ev)
     S.append([Block("note", text="From the append-only audit log (entries cannot be updated or deleted; before/after are sha256 of the row's values)."),
               Block("table", header=["Entity", "Action", "Events"], rows=[[t, a, str(n)] for (t, a), n in sorted(cnt.items())]),
-              Block("para", text="Latest 25 events:"),
-              Block("table", header=["When (UTC)", "Actor", "Action", "Entity", "Label"], rows=[[_iso(e.at), f"{e.actor} [{e.actor_source}]", e.action, f"{e.entity_type} {e.entity_id}", e.label] for e in ev[:25]])])
+              Block("para", text="Latest 25 events (finding rows written by conflict checks are counted above, not listed):"),
+              Block("table", header=["When (UTC)", "Actor", "Action", "Entity", "Label"], rows=[[_iso(e.at), f"{e.actor} [{e.actor_source}]", e.action, f"{e.entity_type} {e.entity_id}", e.label]
+                                                                                       for e in [x for x in ev if not (x.entity_type == "coordination_conflict" and x.action == "create")][:25]])])
 
     assert len(S) == len(SECTION_TITLES)
     return DocModel(title=f"Planning project report - {p.name}", subtitle=f"Project {p.id} | status {PROJECT_STATUS_LABEL.get(p.status, p.status)} | generated {generated}",

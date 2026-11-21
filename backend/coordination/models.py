@@ -35,7 +35,8 @@ RULE_BASES = ("cited_permission_distance", "user_entered")
 QUALITY_LEVELS = ("QL-A", "QL-B", "QL-C", "QL-D")
 ENV_DOMAINS = ("flood", "groundwater", "soil", "geology", "air", "noise", "heat", "vegetation", "water", "heritage",
                "drainage", "seismic", "terrain", "metro", "railway")
-ENGINE_VERSION = "coordination-engine 1.2 (2026-11-15: + objects drawn in Design; 1.1: building footprints, PMC sewer / storm-drain records)"
+ENGINE_VERSION = ("coordination-engine 1.3 (2026-11-21: drawn objects of attached alternatives; OSM metro imported by a study area counted once; "
+                  "1.2: + objects drawn in Design; 1.1: building footprints, PMC sewer / storm-drain records)")
 
 
 def _now() -> datetime.datetime:
