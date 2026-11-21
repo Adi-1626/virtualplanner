@@ -160,6 +160,13 @@ def test_multi_project_sentence_goes_to_nearest_alias():
         ("pune_metro_line_2a_2b_chandani_chowk_wagholi", 1.12), ("pune_metro_line_2a_2b_chandani_chowk_wagholi", 11.63)}
 
 
+def test_ambiguous_and_other_phase_values_are_skipped():
+    P = cfgmod.load()["projects"]
+    s1 = "ITD Cementation was declared the lowest bidder for Pune Metro Purple Line's 5.46 km extension from Swargate to Katraj."
+    s2 = "The Swargate-Katraj section will function as a natural extension of Phase 1's 3.3 km District Court-Swargate underground section."
+    assert [c for c in extract_page([s1, s2], "", P, None) if c.attribute == "length_km"] == []
+
+
 # ── corroboration rules ───────────────────────────────────────────────────────────────────────────────────────────────
 class C:
     def __init__(self, q="a", llm=False, cites=False):

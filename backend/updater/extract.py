@@ -390,8 +390,13 @@ def projects_in(ns: str, projects: list[dict]) -> set[str]:
 
 
 def _nearest_project(spans: list[tuple[int, int, str]], pos: int) -> str | None:
+    """Several projects in one sentence: the value goes to the alias just before it — unless a DIFFERENT project is
+    named after it too ("Purple Line's 5.46 km extension from Swargate to Katraj"), which is ambiguous: no claim."""
     before = [s for s in spans if s[1] <= pos]
+    after_ids = {s[2] for s in spans if s[0] >= pos}
     if before:
+        if after_ids - {before[-1][2]}:
+            return None
         return before[-1][2]
     after = [s for s in spans if s[0] >= pos]
     ids = {s[2] for s in after}
@@ -427,6 +432,9 @@ def extract_page(paragraphs: list[str], title: str, projects: list[dict], publis
                     if here:
                         pid = _nearest_project(spans, pos) if len(here) > 1 else next(iter(here))
                         how = "sentence"
+                        last = max((x for x in spans if x[1] <= pos and x[2] == pid), default=None, key=lambda x: x[1])
+                        if last and OTHER_PHASE.search(ns[last[1]:pos]):
+                            continue      # "Swargate–Katraj … extension of Phase 1's 3.3 km section": the value is Phase 1's
                     elif len(subjects) == 1 and REFERS_BACK.search(ns):
                         # "the project / the line / the TBMs": the one project the previous sentences were about (a
                         # sentence's subject = the first project it names)

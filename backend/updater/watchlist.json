@@ -644,13 +644,13 @@
     {
       "id": "gdelt",
       "kind": "gdelt",
-      "enabled": true,
+      "enabled": false,
       "tier": 3,
       "publisher": "GDELT Project (discovery only)",
       "url": "https://api.gdeltproject.org/api/v2/doc/doc",
       "delay_s": 6.0,
       "timespan": "6months",
-      "note": "Discovery only: finds article URLs; the tier of each article comes from its own domain (publishers below). Licence: unlimited use with citation to https://www.gdeltproject.org/."
+      "note": "Optional, off by default. Licence: unlimited use with citation to https://www.gdeltproject.org/. Live check 2026-11-21 from the sandbox: HTTP 429 ('one every 5 seconds') even at 6-8 s spacing, and an empty result for \"Swargate\" Katraj metro — too unreliable for Pune local news to be a default."
     },
     {
       "id": "google_cse",
