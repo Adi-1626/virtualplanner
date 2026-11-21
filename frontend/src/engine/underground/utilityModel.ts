@@ -23,6 +23,7 @@
 import type { Certainty } from '../objects/certainty';
 import type { UndergroundAlignmentObject, UtilityObject, UtilityType } from '../objects/types';
 import { chainages, worstCertainty } from './alignmentGeometry';
+import { controlsOf, depthsFromControls } from './depthControls';
 
 export type UtilityZRef = 'top' | 'centre' | 'invert';
 /** Lifecycle status (line style). 'unknown' only for utilities saved before status was recorded on the base city. */
@@ -147,19 +148,21 @@ export function derivedLegacy(depths: readonly UtilityVertexDepth[], fallbackDep
  * Writes the full Z model onto a utility (new object): per-vertex depths with their derived top-of-pipe depth, zRef,
  * status, evidence, and the derived legacy `depth` / `depthCertainty` / valueCertainty.depth.
  */
-export function withUtilityZ(u: UtilityObject, z: Partial<Pick<UtilityZ, 'zRef' | 'status' | 'evidence' | 'depths'>> & { diameterMm?: number | null } = {}): UtilityObject {
+export function withUtilityZ(
+  u: UtilityObject,
+  z: Partial<Pick<UtilityZ, 'zRef' | 'status' | 'evidence' | 'depths'>> & { diameterMm?: number | null; controls?: readonly UtilityVertexDepth[] } = {},
+): UtilityObject {
   const cur = utilityZ(u);
   const zRef = z.zRef ?? cur.zRef;
   const diameterMm = 'diameterMm' in z ? (ok(z.diameterMm) && (z.diameterMm as number) > 0 ? z.diameterMm as number : null) : (u.diameterMm ?? null);
   const dia = diameterMm !== null ? diameterMm / 1000 : null;
-  const src = z.depths ?? cur.depths;
   // A change of evidence relabels the depths that still carry the old evidence's usual certainty (an existing QL-C
   // pipe's depths are Estimated, not Hypothetical); a certainty set by hand to something else, and defaults, are kept
-  const relabel = !z.depths && z.evidence !== undefined && z.evidence !== cur.evidence
+  const evidenceChange = z.evidence !== undefined && z.evidence !== cur.evidence;
+  const relabelOf = (on: boolean) => (on
     ? (d: UtilityVertexDepth): Certainty => (!d.isDefault && d.certainty === EVIDENCE_DEPTH_CERTAINTY[cur.evidence] ? EVIDENCE_DEPTH_CERTAINTY[z.evidence as UtilityEvidence] : d.certainty)
-    : (d: UtilityVertexDepth): Certainty => d.certainty;
-  const depths: UtilityVertexDepth[] = u.coordinates.map((_, i) => {
-    const s0 = src[i];
+    : (d: UtilityVertexDepth): Certainty => d.certainty);
+  const norm = (s0: UtilityVertexDepth | undefined, relabel: (d: UtilityVertexDepth) => Certainty): UtilityVertexDepth => {
     const d = s0 ? { ...s0, certainty: relabel(s0) } : { depthM: null, certainty: 'unknown' as Certainty };
     // A default is the typical cover to the TOP of the pipe: re-expressed for the stated reference (needs the diameter
     // for centre / invert; without it the top stays Unknown below)
@@ -168,14 +171,53 @@ export function withUtilityZ(u: UtilityObject, z: Partial<Pick<UtilityZ, 'zRef' 
     if (depthM !== d.depthM) { delete next.elevationM; delete next.groundM; delete next.groundModel; delete next.datum; }
     if (depthM === null) delete next.isDefault;
     return next;
-  });
+  };
+  // With `alignment` the typed depths are the PI controls (GEOMETRY_EDITOR_DESIGN.md §3.4): they are normalised the same
+  // way and the per-vertex depths are derived from them by chainage (unknown stays unknown)
+  let depthControls: UtilityVertexDepth[] | undefined;
+  let src: readonly (UtilityVertexDepth | undefined)[] = z.depths ?? cur.depths;
+  let relabelVertices = !z.depths && evidenceChange;
+  if (u.alignment && !z.depths) {
+    const base = z.controls ?? utilityDepthControls(u);
+    if (base) {
+      depthControls = base.map(c => norm(c, relabelOf(!z.controls && evidenceChange)));
+      src = depthsFromControls(u.alignment, u.coordinates, depthControls, 'depthM');
+      relabelVertices = false;
+    }
+  }
+  const relabel = relabelOf(relabelVertices);
+  const depths: UtilityVertexDepth[] = u.coordinates.map((_, i) => norm(src[i], relabel));
   const legacy = derivedLegacy(depths, u.depth);
   return {
     ...u, zRef, status: z.status ?? cur.status, evidence: z.evidence ?? cur.evidence, depths, diameterMm,
+    ...(depthControls ? { depthControls } : {}),
     depth: legacy.depth, depthCertainty: legacy.depthCertainty,
     valueCertainty: { ...(u.valueCertainty ?? {}), depth: legacy.depthCertainty },
     updatedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Depth controls of a utility with `alignment` (one per PI): the stored ones, or read from the per-vertex depths at the
+ * PIs (legacy-model utilities via utilityZ). Null without `alignment`: its depths are edited per vertex.
+ */
+export function utilityDepthControls(u: UtilityObject): (UtilityVertexDepth & { derived?: boolean })[] | null {
+  if (!u.alignment) return null;
+  return controlsOf<UtilityVertexDepth>({ ...u, depths: utilityZ(u).depths }, 'depthM');
+}
+
+/** New object with PI `i`'s depth control changed (typed: no longer a default or derived). */
+export function withUtilityControlDepth(u: UtilityObject, i: number, patch: { depthM?: number | null; certainty?: Certainty }): UtilityObject {
+  const controls = utilityDepthControls(u);
+  if (!controls || i < 0 || i >= controls.length) return u;
+  const next = controls.map(d => ({ ...d }));
+  const cur = next[i];
+  const depthM = 'depthM' in patch ? cleanUtilityDepth(patch.depthM) : cur.depthM;
+  const certainty: Certainty = depthM === null ? 'unknown' : (patch.certainty ?? (cur.certainty === 'unknown' ? 'hypothetical' : cur.certainty));
+  if (depthM === cur.depthM) next[i] = { ...cur, certainty, ...(patch.certainty && patch.certainty !== 'hypothetical' ? { isDefault: false } : {}) };
+  else next[i] = { depthM, certainty };
+  delete (next[i] as { derived?: boolean }).derived;
+  return withUtilityZ(u, { controls: next });
 }
 
 /** New object with vertex `i`'s depth / certainty changed. A typed depth clears the default flag and drops the stale elevation. */
@@ -194,14 +236,18 @@ export function withUtilityVertexDepth(u: UtilityObject, i: number, patch: { dep
 /** New object with every vertex at the same depth (typed: not a default). */
 export function withAllUtilityDepths(u: UtilityObject, depthM: number | null, certainty: Certainty): UtilityObject {
   const d = cleanUtilityDepth(depthM);
-  return withUtilityZ(u, { depths: u.coordinates.map(() => ({ depthM: d, certainty: d === null ? 'unknown' : certainty })) });
+  const entry = (): UtilityVertexDepth => ({ depthM: d, certainty: d === null ? 'unknown' : certainty });
+  if (u.alignment) return withUtilityZ(u, { controls: u.alignment.pis.map(entry) });
+  return withUtilityZ(u, { depths: u.coordinates.map(entry) });
 }
 
 /** Type change: vertices still on the old type's default take the new type's default (typed depths are kept). */
 export function withUtilityType(u: UtilityObject, type: UtilityType): UtilityObject {
+  const toNew = (d: UtilityVertexDepth): UtilityVertexDepth => (d.isDefault ? { depthM: null, certainty: 'hypothetical' as Certainty, isDefault: true } : d);
+  const controls = utilityDepthControls(u);
+  if (controls) return withUtilityZ({ ...u, utilityType: type }, { controls: controls.map(toNew) });
   const z = utilityZ(u);
-  const depths = z.depths.map(d => (d.isDefault ? { depthM: null, certainty: 'hypothetical' as Certainty, isDefault: true } : d));
-  return withUtilityZ({ ...u, utilityType: type }, { depths });
+  return withUtilityZ({ ...u, utilityType: type }, { depths: z.depths.map(toNew) });
 }
 
 /** Depths for a newly drawn line: the typed depth, else the type's typical cover marked as a default. */
@@ -254,12 +300,15 @@ export function utilityExtentAt(u: UtilityObject, chainageM: number): { topM: nu
 }
 
 /** Shallowest / deepest top-of-pipe depth and how many vertex depths are defaults or unknown (for lists). */
-export function utilitySummary(u: UtilityObject): { minTopM: number | null; maxTopM: number | null; defaults: number; unknown: number; z: UtilityZ } {
+export function utilitySummary(u: UtilityObject): { minTopM: number | null; maxTopM: number | null; defaults: number; unknown: number; points: number; z: UtilityZ } {
   const z = utilityZ(u);
   const tops = z.depths.map(d => d.topDepthM).filter(ok);
+  // With `alignment` the entered depths are the PI controls: counts are of those, not of the densified vertices
+  const entered = utilityDepthControls(u) ?? z.depths;
   return {
     minTopM: tops.length ? Math.min(...tops) : null, maxTopM: tops.length ? Math.max(...tops) : null,
-    defaults: z.depths.filter(d => d.isDefault).length, unknown: z.depths.filter(d => d.depthM === null).length, z,
+    defaults: entered.filter(d => d.isDefault).length, unknown: entered.filter(d => d.depthM === null).length,
+    points: entered.length, z,
   };
 }
 

@@ -7,6 +7,7 @@
 import type { Certainty } from '../objects/certainty';
 import type { UndergroundAlignmentKind, UndergroundAlignmentObject, UndergroundLifecycle, UndergroundSection, UndergroundVertexDepth } from '../objects/types';
 import { ALIGNMENT_KIND_LABEL } from './alignmentGeometry';
+import { controlsOf, depthsFromControls } from './depthControls';
 
 /**
  * Drawing defaults per kind. These are NOT standards or typical values from a source: they are placeholders so a
@@ -78,10 +79,42 @@ export function withVertexDepth(a: UndergroundAlignmentObject, i: number, patch:
   return { ...a, depths, updatedAt: new Date().toISOString() };
 }
 
-/** New object with every vertex set to the same depth / certainty. */
+/** New object with every vertex (or, with `alignment`, every PI control) set to the same depth / certainty. */
 export function withAllDepths(a: UndergroundAlignmentObject, crown: number | null, certainty: Certainty): UndergroundAlignmentObject {
   const d = cleanDepth(crown);
-  return { ...a, depths: a.coordinates.map(() => ({ crownDepthM: d, certainty: d === null ? 'unknown' : certainty })), updatedAt: new Date().toISOString() };
+  const entry = (): UndergroundVertexDepth => ({ crownDepthM: d, certainty: d === null ? 'unknown' : certainty });
+  if (a.alignment) return { ...withDepthControls(a, a.alignment.pis.map(entry)), updatedAt: new Date().toISOString() };
+  return { ...a, depths: a.coordinates.map(entry), updatedAt: new Date().toISOString() };
+}
+
+/**
+ * Depth controls of an alignment with `alignment` (one per PI; GEOMETRY_EDITOR_DESIGN.md §3.4): the stored ones, or read
+ * from the per-vertex depths at the PIs for one drawn before controls were stored. Null without `alignment`.
+ */
+export const alignmentDepthControls = (a: UndergroundAlignmentObject): (UndergroundVertexDepth & { derived?: boolean })[] | null =>
+  controlsOf<UndergroundVertexDepth>(a, 'crownDepthM');
+
+/** New object with these PI controls stored and the per-vertex depths derived from them by chainage. */
+export function withDepthControls(a: UndergroundAlignmentObject, controls: readonly UndergroundVertexDepth[]): UndergroundAlignmentObject {
+  if (!a.alignment || controls.length !== a.alignment.pis.length) return a;
+  const depthControls = controls.map(c => {
+    const crownDepthM = cleanDepth(c.crownDepthM);
+    return { ...c, crownDepthM, certainty: crownDepthM === null ? 'unknown' as Certainty : c.certainty };
+  });
+  return { ...a, depthControls, depths: depthsFromControls(a.alignment, a.coordinates, depthControls, 'crownDepthM') };
+}
+
+/** New object with PI `i`'s depth control changed (typed: no longer derived). A blank depth makes it UNKNOWN. */
+export function withControlDepth(a: UndergroundAlignmentObject, i: number, patch: Partial<UndergroundVertexDepth>): UndergroundAlignmentObject {
+  const controls = alignmentDepthControls(a);
+  if (!controls || i < 0 || i >= controls.length) return a;
+  const cur = controls[i];
+  const crownDepthM = 'crownDepthM' in patch ? cleanDepth(patch.crownDepthM) : cur.crownDepthM;
+  const certainty: Certainty = crownDepthM === null ? 'unknown' : (patch.certainty ?? (cur.certainty === 'unknown' ? 'hypothetical' : cur.certainty));
+  const next = controls.map(c => ({ ...c }));
+  next[i] = crownDepthM === cur.crownDepthM ? { ...cur, crownDepthM, certainty } : { crownDepthM, certainty };
+  delete (next[i] as { derived?: boolean }).derived;
+  return { ...withDepthControls(a, next), updatedAt: new Date().toISOString() };
 }
 
 export function withSection(a: UndergroundAlignmentObject, section: UndergroundSection, certainty?: Certainty): UndergroundAlignmentObject {
