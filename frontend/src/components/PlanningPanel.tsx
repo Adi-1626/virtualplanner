@@ -4,7 +4,7 @@ import { SidePanel, PanelHeader, PanelBody, Section, Button, Notice } from './ui
 import { apiGet } from '../lib/api';
 import { planningApi, STATUS_LABEL, type Project } from '../engine/planning/planningApi';
 import { coordinationApi, type ProjectSummary } from '../lib/coordinationApi';
-import { filterProjects, type ProjectSort } from '../lib/planningProjects';
+import { filterProjects, showGetStarted, type ProjectSort } from '../lib/planningProjects';
 import { inputCls, labelCls } from './projects/projectData';
 import { ProjectList } from './projects/ProjectList';
 import { ProjectPage } from './projects/ProjectPage';
@@ -22,6 +22,8 @@ import { useShellStore } from '../shell/useShellStore';
 
 /** Above this many projects the list gets a search box, a status filter and a sort. */
 const FILTER_FROM = 6;
+/** The planner pressed "Hide" on Get started (this browser). */
+const START_HIDDEN_KEY = 'td-projects-get-started-hidden';
 
 export const PlanningPanel: React.FC<{ onClose: () => void; /** Open this project directly (command palette). */ initialOpenId?: string | null }> = ({ onClose, initialOpenId }) => {
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
@@ -31,6 +33,7 @@ export const PlanningPanel: React.FC<{ onClose: () => void; /** Open this projec
   const [user, setUserState] = useState(() => localStorage.getItem('td-user') ?? '');
   const setUser = (v: string) => { setUserState(v); localStorage.setItem('td-user', v); };
   const [creating, setCreating] = useState(false);
+  const [startHidden, setStartHidden] = useState(() => localStorage.getItem(START_HIDDEN_KEY) === '1');
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
   const [sort, setSort] = useState<ProjectSort>('newest');
@@ -61,7 +64,10 @@ export const PlanningPanel: React.FC<{ onClose: () => void; /** Open this projec
                 <label className={labelCls} htmlFor="pl-user">Your name (recorded with every change; not verified)</label>
                 <input id="pl-user" data-testid="planning-user" className={inputCls} value={user} onChange={e => setUser(e.target.value)} placeholder="e.g. A. Planner, PMC Road Dept" />
               </div>
-              {projects && projects.length === 0 && !creating && <GetStarted user={user} onCreate={() => setCreating(true)} />}
+              {!creating && showGetStarted({ user, projects, hidden: startHidden }) && (
+                <GetStarted user={user} onCreate={() => setCreating(true)} others={projects?.length ?? 0}
+                  onHide={projects && projects.length > 0 ? () => { localStorage.setItem(START_HIDDEN_KEY, '1'); setStartHidden(true); } : undefined} />
+              )}
               <NewProject user={user} open={creating} setOpen={setCreating} onCreated={p => { void reload(); setOpenId(p.id); }} />
               <Section title="Projects" aside={projects ? (shown.length !== projects.length ? `${shown.length} of ${projects.length}` : `${projects.length}`) : undefined}>
                 {projects && projects.length > FILTER_FROM && (
