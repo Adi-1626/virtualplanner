@@ -9,7 +9,13 @@ dataset current" request:
 > dataset, and it should be perfect, no mistake in it."
 
 The user said he does not know how it should be done. This document compares the options, then **decides** each point
-and gives the reason (§9). The implementation that follows these decisions is described in
+and gives the reason (§9).
+
+> **Superseded in part by §11 (2026-11-21, official sources only).** The user then ruled: *"dont get the dataset from
+> news, unless it is from certified. We cannot get fake information into our data set and into the app. So please make
+> sure it takes data from reliable sources only."* Everything below about newspaper feeds, GDELT, Google search, tier-2
+> "reputable press" and corroboration by two outlets is **no longer in force**; it is kept as the record of what was
+> considered. §11 says what replaced it. The implementation that follows these decisions is described in
 [DATA_FRESHNESS_SERVICE.md](DATA_FRESHNESS_SERVICE.md).
 
 Every web fact below was checked on 2026-11-21 from this sandbox (robots.txt files and feeds were fetched directly; the
@@ -349,3 +355,111 @@ These points supersede earlier sections where they differ:
 - **The seed baseline** (`seed-baseline`) loads `pune_project_facts.json` as the first reviewed version, recorded under the reviewer named at load time.
 - **`add-evidence <url>`** adds a specific article that has left the RSS window, so it can corroborate a claim.
 - **Golden evaluation:** 34 of 60 seed quotes reproduced, 0 wrong values.
+
+## 11. Official sources only (2026-11-21) — decisions
+
+The user's rule, verbatim: *"dont get the dataset from news, unless it is from certified. We cannot get fake information
+into our data set and into the app. So please make sure it takes data from reliable sources only."*
+
+"Certified" is read as **official**: published by the responsible agency or by Parliament on its own website. A
+newspaper that quotes an official is not certified: the 2026-11-21 research found newspapers giving three different
+Line 1B costs and two different completion dates for the same project, and reporters' paraphrases presented as
+Maha-Metro figures that no Maha-Metro document contains (the ~28 m tunnel depth).
+
+### 11.1 Which sites count, and how each was verified
+
+The rule is **code** (`backend/updater/official.py`), not configuration: the watch-list cannot add a domain, raise a tier
+or switch the check off; `config.validate` refuses a non-official source or publisher.
+
+| Rule | Covers | How it was verified (2026-11-21) |
+|---|---|---|
+| Any host under **gov.in** | PIB (pib.gov.in), MoHUA (mohua.gov.in), PMO (pmindia.gov.in), PMRDA (pmrda.gov.in), PMC (pmc.gov.in), PCMC (pcmcindia.gov.in), NHAI (nhai.gov.in), Maharashtra (maharashtra.gov.in and its departments), Gazette (egazette.gov.in), CAG (cag.gov.in), NGT (greentribunal.gov.in), Supreme Court (sci.gov.in) | NIC is the exclusive registrar for GOV.IN and registers it only for government bodies: apex offices, ministries and departments, state governments, Parliament, courts, statutory bodies (registry.gov.in eligibility; MeitY guidelines F.No. L-13/14/2014-IGD, 2019). The Guidelines for Indian Government Websites say gov.in and nic.in are "exclusively allotted and restricted to Government websites". |
+| Any host under **nic.in** | MoRTH (morth.nic.in), the older Lok Sabha / Rajya Sabha sites (loksabha.nic.in, rajyasabha.nic.in), eparlib, High Courts (e.g. bombayhighcourt.nic.in) | Same guidelines; nic.in is operated by the National Informatics Centre. |
+| **punemetrorail.org** | Maha-Metro, Pune Metro Rail Project | Linked as "Pune Metro" from mahametro.org; Maha-Metro recruitment notices name www.punemetrorail.org; its PDFs (for example the NOC public notice of 15/04/2026) are on Maha-Metro letterhead. |
+| **mahametro.org** | Maharashtra Metro Rail Corporation Ltd (a 50:50 company of the Government of India and the Government of Maharashtra) | Maha-Metro annual reports 2020-21 to 2024-25 (audited, with CAG comments): "The company's website is mahametro.org". |
+| **sansad.in** | Parliament of India (Lok Sabha and Rajya Sabha questions and answers, annexures) | Rajya Sabha Handbook for Members (2024) and the Lok Sabha LARRDIS chapter: Digital Sansad at "sansad.in", designed and hosted by NIC. |
+| **msrdc.in** | Maharashtra State Road Development Corporation (fully owned by the Government of Maharashtra) | Listed as MSRDC's website on the Public Works Department's own site (pwd.maharashtra.gov.in, Attached Offices). |
+
+Matching is by host name: the host must equal the domain or end with "." + domain. Refused: other schemes, user info in
+the URL (`https://pib.gov.in@evil.com/`), IP addresses, internationalised / punycode hosts, and look-alikes
+(`pib.gov.in.evil.com`, `notpunemetrorail.org`). A contractor's press release (for example Siemens on Line 3) is not
+official.
+
+### 11.2 Where the rule is enforced
+
+| Gate | What happens to a non-official source |
+|---|---|
+| Watch-list (`config.validate`) | A non-official source URL or publisher is a configuration error. The newspaper RSS feeds, GDELT and Google Custom Search were removed, with their code. |
+| Discovery (`pipeline.run`, `sources.rss`) | A candidate URL off the allow-list is skipped before any request; an official feed's link to a newspaper is dropped. |
+| Fetch | A page that redirects off the allow-list is not stored. |
+| `pipeline.ingest`, `add-evidence` | Raise `NotOfficialSource`; nothing is stored. |
+| `proposals.assign` | A claim from a non-official page (only possible in an old database) never creates or joins a proposal. |
+| `proposals.evaluate_group` | A proposal with any non-official evidence is set to *rejected* by "system (official-only rule)", confidence `not_official`. |
+| `review.approve` | Refused for a non-official proposal, with or without a note. |
+| `review.apply_approved` | Refused if any approved proposal rests on non-official evidence (even if forced to "approved" in the database); non-official facts of the active version are dropped, never carried forward. |
+| `facts.register_version` | Refuses a fact set that contains a fact with no evidence or any non-official evidence URL (this also guards the seed baseline). |
+| `review.rollback` / `activate_pending` | An old version that holds non-official facts cannot be made active again. |
+| `facts.read_version` / `GET /api/updater/facts` | A non-official fact in an old active version is **withheld** (listed in `withheld`, never returned). |
+| `GET /api/updater/proposals` | Lists only proposals whose every source is official. |
+| Browser (`lib/officialSources.ts`) | The review pane and the Underground tooltip check the evidence again and ignore anything else. |
+
+Tests: `backend/tests/test_updater.py` (93 tests; the newspaper fixtures are kept only to prove they are refused) and
+`frontend/src/engine/testing/FactUpdates.test.ts`.
+
+### 11.3 Decision: news is dropped completely, including as "leads"
+
+Considered: keep newspapers as an optional, off-by-default "lead" list that only says "check the official source", never
+stores a value, and appears in the UI only as a to-check list.
+
+**Decision: dropped completely.** Reasons:
+- A lead still has to fetch and parse newspaper pages and store their URLs and headlines in the database; that is the
+  path the user asked to close, and it would need its own exceptions in every gate above.
+- A lead without the quote or the value is of little use to a reviewer; a lead with them is a news value in the app,
+  however it is labelled.
+- The useful part of leads is served better by the official sources themselves: Maha-Metro's press-release and
+  project-update pages, PIB, Lok Sabha / Rajya Sabha replies, MoHUA sanction letters and the PMRDA feed
+  (`update_sources` in the JSON). A reviewer who reads a news story can look for the official document and add it with
+  `python -m updater add-evidence <official URL>`; a news URL is refused there too.
+- Fewer moving parts: no news code is left to switch on by mistake.
+
+What was removed is recorded, not hidden: the news values found in the research are listed in PUNE_PROJECT_FACTS.md
+under **"Not in the dataset: unofficial reports"**, outside the dataset.
+
+### 11.4 Confidence levels (replace §4.2 and D4)
+
+| Level | Meaning |
+|---|---|
+| `official` | Stated by the responsible agency or Parliament on its own site; no other official value competes. |
+| `official_conflicting` | Two official sources disagree; both values are kept and shown (example: Line 1B stations, 5 in Maha-Metro's May 2026 press release vs 3 in the 2024 Union Cabinet sanction and in the text of Maha-Metro's Line 1B page). |
+| `slipped` | An official planned date that has passed and was replaced by a later official date. |
+
+Corroboration by news no longer counts, however many outlets agree. An old official source still counts and is
+flagged. A value found only by the optional LLM extractor (from an official page) needs a reviewer note.
+
+### 11.5 Data cleanup
+
+- `docs/urbanos/pune_project_facts.json` is now **dataset_version 2, official only**: 108 records (102 official, 6
+  official but conflicting) and 7 attributes listed under `not_available` (no official figure). v1 had 180 records.
+  Removed values include the Swargate–Katraj ~28 m depth, its January 2027 TBM start, 4 TBMs, the ₹3,637.6 crore revised
+  cost and the December 2030 / December 2029 targets, the Line 1 "up to 30 m" depth and 2019 station depths, and every
+  Line 3 figure that only newspapers gave. Where an official value existed for the same attribute it replaced the news
+  value (Line 1B completion: September 2028 vs February 2029, official but conflicting; Line 3 length 23.2 km, Lok Sabha;
+  Line 3 cost "over ₹8,300 crore", PMO; Nal Stop flyover 600 m, PIB; Katraj flyover target June 2026, MoRTH).
+- The seed baseline now maps 29 official facts (48 before); no tunnel depth is among them, because no official source
+  states one.
+- `migrate-official-only` applies this to an existing database (DATA_FRESHNESS_SERVICE.md §11.4).
+- Outside the updater: the coordination rule `metro_noc_20m` cited an Indian Express report; it now cites Maha-Metro's
+  own public notice No. Maha Metro/Pune/Plng/NOC/959/2026 of 15/04/2026 (UDCPR clause 14.2.1.7, 20 m), read from the
+  scanned PDF. The tunnel cover rule no longer quotes "Pune TBM ran at ~18–30 m" (a 2019 newspaper figure), and the
+  station editor no longer says "station bases are 18–28 m deep per the DPR" (the figures were from a 2019 newspaper, not
+  the DPR).
+
+### 11.6 Decision log (additions)
+
+| # | Decision | Reason |
+|---|---|---|
+| D16 | Official sources only; the allow-list is code (gov.in, nic.in, punemetrorail.org, mahametro.org, sansad.in, msrdc.in) | The user's rule. Code cannot be loosened by editing the watch-list |
+| D17 | News dropped completely, also as leads | §11.3 |
+| D18 | Confidence = official / official_conflicting / slipped; D4 (corroboration) withdrawn | News never corroborates |
+| D19 | Defence in depth: refuse at fetch, ingest, proposal, approve, apply, register, activate, and withhold at read and in the browser | An old database, a hand-edited row or a future bug must still not put a news value in the app |
+| D20 | Old data: delete stored news pages and claims (logged first), reject their proposals, re-seed from the official JSON in a new version; old versions stay in the registry but cannot be re-activated | Reversible history without letting news back in |
