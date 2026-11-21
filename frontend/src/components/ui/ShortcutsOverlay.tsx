@@ -22,6 +22,20 @@ const GENERAL: [string, string][] = [
   ['Esc', 'Simulate: choose another road, then back to View'],
 ];
 
+/** While drawing a road, flyover, metro line, tunnel or utility (docs/urbanos/GEOMETRY_EDITOR_DESIGN.md §4.1). */
+const DRAWING: [string, string][] = [
+  ['Click', 'Add a point (curves are added automatically)'],
+  ['Ctrl + click', 'Add a sharp corner (no curve)'],
+  ['Shift (hold)', 'Snap direction to 15° steps'],
+  ['Alt + Shift (hold)', 'Snap the turn to 15° from the last segment'],
+  ['0-9', 'Type the segment length (m)'],
+  ['Tab', 'Switch typed length ↔ direction (°)'],
+  ['R, then 0-9', 'Radius at the last point (m)'],
+  ['Enter', 'Apply the typed value, or finish'],
+  ['Backspace / Ctrl + Z', 'Remove the last point'],
+  ['Right-click point', 'Remove that point'],
+];
+
 const Kbd: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <kbd className="px-1.5 py-0.5 rounded-md bg-slate-800 border border-slate-600/60 text-sm font-mono text-slate-100 whitespace-nowrap">
     {children}
@@ -52,7 +66,7 @@ export const ShortcutsOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
       aria-label="Keyboard shortcuts"
     >
       <div
-        className="glass-panel w-full max-w-lg rounded-2xl border border-white/10 bg-slate-900/95 p-5 shadow-2xl animate-scale-in"
+        className="glass-panel w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-white/10 bg-slate-900/95 p-5 shadow-2xl animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
@@ -67,8 +81,8 @@ export const ShortcutsOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 text-xs">
           <div className="space-y-2">
             <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold">General</div>
-            {GENERAL.map(([k, d]) => (
-              <div key={k} className="flex items-center justify-between gap-3">
+            {GENERAL.map(([k, d], i) => (
+              <div key={`${k}-${i}`} className="flex items-center justify-between gap-3">
                 <span className="text-slate-300">{d}</span>
                 <Kbd>{k}</Kbd>
               </div>
@@ -80,6 +94,15 @@ export const ShortcutsOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
               <div key={t.mode} className="flex items-center justify-between gap-3">
                 <span className="text-slate-300">{t.label}</span>
                 <Kbd>{t.hotkey}</Kbd>
+              </div>
+            ))}
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Drawing a line <span className="normal-case text-slate-500">(road, flyover, metro, tunnel, utility)</span></div>
+            {DRAWING.map(([k, d]) => (
+              <div key={k} className="flex items-center justify-between gap-3">
+                <span className="text-slate-300">{d}</span>
+                <Kbd>{k}</Kbd>
               </div>
             ))}
           </div>

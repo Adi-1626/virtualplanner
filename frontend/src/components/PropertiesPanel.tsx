@@ -5,6 +5,7 @@ import { engineInstance } from '../engine/TwinCityEngine';
 import { ConfirmDialog } from './ui/ConfirmDialog';
 import { RoadGapPanel } from './RoadGapPanel';
 import { LevelCrossingPanel } from './LevelCrossingPanel';
+import { AlignmentPanel } from './design/AlignmentPanel';
 import { FeasibilityPanel } from './FeasibilityPanel';
 import { isProposalObject } from '../engine/feasibility/proposal';
 import { TYPE_LABELS } from '../engine/objects/builtBy';
@@ -389,6 +390,8 @@ export const PropertiesPanel: React.FC = () => {
             )}
             {selectedObj.type === 'road' && <RoadGapPanel road={selectedObj as RoadObject} />}
             {(selectedObj.type === 'road' || selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover') && <LevelCrossingPanel roadId={selectedObj.id} />}
+            {/* Shape (PIs + radii) of line objects: roads, flyovers, metro, tunnels, utilities — renders nothing for other types */}
+            <AlignmentPanel objectId={selectedObj.id} />
 
             {/* Flyover Feasibility Report */}
             {(selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover') && (selectedObj as any).feasibilityResult && (

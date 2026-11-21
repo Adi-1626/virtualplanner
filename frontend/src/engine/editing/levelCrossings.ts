@@ -122,3 +122,24 @@ export function heldApartPoints(a: CityObject, b: CityObject): [number, number, 
   }
   return out;
 }
+
+/**
+ * After a reshape the crossings are found again (GEOMETRY_EDITOR_DESIGN.md §3.4): a crossing keeps the user's earlier
+ * decision when the new one lies within FLAG_MATCH_M (2 m) of the old point on the same other road; any other crossing
+ * is new and stays as found (unconfirmed). The point, heights and reason are the new ones.
+ */
+export function carryCrossingDecisions(previous: readonly LevelCrossing[] | undefined, next: readonly LevelCrossing[]): LevelCrossing[] {
+  if (!previous?.length) return [...next];
+  const used = new Set<LevelCrossing>();
+  return next.map(n => {
+    let best: LevelCrossing | null = null, bd = Infinity;
+    for (const p of previous) {
+      if (used.has(p) || p.roadId !== n.roadId) continue;
+      const d = planDistM(p.point, n.point);
+      if (d <= FLAG_MATCH_M && d < bd) { bd = d; best = p; }
+    }
+    if (!best) return n;
+    used.add(best);
+    return { ...n, decision: best.decision };
+  });
+}

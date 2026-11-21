@@ -6,12 +6,16 @@ import { TOOLS, TOOL_CATEGORIES, OPEN_TOOLBAR_EVENT, toolsInCategory, type ToolC
 import { AnchoredPopover } from '../ui/AnchoredPopover';
 import { ToolSettings } from './ToolSettings';
 import { ImportProgressOverlay } from './ImportAreaPanel';
+import { DrawReadout } from './DrawReadout';
 
 const C = {
   text1: 'var(--text-1, #E6EAF0)', text2: 'var(--text-2, #A9B3C1)', text3: 'var(--text-3, #8B95A3)',
   surface1: 'var(--surface-1, #161B22)', surface2: 'var(--surface-2, #1E252E)', surface3: 'var(--surface-3, #283039)',
   border: 'var(--border, #333C47)', accent: 'var(--accent, #5AA2FF)',
 };
+
+/** Line tools that build curved alignments (utilities bend at sharp angle points only). */
+const CURVED_MODES: ReadonlySet<string> = new Set(['draw_road', 'draw_flyover', 'draw_metro_flyover', 'draw_metro', 'draw_underground']);
 
 /**
  * Design workspace tool palette (docs/urbanos/UX_ARCHITECTURE.md §3): tools in collapsible
@@ -24,6 +28,7 @@ const C = {
  */
 const ToolPalette: React.FC<{ className?: string }> = ({ className = '' }) => {
   const [activeMode, setActiveMode] = useState<EditingMode>('select');
+  const [autoCurve, setAutoCurve] = useState<boolean>(engineInstance.editing.autoCurve);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<ToolCategory>>(new Set());
@@ -34,7 +39,7 @@ const ToolPalette: React.FC<{ className?: string }> = ({ className = '' }) => {
 
   useEffect(() => {
     setRoot(rootRef.current);
-    const unsubEdit = engineInstance.editing.onChange(() => setActiveMode(engineInstance.editing.getMode()));
+    const unsubEdit = engineInstance.editing.onChange(() => { setActiveMode(engineInstance.editing.getMode()); setAutoCurve(engineInstance.editing.autoCurve); });
     const unsubHistory = engineInstance.history.onChange(() => {
       setCanUndo(engineInstance.history.canUndo());
       setCanRedo(engineInstance.history.canRedo());
@@ -128,11 +133,19 @@ const ToolPalette: React.FC<{ className?: string }> = ({ className = '' }) => {
                 className="h-6 w-6 inline-flex items-center justify-center rounded cursor-pointer hover:bg-white/5 shrink-0" style={{ color: C.text2 }}><X size={14} /></button>
             </div>
             <p className="text-[11px] leading-snug" style={{ color: C.text3 }}>{active.description}</p>
+            {CURVED_MODES.has(activeMode) && (
+              <label className="flex items-center gap-2 text-[12px] cursor-pointer" title="New points get a curve with the automatic radius for the design speed. Off: sharp corners. Ctrl+click does the opposite for one point.">
+                <input type="checkbox" data-testid="tool-auto-curve" checked={autoCurve} onChange={e => engineInstance.editing.setAutoCurve(e.target.checked)} />
+                Auto-curve at new points
+                <span className="ml-auto text-[11px]" style={{ color: C.text3 }}>Ctrl+click: opposite</span>
+              </label>
+            )}
             <ToolSettings mode={activeMode} />
           </div>
         )}
       </AnchoredPopover>
       <ImportProgressOverlay />
+      <DrawReadout />
     </div>
   );
 };

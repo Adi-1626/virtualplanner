@@ -320,7 +320,10 @@ def utility_z(p: dict, n: int, status: str, dia: Optional[float]) -> dict:
             flags.append(bool(d.get("isDefault")) and (top is not None or bot is not None))
             if top is not None or bot is not None:
                 if d.get("isDefault"):
-                    defaults += 1
+                    # A `derived` vertex (frontend depthControls.ts: interpolated along a curved alignment between two
+                    # default points) is not another default the user entered: counted once, at the points themselves
+                    if not d.get("derived"):
+                        defaults += 1
                     certs.append("hypothetical")
                 else:
                     c = d.get("certainty")
