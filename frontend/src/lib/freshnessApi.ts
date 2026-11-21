@@ -3,7 +3,7 @@
  * The data-freshness service runs separately (`python -m updater run`); this client only reads its proposals and records
  * a reviewer's decisions. Nothing reaches the dataset without approve → apply.
  */
-import { API_BASE } from './api';
+import { API_BASE, trackedFetch } from './api';
 import { redactPaths } from './redactPaths';
 
 /** Official sources only (2026-11-21): official · official_conflicting (two official sources disagree) · slipped (an official
@@ -48,7 +48,7 @@ export interface UpdaterStatus {
 }
 
 async function j<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(`${API_BASE}${path}`, { headers: { 'Content-Type': 'application/json' }, ...init });
+  const r = await trackedFetch(`${API_BASE}${path}`, { headers: { 'Content-Type': 'application/json' }, ...init });
   if (!r.ok) {
     let msg = `${r.status} ${r.statusText}`;
     try { const b = await r.json(); if (b?.detail) msg = typeof b.detail === 'string' ? b.detail : JSON.stringify(b.detail); } catch { /* keep status */ }

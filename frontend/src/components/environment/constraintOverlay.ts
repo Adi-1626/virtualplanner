@@ -17,7 +17,7 @@ import {
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { fetchSiteData } from '../../engine/feasibility/feasibilityApi';
 import type { OsmElement } from '../../engine/feasibility/types';
-import { API_BASE } from '../../lib/api';
+import { API_BASE, trackedFetch } from '../../lib/api';
 import type { OverlayKey } from './envCatalogue';
 import { redactPaths } from '../../lib/redactPaths';
 import { boxHolds, requestBox, WIDE_VIEW_DEG } from './envPlanner';
@@ -86,7 +86,7 @@ let coverage: number[] | null | undefined;
 async function coverageBbox(): Promise<number[] | null> {
   if (coverage !== undefined) return coverage;
   try {
-    const r = await fetch(`${API_BASE}/api/feasibility/status`);
+    const r = await trackedFetch(`${API_BASE}/api/feasibility/status`);
     if (r.ok) {
       const b = (await r.json())?.layers?.bbox;
       if (Array.isArray(b) && b.length === 4) return (coverage = b);

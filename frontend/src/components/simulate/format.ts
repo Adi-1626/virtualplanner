@@ -15,4 +15,4 @@ export const fmtDeltaValue = (d: Delta, v: number | null) => {
 
 /** A load error in words a planner can act on: the browser's "Failed to fetch" means the server could not be reached. */
 export const readableLoadError = (error: string | null | undefined) =>
-  /failed to fetch|networkerror|network request failed|load failed|err_connection/i.test(error ?? '') ? 'the server could not be reached.' : (error ?? '');
+  /failed to fetch|networkerror|network request failed|load failed|err_connection|could not be reached/i.test(error ?? '') ? 'the server could not be reached.' : (error ?? '');

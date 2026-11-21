@@ -121,9 +121,12 @@ export const connectionState = new ConnectionStateStore();
 /** What a planner reads when the browser could not reach the UrbanOS server (instead of the browser's "Failed to fetch"). */
 export const SERVER_UNREACHABLE = 'The UrbanOS server could not be reached. Check that it is running, then try again.';
 
+/** A cancelled or timed-out request is not the server being down. */
+const isAbortOrTimeout = (e: unknown) => ['AbortError', 'TimeoutError'].includes((e as Error)?.name);
+
 /** The browser's own network-failure messages (fetch threw before any HTTP response). */
 export const isNetworkFailure = (e: unknown) =>
-  e instanceof TypeError || /failed to fetch|networkerror|network request failed|load failed|err_connection/i.test(String((e as Error)?.message ?? e));
+  e instanceof TypeError || /failed to fetch|networkerror|network request failed|load failed|err_connection|could not be reached/i.test(String((e as Error)?.message ?? e));
 
 /**
  * fetch() for the feature API clients (coordination, terrain, …) that do not go through request(): a network failure marks
@@ -135,7 +138,7 @@ export async function trackedFetch(url: string, init?: RequestInit): Promise<Res
   try {
     res = await fetch(url, init);
   } catch (e) {
-    if ((e as Error)?.name === 'AbortError') throw e;
+    if (isAbortOrTimeout(e)) throw e;
     connectionState.set('offline');
     throw new Error(SERVER_UNREACHABLE);
   }
@@ -176,8 +179,11 @@ async function request<T = void>(
   } catch (networkErr) {
     // fetch itself threw — network unreachable, DNS failure, etc.
     activeRequests--;
+    if (isAbortOrTimeout(networkErr)) throw networkErr;
     connectionState.set('offline');
-    throw networkErr; // caller decides how to handle
+    // The browser's own "Failed to fetch" means nothing to a planner (Final QA 2026-11-21: it was on screen in
+    // Explore, Projects → Data, Reports and the Data catalogue with the server stopped).
+    throw new Error(SERVER_UNREACHABLE);
   }
 
   activeRequests--;

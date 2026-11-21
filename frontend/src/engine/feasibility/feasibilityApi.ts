@@ -1,5 +1,5 @@
 /** Client for /api/feasibility (backend/api/feasibility_router.py). */
-import { API_BASE } from '../../lib/api';
+import { API_BASE, trackedFetch } from '../../lib/api';
 import type { FeasibilityAssessment, SiteData } from './types';
 import { redactPaths } from '../../lib/redactPaths';
 
@@ -19,7 +19,7 @@ export interface DocumentRecord { id: string; format: 'pdf' | 'docx'; file_name:
 export interface DocumentInputs { project_name?: string; location_description?: string; reason?: string; traffic_conditions?: string; simulation_results?: string; expected_benefits?: string; responsible_team?: string; generated_by?: string }
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${API_BASE}/api/feasibility${path}`, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
+  const res = await trackedFetch(`${API_BASE}/api/feasibility${path}`, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
   if (!res.ok) {
     let msg = res.statusText;
     try { const j = await res.json(); msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail); } catch { /* keep statusText */ }

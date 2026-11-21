@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { FileDown, FileText, Loader2, RefreshCw } from 'lucide-react';
-import { API_BASE } from '../../lib/api';
+import { API_BASE, trackedFetch } from '../../lib/api';
 import { planningApi, STATUS_LABEL, type Project } from '../../engine/planning/planningApi';
 import { documentUrl, generateDocument, listDocuments, type DocumentRecord, type StoredAssessment } from '../../engine/feasibility/feasibilityApi';
 import { coordinationApi, type StaleVerdict } from '../../lib/coordinationApi';
@@ -52,7 +52,7 @@ export const ReportsContext: React.FC = () => {
   const load = useCallback(() => {
     setError(null);
     planningApi.projects().then(ps => { setProjects(ps); loadScope(); }).catch((e: Error) => { setProjects([]); setError(e.message); });
-    fetch(`${API_BASE}/api/feasibility/assessments`)
+    trackedFetch(`${API_BASE}/api/feasibility/assessments`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(`${r.status} ${r.statusText}`))))
       .then((a: StoredAssessment[]) => {
         setAssessments(a);
