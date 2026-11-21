@@ -218,6 +218,15 @@ export function draftsFromChangeSet(
   return { drafts, skipped };
 }
 
+/**
+ * The drafts the planner left ticked in "Add proposal elements". Every draft starts ticked; an unticked work is not added to
+ * the project and stays a drawing of the alternative (the conflict check still compares it as a drawn object of an attached
+ * alternative, not as one of this project's elements).
+ */
+export function chosenDrafts<T extends Pick<ElementDraft, 'objectId'>>(drafts: readonly T[], unticked: ReadonlySet<string>): T[] {
+  return drafts.filter(d => !unticked.has(d.objectId));
+}
+
 // ── Conflicts ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export const CLASS_ORDER: ConflictClass[] = ['conflict', 'potential_conflict', 'vertically_separated', 'unknown_no_coverage', 'no_conflict_within_available_data'];

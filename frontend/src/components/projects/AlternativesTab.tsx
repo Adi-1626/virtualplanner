@@ -7,7 +7,7 @@ import { CertaintyBadge } from '../ui/badges';
 import { planningApi, type ProjectLink } from '../../engine/planning/planningApi';
 import { coordinationApi, type ProposalElement } from '../../lib/coordinationApi';
 import { planningClient, type ScenarioVersionInfo } from '../../lib/planningClient';
-import { draftsFromChangeSet, zRangeText, type ElementDraft, type SkippedObject } from '../../lib/planningProjects';
+import { chosenDrafts, draftsFromChangeSet, zRangeText, type ElementDraft, type SkippedObject } from '../../lib/planningProjects';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { useShellStore } from '../../shell/useShellStore';
 import { inputCls, flyToGeometry, type Act, type ProjectBundle } from './projectData';
@@ -86,6 +86,7 @@ const RegisterElements: React.FC<{ sid: string; b: ProjectBundle; who: string; a
   const [plan, setPlan] = useState<{ drafts: ElementDraft[]; skipped: SkippedObject[] } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [unticked, setUnticked] = useState<ReadonlySet<string>>(new Set());
   const registered = useMemo(() => new Set(b.elements.filter(e => e.element_ref).map(e => `${e.scenario_id}:${e.element_ref}`)), [b.elements]);
   React.useEffect(() => {
     let live = true;
@@ -96,7 +97,9 @@ const RegisterElements: React.FC<{ sid: string; b: ProjectBundle; who: string; a
     return () => { live = false; };
   }, [sid, registered]);
   // A version pins the geometry to that snapshot; the head is the alternative as it is now.
-  const drafts = (plan?.drafts ?? []).map(d => ({ ...d, input: { ...d.input, scenario_version_id: vid || null } }));
+  const all = (plan?.drafts ?? []).map(d => ({ ...d, input: { ...d.input, scenario_version_id: vid || null } }));
+  const drafts = chosenDrafts(all, unticked);
+  const toggle = (id: string) => setUnticked(u => { const n = new Set(u); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const register = async () => {
     setBusy(true);
     await act(async () => {
@@ -121,20 +124,12 @@ const RegisterElements: React.FC<{ sid: string; b: ProjectBundle; who: string; a
           {versions.map(v => <option key={v.id} value={v.id}>v{v.number} {v.label}</option>)}
         </select>
       )}
-      {drafts.length === 0 ? <p className="text-sm text-slate-400" data-testid="register-nothing">{plan.skipped.some(x => x.reason.startsWith('already')) ? 'Everything in this alternative is already in the project.' : 'This alternative has no drawn works to add yet (draw them in Design).'}</p> : (
-        <ul className="space-y-1">
-          {drafts.map(d => (
-            <li key={d.objectId} className="text-sm flex items-center gap-2" data-testid="register-draft">
-              <span className="flex-1 min-w-0 truncate text-slate-100">{d.name}</span>
-              <span className="text-xs text-slate-400 whitespace-nowrap">{d.input.kind.replace(/_/g, ' ')} · {zRangeText(d.input.z_min_m ?? null, d.input.z_max_m ?? null)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+      {all.length === 0 ? <p className="text-sm text-slate-400" data-testid="register-nothing">{plan.skipped.some(x => x.reason.startsWith('already')) ? 'Everything in this alternative is already in the project.' : 'This alternative has no drawn works to add yet (draw them in Design).'}</p>
+        : <DraftPicker drafts={all} unticked={unticked} onToggle={toggle} />}
       {plan.skipped.length > 0 && <p className="text-xs text-slate-500">{plan.skipped.length} not registered ({[...new Set(plan.skipped.map(s => s.reason))].join('; ')}).</p>}
       <Disclosure>
         <ul className="text-xs text-slate-400 space-y-1">
-          {drafts.map(d => <li key={d.objectId}><b className="text-slate-300">{d.name}</b>: {d.basis.join(' ')}</li>)}
+          {all.map(d => <li key={d.objectId}><b className="text-slate-300">{d.name}</b>: {d.basis.join(' ')}</li>)}
           <li>Depth / height relative to ground, up positive. Empty = UNKNOWN (never 0). Values are design inputs (hypothetical), not surveys.</li>
         </ul>
       </Disclosure>
@@ -144,6 +139,37 @@ const RegisterElements: React.FC<{ sid: string; b: ProjectBundle; who: string; a
         </Button>
         <Button size="sm" variant="ghost" onClick={onDone}>Cancel</Button>
       </div>
+    </div>
+  );
+};
+
+/**
+ * One checkbox per drawn work (all ticked to start). An unticked work is not added to the project; it stays a drawing of the
+ * alternative, which the conflict check still compares as a drawn object of an attached alternative.
+ */
+export const DraftPicker: React.FC<{ drafts: readonly ElementDraft[]; unticked: ReadonlySet<string>; onToggle: (objectId: string) => void }> = ({ drafts, unticked, onToggle }) => {
+  const off = drafts.filter(d => unticked.has(d.objectId)).length;
+  return (
+    <div className="space-y-1">
+      <ul className="space-y-1" aria-label="Works to add as proposal elements">
+        {drafts.map(d => {
+          const on = !unticked.has(d.objectId);
+          return (
+            <li key={d.objectId} className="text-sm" data-testid="register-draft" data-object={d.objectId} data-checked={on ? 'true' : 'false'}>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={on} onChange={() => onToggle(d.objectId)} data-testid="register-draft-check" aria-label={`Add ${d.name} as a proposal element`} />
+                <span className={`flex-1 min-w-0 truncate ${on ? 'text-slate-100' : 'text-slate-500 line-through'}`}>{d.name}</span>
+                <span className="text-xs text-slate-400 whitespace-nowrap">{d.input.kind.replace(/_/g, ' ')} · {zRangeText(d.input.z_min_m ?? null, d.input.z_max_m ?? null)}</span>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+      {off > 0 && (
+        <p className="text-xs text-slate-400" data-testid="register-unticked-note">
+          {off} not added: {off === 1 ? 'it stays' : 'they stay'} a drawing of this alternative. The conflict check still compares drawn objects of attached alternatives, but not as this project's elements.
+        </p>
+      )}
     </div>
   );
 };

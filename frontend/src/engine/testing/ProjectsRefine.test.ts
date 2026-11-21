@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
-  activityText, draftFromObject, draftsFromChangeSet, filterProjects, isDraft, openConflictText, otherSideLabel, projectName,
+  activityText, chosenDrafts, draftFromObject, draftsFromChangeSet, filterProjects, isDraft, openConflictText, otherSideLabel, projectName,
   staleReasonText, startSteps, type ChangeSetEntry,
 } from '../../lib/planningProjects';
 import type { ProjectIssue, ProjectSummary } from '../../lib/coordinationApi';
@@ -15,6 +15,7 @@ import { ProjectList } from '../../components/projects/ProjectList';
 import { GetStarted } from '../../components/projects/GetStarted';
 import { ActivityTab } from '../../components/projects/RecordsTabs';
 import { OverviewTab } from '../../components/projects/OverviewTab';
+import { DraftPicker } from '../../components/projects/AlternativesTab';
 import type { ProjectBundle } from '../../components/projects/projectData';
 
 // three vertices 100 m apart along a parallel (~0.000948° of longitude at 18.5° N)
@@ -183,5 +184,28 @@ describe('Overview states (A5, A6, A10, A14)', () => {
     expect(html).not.toMatch(/<a [^>]*data-testid="export-pdf"[^>]*>\s*<button/);
     expect(html).toContain('data-testid="next-steps"');
     expect(html).toContain('data-testid="delete-project"');
+  });
+});
+
+describe('Add proposal elements: one checkbox per drawn work (drawn-only 11 kV cable)', () => {
+  const { drafts } = draftsFromChangeSet([
+    entry('underground_alignment', { alignmentKind: 'bored_tunnel', section: { shape: 'circular', diameterM: 6 }, depths: [{ crownDepthM: 12 }, { crownDepthM: 12 }, { crownDepthM: 12 }] }, C3, 'tun'),
+    entry('utility', { utilityType: 'electric', voltageKv: 11, diameterMm: 150, zRef: 'top', depths: [{ depthM: 1.2, certainty: 'estimated' }, { depthM: 1.2, certainty: 'estimated' }, { depthM: 1.2, certainty: 'estimated' }] }, C3, 'cable'),
+  ], 'scn_a', null);
+  it('every work starts ticked; an unticked cable is not added and the tunnel still is', () => {
+    expect(drafts.map(d => d.objectId)).toEqual(['tun', 'cable']);
+    expect(chosenDrafts(drafts, new Set()).map(d => d.objectId)).toEqual(['tun', 'cable']);
+    expect(chosenDrafts(drafts, new Set(['cable'])).map(d => d.objectId)).toEqual(['tun']);
+    expect(chosenDrafts(drafts, new Set(['cable', 'tun']))).toEqual([]);
+  });
+  it('renders a checkbox per work and says that an unticked work stays a drawing the check still compares', () => {
+    const all = renderToStaticMarkup(createElement(DraftPicker, { drafts, unticked: new Set(), onToggle: () => {} }));
+    expect(all.match(/data-testid="register-draft-check"/g)).toHaveLength(2);
+    expect(all).not.toContain('register-unticked-note');
+    const one = renderToStaticMarkup(createElement(DraftPicker, { drafts, unticked: new Set(['cable']), onToggle: () => {} }));
+    expect(one).toMatch(/data-object="cable" data-checked="false"/);
+    expect(one).toMatch(/data-object="tun" data-checked="true"/);
+    expect(one).toContain('1 not added: it stays a drawing of this alternative');
+    expect(one).toContain('still compares drawn objects of attached alternatives');
   });
 });
