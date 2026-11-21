@@ -7,9 +7,11 @@ import { describe, it, expect } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
-  activityText, chosenDrafts, draftFromObject, draftsFromChangeSet, filterProjects, isDraft, openConflictText, otherSideLabel, projectName,
-  staleReasonText, startSteps, type ChangeSetEntry,
+  activityText, actorText, chosenDrafts, draftFromObject, draftsFromChangeSet, filterProjects, isDraft, openConflictText, otherSideLabel, projectName,
+  sameName, showGetStarted, staleReasonText, startSteps, type ChangeSetEntry,
 } from '../../lib/planningProjects';
+import { plural } from '../../lib/plural';
+import { reportInputsText } from '../../lib/planningReports';
 import type { ProjectIssue, ProjectSummary } from '../../lib/coordinationApi';
 import { ProjectList } from '../../components/projects/ProjectList';
 import { GetStarted } from '../../components/projects/GetStarted';
@@ -207,5 +209,46 @@ describe('Add proposal elements: one checkbox per drawn work (drawn-only 11 kV c
     expect(one).toMatch(/data-object="tun" data-checked="true"/);
     expect(one).toContain('1 not added: it stays a drawing of this alternative');
     expect(one).toContain('still compares drawn objects of attached alternatives');
+  });
+});
+
+describe('Get started follows the planner’s own projects (A16)', () => {
+  const others = [{ created_by: 'B. Other, PMC Water' }, { created_by: 'C. Third, MSEDCL' }];
+  it('another agency’s project does not hide it; the planner’s own project (any case / spacing) does', () => {
+    expect(showGetStarted({ user: 'A. Planner', projects: others, hidden: false })).toBe(true);
+    expect(showGetStarted({ user: 'A. Planner', projects: [...others, { created_by: '  a.  planner ' }], hidden: false })).toBe(false);
+    expect(showGetStarted({ user: 'A. Planner', projects: [], hidden: false })).toBe(true);
+    expect(sameName('A. Planner', 'a.   PLANNER')).toBe(true);
+  });
+  it('stays without a name (step 1 is entering it); goes when hidden; not while the list is loading', () => {
+    expect(showGetStarted({ user: ' ', projects: others, hidden: false })).toBe(true);
+    expect(showGetStarted({ user: 'A. Planner', projects: others, hidden: true })).toBe(false);
+    expect(showGetStarted({ user: 'A. Planner', projects: null, hidden: false })).toBe(false);
+  });
+  it('with other projects listed, the card says they are other people’s and offers Hide', () => {
+    const html = renderToStaticMarkup(createElement(GetStarted, { user: 'A', onCreate: () => {}, others: 2, onHide: () => {} }));
+    expect(html).toContain('The 2 projects listed below were created under other names');
+    expect(html).toContain('data-testid="start-hide"');
+    expect(html).toContain('Create your first project');
+  });
+});
+
+describe('plain words: no log codes in Activity, correct plurals (A18)', () => {
+  const ev = (actor: string, actor_source: string) => ({ id: 1, at: 'Sat 2026-11-21 3:30 PM IST (UTC+05:30)', actor, actor_source, action: 'update', entity_type: 'decision',
+    entity_id: 'd', parent_type: 'project', parent_id: 'p', label: 'X', changed_fields: ['decision_text', 'scenario_version_id'], before_hash: null, after_hash: null });
+  it('an Activity row never shows "[request field]" or other source codes; the source is a plain tooltip', () => {
+    const html = renderToStaticMarkup(createElement(ActivityTab, { events: [ev('A. Planner', 'request_field'), { ...ev('unattributed', 'none'), id: 2 }, { ...ev('B', 'td_audit'), id: 3 }] }));
+    expect(html).not.toMatch(/\[(request field|request_field|record field|header|td audit|none)\]/);
+    expect(html).toContain('title="Name typed in “Your name” (not verified)"');
+    expect(html).toContain('No name recorded');
+    expect(html).toContain('(decision text, scenario version id)');
+    expect(actorText({ actor: 'B', actor_source: 'td_audit' })).toEqual({ who: 'B', how: 'Name from the traffic-data change log (not verified)' });
+  });
+  it('"1 alternative", not "1 alternatives"', () => {
+    expect(plural(1, 'alternative')).toBe('1 alternative');
+    expect(plural(0, 'alternative')).toBe('0 alternatives');
+    expect(plural(1200, 'finding')).toBe('1,200 findings');
+    expect(reportInputsText({ alternatives: 1, datasets: 1, assessments: 0, runs: 2, decisions: 1 }))
+      .toBe('Inputs: 1 alternative · 1 dataset · 0 screenings · 2 runs · 1 decision');
   });
 });
