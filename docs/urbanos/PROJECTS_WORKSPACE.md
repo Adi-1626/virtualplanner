@@ -23,7 +23,8 @@ nothing is taken from news reports.
 
 1. **Projects** in the left rail. Enter **your name** at the top: it is recorded with every change (it is not verified).
    Without a name the workspace is read-only and says so.
-2. **New planning project** (or *Create the first project* on the *Get started* card): a name, the planning question it answers
+2. **New planning project** (or *Create your first project* on the *Get started* card, shown until you have a project under
+   your name, even when other agencies' projects are listed; *Hide* removes it): a name, the planning question it answers
    (purpose) and, optionally, a study area. The project notes the current base city, so a later change to it is flagged.
 3. Open the project. The **Next steps** card on *Overview* ticks what is done and has a *Go* link for the next step:
    - attach the alternative you drew in Design (*Alternatives* tab);
@@ -116,12 +117,21 @@ detection engine changed.
   feasibility findings with certainty, reviews, decisions, unknowns, audit summary).
 - *Conflicts → Conflict summary CSV*: every finding visible to the project with class, distances (empty = UNKNOWN), certainty,
   permission triggers, response and stale verdict.
+- The report has a section **Proposal elements and conflict check**: the elements with their depth range, the latest check and
+  whether it is stale, the number of findings per class, and the newest conflict / potential-conflict findings (the full list is
+  the CSV). Findings raised by another project's check are included.
 - **Reports** workspace lists every project with its inputs, the export buttons and when each was last generated. Every export is
-  recorded in Activity (as "unattributed" if no name was entered).
+  recorded in Activity (as "No name recorded" if no name was entered).
+
+Activity rows show the name only; hover it to see where the name came from (typed in *Your name*, written on the record, or the
+traffic-data change log). No name is verified.
+
+Not to be confused with **Your drawn works**, the right-hand panel in Explore: it lists the objects drawn in the open alternative,
+not planning projects.
 
 ## 9. Known limits
 
-- Names are self-declared; there is no sign-in.
+- Names are self-declared; there is no sign-in. *Get started* recognises your projects by the name you typed.
 - A drawing that no project has added as elements is checked only for the projects that attach its alternative.
 - The status of a finding is per check; a new check carries a response forward only for the same pair with the same class.
 - Comparing alternatives inside a project and locking an alternative under review are not built.
