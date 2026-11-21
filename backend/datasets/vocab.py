@@ -60,6 +60,7 @@ THEMES = {
     "transit": "Public transport (stops, depots, routes)",
     "amenities": "Public facilities and amenities",
     "land_parcels": "Revenue / cadastral parcels (gut, TP scheme)",
+    "project_facts": "Published infrastructure project facts (reviewed)",
     "other": "Other",
 }
 

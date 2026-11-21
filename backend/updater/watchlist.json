@@ -1,0 +1,235 @@
+{
+  "_doc": "Watch-list of the data-freshness service (docs/urbanos/DATA_FRESHNESS_SERVICE.md). Projects: what to track and how they are named. Sources: where to look, with tier 1 official / 2 reputable press / 3 other. Edit and commit; every run records this file's sha256.",
+  "version": 1,
+  "settings": {
+    "max_article_age_days": 400,
+    "max_articles_per_run": 40,
+    "max_articles_per_host": 8,
+    "min_host_delay_s": 2.0,
+    "refetch_after_days": 30,
+    "user_agent": "UrbanOS-data-freshness/1.0 (+docs/urbanos/DATA_FRESHNESS_SERVICE.md)"
+  },
+  "projects": [
+    {
+      "id": "pune_metro_swargate_katraj",
+      "name": "Swargate–Katraj underground metro (Line 1B extension)",
+      "authority": "MahaMetro",
+      "kind": "metro_underground",
+      "aliases": ["Swargate-Katraj", "Swargate Katraj", "Swargate to Katraj", "Katraj Metro", "Katraj underground metro", "Line 1B", "Line-1B", "Line 1 B Extension"],
+      "attributes": ["tunnel_depth_m", "length_km", "station_count", "cost_inr_crore", "tbm_count", "tunnelling_start", "completion_target", "status"],
+      "osm_name_patterns": ["katraj"],
+      "gdelt_query": "\"Swargate\" Katraj metro"
+    },
+    {
+      "id": "pune_metro_line1_pcmc_swargate",
+      "name": "Pune Metro Line 1 / Purple Line (PCMC–Swargate, underground Range Hill–Swargate)",
+      "authority": "MahaMetro",
+      "kind": "metro",
+      "aliases": ["PCMC-Swargate", "PCMC to Swargate", "Pimpri-Swargate", "Pimpri Chinchwad-Swargate", "Purple Line", "Line 1 (PCMC"],
+      "attributes": ["tunnel_depth_m", "length_km", "station_count", "status"],
+      "osm_name_patterns": ["purple", "pcmc.*swargate", "swargate.*pcmc", "line 1\\b"],
+      "gdelt_query": "\"Purple Line\" Pune metro"
+    },
+    {
+      "id": "pune_metro_pcmc_nigdi",
+      "name": "PCMC–Nigdi (Bhakti Shakti) elevated extension (Line 1A)",
+      "authority": "MahaMetro",
+      "kind": "metro_elevated",
+      "aliases": ["PCMC-Nigdi", "PCMC to Nigdi", "Nigdi extension", "Bhakti Shakti", "Line 1A", "Line 1 A Extension"],
+      "attributes": ["length_km", "station_count", "cost_inr_crore", "completion_target", "status"],
+      "osm_name_patterns": ["nigdi"],
+      "gdelt_query": "Nigdi metro extension Pune"
+    },
+    {
+      "id": "pune_metro_line3_hinjewadi_shivajinagar",
+      "name": "Hinjewadi–Shivajinagar metro (Line 3, PMRDA PPP)",
+      "authority": "PMRDA",
+      "kind": "metro_elevated",
+      "aliases": ["Hinjewadi-Shivajinagar", "Hinjewadi to Shivajinagar", "Hinjewadi Metro", "Metro Line 3", "Line 3 metro", "Puneri Metro"],
+      "attributes": ["length_km", "station_count", "cost_inr_crore", "completion_target", "status"],
+      "osm_name_patterns": ["hinjewadi", "line 3\\b"],
+      "gdelt_query": "Hinjewadi Shivajinagar metro"
+    },
+    {
+      "id": "pune_metro_vanaz_chandni_chowk",
+      "name": "Vanaz–Chandni Chowk elevated extension (Line 2)",
+      "authority": "MahaMetro",
+      "kind": "metro_elevated",
+      "aliases": ["Vanaz-Chandni Chowk", "Vanaz to Chandni Chowk", "Vanaz-Chandani Chowk", "Chandni Chowk metro"],
+      "attributes": ["length_km", "station_count", "cost_inr_crore", "completion_target", "status"],
+      "osm_name_patterns": ["chandni|chandani"],
+      "gdelt_query": "Vanaz Chandni Chowk metro"
+    },
+    {
+      "id": "pune_metro_ramwadi_wagholi",
+      "name": "Ramwadi–Wagholi elevated extension (Line 2)",
+      "authority": "MahaMetro",
+      "kind": "metro_elevated",
+      "aliases": ["Ramwadi-Wagholi", "Ramwadi to Wagholi", "Ramwadi-Vitthalwadi", "Wagholi metro"],
+      "attributes": ["length_km", "station_count", "cost_inr_crore", "completion_target", "status"],
+      "osm_name_patterns": ["wagholi"],
+      "gdelt_query": "Ramwadi Wagholi metro"
+    },
+    {
+      "id": "pune_metro_khadakwasla_kharadi",
+      "name": "Khadakwasla–Kharadi metro (Phase 2)",
+      "authority": "MahaMetro",
+      "kind": "metro",
+      "aliases": ["Khadakwasla-Kharadi", "Kharadi-Khadakwasla", "Khadakwasla to Kharadi", "Swargate-Hadapsar-Kharadi"],
+      "attributes": ["length_km", "station_count", "cost_inr_crore", "status"],
+      "osm_name_patterns": ["kharadi"],
+      "gdelt_query": "Khadakwasla Kharadi metro"
+    },
+    {
+      "id": "pune_metro_nal_stop_manik_baug",
+      "name": "Nal Stop–Warje–Manik Baug metro (Phase 2)",
+      "authority": "MahaMetro",
+      "kind": "metro",
+      "aliases": ["Nal Stop-Warje-Manik Baug", "Nal Stop-Manik Baug", "Nal Stop to Manik Baug"],
+      "attributes": ["length_km", "station_count", "cost_inr_crore", "status"],
+      "osm_name_patterns": ["manik baug"],
+      "gdelt_query": "\"Manik Baug\" metro"
+    },
+    {
+      "id": "pune_ring_road",
+      "name": "Pune Ring Road (MSRDC)",
+      "authority": "MSRDC",
+      "kind": "road",
+      "aliases": ["Pune Ring Road", "MSRDC Ring Road", "Pune ring road", "outer ring road"],
+      "attributes": ["length_km", "cost_inr_crore", "completion_target", "status"],
+      "osm_name_patterns": ["ring road"],
+      "gdelt_query": "\"Pune Ring Road\""
+    },
+    {
+      "id": "pune_riverfront",
+      "name": "Mula–Mutha Riverfront Development (PMC)",
+      "authority": "PMC",
+      "kind": "riverfront",
+      "aliases": ["Riverfront Development", "riverfront project", "Mula-Mutha riverfront", "Mula Mutha riverfront", "RFD project"],
+      "attributes": ["length_km", "cost_inr_crore", "completion_target", "status"],
+      "osm_name_patterns": [],
+      "gdelt_query": "Pune riverfront development Mula Mutha"
+    },
+    {
+      "id": "pune_ganeshkhind_double_decker_flyover",
+      "name": "University Chowk / Ganeshkhind Road double-decker flyover (PMRDA)",
+      "authority": "PMRDA",
+      "kind": "flyover",
+      "aliases": ["University Chowk flyover", "Ganeshkhind Road flyover", "double-decker flyover", "double decker flyover"],
+      "attributes": ["length_km", "cost_inr_crore", "completion_target", "status"],
+      "osm_name_patterns": [],
+      "gdelt_query": "\"University Chowk\" flyover Pune"
+    },
+    {
+      "id": "pune_sinhagad_road_flyover",
+      "name": "Sinhagad Road flyover (Rajaram bridge – Funtime)",
+      "authority": "PMC",
+      "kind": "flyover",
+      "aliases": ["Sinhagad Road flyover", "Sinhagad road flyover", "Rajaram bridge flyover"],
+      "attributes": ["length_km", "cost_inr_crore", "completion_target", "status"],
+      "osm_name_patterns": [],
+      "gdelt_query": "\"Sinhagad Road\" flyover"
+    }
+  ],
+  "sources": [
+    {
+      "id": "punemetrorail_project_profile",
+      "kind": "official_page",
+      "enabled": true,
+      "tier": 1,
+      "publisher": "Maha-Metro (Pune Metro Rail Project)",
+      "url": "https://punemetrorail.org/project-profile",
+      "page_rules": [
+        {
+          "id": "line1b_row",
+          "project": "pune_metro_swargate_katraj",
+          "pattern": "Line 1 ?B Extension\\s+Swargate\\s*-\\s*Katraj\\s+(?P<length_km>\\d+(?:\\.\\d+)?)\\s*KM\\s+(?P<station_count>\\d+)",
+          "note": "project-profile table row: corridor, length, underground stations"
+        },
+        {
+          "id": "line1a_row",
+          "project": "pune_metro_pcmc_nigdi",
+          "pattern": "Line 1 ?A Extension\\s+PCMC\\s*-\\s*Nigdi\\s+(?P<length_km>\\d+(?:\\.\\d+)?)\\s*KM\\s+-\\s+(?P<station_count>\\d+)",
+          "note": "project-profile table row: corridor, length, -, elevated stations"
+        }
+      ]
+    },
+    {
+      "id": "punemetrorail_project_update",
+      "kind": "official_page",
+      "enabled": false,
+      "tier": 1,
+      "publisher": "Maha-Metro (Pune Metro Rail Project)",
+      "url": "https://punemetrorail.org/project-update",
+      "page_rules": [],
+      "note": "Disabled: a dated diary going back to 2018 with no per-entry markup; an undated official page is read as of retrieval, so old entries would look current. Enable only with page_rules that capture the entry date."
+    },
+    {
+      "id": "pmrda_sitemap_rss",
+      "kind": "rss",
+      "enabled": true,
+      "tier": 1,
+      "publisher": "PMRDA",
+      "url": "https://www.pmrda.gov.in/sitemap.rss"
+    },
+    {
+      "id": "pib_rss",
+      "kind": "rss",
+      "enabled": false,
+      "tier": 1,
+      "publisher": "Press Information Bureau",
+      "url": "https://pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=3",
+      "note": "Disabled: on 2026-11-21 every Lang value returned Hindi titles, so English aliases never match. Enable once an English feed URL is confirmed."
+    },
+    {"id": "ht_pune_rss", "kind": "rss", "enabled": true, "tier": 2, "publisher": "Hindustan Times", "url": "https://www.hindustantimes.com/feeds/rss/cities/pune-news/rssfeed.xml"},
+    {"id": "ie_pune_rss", "kind": "rss", "enabled": true, "tier": 2, "publisher": "The Indian Express", "url": "https://indianexpress.com/section/cities/pune/feed/"},
+    {"id": "toi_pune_rss", "kind": "rss", "enabled": true, "tier": 2, "publisher": "The Times of India", "url": "https://timesofindia.indiatimes.com/rssfeeds/-2128821991.cms"},
+    {"id": "punekarnews_rss", "kind": "rss", "enabled": true, "tier": 2, "publisher": "Punekar News", "url": "https://www.punekarnews.in/feed/"},
+    {"id": "punemirror_rss", "kind": "rss", "enabled": true, "tier": 2, "publisher": "Pune Times Mirror", "url": "https://punemirror.com/feed/"},
+    {
+      "id": "gdelt",
+      "kind": "gdelt",
+      "enabled": true,
+      "tier": 3,
+      "publisher": "GDELT Project (discovery only)",
+      "url": "https://api.gdeltproject.org/api/v2/doc/doc",
+      "delay_s": 6.0,
+      "timespan": "6months",
+      "note": "Discovery only: finds article URLs; the tier of each article comes from its own domain (publishers below). Licence: unlimited use with citation to https://www.gdeltproject.org/."
+    },
+    {
+      "id": "google_cse",
+      "kind": "google_cse",
+      "enabled": false,
+      "tier": 3,
+      "publisher": "Google Programmable Search (discovery only)",
+      "url": "https://www.googleapis.com/customsearch/v1",
+      "note": "Optional. Needs GOOGLE_CSE_KEY and GOOGLE_CSE_CX. Closed to new customers; Google discontinues it on 2027-01-01."
+    }
+  ],
+  "publishers": {
+    "_doc": "Registrable domain -> tier and display name. Unlisted domains are tier 3 (other) and never corroborate on their own.",
+    "punemetrorail.org": {"tier": 1, "name": "Maha-Metro (Pune Metro Rail Project)"},
+    "mahametro.org": {"tier": 1, "name": "Maha-Metro"},
+    "pib.gov.in": {"tier": 1, "name": "Press Information Bureau"},
+    "pmc.gov.in": {"tier": 1, "name": "Pune Municipal Corporation"},
+    "pmrda.gov.in": {"tier": 1, "name": "PMRDA"},
+    "pcmcindia.gov.in": {"tier": 1, "name": "Pimpri Chinchwad Municipal Corporation"},
+    "msrdc.in": {"tier": 1, "name": "MSRDC"},
+    "nhai.gov.in": {"tier": 1, "name": "NHAI"},
+    "maharashtra.gov.in": {"tier": 1, "name": "Government of Maharashtra"},
+    "hindustantimes.com": {"tier": 2, "name": "Hindustan Times"},
+    "indianexpress.com": {"tier": 2, "name": "The Indian Express"},
+    "timesofindia.indiatimes.com": {"tier": 2, "name": "The Times of India"},
+    "indiatimes.com": {"tier": 2, "name": "The Times of India"},
+    "punemirror.com": {"tier": 2, "name": "Pune Times Mirror"},
+    "punekarnews.in": {"tier": 2, "name": "Punekar News"},
+    "thehindu.com": {"tier": 2, "name": "The Hindu"},
+    "lokmat.com": {"tier": 2, "name": "Lokmat"},
+    "esakal.com": {"tier": 2, "name": "Sakal"},
+    "freepressjournal.in": {"tier": 2, "name": "Free Press Journal"},
+    "business-standard.com": {"tier": 2, "name": "Business Standard"},
+    "livemint.com": {"tier": 2, "name": "Mint"},
+    "ndtv.com": {"tier": 2, "name": "NDTV"}
+  }
+}
