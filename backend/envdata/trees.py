@@ -121,6 +121,48 @@ def query(bbox: Sequence[float], limit: int = 2000) -> dict:
                        f"shown as {len(cells):,} grid clusters ({s}° cells). Zoom in to see individual trees."}
 
 
+TILE_CELLS = 4          # a tile is TILE_CELLS × TILE_CELLS grid cells of its level
+TILE_MAX_LIMIT = MAX_LIMIT
+
+
+@_retry
+def tile(level: int, tx: int, ty: int, limit: int = 500) -> dict:
+    """Trees of one map tile, for the browser's tiled, cached tree layer.
+
+    A tile at `level` is the 4 × 4 block of that level's grid cells with gx // 4 == tx and gy // 4 == ty. Membership is
+    the index pipeline's own cell assignment (int(lon // size)), so the tiles of a level partition the census exactly:
+    every tree is in one tile, and the total is the sum of the pipeline's cell counts (exact, no estimate).
+    Points are returned when the tile holds ≤ `limit` trees (checked against that total), else the tile's cells as
+    clusters (count + centroid).
+    """
+    limit = max(1, min(TILE_MAX_LIMIT, int(limit)))
+    c = _conn()
+    levels = _levels(c)
+    if not 0 <= level < len(levels):
+        raise ValueError(f"level must be 0..{len(levels) - 1}")
+    s = levels[level]
+    k = TILE_CELLS
+    rows = c.execute("SELECT gx, gy, n, sum_lon, sum_lat FROM grid WHERE level=? AND gx BETWEEN ? AND ? AND gy BETWEEN ? AND ?",
+                     (level, tx * k, tx * k + k - 1, ty * k, ty * k + k - 1)).fetchall()
+    total = sum(r["n"] for r in rows)
+    bbox = [tx * k * s, ty * k * s, (tx + 1) * k * s, (ty + 1) * k * s]
+    base = {"level": level, "cell_deg": s, "tile": [tx, ty], "bbox": bbox, "total": total, "total_exact": True, "limit": limit}
+    if total <= limit:
+        if total == 0:
+            return {**base, "mode": "points", "returned": 0, "points": []}
+        pad = s * 1e-6   # candidates a hair outside the box; the cell rule below decides membership exactly
+        b = [bbox[0] - pad, bbox[1] - pad, bbox[2] + pad, bbox[3] + pad]
+        cand = c.execute(
+            """SELECT t.id, t.lon, t.lat, t.girth_cm, t.height_m, t.canopy_dia_m, t.condition, t.ownership, t.ward, t.is_rare,
+                      s.botanical_name, s.common_name, s.local_name
+               FROM trees_rt r JOIN trees t ON t.id=r.id LEFT JOIN species s ON s.id=t.species_id
+               WHERE """ + _WHERE, _args(b)).fetchall()
+        pts = [dict(r) for r in cand if int(r["lon"] // s) // k == tx and int(r["lat"] // s) // k == ty]
+        return {**base, "mode": "points", "returned": len(pts), "points": pts}
+    cells = [{"lon": r["sum_lon"] / r["n"], "lat": r["sum_lat"] / r["n"], "n": r["n"]} for r in rows]
+    return {**base, "mode": "clusters", "returned": 0, "clusters": cells}
+
+
 @_retry
 def count_in_polygon(geom_4326: dict) -> dict:
     """Trees whose point lies inside a WGS84 polygon (used by feasibility screening's treesInFootprint slot)."""

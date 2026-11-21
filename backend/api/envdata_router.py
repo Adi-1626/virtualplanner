@@ -90,6 +90,20 @@ def tree_points(bbox: str = Query(...), limit: int = Query(2000, ge=1, le=trees.
     return trees.query(_bbox(bbox), limit)
 
 
+@router.get("/trees/tile")
+def tree_tile(level: int = Query(..., ge=0, le=8), tx: int = Query(...), ty: int = Query(...),
+              limit: int = Query(500, ge=1, le=trees.TILE_MAX_LIMIT)):
+    """One tile of the tree census (4 × 4 grid cells of `level`): points when it holds ≤ limit trees, else cell clusters.
+    Tiles of a level partition the census exactly (the index pipeline's cell rule), so the browser can cache them."""
+    _layer("tree_census_2019")
+    if not trees.db_path().exists():
+        raise HTTPException(404, "tree index not built: python -m datasets.pipelines.tree_index")
+    try:
+        return trees.tile(level, tx, ty, limit)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+
+
 @router.post("/footprint")
 def line_footprint(coordinates: list = Body(..., embed=True), width_m: float = Body(..., embed=True)):
     """Footprint polygon (WGS84) of a drawn line: centreline ± width/2, flat ends, mitred corners (metric buffer)."""
