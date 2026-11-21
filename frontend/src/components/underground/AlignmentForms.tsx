@@ -3,7 +3,9 @@ import { engineInstance } from '../../engine/TwinCityEngine';
 import type { CityObject, UndergroundAlignmentKind, UndergroundAlignmentObject, UndergroundLifecycle, UndergroundSection } from '../../engine/objects/types';
 import type { Certainty } from '../../engine/objects/certainty';
 import { ALIGNMENT_KIND_LABEL, alignmentProfile } from '../../engine/underground/alignmentGeometry';
-import { ALIGNMENT_KINDS, cleanDepth, withAllDepths, withGroundReference, withKind, withLifecycle, withSection, withVertexDepth } from '../../engine/underground/alignmentFactory';
+import { ALIGNMENT_KINDS, alignmentDepthControls, cleanDepth, withAllDepths, withControlDepth, withGroundReference, withKind, withLifecycle, withSection, withVertexDepth } from '../../engine/underground/alignmentFactory';
+import { piChainagesOn } from '../../engine/underground/depthControls';
+import { chainages } from '../../engine/underground/alignmentGeometry';
 import { elevationProfile } from '../../engine/underground/terrainProfile';
 import { useTerrainProfile } from './useTerrain';
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
@@ -123,6 +125,8 @@ export const AlignmentEditor: React.FC<{ a: UndergroundAlignmentObject }> = ({ a
     if (next !== a) engineInstance.objects.update(a.id, { depths: next.depths } as Partial<CityObject>);
   }, [a, g.ground, g.model]);
   const lifecycle = a.lifecycle ?? 'proposed';
+  // With an editable alignment the depths are entered at its PIs, not at every densified vertex (GEOMETRY_EDITOR_DESIGN.md §3.4)
+  const controls = alignmentDepthControls(a);
   return (
     <div className="flex flex-col gap-3" data-testid="alignment-editor">
       <div className="grid grid-cols-2 gap-2">
@@ -169,41 +173,100 @@ export const AlignmentEditor: React.FC<{ a: UndergroundAlignmentObject }> = ({ a
           <button type="button" className="uos-btn uos-btn-sm" data-testid="ug-apply-all-depth" disabled={allDepth.trim() === '' || cleanDepth(Number(allDepth)) === null}
             onClick={() => { commit(withAllDepths(a, Number(allDepth), 'hypothetical'), 'Set all depths'); setAllDepth(''); }}>Apply</button>
         </div>
+        {controls ? <PIDepthTable a={a} controls={controls} ground={g.ground} commit={commit} /> : (
         <table className="uos-table ug-vertex-table" data-testid="ug-vertex-table">
-          <thead><tr><th style={cell}>#</th><th className="num" style={cell}>Chainage · grade</th><th style={cell}>Depth ↓ (m)</th><th style={cell}>Certainty</th></tr></thead>
-          <tbody>
-            {p.vertices.map((v, i) => {
-              const gr = g.ground?.[i] ?? null;
-              const elev = v.crownDepthM !== null && gr !== null ? gr - v.crownDepthM : null;
-              return (
-                <tr key={i}>
-                  <td style={cell}>{i + 1}</td>
-                  <td className="num" style={cell} title="Grade = Δcrown / Δchainage to the next vertex; + = getting deeper">
-                    {Math.round(v.chainageM)} m
-                    {i < p.gradientsPct.length && <span className="block text-meta text-text-3">{p.gradientsPct[i] === null ? 'grade ?' : `${(p.gradientsPct[i] as number) >= 0 ? '+' : ''}${(p.gradientsPct[i] as number).toFixed(2)} %`}</span>}
-                  </td>
-                  <td style={cell}>
-                    <input aria-label={`Crown depth below ground at vertex ${i + 1} (m)`} data-testid={`ug-depth-${i}`} type="number" min={0} step={0.5} placeholder="?" title="Blank = Unknown"
-                      className={input} style={{ ...inputStyle, width: 70, fontSize: 12 }} value={v.crownDepthM ?? ''}
-                      onChange={e => commit(withVertexDepth(a, i, { crownDepthM: num(e.target.value) }), `Depth at vertex ${i + 1}`, `${a.id}:depth:${i}`)} />
-                    <span className="block text-meta text-text-3 tabular-nums" data-testid={`ug-elev-${i}`}
-                      title={gr === null ? 'Ground UNKNOWN here' : `Ground ${gr.toFixed(1)} m EGM2008 (DSM) − depth`}>
-                      {elev === null ? (v.crownDepthM === null ? 'elev ?' : 'ground ?') : `${elev.toFixed(1)} m EGM2008`}
-                    </span>
-                  </td>
-                  <td style={cell}>
-                    {v.crownDepthM === null ? <CertaintyBadge certainty="unknown" note="No depth entered" /> : (
-                      <CertaintySelect id={`ug-cert-${i}`} label={`Depth certainty at vertex ${i + 1}`} testId={`ug-cert-${i}`} short value={v.certainty}
-                        onChange={c => commit(withVertexDepth(a, i, { certainty: c }), `Depth certainty at vertex ${i + 1}`)} />
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        <p className="text-[11px] mt-1" style={note}>Under each depth: the crown elevation it gives (ground − depth), stored with the ground level and model used. Blank depth = Unknown: never interpolated across, shown as "?" on the Profile.</p>
+            <thead><tr><th style={cell}>#</th><th className="num" style={cell}>Chainage · grade</th><th style={cell}>Depth ↓ (m)</th><th style={cell}>Certainty</th></tr></thead>
+            <tbody>
+              {p.vertices.map((v, i) => {
+                const gr = g.ground?.[i] ?? null;
+                const elev = v.crownDepthM !== null && gr !== null ? gr - v.crownDepthM : null;
+                return (
+                  <tr key={i}>
+                    <td style={cell}>{i + 1}</td>
+                    <td className="num" style={cell} title="Grade = Δcrown / Δchainage to the next vertex; + = getting deeper">
+                      {Math.round(v.chainageM)} m
+                      {i < p.gradientsPct.length && <span className="block text-meta text-text-3">{p.gradientsPct[i] === null ? 'grade ?' : `${(p.gradientsPct[i] as number) >= 0 ? '+' : ''}${(p.gradientsPct[i] as number).toFixed(2)} %`}</span>}
+                    </td>
+                    <td style={cell}>
+                      <input aria-label={`Crown depth below ground at vertex ${i + 1} (m)`} data-testid={`ug-depth-${i}`} type="number" min={0} step={0.5} placeholder="?" title="Blank = Unknown"
+                        className={input} style={{ ...inputStyle, width: 70, fontSize: 12 }} value={v.crownDepthM ?? ''}
+                        onChange={e => commit(withVertexDepth(a, i, { crownDepthM: num(e.target.value) }), `Depth at vertex ${i + 1}`, `${a.id}:depth:${i}`)} />
+                      <span className="block text-meta text-text-3 tabular-nums" data-testid={`ug-elev-${i}`}
+                        title={gr === null ? 'Ground UNKNOWN here' : `Ground ${gr.toFixed(1)} m EGM2008 (DSM) − depth`}>
+                        {elev === null ? (v.crownDepthM === null ? 'elev ?' : 'ground ?') : `${elev.toFixed(1)} m EGM2008`}
+                      </span>
+                    </td>
+                    <td style={cell}>
+                      {v.crownDepthM === null ? <CertaintyBadge certainty="unknown" note="No depth entered" /> : (
+                        <CertaintySelect id={`ug-cert-${i}`} label={`Depth certainty at vertex ${i + 1}`} testId={`ug-cert-${i}`} short value={v.certainty}
+                          onChange={c => commit(withVertexDepth(a, i, { certainty: c }), `Depth certainty at vertex ${i + 1}`)} />
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+        <p className="text-[11px] mt-1" style={note}>{controls
+          ? 'Depths are entered at the alignment points; along the curves and straights between them the crown follows a straight grade by chainage (certainty = the weaker of the two points). Blank depth = Unknown: never interpolated across, shown as "?" on the Profile.'
+          : 'Under each depth: the crown elevation it gives (ground − depth), stored with the ground level and model used. Blank depth = Unknown: never interpolated across, shown as "?" on the Profile.'}</p>
       </div>
     </div>
+  );
+};
+
+/** Depth table of an alignment with PIs: one row per PI (its control depth), grade to the next PI. */
+const PIDepthTable: React.FC<{
+  a: UndergroundAlignmentObject;
+  controls: NonNullable<ReturnType<typeof alignmentDepthControls>>;
+  ground: (number | null)[] | null;
+  commit: (after: UndergroundAlignmentObject, what: string, key?: string) => void;
+}> = ({ a, controls, ground, commit }) => {
+  const pch = useMemo(() => (a.alignment ? piChainagesOn(a.alignment, a.coordinates) : []), [a.alignment, a.coordinates]);
+  const vch = useMemo(() => chainages(a.coordinates), [a.coordinates]);
+  // Ground at a PI = the ground at the vertex on it (a curved PI's arc midpoint has one within 0.5 m only by chance)
+  const groundAtPi = (k: number): number | null => {
+    if (!ground) return null;
+    const i = vch.findIndex(c => Math.abs(c - pch[k]) <= 0.5);
+    return i >= 0 ? ground[i] ?? null : null;
+  };
+  return (
+    <table className="uos-table ug-vertex-table" data-testid="ug-pi-table">
+      <thead><tr><th style={cell}>Point</th><th className="num" style={cell}>Chainage · grade</th><th style={cell}>Depth ↓ (m)</th><th style={cell}>Certainty</th></tr></thead>
+      <tbody>
+        {controls.map((c, k) => {
+          const nx = controls[k + 1];
+          const span = k + 1 < pch.length ? pch[k + 1] - pch[k] : 0;
+          const grade = nx && span > 0 && c.crownDepthM !== null && nx.crownDepthM !== null ? ((nx.crownDepthM - c.crownDepthM) / span) * 100 : null;
+          const gr = groundAtPi(k);
+          const elev = c.crownDepthM !== null && gr !== null ? gr - c.crownDepthM : null;
+          return (
+            <tr key={k}>
+              <td style={cell}>{k === 0 ? 'Start' : k === controls.length - 1 ? 'End' : `PI ${k}`}</td>
+              <td className="num" style={cell} title="Grade = Δcrown / Δchainage to the next point; + = getting deeper">
+                {Math.round(pch[k] ?? 0)} m
+                {nx && <span className="block text-meta text-text-3">{grade === null ? 'grade ?' : `${grade >= 0 ? '+' : ''}${grade.toFixed(2)} %`}</span>}
+              </td>
+              <td style={cell}>
+                <input aria-label={`Crown depth below ground at point ${k + 1} (m)`} data-testid={`ug-pi-depth-${k}`} type="number" min={0} step={0.5} placeholder="?" title="Blank = Unknown"
+                  className={input} style={{ ...inputStyle, width: 70, fontSize: 12 }} value={c.crownDepthM ?? ''}
+                  onChange={e => commit(withControlDepth(a, k, { crownDepthM: num(e.target.value) }), `Depth at point ${k + 1}`, `${a.id}:pidepth:${k}`)} />
+                {c.derived && <span className="block text-meta text-text-3" data-testid={`ug-pi-derived-${k}`} title="Not entered: read off the line between the neighbouring points">interpolated</span>}
+                <span className="block text-meta text-text-3 tabular-nums" data-testid={`ug-pi-elev-${k}`}>
+                  {elev === null ? (c.crownDepthM === null ? 'elev ?' : 'ground ?') : `${elev.toFixed(1)} m EGM2008`}
+                </span>
+              </td>
+              <td style={cell}>
+                {c.crownDepthM === null ? <CertaintyBadge certainty="unknown" note="No depth entered" /> : (
+                  <CertaintySelect id={`ug-pi-cert-${k}`} label={`Depth certainty at point ${k + 1}`} testId={`ug-pi-cert-${k}`} short value={c.certainty}
+                    onChange={v => commit(withControlDepth(a, k, { certainty: v }), `Depth certainty at point ${k + 1}`)} />
+                )}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 };

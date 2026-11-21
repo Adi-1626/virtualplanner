@@ -67,13 +67,22 @@ function isMappedOsm(road: RoadObject): boolean {
 
 // ─── IRC/MORTH Constants ─────────────────────────────────────────────────────
 
-/** IRC:SP-73 — Maximum permissible ramp gradient for urban flyovers */
+/**
+ * Ramp gradient used by this desk check: 5 % (1 in 20), an app screening value with no cited source. It was labelled
+ * "IRC:SP-73", which is the two-laning manual, not the grade-separator one. The grade-separator clause is
+ * IRC:SP:90-2010 §6.14: a gradient "in any case greater than 3.5 percent should not be provided"
+ * (docs/urbanos/GEOMETRY_EDITOR_DESIGN.md §1.5, §2.2). TODO(geometry phase 3, decision D5): move this to 3.5 % with that
+ * citation together with the grade-driven flyover ramps; kept at 5 % until the user decides, so results do not change.
+ */
 const MAX_RAMP_GRADE = 0.05; // 5% = 1 in 20
 
 /** IRC:6 — Minimum median width to fit a standard pier cap (2.4m cap + 0.3m clearance each side) */
 const MIN_MEDIAN_FOR_PIER_M = 3.0;
 
-/** IRC:SP-73 — Minimum flat deck length for a flyover to be structurally valid */
+/**
+ * Minimum flat deck length used by the desk check (app screening value). TODO: no clause for a 50 m minimum deck was
+ * found (it was labelled IRC:SP-73, the two-laning manual); find the official source or drop the citation.
+ */
 const MIN_FLAT_DECK_M = 50.0;
 
 /** MORTH — Ramp merge/weave zone capacity penalty applied to the surface road */
@@ -242,7 +251,7 @@ export class BridgeFeasibilityEngine {
 
     const totalLength = bfe_pathLengthMeters(flyoverCoords);
 
-    // IRC:SP-73: ramp length = elevation / max_grade
+    // ramp length = elevation / max_grade (5 % app screening value; see MAX_RAMP_GRADE)
     const rampLengthRequired = Math.ceil(elevation / MAX_RAMP_GRADE);
 
     const startCoord = flyoverCoords[0];
@@ -251,7 +260,7 @@ export class BridgeFeasibilityEngine {
     const rampStartAvail = bfe_getRampApproachLength(startCoord, surfaceRoads);
     const rampEndAvail   = bfe_getRampApproachLength(endCoord, surfaceRoads);
 
-    // ── Check 1: Ramp Grade (IRC:SP-73) ──────────────────────────────────────
+    // ── Check 1: Ramp Grade (5 % screening value; IRC:SP:90 §6.14 caps 3.5 %) ─
 
     const minRampAvail = Math.min(rampStartAvail, rampEndAvail);
     const rampGradeStatus: FeasibilityStatus =
@@ -259,7 +268,7 @@ export class BridgeFeasibilityEngine {
 
     checks.push({
       id: 'ramp_grade',
-      name: 'Ramp Grade (IRC:SP-73)',
+      name: 'Ramp Grade (5 % screening value)',
       status: rampGradeStatus,
       message: rampGradeStatus === 'pass'
         ? `A ${elevation} m rise at 5% needs ${rampLengthRequired} m of ramp. The longest mapped road within 60 m of each end is long enough (start ${Math.round(rampStartAvail)} m, end ${Math.round(rampEndAvail)} m).`
@@ -267,10 +276,10 @@ export class BridgeFeasibilityEngine {
       actual: Math.round(minRampAvail),
       required: rampLengthRequired,
       unit: 'm approach',
-      basis: 'Length of mapped roads near each end. Not checked: whether that road is straight and wide enough to hold the ramp.'
+      basis: 'Length of mapped roads near each end, at a 5 % ramp (app screening value; IRC:SP:90-2010 §6.14 says grade-separator gradients above 3.5 % should not be provided, which needs longer ramps). Not checked: whether that road is straight and wide enough to hold the ramp.'
     });
 
-    // ── Check 2: Minimum Deck Length (IRC:SP-73) ──────────────────────────────
+    // ── Check 2: Minimum Deck Length (app screening value; TODO source) ───────
 
     const minDeckLength = 2 * rampLengthRequired + MIN_FLAT_DECK_M;
     const deckStatus: FeasibilityStatus = totalLength >= minDeckLength ? 'pass' : 'fail';

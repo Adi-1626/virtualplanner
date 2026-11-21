@@ -42,6 +42,24 @@ function resampleCoordinates(coords: number[][], interval: number): number[][] {
   return newCoords;
 }
 
+/** Same plan positions (z ignored), within ~1 mm. */
+function samePlan(a: readonly (readonly number[])[], b: readonly (readonly number[])[]): boolean {
+  for (let i = 0; i < a.length; i++) if (Math.abs(a[i][0] - b[i][0]) > 1e-8 || Math.abs(a[i][1] - b[i][1]) > 1e-8) return false;
+  return true;
+}
+
+/**
+ * A flyover whose plan line was regenerated (GEOMETRY_EDITOR_DESIGN.md §3.4): `groundLine` is its new ground-level path.
+ * The stored ground coordinates are dropped so applyFlyoverElevationProfile rebuilds them and the ramp/deck profile from
+ * the new path (same 40 m legacy ramps; the ramp model is not changed here). Mutates and returns `flyover`.
+ */
+export function resetFlyoverGround<T extends { coordinates: unknown; groundCoordinates?: unknown }>(flyover: T, groundLine: readonly (readonly number[])[]): T {
+  (flyover as any).coordinates = groundLine.map(c => [c[0], c[1], c[2] || 0]);
+  delete (flyover as any).groundCoordinates;
+  applyFlyoverElevationProfile(flyover);
+  return flyover;
+}
+
 export function applyFlyoverElevationProfile(flyover: any) {
   if (!flyover.coordinates || flyover.coordinates.length < 2) return;
 
@@ -64,11 +82,14 @@ export function applyFlyoverElevationProfile(flyover: any) {
     distanceList.push(totalDist);
   }
 
+  // Legacy fixed 40 m ramp (a 15 % grade for the 6 m deck). Kept for every flyover until the grade-driven ramp model
+  // (decision D5, IRC:SP:90-2010 §6.14 3.5 %) is chosen: GEOMETRY_EDITOR_DESIGN.md §1.5, phase 3.
   const rampLength = 40.0; // 40 meters default ramp length
   const actualRampLength = Math.min(rampLength, totalDist / 2);
 
   // Preserve/Reconstruct ground coordinates to avoid double-elevation accumulation
-  if (!flyover.groundCoordinates || flyover.groundCoordinates.length !== flyover.coordinates.length) {
+  // Rebuilt when the plan changed: a vertex added (length differs) or moved (a reshape that keeps the vertex count)
+  if (!flyover.groundCoordinates || flyover.groundCoordinates.length !== flyover.coordinates.length || !samePlan(flyover.groundCoordinates, flyover.coordinates)) {
     const averageElev = flyover.coordinates.reduce((sum: number, c: any) => sum + (c[2] || 0), 0) / flyover.coordinates.length;
     if (averageElev > 1.0) {
       flyover.groundCoordinates = flyover.coordinates.map((c: any, i: number) => {
