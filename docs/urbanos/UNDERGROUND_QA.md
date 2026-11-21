@@ -125,3 +125,17 @@ The screening engine was not changed.
     said "Online" with the backend down.
 12. **Existing data isn't migrated:** pipes saved as QL-C before 7dcf9de keep Hypothetical depths until their evidence is changed again.
 13. **Report file names use the server's UTC clock** (`…-1425.pdf` for 19:55 IST). The report body shows both IST and UTC.
+
+## Final end-user pass (2026-11-21, headless Chromium, DB copy, real clicks)
+
+Branch `underground-final` (from c09d91a). All timings and visuals are headless; real Windows Chrome was not measured.
+
+**Passed:** pick area and "See existing records"; draw a tunnel (3 clicks) and a water pipe (2 clicks); typed depths and diameter; Undo/Redo; blank depth stored as Unknown (never 0); Check conflicts with five-part finding detail and gap groups; Look from below (labels capped at 1.2 km near/below ground, no horizon pile-up); Back to surface; Cross-section tab; PDF (6 pages), DOCX and CSV downloads via the buttons (no imported-metro duplicate, no forbidden words); reload keeps depths, diameter and last saved check; backend down shows "Offline" with a plain message.
+
+**Found and fixed:** "unknown to unknown" in findings (now "depth unknown"); imported OSM metro tunnel screened as "Elevated metro (drawn)" and counted twice (Design copy + OSM-index copy are one asset); double full stop in the records error text; study-area import wrote an invented −6 m for metro tunnels (now level 0 with `tunnel=yes`; old −6 m objects still recognised); PMC records stayed visible in Design (now Underground only); "Show drawn utilities" missed the full-size pipe models; summary sentence count now matches the badges; DOCX report button added; report file names in IST.
+
+**Noted, not changed:** the Purple Line gives two findings for two separate OSM ways; the metro NOC rule shows "[notice UNVERIFIED]" (honest label from the screening config); the 4th click of the polygon study-area tool did not register in the headless harness (harness quirk, not investigated).
+
+**Moved:** vertex drag on drawn tunnels/utilities is not implemented here; it is part of the geometry editor work (`GEOMETRY_EDITOR_DESIGN.md`, Phase 2 reshape editor).
+
+**Not re-checked in this pass:** deeper Environment/Simulate behaviour after switching (only record visibility and globe state); backend restart recovery; "depth unknown" wording in a fresh report from the new backend (covered by pytest).
