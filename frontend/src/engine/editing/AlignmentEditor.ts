@@ -360,8 +360,8 @@ export interface GeometryCommitResult {
 }
 
 /**
- * LOCAL STAND-IN for D's commitGeometry(obj, alignment, ctx) (TODO(merge): replace with
- * `import { commitGeometry } from './geometryCommit'`). Regenerates, updates the object and pushes ONE batch diff
+ * Lightweight commit used by the editor's unit tests only; the app uses geometryCommit.ts `commitGeometry` (full
+ * pipeline: re-join, crossings, flyover ramps, depth controls). Regenerates, updates the object and pushes ONE batch diff
  * "Reshape <name>"; refuses locked / invalid shapes. No network steps (crossings, T-splits, end re-join) here.
  */
 export function commitGeometry(obj: CityObject, alignment: HorizontalAlignment, ctx: GeometryCommitContext): GeometryCommitResult {

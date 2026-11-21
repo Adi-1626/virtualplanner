@@ -58,7 +58,8 @@ import { findRoadEndGaps, type RoadEndGap } from './editing/roadGaps';
 import type { NonDrivableRoad } from './editing/osmDrivability';
 import { HistoryManager, deleteWithHistory } from './history/HistoryManager';
 import { EditingEngine } from './editing/EditingEngine';
-import { AlignmentEditSession, HANDLE_PREFIX, commitGeometry } from './editing/AlignmentEditor';
+import { AlignmentEditSession, HANDLE_PREFIX } from './editing/AlignmentEditor';
+import { commitGeometry } from './editing/geometryCommit';
 import { AlignmentEditorView } from './editing/AlignmentEditorView';
 import { runProgressivePerformanceTest, runRoadPerformanceTest } from './testing/PerformanceTester';
 import { apiGet, apiPost } from '../lib/api';
@@ -179,7 +180,6 @@ export class TwinCityEngine {
     this.editing = new EditingEngine(this.objects, this.history, () => this.getTrafficNetwork(), localOsm);
     this.alignmentEditor = new AlignmentEditSession({
       getObject: id => this.objects.getById(id),
-      // TODO(merge with agent D): commitGeometry comes from ./editing/geometryCommit (same signature)
       commit: (obj, alignment) => commitGeometry(obj, alignment, { objects: this.objects, history: this.history, editing: this.editing, scenarioId: this.scenarios.getActiveScenarioId() }),
       canEdit: () => !this.simMode.isActive() && !this.editing.isLocked(),
       snapEnd: (lon, lat, objId) => {
