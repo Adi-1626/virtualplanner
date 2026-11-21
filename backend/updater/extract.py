@@ -133,11 +133,14 @@ def _temporal(ns: str) -> str | None:
 
 # ── per-attribute extractors: (normalised sentence) -> list[(value_num, value_text, qualifier, match_start, note)] ─────
 def x_tunnel_depth(ns: str, ctx: dict) -> list:
-    if not re.search(r"\b(?:tunnel\w*|tbms?|boring|underground)\b", ns):
+    tunnel_words = r"\b(?:tunnel\w*|tbms?|boring|underground)\b"
+    # "The machines will work about 28 metres below ground level." — "machines" refers to the TBMs of the previous sentences
+    if not (re.search(tunnel_words, ns) or (re.search(r"\b(?:the|these|both|all four) machines?\b", ns)
+                                             and re.search(r"\b(?:tbms?|tunnel boring machines?)\b", ctx.get("prev", "")))):
         return []
     if re.search(r"\b(?:piles?|piling|shafts?|footings?|foundations?|borewells?|wells?|station box|basement)\b", ns):
         return []
-    if re.search(r"\bstations?\b", ns) and not re.search(r"\b(?:tunnel\w*|tbms?|boring)\b", ns):
+    if re.search(r"\bstations?\b", ns) and not re.search(r"\b(?:tunnel\w*|tbms?|boring|machines?)\b", ns):
         return []
     out = []
     pats = [
@@ -177,12 +180,16 @@ def x_length(ns: str, ctx: dict) -> list:
         if not (0.2 <= v <= 300):
             continue
         out.append((v, None, _qualifier(m.group("hedge")), m.start(), ""))
+    for m in re.finditer(r"(?:" + HEDGE + r"\s*)?(?P<num>\d{2,4}(?:\.\d+)?)\s*(?:m|metres|meters)\s+(?:in length|long)\b", ns):
+        v = float(m.group("num")) / 1000.0
+        if 0.05 <= v <= 20:
+            out.append((v, None, _qualifier(m.group("hedge")), m.start(), "stated in metres"))
     return out
 
 
 def x_station_count(ns: str, ctx: dict) -> list:
     out = []
-    for m in re.finditer(NUMWORD + r"\s+(?:new\s+)?(?:(?P<kind>underground|elevated|metro)\s+)?stations\b", ns):
+    for m in re.finditer(NUMWORD + r"\s+(?:(?:new|more|important|major|planned|proposed)\s+)?(?:(?P<kind>underground|elevated|metro)\s+)?stations\b", ns):
         before = ns[max(0, m.start() - 25):m.start()]
         after = ns[m.end():m.end() + 25]
         if re.search(r"\b(?:first|of the|among|other|remaining|another|existing)\s*$", before):
@@ -197,13 +204,13 @@ def x_station_count(ns: str, ctx: dict) -> list:
 
 
 def x_cost(ns: str, ctx: dict) -> list:
-    if not re.search(r"\b(?:cost|costing|estimated|outlay|budget|project worth|project of|worth)\b", ns):
+    if not re.search(r"\b(?:cost|costing|estimated|outlay|budget|project worth|project of|worth|pegged)\b|crore[- ](?:[\w-]+\s+){0,3}(?:project|flyover|bridge|road|corridor|line|extension)\b", ns):
         return []
     if re.search(r"\b(?:loa|letter of acceptance|awarded|contract|tender|bid|work order|equity|loan|funding|grant|allocat\w*|"
-                 r"released|disbursed|compensation|land acquisition|fine|penalty|revenue|toll)\b", ns):
+                 r"released|disbursed|contribut\w*|will add|share of|compensation|for land acquisition|fine|penalty|revenue|toll)\b", ns):
         return []
     out = []
-    for m in re.finditer(r"(?:" + HEDGE + r"\s*)?(?:₹|rs\.?|inr)\s*(?P<num>\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*"
+    for m in re.finditer(r"(?:" + HEDGE + r"\s*)?(?:₹|rs\.?|inr)\s*(?P<num>\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)[\s-]*"
                          r"(?P<scale>lakh crore|crore|cr\b)", ns):
         v = parse_number(m.group("num"))
         if v is None:
@@ -219,7 +226,7 @@ def x_cost(ns: str, ctx: dict) -> list:
 def x_tbm_count(ns: str, ctx: dict) -> list:
     out = []
     for m in re.finditer(r"(?P<pre>\b(?:needs|need|requires?|require|deploy(?:ed|ing)?|total of|of|use|using|uses|procured?|"
-                         r"order(?:ed)?)\s+)?" + NUMWORD + r"\s+(?:tunnel boring machines|tbms)\b", ns):
+                         r"order(?:ed)?|involve|involves|all)\s+)?" + NUMWORD + r"\s+(?:tunnel boring machines|tbms)\b", ns):
         after = ns[m.end():m.end() + 45]
         if re.match(r"\s*(?:\(tbms\)\s*)?(?:will )?(?:operate|operating|work|working)?\s*(?:from|on the|each|side)\b", after):
             continue
@@ -253,7 +260,7 @@ def x_tunnelling_start(ns: str, ctx: dict) -> list:
         return []
     if not re.search(r"\b(?:begin|begins|began|begun|start|starts|started|commence\w*|kick off|kicks off|kicked off|get under way)\b", ns):
         return []
-    if re.search(r"\bshafts?\b", ns) and not re.search(r"\b(?:tunnel\w*|boring|tbms?)\b.{0,60}\b(?:begin|start|commence)", ns):
+    if re.search(r"\bshafts?\b", ns) and not re.search(r"\b(?:tunnel\w*|boring|tbms?)\b.{0,120}\b(?:begin|start|commence)", ns):
         return []
     out = []
     for m in re.finditer(r"\b(?:in|from|by|during)\s+(?:early\s+|mid-?\s*|the end of\s+|end of\s+|late\s+)?" + _MONTH_RE +
@@ -265,18 +272,39 @@ def x_tunnelling_start(ns: str, ctx: dict) -> list:
 
 
 def x_completion(ns: str, ctx: dict) -> list:
-    if not re.search(r"\b(?:complete\w*|ready|operational|open(?:ed)? (?:for|to) (?:the )?(?:public|commuters)|deadline|target)\b", ns):
+    if not re.search(r"\b(?:complet\w*|ready|operational|open(?:ed)? (?:for|to) (?:the )?(?:public|commuters)|deadline|target)\b", ns):
         return []
     if re.search(r"\b(?:shaft|station box|casting|segment|survey|dpr|tender)\b", ns):
         return []
     out = []
-    for m in re.finditer(r"\b(?:by|in|of|till|before|until)\s+(?:the end of\s+|end of\s+|end-)?(?:" + _MONTH_RE + r"\s*,?\s*)?(?P<year>20\d{2})\b", ns):
+    rev = re.search(r"\b(?:extended|revised|pushed(?: back)?|postponed|deferred|shifted)\s+to\b", ns)
+    start = rev.end() - 2 if rev else 0       # keep the "to" so the pattern below sees a preposition
+    day = r"(?:\d{1,2}(?:st|nd|rd|th)?\s+)?"
+    pat = (r"\b(?:by|in|of|till|before|until|to)\s+(?:the end of\s+|end of\s+|end-)?" + day +
+           r"(?:" + _MONTH_RE + r"\s*(?:\d{1,2}(?:st|nd|rd|th)?\s*)?,?\s*)?(?P<year>20\d{2})?\b")
+    for m in re.finditer(pat, ns[start:]):
+        pos = m.start() + start
+        if not m.group("year") and not m.groupdict().get("month"):
+            continue
+        if not rev and m.group(0).startswith("to"):
+            continue
+        if re.search(r"\b(?:original|earlier|initial|previous|old)\s+(?:\w+\s+){0,2}$", ns[max(0, pos - 30):pos]):
+            continue
+        seg = re.split(r"[,;]|\bwhile\b|\bwhereas\b", ns[max(0, pos - 50):pos])[-1]
+        if not re.search(r"\b(?:complet\w*|ready|operational|open\w*|deadline|target\w*|finish\w*|commission\w*)\b", seg):
+            continue      # the date must follow its completion word (not a date from another clause)
         if m.groupdict().get("month"):
-            val, note = _month_value(m, None, allow_no_year=False)
+            val, note = _month_value(m, ctx.get("published"), allow_no_year=True)
         else:
             val, note = m.group("year"), ""
         if val:
-            out.append((None, val, "exact", m.start(), note))
+            out.append((None, val, "exact", pos, note))
+    pub = ctx.get("published")
+    for m in re.finditer(r"\b(?:by|before|till|until)\s+(?:the )?end of (?P<rel>this|next) year\b", ns):
+        seg = re.split(r"[,;]|\bwhile\b", ns[max(0, m.start() - 50):m.start()])[-1]
+        if pub and re.search(r"\b(?:complet\w*|ready|operational|open\w*)\b", seg):
+            y = pub.year + (1 if m.group("rel") == "next" else 0)
+            out.append((None, f"{y}-12", "exact", m.start(), f"'end of {m.group('rel')} year' read as December {y} from the publish date {pub.isoformat()}"))
     return out
 
 
@@ -355,12 +383,14 @@ def extract_page(paragraphs: list[str], title: str, projects: list[dict], publis
     out: list[Claim] = []
     seen: set[tuple] = set()
     window: list[set[str]] = []          # projects named in the previous sentences (document order, newest last)
+    prev_text: list[str] = []
     for para in paragraphs:
         for s in sentences(para):
             ns = norm_for_match(s)
             spans = alias_spans(ns, projects)
             here = {x[2] for x in spans}
             recent = set().union(*window[-CONTEXT_SENTENCES:]) if window else set()
+            ctx["prev"] = " ".join(prev_text[-2:])
             cites = bool(CITES.search(ns))
             temporal = _temporal(ns)
             for attr, fn in EXTRACTORS.items():
@@ -389,6 +419,7 @@ def extract_page(paragraphs: list[str], title: str, projects: list[dict], publis
                     out.append(Claim(pid, attr, vnum, vtext, unit, qual, t, s[:MAX_QUOTE], how,
                                      f"pattern:{attr}@{EXTRACTOR_VERSION}", cites, note))
             window.append(here)
+            prev_text.append(ns)
     return out
 
 
