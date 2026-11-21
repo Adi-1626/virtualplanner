@@ -44,7 +44,7 @@
     {
       "project_id": "pune-metro-line-3-hinjewadi-shivajinagar",
       "name": "Pune Metro Line 3 (Pink Line / 'Puneri Metro') Maan-Hinjewadi–Shivajinagar (District Court)",
-      "agency": "PMRDA (PPP concession to Tata (TRIL Urban Transport) – Siemens JV)",
+      "agency": "PMRDA (PPP project)",
       "category": "metro"
     },
     {
@@ -68,7 +68,7 @@
     {
       "project_id": "flyover-university-chowk-ganeshkhind-double-decker",
       "name": "Integrated double-decker flyover, Savitribai Phule Pune University Chowk (Ganeshkhind Road)",
-      "agency": "PMRDA (built by Metro Line 3 concessionaire; PMC approval)",
+      "agency": "PMRDA",
       "category": "flyover"
     },
     {
@@ -86,7 +86,7 @@
     {
       "project_id": "flyover-katraj-junction-nh548dd",
       "name": "Katraj Junction six-lane flyover (Katraj–Kondhwa Road to Mumbai–Bengaluru bypass), NH-548DD",
-      "agency": "NHAI (with PMC for Katraj–Kondhwa road widening)",
+      "agency": "NHAI / MoRTH",
       "category": "flyover"
     },
     {
@@ -128,7 +128,7 @@
     {
       "project_id": "swargate-multimodal-hub",
       "name": "Swargate Multimodal Transport Hub (Metro + MSRTC + PMPML)",
-      "agency": "Maha-Metro (hub built by a third-party contractor); MSRTC, PMPML",
+      "agency": "Maha-Metro; MSRTC; PMPML",
       "category": "transit_hub"
     },
     {
@@ -1260,7 +1260,7 @@
       "category": "metro",
       "attribute": "opening_date",
       "value": "2026-11-03 (inaugurated by the Prime Minister)",
-      "unit": "date (passenger services; inaugurated 2026-11-03)",
+      "unit": "date",
       "as_of": null,
       "confidence": "official",
       "slipped": false,
@@ -2873,7 +2873,7 @@
       "attribute": "status",
       "value": "land acquisition and forest land clearance in progress (Stage 1, Phases 1 and 2)",
       "unit": null,
-      "as_of": "2026-10-29",
+      "as_of": null,
       "confidence": "official",
       "slipped": false,
       "sources": [
