@@ -474,12 +474,7 @@ export function readCorridorRun(sim: TrafficMicroSim, seed: number, corridor: St
   // Junction names from the roads that meet there
   const roadNamesAt = new Map<string, Set<string>>();
   for (const l of counts.links) for (const n of [l.from, l.to]) { const s = roadNamesAt.get(n) ?? roadNamesAt.set(n, new Set()).get(n)!; const nm = roads.get(l.roadId)?.name; if (nm && !isGenericRoadName(nm)) s.add(nm); }
-  const junctionName = (nodeId: string) => {
-    const names = [...(roadNamesAt.get(nodeId) ?? [])];
-    const others = names.filter(n => n !== section.name);
-    if (names.length >= 2) return names.slice(0, 3).join(' / ');
-    return others.length ? `${section.name} / ${others[0]}` : names.length ? `${names[0]} (junction)` : 'an unnamed junction';
-  };
+  const junctionName = (nodeId: string) => junctionLabel([...(roadNamesAt.get(nodeId) ?? [])], section.name);
   const sectionNodes = new Set(dirs.flatMap(d => d.linkIds).flatMap(id => { const l = byId.get(id); return l ? [l.from, l.to] : []; }));
   const stats = sim.junctionStats();
   const statByJunction = new Map(stats.map(j => [j.id, j]));
@@ -977,4 +972,11 @@ export function countChecks(sim: TrafficMicroSim, layouts: readonly ZoneLayout[]
       demandVph: Math.round(keys.reduce((n, k) => n + (demand.get(k) ?? 0), 0)), servedVph: Math.round(keys.reduce((n, k) => n + (counts.get(k) ?? 0) * perH, 0)),
       problem: layout?.problem ?? null };
   });
+}
+
+/** Plain label for a junction from the names of the roads that meet there; reads inside a sentence ("Queue backing up from …"). */
+export function junctionLabel(names: string[], sectionName: string): string {
+  const others = names.filter(n => n !== sectionName);
+  if (names.length >= 2) return names.slice(0, 3).join(' / ');
+  return others.length ? `${sectionName} / ${others[0]}` : names.length ? `a junction on ${names[0]}` : 'an unnamed junction';
 }
