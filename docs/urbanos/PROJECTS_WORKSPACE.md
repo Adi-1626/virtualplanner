@@ -44,7 +44,7 @@ nothing is taken from news reports.
 | Tab | What you do there |
 |---|---|
 | **Overview** | Purpose, *Edit* (name, purpose, study area), *Next steps*, metric tiles (click to jump), status (*Draft / Under study / Under review*; *Decision recorded* is set only by recording a decision), report PDF / DOCX, all linked records (attach or detach any alternative, version, run, traffic dataset, feasibility screening), **Delete project**. |
-| **Alternatives** | Attach an alternative (the base city is not offered: it is what every alternative is compared with); ★ preferred; *Open & compare in Design*; **Add proposal elements** — the list shows each element's kind and depth range before you confirm, with the basis under *Technical details*; elements list with *Show on map* and *Remove* (the alternative itself is not changed). |
+| **Alternatives** | Attach an alternative (the base city is not offered: it is what every alternative is compared with); ★ preferred; *Open & compare in Design*; **Add proposal elements** — one checkbox per drawn work (all ticked to start) with its kind and depth range; untick a work you do not want in the project (it stays a drawing of the alternative, which the check still compares — see §5); the basis is under *Technical details*; elements list with *Show on map* and *Remove* (the alternative itself is not changed). |
 | **Assessments** | Feasibility screenings (+ investigation documents), traffic model runs (they fail validation, TAG M3.1, and say so), conflict checks — each with its stale badge. |
 | **Datasets** | Traffic datasets with provenance; subsurface datasets imported for the project (coverage UNKNOWN unless stated). |
 | **Conflicts** | Run the check; findings grouped by class (15 per class, *Show all N* for more); respond (see §6). |
@@ -65,6 +65,10 @@ nothing is taken from news reports.
 
 Values from a drawing are design values (*hypothetical*), not surveys.
 
+Example: an alternative holds a storm-water tunnel, a water main and an 11 kV cable. Tick the tunnel and the water main, untick
+the cable: the project gets two elements; the cable is still checked as an object *drawn in Design* in an attached alternative
+(the finding says "Objects drawn in Design: … 11 kV cable"), but it is not one of the project's works.
+
 ## 5. What the conflict check compares
 
 This project's elements against:
@@ -80,8 +84,10 @@ This project's elements against:
 - utility records (PMC sewer / storm-drain records, ASCE 38 QL-D; their levels are design levels, unverified).
 
 Plan distances are measured in UTM 43N; depths are compared separately. A depth or width that is UNKNOWN gives *Potential
-conflict*, never "clear". The **metro NOC trigger** (20 m from the edge of the metro, UDCPR 2020 cl. 14.2.1.7) says when a
-MahaMetro NOC is needed; it is a permission distance, not an engineering clearance.
+conflict*, never "clear". The **metro NOC trigger** (20 m on either side of the edge of the Metro Rail: UDCPR 2020 cl. 14.2.1.7, and Maha-Metro Public
+Notice 9549/2026 of 15.04.2026, which applies it to construction, excavation, geotechnical investigations, borewells and utility
+laying near viaducts, stations and tunnels) says when a Maha-Metro NOC is needed; it is a permission distance, not an
+engineering clearance. The tool measures it from the mapped centreline, not from the structure's edge.
 
 A check is **stale** when, since it ran, this project's elements changed, an attached alternative was edited or another one was
 attached, another project changed, the base city, clearance rules, subsurface records, the OSM or building index changed, or the
