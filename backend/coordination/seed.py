@@ -16,10 +16,20 @@ from .models import ClearanceRuleEntity, EnvironmentLayerEntity
 SEED_ACTOR = "system (seed)"
 
 METRO_KINDS = "metro,metro_tunnel,metro_viaduct,metro_station"
-_S9 = ("Indian Express, 'Pune Metro issues no-NOC, no-work warning after Shukrawar Peth tunnel breach', 17 Apr 2026 — "
-       "https://indianexpress.com/article/cities/pune/noc-mandatory-pune-metro-warns-of-action-over-borewell-drilling-near-tunnels-10641841/ "
-       "(MahaMetro spokesperson: development within 20 m of either the elevated or underground metro route needs a metro NOC). "
-       "MahaMetro notice https://www.punemetrorail.org/download/Notice-for-NOC.pdf not read (scanned). Repo: docs/RESEARCH_FEASIBILITY_AND_INVESTIGATION.md §1.7, S9.")
+# Official source (official-only rule, 2026-11-21). The earlier citation was a news report; it is kept only as
+# _S9_LEGACY so `python -m updater migrate-official-only` can replace it in an existing database.
+_S9 = ("Maha-Metro (Pune Metro Rail Project) Public Notice No. Maha Metro/Pune/Plng/NOC/959/2026 dated 15/04/2026 — "
+       "https://www.punemetrorail.org/download/Notice-for-NOC.pdf (scanned PDF, read by visual check 2026-11-21): 'as per Clause "
+       "14.2.1.7 of the Unified Development Control and Promotion Regulations (UDCPR), it is mandatory that for any development "
+       "or redevelopment proposed within a distance of 20 meters on either side from the edge of Metro Railway structures, "
+       "including viaducts, piers, stations, entry-exits, depots, ancillary structures, tunnels (UP & DN lines), subways, or any "
+       "other Metro structures, the concerned Planning Authority shall seek and obtain prior No Objection Certificate (NOC) from "
+       "the Metro Railway Authority'. Also Maha-Metro circular NMRCL/Plg/NOC/Metro-Corridor/2017/257 (28.03.2018), "
+       "https://www.punemetrorail.org/download/Guidelines%20for%20NOC.pdf. Repo: docs/RESEARCH_FEASIBILITY_AND_INVESTIGATION.md §1.7, S9.")
+_S9_LEGACY = ("Indian Express, 'Pune Metro issues no-NOC, no-work warning after Shukrawar Peth tunnel breach', 17 Apr 2026 — "
+              "https://indianexpress.com/article/cities/pune/noc-mandatory-pune-metro-warns-of-action-over-borewell-drilling-near-tunnels-10641841/ "
+              "(MahaMetro spokesperson: development within 20 m of either the elevated or underground metro route needs a metro NOC). "
+              "MahaMetro notice https://www.punemetrorail.org/download/Notice-for-NOC.pdf not read (scanned). Repo: docs/RESEARCH_FEASIBILITY_AND_INVESTIGATION.md §1.7, S9.")
 _AMASR = ("AMASR Act 1958 as amended 2010, s.20A (prohibited area 100 m) and s.20B (regulated area, a further 200 m, i.e. 100–300 m) — "
           "NMA FAQ https://nma.gov.in/show_content.php?lang=1&level=0&lid=9&ls_id=14&nma_type=0 (NMA, updated 24 Feb 2025, READ); "
           "Act text https://prsindia.org/files/bills_acts/acts_parliament/2010/ancient-monuments-and-archaeological-sites-and-remains-act-2010.pdf "

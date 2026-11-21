@@ -7,9 +7,12 @@ import os
 import re
 
 from .extract import ATTRIBUTES
+from .official import official_domain
 
 WATCHLIST_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "watchlist.json")
-SOURCE_KINDS = ("official_page", "rss", "gdelt", "google_cse")
+# Only official pages and official feeds. News discovery (newspaper RSS, GDELT, Google search) was removed on 2026-11-21
+# (official-only rule, backend/updater/official.py): a source kind that finds news URLs cannot be configured.
+SOURCE_KINDS = ("official_page", "rss")
 
 
 class ConfigError(ValueError):
@@ -49,12 +52,24 @@ def validate(cfg: dict) -> None:
         if s["id"] in sids:
             raise ConfigError(f"duplicate source id {s['id']}")
         sids.add(s["id"])
-        if int(s.get("tier", 3)) not in (1, 2, 3):
-            raise ConfigError(f"source {s['id']}: tier must be 1, 2 or 3")
+        if official_domain(s.get("url", "")) is None:
+            raise ConfigError(f"source {s['id']}: {s.get('url')!r} is not an official source; only government and agency "
+                              "sites may be watched (backend/updater/official.py)")
+        if "tier" in s and int(s["tier"]) != 1:
+            raise ConfigError(f"source {s['id']}: every source is official (tier 1); tiers 2 and 3 no longer exist")
         for r in s.get("page_rules", []):
             if r.get("project") not in ids:
                 raise ConfigError(f"source {s['id']} rule {r.get('id')}: unknown project {r.get('project')}")
             re.compile(r["pattern"])
+
+
+    for dom, pub in (cfg.get("publishers") or {}).items():
+        if dom.startswith("_"):
+            continue
+        if official_domain("https://" + dom + "/") is None:
+            raise ConfigError(f"publisher {dom!r} is not an official domain; the publishers list only names official sites")
+        if isinstance(pub, dict) and "tier" in pub and int(pub["tier"]) != 1:
+            raise ConfigError(f"publisher {dom!r}: tiers 2 and 3 no longer exist (official sources only)")
 
 
 def project(cfg: dict, pid: str) -> dict | None:

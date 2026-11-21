@@ -256,13 +256,17 @@ def registrable_domain(url_or_host: str) -> str:
 
 
 def publisher_for(url: str, publishers: dict) -> tuple[str, int, str]:
-    """(registrable domain, tier, name): the most specific host suffix listed in the watch-list publishers wins;
-    unlisted = tier 3, named after the domain."""
+    """(registrable domain, tier, name). The tier is decided by code (updater.official), never by the watch-list:
+    1 = official, 3 = not official (such a page is refused before it is stored). The watch-list only supplies a display
+    name for an official domain; the most specific listed host suffix wins."""
+    from .official import official_domain
     h = host_of(url)
+    off = official_domain(url)
+    tier = 1 if off else 3
     labels = h.split(".")
     for i in range(len(labels) - 1):
         suffix = ".".join(labels[i:])
         if suffix in publishers and isinstance(publishers[suffix], dict):
             p = publishers[suffix]
-            return registrable_domain(h), int(p.get("tier", 3)), str(p.get("name", suffix))
-    return registrable_domain(h), 3, registrable_domain(h)
+            return (off or registrable_domain(h)), tier, str(p.get("name", suffix))
+    return (off or registrable_domain(h)), tier, (off or registrable_domain(h))

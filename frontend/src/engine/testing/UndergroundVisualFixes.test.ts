@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { MetroLineObject, MetroStationObject, UtilityObject } from '../objects/types';
 import type { SubsurfaceRecord } from '../../lib/coordinationApi';
 import {
-  DEPTH_NOT_MAPPED, declutterStationLabels, metroTip, objectTip, pickObjectId, pickRecordId, recordTip, shortStationName, utilityTip,
+  DEPTH_NOT_MAPPED, NO_OFFICIAL_STATION_DEPTH, NO_OFFICIAL_TUNNEL_DEPTH, declutterStationLabels, metroTip, objectTip, pickObjectId, pickRecordId, recordTip, shortStationName, utilityTip,
 } from '../underground/hoverInfo';
 import { DEFAULT_UNDERGROUND_SETTINGS, UndergroundView, type ViewerLike } from '../underground/UndergroundView';
 
@@ -50,11 +50,12 @@ describe('hover tooltip text', () => {
   });
   it('metro: unmapped tunnel / station say "depth not mapped"; elevated metro gives its deck height', () => {
     const line = { id: 'm1', type: 'metro_line', name: 'Pune Metro Line 1', coordinates: [], elevation: -6, trackCount: 2 } as unknown as MetroLineObject;
-    expect(metroTip(line, true)).toMatchObject({ type: 'Metro tunnel', depth: DEPTH_NOT_MAPPED });
+    expect(metroTip(line, true)).toMatchObject({ type: 'Metro tunnel', depth: NO_OFFICIAL_TUNNEL_DEPTH });
+    expect(NO_OFFICIAL_TUNNEL_DEPTH).toBe('Depth not mapped (no official figure)');
     expect(metroTip({ ...line, elevation: 12 } as MetroLineObject, false).depth).toContain('12 m above ground');
     const st = { id: 's1', type: 'metro_station', stationName: 'Swargate', coordinates: [73.857, 18.4997, 0], elevation: 0 } as unknown as MetroStationObject;
     const t = objectTip(st, { unmappedMetro: () => ({ inferred: true }) })!;
-    expect(t).toMatchObject({ type: 'Underground metro station', name: 'Swargate', depth: DEPTH_NOT_MAPPED });
+    expect(t).toMatchObject({ type: 'Underground metro station', name: 'Swargate', depth: NO_OFFICIAL_STATION_DEPTH });
     expect(t.status).toContain('on a tunnel section');
     expect(objectTip({ id: 'b', type: 'building' } as never)).toBeNull();
   });

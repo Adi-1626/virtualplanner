@@ -1,6 +1,6 @@
 {
-  "_doc": "Watch-list of the data-freshness service (docs/urbanos/DATA_FRESHNESS_SERVICE.md). Projects: what to track and how they are named. Sources: where to look, with tier 1 official / 2 reputable press / 3 other. Edit and commit; every run records this file's sha256.",
-  "version": 1,
+  "_doc": "Watch-list of the data-freshness service (docs/urbanos/DATA_FRESHNESS_SERVICE.md). Projects: what to track and how they are named. Sources: OFFICIAL pages and feeds only (government and agency sites; the rule is in backend/updater/official.py and cannot be changed here). News feeds were removed on 2026-11-21. Edit and commit; every run records this file's sha256.",
+  "version": 2,
   "settings": {
     "max_article_age_days": 400,
     "max_articles_per_run": 40,
@@ -44,8 +44,7 @@
       ],
       "osm_name_patterns": [
         "katraj"
-      ],
-      "gdelt_query": "\"Swargate\" Katraj metro"
+      ]
     },
     {
       "id": "pune_metro_line_1_purple",
@@ -71,8 +70,7 @@
         "pcmc.*swargate",
         "swargate.*pcmc",
         "line 1\\b"
-      ],
-      "gdelt_query": "\"Purple Line\" Pune metro"
+      ]
     },
     {
       "id": "pune_metro_line_2_aqua",
@@ -93,8 +91,7 @@
         "aqua",
         "vanaz.*ramwadi",
         "line 2\\b"
-      ],
-      "gdelt_query": "Vanaz Ramwadi metro"
+      ]
     },
     {
       "id": "pune_metro_line_3_hinjewadi_shivajinagar",
@@ -121,8 +118,7 @@
       "osm_name_patterns": [
         "hinjewadi",
         "line 3\\b"
-      ],
-      "gdelt_query": "Hinjewadi Shivajinagar metro"
+      ]
     },
     {
       "id": "pune_metro_line_1a_pcmc_nigdi",
@@ -147,8 +143,7 @@
       ],
       "osm_name_patterns": [
         "nigdi"
-      ],
-      "gdelt_query": "Nigdi metro extension Pune"
+      ]
     },
     {
       "id": "pune_metro_line_2a_2b_chandani_chowk_wagholi",
@@ -178,8 +173,7 @@
         "chandni|chandani",
         "wagholi",
         "vitthalwadi"
-      ],
-      "gdelt_query": "Wagholi Chandani Chowk metro extension"
+      ]
     },
     {
       "id": "pune_metro_line_4_4a_kharadi_khadakwasla_nalstop_manikbaug",
@@ -208,8 +202,7 @@
         "kharadi",
         "khadakwasla",
         "manik baug"
-      ],
-      "gdelt_query": "Khadakwasla Kharadi metro"
+      ]
     },
     {
       "id": "flyover_university_chowk_ganeshkhind_double_decker",
@@ -230,8 +223,7 @@
         "completion_target",
         "status"
       ],
-      "osm_name_patterns": [],
-      "gdelt_query": "\"University Chowk\" flyover Pune"
+      "osm_name_patterns": []
     },
     {
       "id": "flyover_sinhagad_road_rajaram_bridge_funtime",
@@ -250,8 +242,7 @@
         "completion_target",
         "status"
       ],
-      "osm_name_patterns": [],
-      "gdelt_query": "\"Sinhagad Road\" flyover"
+      "osm_name_patterns": []
     },
     {
       "id": "chandani_chowk_interchange_nh48",
@@ -272,8 +263,7 @@
         "completion_target",
         "status"
       ],
-      "osm_name_patterns": [],
-      "gdelt_query": "\"Chandani Chowk\" flyover Pune"
+      "osm_name_patterns": []
     },
     {
       "id": "flyover_katraj_junction_nh548dd",
@@ -293,8 +283,7 @@
         "completion_target",
         "status"
       ],
-      "osm_name_patterns": [],
-      "gdelt_query": "Katraj flyover Pune"
+      "osm_name_patterns": []
     },
     {
       "id": "flyover_nal_stop_double_decker",
@@ -313,8 +302,7 @@
         "completion_target",
         "status"
       ],
-      "osm_name_patterns": [],
-      "gdelt_query": "\"Nal Stop\" flyover"
+      "osm_name_patterns": []
     },
     {
       "id": "flyover_karve_statue_warje_double_deckers_line4a",
@@ -334,8 +322,7 @@
         "completion_target",
         "status"
       ],
-      "osm_name_patterns": [],
-      "gdelt_query": "Karve statue flyover Pune"
+      "osm_name_patterns": []
     },
     {
       "id": "elevated_corridor_nashik_phata_khed_nh60",
@@ -354,8 +341,7 @@
         "completion_target",
         "status"
       ],
-      "osm_name_patterns": [],
-      "gdelt_query": "\"Nashik Phata\" Khed elevated corridor"
+      "osm_name_patterns": []
     },
     {
       "id": "ring_road_pmrda_inner",
@@ -376,8 +362,7 @@
       ],
       "osm_name_patterns": [
         "ring road"
-      ],
-      "gdelt_query": "Pune \"inner ring road\" PMRDA"
+      ]
     },
     {
       "id": "ring_road_msrdc_outer",
@@ -399,8 +384,7 @@
       ],
       "osm_name_patterns": [
         "ring road"
-      ],
-      "gdelt_query": "\"Pune Ring Road\" MSRDC"
+      ]
     },
     {
       "id": "riverfront_development_mula_mutha",
@@ -421,8 +405,7 @@
         "completion_target",
         "status"
       ],
-      "osm_name_patterns": [],
-      "gdelt_query": "Pune riverfront development Mula Mutha"
+      "osm_name_patterns": []
     },
     {
       "id": "swargate_multimodal_hub",
@@ -439,8 +422,7 @@
         "completion_target",
         "status"
       ],
-      "osm_name_patterns": [],
-      "gdelt_query": "Swargate multimodal hub"
+      "osm_name_patterns": []
     },
     {
       "id": "sewer_parmm_jica_mula_mutha",
@@ -459,8 +441,7 @@
         "completion_target",
         "status"
       ],
-      "osm_name_patterns": [],
-      "gdelt_query": "Pune JICA sewage treatment Mula Mutha"
+      "osm_name_patterns": []
     },
     {
       "id": "stormwater_pune_flood_mitigation",
@@ -478,8 +459,7 @@
         "cost_inr_crore",
         "status"
       ],
-      "osm_name_patterns": [],
-      "gdelt_query": "Pune flood mitigation storm water drains"
+      "osm_name_patterns": []
     },
     {
       "id": "metro_proposed_nigdi_chakan",
@@ -500,8 +480,7 @@
       ],
       "osm_name_patterns": [
         "chakan"
-      ],
-      "gdelt_query": "Nigdi Chakan metro"
+      ]
     },
     {
       "id": "hcmtr_high_capacity_mass_transit_route",
@@ -519,8 +498,7 @@
         "cost_inr_crore",
         "status"
       ],
-      "osm_name_patterns": [],
-      "gdelt_query": "Pune HCMTR"
+      "osm_name_patterns": []
     }
   ],
   "sources": [
@@ -528,7 +506,6 @@
       "id": "punemetrorail_project_profile",
       "kind": "official_page",
       "enabled": true,
-      "tier": 1,
       "publisher": "Maha-Metro (Pune Metro Rail Project)",
       "url": "https://punemetrorail.org/project-profile",
       "page_rules": [
@@ -550,7 +527,6 @@
       "id": "punemetrorail_line_1b",
       "kind": "official_page",
       "enabled": true,
-      "tier": 1,
       "publisher": "Maha-Metro (Pune Metro Rail Project)",
       "url": "https://www.punemetrorail.org/Line_b.aspx",
       "extract_sentences": true,
@@ -568,7 +544,6 @@
       "id": "punemetrorail_project_update",
       "kind": "official_page",
       "enabled": false,
-      "tier": 1,
       "publisher": "Maha-Metro (Pune Metro Rail Project)",
       "url": "https://www.punemetrorail.org/projectupdate.aspx",
       "page_rules": [],
@@ -579,7 +554,6 @@
       "id": "pmrda_feed",
       "kind": "rss",
       "enabled": true,
-      "tier": 1,
       "publisher": "PMRDA",
       "url": "https://www.pmrda.gov.in/feed/"
     },
@@ -587,178 +561,60 @@
       "id": "pib_rss",
       "kind": "rss",
       "enabled": false,
-      "tier": 1,
       "publisher": "Press Information Bureau",
       "url": "https://pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=3",
       "note": "Disabled: on 2026-11-21 every Lang value returned Hindi titles, so English aliases never match. Enable once an English feed URL is confirmed."
-    },
-    {
-      "id": "ht_pune_rss",
-      "kind": "rss",
-      "enabled": true,
-      "tier": 2,
-      "publisher": "Hindustan Times",
-      "url": "https://www.hindustantimes.com/feeds/rss/cities/pune-news/rssfeed.xml"
-    },
-    {
-      "id": "ie_pune_rss",
-      "kind": "rss",
-      "enabled": true,
-      "tier": 2,
-      "publisher": "The Indian Express",
-      "url": "https://indianexpress.com/section/cities/pune/feed/"
-    },
-    {
-      "id": "toi_pune_rss",
-      "kind": "rss",
-      "enabled": true,
-      "tier": 2,
-      "publisher": "The Times of India",
-      "url": "https://timesofindia.indiatimes.com/rssfeeds/-2128821991.cms"
-    },
-    {
-      "id": "punekarnews_rss",
-      "kind": "rss",
-      "enabled": true,
-      "tier": 2,
-      "publisher": "Punekar News",
-      "url": "https://www.punekarnews.in/feed/"
-    },
-    {
-      "id": "punemirror_rss",
-      "kind": "rss",
-      "enabled": true,
-      "tier": 2,
-      "publisher": "Pune Times Mirror",
-      "url": "https://punemirror.com/feed/"
-    },
-    {
-      "id": "metrorailguy_pune_rss",
-      "kind": "rss",
-      "enabled": true,
-      "tier": 3,
-      "publisher": "The Metro Rail Guy",
-      "url": "https://themetrorailguy.com/category/pune-metro/feed/",
-      "note": "Specialist blog: a good lead for contract awards; tier 3 (never corroborates on its own)."
-    },
-    {
-      "id": "gdelt",
-      "kind": "gdelt",
-      "enabled": false,
-      "tier": 3,
-      "publisher": "GDELT Project (discovery only)",
-      "url": "https://api.gdeltproject.org/api/v2/doc/doc",
-      "delay_s": 6.0,
-      "timespan": "6months",
-      "note": "Optional, off by default. Licence: unlimited use with citation to https://www.gdeltproject.org/. Live check 2026-11-21 from the sandbox: HTTP 429 ('one every 5 seconds') even at 6-8 s spacing, and an empty result for \"Swargate\" Katraj metro — too unreliable for Pune local news to be a default."
-    },
-    {
-      "id": "google_cse",
-      "kind": "google_cse",
-      "enabled": false,
-      "tier": 3,
-      "publisher": "Google Programmable Search (discovery only)",
-      "url": "https://www.googleapis.com/customsearch/v1",
-      "note": "Optional. Needs GOOGLE_CSE_KEY and GOOGLE_CSE_CX. Closed to new customers; Google discontinues it on 2027-01-01."
     }
   ],
   "publishers": {
-    "_doc": "Registrable domain -> tier and display name. Unlisted domains are tier 3 (other) and never corroborate on their own.",
+    "_doc": "Official domain -> display name. Only official domains are allowed here (checked by config.validate against backend/updater/official.py, which is the rule; this list only names publishers).",
     "punemetrorail.org": {
-      "tier": 1,
       "name": "Maha-Metro (Pune Metro Rail Project)"
     },
     "mahametro.org": {
-      "tier": 1,
       "name": "Maha-Metro"
     },
     "pib.gov.in": {
-      "tier": 1,
       "name": "Press Information Bureau"
     },
     "pmc.gov.in": {
-      "tier": 1,
       "name": "Pune Municipal Corporation"
     },
     "pmrda.gov.in": {
-      "tier": 1,
       "name": "PMRDA"
     },
     "pcmcindia.gov.in": {
-      "tier": 1,
       "name": "Pimpri Chinchwad Municipal Corporation"
     },
     "msrdc.in": {
-      "tier": 1,
       "name": "MSRDC"
     },
     "nhai.gov.in": {
-      "tier": 1,
       "name": "NHAI"
     },
     "maharashtra.gov.in": {
-      "tier": 1,
       "name": "Government of Maharashtra"
     },
-    "hindustantimes.com": {
-      "tier": 2,
-      "name": "Hindustan Times"
+    "sansad.in": {
+      "name": "Parliament of India (Digital Sansad)"
     },
-    "indianexpress.com": {
-      "tier": 2,
-      "name": "The Indian Express"
+    "mohua.gov.in": {
+      "name": "Ministry of Housing and Urban Affairs"
     },
-    "timesofindia.indiatimes.com": {
-      "tier": 2,
-      "name": "The Times of India"
+    "pmindia.gov.in": {
+      "name": "Prime Minister's Office"
     },
-    "indiatimes.com": {
-      "tier": 2,
-      "name": "The Times of India"
+    "morth.nic.in": {
+      "name": "Ministry of Road Transport and Highways"
     },
-    "punemirror.com": {
-      "tier": 2,
-      "name": "Pune Times Mirror"
+    "egazette.gov.in": {
+      "name": "Gazette of India"
     },
-    "punekarnews.in": {
-      "tier": 2,
-      "name": "Punekar News"
+    "cag.gov.in": {
+      "name": "Comptroller and Auditor General of India"
     },
-    "thehindu.com": {
-      "tier": 2,
-      "name": "The Hindu"
-    },
-    "lokmat.com": {
-      "tier": 2,
-      "name": "Lokmat"
-    },
-    "esakal.com": {
-      "tier": 2,
-      "name": "Sakal"
-    },
-    "freepressjournal.in": {
-      "tier": 2,
-      "name": "Free Press Journal"
-    },
-    "business-standard.com": {
-      "tier": 2,
-      "name": "Business Standard"
-    },
-    "livemint.com": {
-      "tier": 2,
-      "name": "Mint"
-    },
-    "ndtv.com": {
-      "tier": 2,
-      "name": "NDTV"
-    },
-    "themetrorailguy.com": {
-      "tier": 3,
-      "name": "The Metro Rail Guy"
-    },
-    "primetime24.com": {
-      "tier": 3,
-      "name": "Prime Time 24"
+    "greentribunal.gov.in": {
+      "name": "National Green Tribunal"
     }
   }
 }

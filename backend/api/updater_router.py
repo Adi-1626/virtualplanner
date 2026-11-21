@@ -25,9 +25,9 @@ from sqlalchemy.orm import Session
 
 from database.connection import get_db
 from planning.audit import acting_as
-from updater import audit, config as cfgmod, facts as facts_mod, review
+from updater import audit, config as cfgmod, facts as facts_mod, official, review
 from updater.models import FuProposalEntity, FuRunEntity
-from updater.proposals import evaluate_all, groups_by_status, proposal_dict
+from updater.proposals import _evidence, evaluate_all, evidence_is_official, groups_by_status, proposal_dict
 
 router = APIRouter(prefix="/updater", tags=["updater"])
 
@@ -69,14 +69,18 @@ def status(db: Session = Depends(get_db)):
     runs = list(db.scalars(select(FuRunEntity).order_by(FuRunEntity.started_at.desc()).limit(5)))
     active = facts_mod.read_active(db)
     return {"proposals": groups_by_status(db), "last_runs": [_run_dict(r) for r in runs],
-            "facts": {k: active[k] for k in ("version_id", "version_label", "sha256_ok", "error")} | {"count": len(active["facts"])},
-            "audit": audit.verify_chain(db), "watched_projects": len(cfg["projects"]),
-            "sources": [{"id": s["id"], "kind": s["kind"], "enabled": s.get("enabled", True), "tier": s.get("tier", 3),
+            "facts": {k: active[k] for k in ("version_id", "version_label", "sha256_ok", "error")}
+            | {"count": len(active["facts"]), "withheld": active.get("withheld", [])},
+            "audit": audit.verify_chain(db), "watched_projects": len(cfg["projects"]), "official_rule": official.describe(),
+            "sources": [{"id": s["id"], "kind": s["kind"], "enabled": s.get("enabled", True), "tier": 1,
                          "publisher": s.get("publisher"), "url": s.get("url"), "note": s.get("note", "")} for s in cfg["sources"]]}
 
 
 @router.get("/proposals")
-def proposals(status: Optional[str] = None, project: Optional[str] = None, db: Session = Depends(get_db)):
+def proposals(status: Optional[str] = None, project: Optional[str] = None, include_unofficial: bool = False,
+              db: Session = Depends(get_db)):
+    """Proposals backed only by official pages. A proposal from before the official-only rule (news evidence) is left
+    out unless include_unofficial=true (audit use); it is rejected by the system and can never be approved."""
     cfg = _cfg()
     q = select(FuProposalEntity)
     if status and status != "all":   # "all" = no filter, as in `python -m updater proposals --status all`
@@ -84,6 +88,8 @@ def proposals(status: Optional[str] = None, project: Optional[str] = None, db: S
     if project:
         q = q.where(FuProposalEntity.project_id == project)
     rows = list(db.scalars(q))
+    if not include_unofficial:
+        rows = [p for p in rows if evidence_is_official(_evidence(db, p.id))]
     order = {"pending": 0, "approved": 1, "applied": 2, "rolled_back": 3, "superseded": 4, "rejected": 5}
     rows.sort(key=lambda p: (order.get(p.status, 9), p.project_id, p.attribute, p.id))
     return [proposal_dict(db, p, cfg) for p in rows]
@@ -122,7 +128,7 @@ def apply(body: ApplyBody, db: Session = Depends(get_db)):
             v = review.apply_approved(db, body.reviewer, body.note or "", body.activate, cfg)
             evaluate_all(db, facts_mod.read_active(db), int(cfgmod.setting(cfg, "max_article_age_days", 400)))
             db.commit()
-    except review.ReviewError as e:
+    except (review.ReviewError, ValueError) as e:   # ValueError: facts.UnofficialFactError
         db.rollback()
         raise HTTPException(400, str(e)) from None
     return {"version_id": v.id, "version_label": v.version_label, "review_status": v.review_status, "sha256": v.sha256}

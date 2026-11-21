@@ -24,10 +24,21 @@ from datasets.vocab import data_root
 
 DATASET_ID = "pune_infra_project_facts"
 SOURCE_ID = "updater_published_facts"
-LICENCE = ("Internal use. Each fact links to and attributes its publishers; quoted sentences are short excerpts kept "
-           "for verification, not republication (DATA_FRESHNESS_RESEARCH.md §2.2).")
-LIMITATIONS = ("Published figures (authority statements and press reports) reviewed by a named person before use. "
-               "Not surveyed, not engineering levels: screening context only. Sources can be wrong or out of date.")
+LICENCE = ("Internal use. Each fact links to and attributes its official publisher (government or agency site); quoted "
+           "sentences are short excerpts kept for verification (DATA_FRESHNESS_RESEARCH.md §2.2).")
+LIMITATIONS = ("Official figures only: each value is stated by the responsible agency or Parliament on its own site "
+               "(updater.official) and reviewed by a named person. No news reports. Not surveyed, not engineering levels: "
+               "screening context only. Official pages can be out of date; each fact carries its date.")
+
+
+class UnofficialFactError(ValueError):
+    """A facts version would contain a fact whose evidence is not entirely from official sources."""
+
+
+def official_check(facts: list[dict]) -> list[str]:
+    """Labels of facts that break the official-only rule (no evidence, or any evidence URL not official)."""
+    from .official import evidence_urls_official
+    return [f"{f.get('project_id')}·{f.get('attribute')}" for f in facts if not evidence_urls_official(f.get("evidence") or [])]
 
 
 def git_commit() -> str | None:
@@ -39,14 +50,40 @@ def git_commit() -> str | None:
         return None
 
 
+SOURCE_TEXT = dict(name="Official infrastructure facts (data-freshness service)",
+                   publisher="Government and agency sites — see each fact's evidence",
+                   notes="Facts proposed by `python -m updater` from official pages and official feeds only "
+                         "(government and agency sites); each one approved by a reviewer.")
+DATASET_TEXT = dict(title="Pune infrastructure project facts (official sources, reviewed)", limitations=LIMITATIONS)
+
+
+def refresh_registry_texts(db: Session) -> list[str]:
+    """A database registered before the official-only rule keeps the old source / dataset wording ("publisher feeds and
+    GDELT"), because ensure_source / ensure_dataset never update. Bring the descriptive texts up to date; returns the
+    fields changed."""
+    from datasets.models import DsDatasetEntity, DsSourceEntity
+    changed = []
+    src = db.get(DsSourceEntity, SOURCE_ID)
+    if src is not None:
+        for k, v in {**SOURCE_TEXT, "licence_text": LICENCE}.items():
+            if hasattr(src, k) and getattr(src, k) != v:
+                setattr(src, k, v)
+                changed.append(f"source.{k}")
+    ds = db.get(DsDatasetEntity, DATASET_ID)
+    if ds is not None:
+        for k, v in DATASET_TEXT.items():
+            if hasattr(ds, k) and getattr(ds, k) != v:
+                setattr(ds, k, v)
+                changed.append(f"dataset.{k}")
+    db.flush()
+    return changed
+
+
 def ensure_registered(db: Session) -> None:
-    registry.ensure_source(db, SOURCE_ID, name="Published infrastructure facts (data-freshness service)",
-                           publisher="Various — see each fact's evidence", url="", access_method="api",
+    registry.ensure_source(db, SOURCE_ID, **SOURCE_TEXT, url="", access_method="api",
                            licence_text=LICENCE, official=False, origin="api",
-                           notes="Facts proposed by `python -m updater` from official pages, publisher feeds and GDELT; "
-                                 "each one approved by a reviewer.",
                            robots_notes="robots.txt honoured for every host (RFC 9309); see DATA_FRESHNESS_SERVICE.md")
-    registry.ensure_dataset(db, DATASET_ID, title="Pune infrastructure project facts (published, reviewed)",
+    registry.ensure_dataset(db, DATASET_ID, title=DATASET_TEXT["title"],
                             description="Tunnel depths, lengths, station counts, costs, TBM counts, tunnelling start and "
                                         "completion targets and status of watched Pune projects, each with its quoted "
                                         "source sentences. Written only by the data-freshness review flow.",
@@ -83,6 +120,10 @@ def register_version(db: Session, facts: list[dict], *, reviewer: str, note: str
     """Writes the files and registers them as a new version (pending_review), then activates it through
     registry.review_version when `activate`. The first ever version is an empty baseline (activated by the registry as
     the dataset's first version), so every real fact arrives in a reviewed version."""
+    bad = official_check(facts)
+    if bad:
+        raise UnofficialFactError(f"refused: {len(bad)} fact(s) are not backed only by official sources: {', '.join(bad[:8])}"
+                                  f"{' …' if len(bad) > 8 else ''}")
     ensure_registered(db)
     now = dt.datetime.now(dt.timezone.utc)
     if not registry.versions_of(db, DATASET_ID):
@@ -128,28 +169,34 @@ def _add(db: Session, label: str, facts: list[dict], *, note: str, proposal_ids:
     return v
 
 
-def read_version(db: Session, v: DsDatasetVersionEntity | None) -> dict:
-    """{version_id, version_label, review_status, facts, sha256_ok, error}. A file whose sha256 differs from the
-    registry is refused (facts = [])."""
+def read_version(db: Session, v: DsDatasetVersionEntity | None, include_unofficial: bool = False) -> dict:
+    """{version_id, version_label, review_status, facts, sha256_ok, error, withheld}. A file whose sha256 differs from the
+    registry is refused (facts = []). A fact that is not backed only by official sources (a version registered before
+    the official-only rule) is WITHHELD: it is not returned, and `withheld` lists it (project·attribute) so the app can
+    say why. `python -m updater migrate-official-only` replaces such a version."""
     if v is None:
         return {"version_id": None, "version_label": None, "review_status": None, "facts": [], "sha256_ok": None,
-                "error": None}
+                "error": None, "withheld": []}
     f = facts_file(db, v)
     base = {"version_id": v.id, "version_label": v.version_label, "review_status": v.review_status,
             "reviewed_by": v.reviewed_by, "reviewed_at": v.reviewed_at.isoformat() + "Z" if v.reviewed_at else None}
     if f is None:
-        return {**base, "facts": [], "sha256_ok": False, "error": "version has no facts file"}
+        return {**base, "facts": [], "sha256_ok": False, "error": "version has no facts file", "withheld": []}
     p = quality.resolve_path(f.path)
     try:
         sha = quality.sha256_file(p)
     except OSError as e:
-        return {**base, "facts": [], "sha256_ok": False, "error": f"facts file unreadable ({type(e).__name__})"}
+        return {**base, "facts": [], "sha256_ok": False, "error": f"facts file unreadable ({type(e).__name__})", "withheld": []}
     if sha != f.sha256:
         return {**base, "facts": [], "sha256_ok": False,
-                "error": "facts file does not match its registered sha256 (edited outside the review flow); refused"}
+                "error": "facts file does not match its registered sha256 (edited outside the review flow); refused", "withheld": []}
     with open(p, encoding="utf-8") as fh:
         data = json.load(fh)
-    return {**base, "facts": data.get("facts", []), "sha256_ok": True, "error": None}
+    from .official import evidence_urls_official
+    allf = data.get("facts", [])
+    ok = allf if include_unofficial else [f for f in allf if evidence_urls_official(f.get("evidence") or [])]
+    withheld = [f"{f.get('project_id')}·{f.get('attribute')}" for f in allf if not evidence_urls_official(f.get("evidence") or [])]
+    return {**base, "facts": ok, "sha256_ok": True, "error": None, "withheld": withheld}
 
 
 def read_active(db: Session) -> dict:

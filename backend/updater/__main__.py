@@ -12,7 +12,8 @@ URBANOS_DATA_DIR as the app.
     python -m updater rollback VERSION_ID --reviewer NAME [--note TEXT]
     python -m updater versions
     python -m updater add-evidence URL --reviewer NAME [--project id]
-    python -m updater seed-baseline --reviewer NAME [--file pune_project_facts.json]
+    python -m updater seed-baseline --reviewer NAME [--file pune_project_facts.json]   (empty dataset only)
+    python -m updater migrate-official-only --reviewer NAME [--dry-run]   existing database: apply the official-only rule
     python -m updater evaluate [--json out.json]               golden test against the seed quotes (offline)
     python -m updater verify-audit
     python -m updater purge-cache
@@ -54,9 +55,9 @@ def _print_proposals(rows: list[dict]) -> None:
         conf = " ⚠ conflict" if any(c["kind"] == "source_disagreement" for c in p["conflicts"]) else ""
         cur = f" (dataset: {p['current_value']['label']})" if p.get("current_value") else ""
         print(f"  {p['id']}  [{p['status']}] {p['project_id']} · {p['attribute_label']} = {p['label']}{cur} · "
-              f"{p['confidence']} · {p['independent_sources']} independent / {p['official_sources']} official{conf}")
+              f"{p['confidence']} · {p['official_sources']} official source(s){conf}")
         for e in p.get("evidence", [])[:4]:
-            print(f"      “{e['quote'][:150]}” — {e['publisher']} (tier {e['tier']}, {e['published_at'] or 'undated'}) {e['url']}")
+            print(f"      “{e['quote'][:150]}” — {e['publisher']} ({e['domain']}, {e['published_at'] or 'undated'}) {e['url']}")
         for f in p["flags"]:
             print(f"      flag {f['code']}: {f['detail']}")
 
@@ -98,6 +99,9 @@ def main(argv: list[str] | None = None) -> int:
     sb = sub.add_parser("seed-baseline")
     sb.add_argument("--reviewer", required=True)
     sb.add_argument("--file")
+    mo = sub.add_parser("migrate-official-only")
+    mo.add_argument("--reviewer", required=True)
+    mo.add_argument("--dry-run", action="store_true")
     ev = sub.add_parser("evaluate")
     ev.add_argument("--json")
     sub.add_parser("verify-audit")
@@ -108,7 +112,10 @@ def main(argv: list[str] | None = None) -> int:
     from updater import config as cfgmod
     cfg = cfgmod.load()
     if args.cmd == "check-config":
-        print(f"watch-list OK: {len(cfg['projects'])} projects, {len(cfg['sources'])} sources, sha256 {cfg['_sha256'][:12]}")
+        from updater import official
+        print(f"watch-list OK: {len(cfg['projects'])} projects, {len(cfg['sources'])} sources (all official), sha256 {cfg['_sha256'][:12]}")
+        rule = official.describe()
+        print(f"official sources only: any *.{' / *.'.join(rule['government_zones'])} site, and {', '.join(rule['agency_domains'])}; news: never")
         return 0
     if args.cmd == "purge-cache":
         from updater.fetch import default_cache_dir, purge_cache
@@ -167,6 +174,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"database: {url}")
             print(f"proposals: {groups_by_status(db)}")
             print(f"facts: version {act['version_label']} · {len(act['facts'])} facts · sha256 ok: {act['sha256_ok']} {act['error'] or ''}")
+            if act.get("withheld"):
+                print(f"  WITHHELD (not official; run migrate-official-only): {', '.join(act['withheld'])}")
             print(f"audit chain: {audit.verify_chain(db)}")
             return 0
         if args.cmd == "proposals":
@@ -206,8 +215,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "seed-baseline":
             from updater import seed
             act = facts_mod.read_active(db)
-            if act["facts"]:
-                print("refused: the facts dataset already has facts; the seed baseline is only for an empty dataset")
+            if act["facts"] or act.get("withheld"):
+                print("refused: the facts dataset already has facts; the seed baseline is only for an empty dataset. "
+                      "For an existing database use: python -m updater migrate-official-only --reviewer NAME")
                 return 2
             facts, counts = seed.baseline_facts(seed.load_seed(args.file), cfg)
             v = facts_mod.register_version(db, facts, reviewer=args.reviewer,
@@ -218,6 +228,12 @@ def main(argv: list[str] | None = None) -> int:
             evaluate_all(db, facts_mod.read_active(db), max_age)
             db.commit()
             print(f"baseline version {v.version_label} ({v.id}): {counts}")
+            return 0
+        if args.cmd == "migrate-official-only":
+            from updater import migrate
+            rep = migrate.migrate(db, cfg, args.reviewer, dry_run=args.dry_run, max_age_days=max_age)
+            print(f"database: {url}")
+            print(migrate.summary(rep))
             return 0
         if args.cmd == "verify-audit":
             res = audit.verify_chain(db)

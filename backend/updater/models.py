@@ -2,7 +2,7 @@
 Data-freshness service tables (additive; prefix `fu_`). Existing tables are never altered.
 
     fu_runs        one row per `python -m updater run`
-    fu_documents   one row per fetched page (URL, publisher, tier, publish date, retrieval time, body sha256)
+    fu_documents   one row per fetched OFFICIAL page (URL, publisher, publish date, retrieval time, body sha256)
     fu_claims      one extracted fact from one document, with the exact quoted sentence
     fu_proposals   claims grouped by (project, attribute, normalised value) + corroboration / conflict / staleness verdict
     fu_audit       append-only, hash-chained log of every run, proposal change, decision, apply and rollback
@@ -45,7 +45,9 @@ class FuDocumentEntity(Base):
     final_url = Column(Text, nullable=True)
     domain = Column(String, nullable=False, index=True)            # registrable domain (hindustantimes.com)
     publisher = Column(String, nullable=False, default="UNKNOWN")
-    tier = Column(Integer, nullable=False, default=3)              # 1 official · 2 reputable press · 3 other
+    # 1 = official. Rows written before the official-only rule (2026-11-21) may hold 2/3; the code never trusts this
+    # column: it decides again from the URL (updater.official), and migrate-official-only deletes those rows.
+    tier = Column(Integer, nullable=False, default=3)
     source_id = Column(String, nullable=True)                      # watch-list source that led here
     title = Column(Text, nullable=False, default="")
     published_at = Column(String, nullable=True)                   # ISO date(-time); NULL = undated
@@ -95,10 +97,10 @@ class FuProposalEntity(Base):
     temporal = Column(String, nullable=True)
     # pending | approved | rejected | applied | superseded (another value approved / applied for the same attribute)
     status = Column(String, nullable=False, default="pending", index=True)
-    verdict = Column(String, nullable=False, default="needs_corroboration")  # corroborated | needs_corroboration | conflict
-    # same vocabulary as docs/urbanos/pune_project_facts.json: official | corroborated | single_source | conflicting |
-    # unverified, plus slipped (a planned date that passed and was replaced by a later reported date)
-    confidence = Column(String, nullable=False, default="unverified")
+    verdict = Column(String, nullable=False, default="official")   # official | conflict | not_official
+    # same vocabulary as docs/urbanos/pune_project_facts.json (v2): official | official_conflicting | slipped; plus
+    # not_official for a proposal from before the official-only rule (rejected by the system, never approvable)
+    confidence = Column(String, nullable=False, default="official")
     independent_sources = Column(Integer, nullable=False, default=0)
     official_sources = Column(Integer, nullable=False, default=0)
     evidence_count = Column(Integer, nullable=False, default=0)

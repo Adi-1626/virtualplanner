@@ -100,7 +100,7 @@ COVER: dict[str, dict[str, Any]] = {
     "utility": {"min": [{"value_m": 0.6, "type": G, "source": IRC98, "clause": "§3.3.1"}], "band": [0.6, 6.0]},
     "tunnel": {"min": [{"value_m": 0.0, "diameter_factor": 2.0, "type": R, "source": DPR, "clause": "NATM overburden ~2–2.5 x D (bored tunnels only)",
                         "bored_only": True}], "band": None},
-    "metro_tunnel": {"min": [{"value_m": 0.0, "diameter_factor": 2.0, "type": R, "source": DPR, "clause": "NATM overburden ~2–2.5 x D; Pune TBM ran at ~18–30 m",
+    "metro_tunnel": {"min": [{"value_m": 0.0, "diameter_factor": 2.0, "type": R, "source": DPR, "clause": "NATM overburden ~2–2.5 x D",
                               "bored_only": True}], "band": None},
 }
 BAND_SOURCE = {"type": R, "source": IRC98, "clause": "§3.3.3 typical depths (sanity check only: 'unusual depth, verify')"}

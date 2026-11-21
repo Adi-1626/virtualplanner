@@ -2,6 +2,9 @@
 One run of the data-freshness service: sources → candidate pages → fetch (robots, cache, delay) → documents →
 claims → proposals → verdicts. Writes only fu_* tables and fu_audit; never the facts dataset.
 
+Official sources only (updater.official): a candidate URL that is not on the allow-list is skipped before any request,
+a page that redirects off the allow-list is not stored, and `ingest` refuses anything else.
+
 A dry run does everything, returns the report, and rolls the database transaction back (the HTTP cache is kept).
 """
 from __future__ import annotations
@@ -17,6 +20,7 @@ from sqlalchemy.orm import Session
 from . import audit, config as cfgmod, facts as facts_mod, llm
 from .extract import apply_page_rules, extract_page, label
 from .fetch import PoliteFetcher, Refused
+from .official import is_official_url, require_official
 from .models import FuClaimEntity, FuDocumentEntity, FuProposalEntity, FuRunEntity
 from .proposals import assign, evaluate_all, proposal_dict
 from .sources import PLUGINS, Candidate
@@ -82,15 +86,15 @@ def ingest(db: Session, cfg: dict, cand: Candidate, body: bytes, final_url: str,
     """Store one fetched page and its claims. Returns (document, new claims, was_new). The same URL with the same
     body hash is not processed twice."""
     now = now or dt.datetime.now(dt.timezone.utc)
+    require_official(cand.url, "page")
+    require_official(final_url, "page (after redirects)")
     sha = sha256_bytes(body)
     prev = db.scalars(select(FuDocumentEntity).where(FuDocumentEntity.url == cand.url, FuDocumentEntity.sha256 == sha)).first()
     if prev is not None:
         prev.retrieved_at = now.replace(tzinfo=None)
         return prev, [], False
     page = parse_html(body, final_url)
-    domain, tier, name = publisher_for(final_url, cfg.get("publishers", {}))
-    if tier == 3 and source_tier < 3 and cand.official_page:
-        tier = source_tier
+    domain, tier, name = publisher_for(final_url, cfg.get("publishers", {}))   # tier is 1: require_official passed
     if cand.official_page:
         name = next((s.get("publisher") for s in cfg.get("sources", []) if s["id"] == cand.source_id), name) or name
     published, how = page.published_at, page.published_from
@@ -149,6 +153,7 @@ def run(db: Session, cfg: dict | None = None, *, dry_run: bool = False, only: se
     errors: list[dict] = []
     per_source: dict[str, dict] = {}
     cands: list[Candidate] = []
+    not_official: list[dict] = []
     used = []
     for src in cfg.get("sources", []):
         if not src.get("enabled", True) or (sources and src["id"] not in sources):
@@ -158,11 +163,15 @@ def run(db: Session, cfg: dict | None = None, *, dry_run: bool = False, only: se
         per_source[src["id"]] = {"candidates": len(res.candidates), "errors": res.errors, "note": res.note}
         errors += [{"source": src["id"], "error": e} for e in res.errors]
         for c in res.candidates:
+            if not is_official_url(c.url):
+                not_official.append({"url": c.url, "reason": "not an official source (official-only rule)"})
+                continue
             c.projects = c.projects & {p["id"] for p in projects} if c.projects else c.projects
             if c.official_page or c.projects:
                 cands.append(c)
         log(f"  source {src['id']}: {len(res.candidates)} candidate(s){' · ' + '; '.join(res.errors)[:200] if res.errors else ''}")
     chosen, skipped = select_candidates(db, cands, cfg, refresh, now)
+    skipped = not_official + skipped
     tier_of = {s["id"]: int(s.get("tier", 3)) for s in cfg.get("sources", [])}
     docs_new = claims_new = 0
     fetched = []
@@ -175,6 +184,9 @@ def run(db: Session, cfg: dict | None = None, *, dry_run: bool = False, only: se
         ctype = (r.headers.get("content-type") or "").lower()
         if r.status != 200:
             errors.append({"source": c.source_id, "url": c.url, "error": f"HTTP {r.status}"})
+            continue
+        if not is_official_url(r.final_url):
+            errors.append({"source": c.source_id, "url": c.url, "error": f"redirected to a non-official site ({r.final_url[:80]}); not stored"})
             continue
         if ctype and not any(t in ctype for t in HTML_TYPES):
             errors.append({"source": c.source_id, "url": c.url, "error": f"not an HTML page ({ctype[:60]})"})
@@ -192,7 +204,8 @@ def run(db: Session, cfg: dict | None = None, *, dry_run: bool = False, only: se
     evaluate_all(db, active, max_age, today)
     stats = {"requests": len(fetcher.requests), "requests_per_host": fetcher.per_host, "candidates": len(cands),
              "pages_read": len(fetched), "documents_new": docs_new, "claims_new": claims_new,
-             "proposals_created": len(created), "skipped": len(skipped), "per_source": per_source,
+             "proposals_created": len(created), "skipped": len(skipped), "not_official_skipped": len(not_official),
+             "per_source": per_source,
              "robots": {o: n for o, (_r, _d, n) in fetcher.robots.items()}}
     run_row.finished_at = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
     run_row.sources_json = json.dumps(used)
@@ -218,10 +231,12 @@ def add_evidence(db: Session, cfg: dict, url: str, reviewer: str, project_id: st
     rules and goes through the same extractors; nothing is typed in by hand."""
     if not (reviewer or "").strip():
         raise ValueError("a reviewer name is required")
+    require_official(url, "evidence URL")      # NotOfficialSource (a ValueError): news articles cannot be added
     fetcher = fetcher or PoliteFetcher(user_agent=cfgmod.setting(cfg, "user_agent", None) or "UrbanOS-data-freshness/1.0")
     r = fetcher.get(url)
     if r.status != 200:
         raise ValueError(f"HTTP {r.status}")
+    require_official(r.final_url, "evidence URL (after redirects)")
     cand = Candidate(url, "manual", "", None, {project_id} if project_id else set())
     doc, rows, new = ingest(db, cfg, cand, r.body, r.final_url, r.status, r.robots_note, None, 3, manual=True,
                             force_projects={project_id} if project_id else None)
