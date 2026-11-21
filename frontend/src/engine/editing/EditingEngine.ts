@@ -79,6 +79,16 @@ const NEW_OBJECT_LABEL: Partial<Record<EditingMode, string>> = {
 
 export type EditingMode = 'select' | 'draw_road' | 'draw_building' | 'draw_junction' | 'draw_utility' | 'draw_flyover' | 'draw_metro' | 'place_station' | 'import_osm' | 'draw_zone' | 'draw_gateway' | 'draw_metro_flyover' | 'draw_underground';
 
+/**
+ * Deck / platform level (m) stored for an imported OSM metro way or station: 12 m for a bridge (or layer > 0), else 0.
+ * A tunnel (tunnel=yes / layer < 0) is stored at 0 with its tags: OSM never maps its depth, so no level is invented
+ * (imports used to store -6 m). metroLevel.ts recognises it from the tags and draws it plan-only, labelled
+ * "depth not mapped"; the screening treats its depth as UNKNOWN.
+ */
+export function osmMetroLevel(tags: Record<string, string | undefined>): number {
+  return tags.bridge === 'yes' || Number(tags.layer) > 0 ? 12 : 0;
+}
+
 export class EditingEngine {
   private activeMode: EditingMode = 'select';
   private drawingPoints: [number, number, number][] = [];
@@ -1876,7 +1886,7 @@ export class EditingEngine {
             length: 140,
             width: 20,
             height: 8,
-            elevation: tags.tunnel === 'yes' || Number(tags.layer) < 0 ? -6 : tags.bridge === 'yes' || Number(tags.layer) > 0 ? 12 : 0,
+            elevation: osmMetroLevel(tags),
             capacity: 25000,
             osmElementType: el.type,
             osmId: el.id,
@@ -1899,7 +1909,7 @@ export class EditingEngine {
           const status = isSubway ? 'operational' : 'under_construction';
 
           // OSM level tags distinguish underground, elevated and surface tracks.
-          const coordinates = el.geometry.map((pt: any) => [pt.lon, pt.lat, tags.tunnel === 'yes' || Number(tags.layer) < 0 ? -6 : tags.bridge === 'yes' || Number(tags.layer) > 0 ? 12 : 0]);
+          const coordinates = el.geometry.map((pt: any) => [pt.lon, pt.lat, osmMetroLevel(tags)]);
 
           const lineObj = {
             id,
@@ -1911,7 +1921,7 @@ export class EditingEngine {
             trackCount: 2,
             trackGauge: 1.435,
             deckWidth: 8.0,
-            elevation: tags.tunnel === 'yes' || Number(tags.layer) < 0 ? -6 : tags.bridge === 'yes' || Number(tags.layer) > 0 ? 12 : 0,
+            elevation: osmMetroLevel(tags),
             pierSpacing: 30,
             status,
             tags: tags as Record<string, string>,
