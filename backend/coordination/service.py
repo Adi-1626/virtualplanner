@@ -412,6 +412,10 @@ def run_detection(db: Session, project_id: str, run_by: str, screening_radius_m:
     inputs = {
         "project_elements_hash": _sha(own_hashes), "project_elements": own_hashes,
         "scenario_versions": {e.scenario_id: e.scenario_version_id for e in own + others if e.scenario_id and e.scenario_version_id},
+        # the newest version of each of those alternatives when the run was made: a version that was already superseded
+        # then is not a change since the run (stale = a newer version appeared after it)
+        "scenario_latest_versions": {sid: (lv.id if lv is not None else None) for sid in sorted({e.scenario_id for e in own + others if e.scenario_id and e.scenario_version_id})
+                                     for lv in [_latest_version(db, sid)]},
         "scenario_heads": {sid: change_set_hash(head_change_set(db, sid)) for sid in sorted({e.scenario_id for e in own + others if e.scenario_id and not e.scenario_version_id})},
         "other_projects": other_projects, "baseline_fingerprint": base_fp, "rule_set_hash": rules_hash, "rules": rules,
         "design_scenarios": sorted(design_scenarios),
@@ -576,9 +580,11 @@ def stale_coordination_run(db: Session, run: CoordinationRunEntity, cache: Optio
     reasons: list[str] = []
     if el_hash(run.project_id) != inp.get("project_elements_hash"):
         reasons.append("project_elements_changed")
+    latest_then = inp.get("scenario_latest_versions")
     for sid, vid in (inp.get("scenario_versions") or {}).items():
         lv = _latest_version(db, sid)
-        if lv is not None and lv.id != vid:
+        ref = latest_then.get(sid, vid) if isinstance(latest_then, dict) else vid
+        if lv is not None and lv.id != ref:
             reasons.append(f"scenario_version_superseded:{sid}")
     for sid, h in (inp.get("scenario_heads") or {}).items():
         if head(sid) != h:

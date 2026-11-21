@@ -104,7 +104,8 @@ def test_utility_drawn_in_attached_alternative_is_checked_and_its_edit_makes_the
     hits = [c for c in run["conflicts"] if c["element_a_id"] == e["id"] and c["b_ref"] == "design:alt_gas_1"]
     assert hits and hits[0]["class"] == "conflict", [c["b_ref"] for c in run["conflicts"]]
     assert sid in run["inputs"]["design_scenarios"] and sid in run["inputs"]["design_heads"]
-    assert client.get(f"/api/coordination/stale/coordination_run/{run['id']}").json()["stale"] is False
+    st0 = client.get(f"/api/coordination/stale/coordination_run/{run['id']}").json()
+    assert st0["stale"] is False, st0["reasons"]
     # the drawn utility is edited in its alternative → the run is stale
     r = client.post("/api/objects", json={"id": "alt_gas_2", "type": "utility", "name": "SYNTHETIC water", "layerId": "utilities", "scenarioId": sid,
                                           "coordinates": [[x + 0.001, LAT - 0.001, 0], [x + 0.001, LAT + 0.001, 0]], "properties": {"utilityType": "water", "depth": 1}})
@@ -260,3 +261,22 @@ def test_twin_osm_ways_of_one_named_line_give_one_finding_per_element(client, mo
     assert len(rows) == 1 and rows[0]["evidence"]["osm_pieces"] == 2
     assert any("2 OpenStreetMap pieces" in r for r in rows[0]["reasons"])
     assert rows[0]["permission_triggers"] and rows[0]["permission_triggers"][0]["rule_id"] == "metro_noc_20m"
+
+
+def test_a_check_is_not_stale_at_birth_when_another_project_pins_an_older_version(client):
+    """Found while testing: another project's element pinned to v1 of an alternative that already had v2 made every new
+    check of any project 'stale' immediately (scenario_version_superseded). Stale now means a newer version appeared
+    after the check."""
+    sid = _scenario(client, "SYNTHETIC pinned")
+    x = X0 + 0.08
+    _object(client, f"o_{sid}", "road", [[x, LAT, 0], [x + 0.004, LAT, 0]], sid=sid, layerId="roads", width=10)
+    v1 = client.post(f"/api/scenarios/{sid}/versions", json={"label": "v1"}).json()
+    client.post(f"/api/scenarios/{sid}/versions", json={"label": "v2"})
+    other = _project(client, "SYNTHETIC pins v1")
+    _el(client, other, "road", None, element_ref=f"o_{sid}", scenario_id=sid, scenario_version_id=v1["id"], z_min_m=-1, z_max_m=0)
+    p = _project(client, "SYNTHETIC fresh check")
+    _el(client, p, "pipeline", _line(x + 0.002, LAT - 0.001, x + 0.002, LAT + 0.001), width_m=1, z_min_m=-3, z_max_m=-2)
+    run = _detect(client, p)
+    assert run["stale"]["stale"] is False, run["stale"]["reasons"]
+    client.post(f"/api/scenarios/{sid}/versions", json={"label": "v3"})
+    assert f"scenario_version_superseded:{sid}" in client.get(f"/api/coordination/stale/coordination_run/{run['id']}").json()["reasons"]
