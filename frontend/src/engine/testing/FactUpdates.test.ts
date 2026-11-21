@@ -119,6 +119,15 @@ describe('Underground: reviewed published depth in the metro tooltip', () => {
     expect(elevated?.depth).not.toContain('reported');
   });
 
+  it('the real OSM Purple Line tunnel matches the Line 1 fact (watch-list patterns)', () => {
+    const purple = { ...line, id: 'w586112436', name: 'Pune Metro Line 1: Purple Line', tags: { tunnel: 'yes', layer: '-2' } } as unknown as CityObject;
+    const f1: Fact = { ...fact, project_id: 'pune_metro_line_1_purple', osm_name_patterns: ['purple', 'pcmc.*swargate', 'swargate.*pcmc', 'line 1\\b'],
+      qualifier: 'max', label: 'up to 30 m', confidence: 'single_source', evidence: [{ url: 'u', publisher: 'Hindustan Times', tier: 2, published_at: '2019-12-24', quote: 'q' }] };
+    expect(reportedDepthFor(purple, [fact, f1])).toBe(f1);
+    expect(reportedDepthText(f1)).toBe('reported up to 30 m below ground (Hindustan Times 2019-12-24 · single source · not surveyed)');
+    expect(reportedDepthFor({ ...purple, name: 'Pune Metro Line 2: Aqua Line' } as unknown as CityObject, [fact, f1])).toBeNull();
+  });
+
   it('a facts file that failed its sha256 check is never used', async () => {
     setReportedFacts([]);
     await loadReportedFacts(async () => ({ facts: [fact], sha256_ok: false }));

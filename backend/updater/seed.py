@@ -21,7 +21,8 @@ SEED_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path
                          "docs", "urbanos", "pune_project_facts.json")
 ATTR_MAP = {"length": "length_km", "station_count": "station_count", "tunnel_depth": "tunnel_depth_m",
             "tbm_count": "tbm_count", "tbm_boring_start": "tunnelling_start", "completion_target": "completion_target",
-            "cost": "cost_inr_crore", "cost_sanctioned": "cost_inr_crore", "status": "status"}
+            "cost": "cost_inr_crore", "cost_sanctioned": "cost_inr_crore", "status": "status",
+            "tunnel_depth_max": "tunnel_depth_m"}     # "maximum tunnel depth … 30 metres" → up to 30 m
 
 
 def load_seed(path: str | None = None) -> dict:
@@ -61,7 +62,9 @@ def map_value(rec: dict) -> tuple[str, float | None, str | None, str] | None:
     if attr is None or v is None or isinstance(v, (dict, list)):
         return None
     kind = ATTRIBUTES[attr]["kind"]
-    qual = "approx" if isinstance(v, str) and ("approx" in v or v.strip().startswith("~")) else "exact"
+    qual = "approx" if ("approx" in f"{v} {unit}" or str(v).strip().startswith("~")) else "exact"
+    if rec.get("attribute") == "tunnel_depth_max":
+        qual = "max"
     if kind == "status":
         w = status_word(str(v))
         return (attr, None, w, "exact") if w else None
