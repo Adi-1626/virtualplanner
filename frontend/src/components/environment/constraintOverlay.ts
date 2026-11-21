@@ -10,8 +10,8 @@
  */
 import { create } from 'zustand';
 import {
-  Cartesian3, Color, ColorGeometryInstanceAttribute, GeometryInstance, LabelCollection, LabelStyle, Material, PerInstanceColorAppearance,
-  PointPrimitiveCollection, PolygonGeometry, PolygonHierarchy, PolylineCollection, Primitive, PrimitiveCollection, VerticalOrigin,
+  Cartesian3, Color, ColorGeometryInstanceAttribute, GeometryInstance, LabelCollection, LabelStyle, PerInstanceColorAppearance,
+  PointPrimitiveCollection, PolygonGeometry, PolygonHierarchy, Primitive, PrimitiveCollection, VerticalOrigin,
   Math as CesiumMath, type Viewer,
 } from 'cesium';
 import { engineInstance } from '../../engine/TwinCityEngine';
@@ -23,6 +23,7 @@ import { redactPaths } from '../../lib/redactPaths';
 import { boxHolds, requestBox, WIDE_VIEW_DEG } from './envPlanner';
 import { osmTip, registerPickable, setTipResolver } from './envTips';
 import { ENV_WORKSPACES } from './envPerf';
+import { staticLines, type StaticLine } from './staticLines';
 import { useShellStore } from '../../shell/useShellStore';
 
 export interface OverlayState {
@@ -130,12 +131,11 @@ const ring = (pts: { lon: number; lat: number }[]) => Cartesian3.fromDegreesArra
 function draw(root: PrimitiveCollection, key: OverlayKey, els: OsmElement[]): number {
   const { color } = OVERLAY_STYLE[key];
   const fill = ColorGeometryInstanceAttribute.fromColor(color.withAlpha(0.35));
-  const material = Material.fromType('Color', { color });
   const polys: GeometryInstance[] = [];
-  const lines = new PolylineCollection();
+  const lines: StaticLine[] = [];
   const points = new PointPrimitiveCollection();
   const labels = new LabelCollection();
-  const line = (id: string, positions: Cartesian3[], width: number) => { lines.add({ id, positions, width, material }); };
+  const line = (id: string, positions: Cartesian3[], width: number) => { lines.push({ id, positions, width }); };
   let n = 0;
   for (const e of els) {
     const id = `env_overlay_${key}_${e.type}_${e.id}`;
@@ -165,7 +165,9 @@ function draw(root: PrimitiveCollection, key: OverlayKey, els: OsmElement[]): nu
     }
   }
   if (polys.length) root.add(new Primitive({ geometryInstances: polys, appearance: new PerInstanceColorAppearance({ flat: true, translucent: true }) }));
-  if (lines.length) root.add(lines); else lines.destroy();
+  // static lines as one batched Primitive: a PolylineCollection rebuilt its draw commands on every frame (staticLines.ts)
+  const linePrim = staticLines(lines, color);
+  if (linePrim) root.add(linePrim);
   if (points.length) root.add(points); else points.destroy();
   if (labels.length) root.add(labels); else labels.destroy();
   return n;

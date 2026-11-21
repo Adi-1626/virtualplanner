@@ -13,8 +13,8 @@
  */
 import { create } from 'zustand';
 import {
-  Cartesian2, Cartesian3, Color, CustomDataSource, ImageryLayer, LabelStyle, Material, Math as CesiumMath, NearFarScalar,
-  PolylineCollection, Rectangle, SingleTileImageryProvider, VerticalOrigin, type Viewer,
+  Cartesian2, Cartesian3, Color, CustomDataSource, ImageryLayer, LabelStyle, Math as CesiumMath, NearFarScalar,
+  type Primitive, Rectangle, SingleTileImageryProvider, VerticalOrigin, type Viewer,
 } from 'cesium';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { Cancelled, envDataApi, timeoutOr, type AqStation, type EnvDataLayer } from '../../lib/envDataApi';
@@ -24,6 +24,7 @@ import { clearTips, registerPickable, setTip, setTipResolver, type EnvTip } from
 import { useShellStore } from '../../shell/useShellStore';
 import { dropTreeLayer, drawTreeTiles, setTreeLayerShown, treeLayerCounts } from './treeLayer';
 import { Lru } from './treeTiles';
+import { staticLines, type StaticLine } from './staticLines';
 import { enableRenderOnDemand, ENV_WORKSPACES, HEARTBEAT_MS, sameBox, wantsOnDemand } from './envPerf';
 
 export interface EnvDataOverlayState {
@@ -49,7 +50,7 @@ export const overlayState = (id: string): EnvDataOverlayState => useEnvDataOverl
 const imagery = new Map<string, ImageryLayer>();
 const blobUrls = new Map<string, string>();
 const sources = new Map<string, CustomDataSource>();
-const lines = new Map<string, PolylineCollection>();
+const lines = new Map<string, { prim: Primitive; n: number }>();
 const active = new Map<string, EnvDataLayer>();
 const seq = new Map<string, number>();
 const ctrls = new Map<string, AbortController>();
@@ -99,7 +100,7 @@ function dropMapObjects(id: string, v: Viewer | null) {
   ctrls.get(id)?.abort();
   ctrls.delete(id);
   const pl = lines.get(id);
-  if (pl && v && !v.isDestroyed()) v.scene.primitives.remove(pl);   // destroys the GPU buffers
+  if (pl && v && !v.isDestroyed()) v.scene.primitives.remove(pl.prim);   // destroys the GPU buffers
   lines.delete(id);
   for (const k of [...streamTips]) if (k.startsWith(`env_overlay_${id}_`)) streamTips.delete(k);
   if (id === 'tree_census_2019') dropTreeLayer();
@@ -183,24 +184,21 @@ async function drawStreams(v: Viewer, l: EnvDataLayer, box: NonNullable<ReturnTy
     featureCache.set(key, res);
   }
   if (!alive()) throw new Superseded();
-  // one GPU batch for all lines (was one Entity per line)
-  const pl = new PolylineCollection();
-  const material = Material.fromType('Color', { color: STREAM_COLOR });
-  const ids: string[] = [];
+  // one static GPU batch for all lines (was one Entity per line; a PolylineCollection rebuilt its commands every frame)
+  const items: StaticLine[] = [];
   res.geojson.features.forEach((f, k) => {
     const parts = f.geometry.type === 'MultiLineString' ? (f.geometry.coordinates as number[][][]) : [f.geometry.coordinates as number[][]];
     parts.forEach((c, i) => {
       if (c.length < 2) return;
-      const eid = streamEntityId(l.id, f, k, i);
-      pl.add({ id: eid, positions: c.map(p => lift(p[0], p[1])), width: 3, material });
-      ids.push(eid);
+      items.push({ id: streamEntityId(l.id, f, k, i), positions: c.map(p => lift(p[0], p[1])), width: 3 });
     });
   });
+  const ids = items.map(x => x.id);
+  const prim = staticLines(items, STREAM_COLOR);
   const prev = lines.get(l.id);
-  v.scene.primitives.add(pl);
-  pl.show = shownHere();
-  if (prev) v.scene.primitives.remove(prev);
-  lines.set(l.id, pl);
+  if (prim) { v.scene.primitives.add(prim); prim.show = shownHere(); }
+  if (prev) v.scene.primitives.remove(prev.prim);
+  if (prim) lines.set(l.id, { prim, n: items.length }); else lines.delete(l.id);
   for (const k of [...streamTips]) if (k.startsWith(`env_overlay_${l.id}_`)) streamTips.delete(k);
   for (const id of ids) streamTips.add(id);
   return `${res.returned.toLocaleString()} of ${res.total.toLocaleString()} derived flow paths in the ${box.from}` +
@@ -355,7 +353,7 @@ if (typeof window !== 'undefined') window.setInterval(() => { syncRenderMode(); 
 export function envOverlayCounts(): { imagery: number; sources: number; entities: number; lines: number; trees: ReturnType<typeof treeLayerCounts>; shown: boolean } {
   let entities = 0, nl = 0;
   for (const ds of sources.values()) entities += ds.entities.values.length;
-  for (const pl of lines.values()) nl += pl.length;
+  for (const pl of lines.values()) nl += pl.n;
   return { imagery: imagery.size, sources: sources.size, entities, lines: nl, trees: treeLayerCounts(), shown: shownHere() };
 }
 (window as unknown as { __envOverlayCounts?: typeof envOverlayCounts }).__envOverlayCounts = envOverlayCounts;

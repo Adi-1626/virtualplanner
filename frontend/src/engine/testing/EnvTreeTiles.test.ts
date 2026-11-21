@@ -4,6 +4,7 @@ import {
   summarize, summaryText, tileDeg, tilesFor, type TreeTile,
 } from '../../components/environment/treeTiles';
 import { sameBox, stillness, STILL_MS, wantsOnDemand, ENV_WORKSPACES } from '../../components/environment/envPerf';
+import { drawable } from '../../components/environment/staticLines';
 import { anythingToPick, clearTips, registerPickable, setTip, setTipResolver, tipFor } from '../../components/environment/envTips';
 
 const tile = (over: Partial<TreeTile>): TreeTile => ({ level: 2, cell_deg: 0.0025, tile: [0, 0], bbox: [0, 0, 0.01, 0.01], total: 0, total_exact: true, limit: 500, mode: 'points', returned: 0, ...over });
@@ -132,5 +133,16 @@ describe('hover guard: camera stillness from the view matrix (no moveEnd needed)
     t += 1; expect(still()).toBe(true);          // no moveEnd event involved
     m = mat(6); t += 1000;
     expect(still()).toBe(false);
+  });
+});
+
+describe('static lines: which lines can be batched', () => {
+  it('needs two positions that are not all the same point', () => {
+    const p = (x: number) => ({ x, y: 0, z: 0 });
+    expect(drawable([])).toBe(false);
+    expect(drawable([p(1)])).toBe(false);
+    expect(drawable([p(1), p(1), p(1)])).toBe(false);
+    expect(drawable([p(1), p(2)])).toBe(true);
+    expect(drawable([p(1), p(1), p(3)])).toBe(true);
   });
 });
