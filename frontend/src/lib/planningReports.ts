@@ -1,6 +1,7 @@
 /** View-model helpers for the Reports workspace (pure; unit-tested). */
 import type { AuditEvent } from '../engine/planning/planningApi';
 import type { StaleVerdict } from './coordinationApi';
+import { plural } from './plural';
 
 export interface ReportScopeInfo {
   alternatives: number; datasets: number; assessments: number; runs: number; decisions: number;
@@ -18,4 +19,10 @@ export function lastExport(events: readonly Pick<AuditEvent, 'action' | 'label' 
     if (best == null || e.at > best) best = e.at;
   }
   return best;
+}
+
+/** The "Inputs:" line of a report card, with correct singular / plural ("1 alternative", not "1 alternatives"). */
+export function reportInputsText(s: Pick<ReportScopeInfo, 'alternatives' | 'datasets' | 'assessments' | 'runs' | 'decisions'>): string {
+  return `Inputs: ${[plural(s.alternatives, 'alternative'), plural(s.datasets, 'dataset'), plural(s.assessments, 'screening'),
+    plural(s.runs, 'run'), plural(s.decisions, 'decision')].join(' · ')}`;
 }

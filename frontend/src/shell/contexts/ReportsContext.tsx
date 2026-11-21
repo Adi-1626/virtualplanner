@@ -5,7 +5,7 @@ import { planningApi, STATUS_LABEL, type Project } from '../../engine/planning/p
 import { documentUrl, generateDocument, listDocuments, type DocumentRecord, type StoredAssessment } from '../../engine/feasibility/feasibilityApi';
 import { coordinationApi, type StaleVerdict } from '../../lib/coordinationApi';
 import { planningClient } from '../../lib/planningClient';
-import { type ReportScopeInfo } from '../../lib/planningReports';
+import { reportInputsText, type ReportScopeInfo } from '../../lib/planningReports';
 import { PanelSection } from '../../components/ui/Panel';
 import { Disclosure } from '../../components/ui/Disclosure';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -95,7 +95,7 @@ export const ReportsContext: React.FC = () => {
                       <span className="block text-body text-text-1 break-words">{p.name}</span>
                       <span className="block text-meta text-text-2">{STATUS_LABEL[p.status] ?? p.status}</span>
                     </button>
-                    {s && <div className="text-meta text-text-2 tabular-nums" data-testid="report-inputs">Inputs: {s.alternatives} alternatives · {s.datasets} datasets · {s.assessments} screenings · {s.runs} runs · {s.decisions} decisions</div>}
+                    {s && <div className="text-meta text-text-2 tabular-nums" data-testid="report-inputs">{reportInputsText(s)}</div>}
                     {s && s.runs > 0 && <div className="flex items-center gap-1.5 text-meta text-text-2">Traffic figures: <TrustBadge trust="fails_validation" testId="report-trust" /></div>}
                     <div className="flex flex-wrap items-center gap-1.5">
                       <a className="uos-btn uos-btn-sm" href={planningApi.reportUrl(p.id, 'pdf', who())} onClick={() => refreshSoon(projects)} data-testid={`report-project-pdf-${p.id}`}><FileDown size={14} aria-hidden />PDF</a>
