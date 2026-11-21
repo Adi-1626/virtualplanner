@@ -174,7 +174,14 @@ editing API (as the Underground QA does), "Check conflicts" by click: findings l
 "Vertical: not checkable", two sewer clearances, cover, nalla). Switching workspaces kept Simulate's comparison; the
 Design edit (a real network change) marked it stale, as intended.
 
-**Gates:** see the report in the commit message history and below.
+**Gates (branch, 2026-11-21):** `tsc -p tsconfig.app.json --noEmit` 0 errors · `oxlint` 0 errors (8 warnings, none in
+files touched here) · `vite build` ok (16:16 UTC build; the worker ships as `assets/liveTraffic.worker-*.js`; the last
+code commit after it only changed two text cells and an error string, and was not rebuilt) · full vitest
+`--maxWorkers=1` on the final code: **108 files passed, 6 skipped; 895 tests passed, 7 skipped** · targeted re-run
+(SimulateRefine, VehiclePoints, LiveTrafficWorker, RoadAnalysisPanelPieces) 41/41 · earlier targeted run of SimulateRefine,
+Overhaul, SimulateFlow, FocusTraffic, EditRecompute, ScenarioIsolation, ScenarioGenerator, TimelineStale, Calibration and
+Odme: all passed · full pytest **not run on the branch** (the coordinator runs it on the merged tree; no backend file
+changed here).
 
 ### Still open
 - At 4× CPU throttle the main thread still spends ~20 ms per frame drawing ~1,500 vehicles; instancing the vehicle
