@@ -6,7 +6,8 @@ Guard rails, so the model is never trusted more than a pattern:
   1. every returned quote must be an exact substring of the fetched text (else dropped)
   2. the numeric value must be found in that quote by the deterministic number parser (else dropped)
   3. the project must be named in the quote (sentence-level attribution only)
-  4. claims carry extractor `llm:<model>` and always need 2 independent sources to be corroborated
+  4. claims carry extractor `llm:<model>`; such a proposal (from an official page, like every proposal) is flagged
+     llm_only and needs a reviewer note to be approved
 Never runs in tests (no key) and sends page text only to the endpoint the user configured.
 """
 from __future__ import annotations

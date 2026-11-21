@@ -1,5 +1,5 @@
 """
-The verified ground-truth list (docs/urbanos/pune_project_facts.json, branch pune-facts b2eb8e8) as
+The verified ground-truth list (docs/urbanos/pune_project_facts.json; v2 = official sources only, 2026-11-21) as
   1. the BASELINE the service compares against: `python -m updater seed-baseline --reviewer NAME` registers the mapped
      records as a facts version (through the same registry flow as any applied change), so every new proposal is
      checked against it ("the dataset currently says …");
@@ -7,7 +7,12 @@ The verified ground-truth list (docs/urbanos/pune_project_facts.json, branch pun
      extractor is tested on real published wording (tests/test_updater_golden.py; `python -m updater evaluate`).
 
 Seed attributes map onto the service's attributes; records that do not map (agency, type, stations list, free-text
-progress, …) or whose value is null (unverified) are left out and counted.
+progress, …) are left out and counted. Official sources only: a record with any non-official source URL is refused
+(counted as `not_official`), so even an edited seed file cannot put a news value into the dataset; and
+facts.register_version checks it again.
+
+SEED_VERSION is the `meta.dataset_version` this code expects. `migrate-official-only` re-seeds an existing database
+from it (DATA_FRESHNESS_SERVICE.md §11).
 """
 from __future__ import annotations
 
@@ -16,6 +21,9 @@ import os
 import re
 
 from .extract import ATTRIBUTES, label
+from .official import is_official_url
+
+SEED_VERSION = 2
 
 SEED_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                          "docs", "urbanos", "pune_project_facts.json")
@@ -38,7 +46,7 @@ def _lead_number(v) -> float | None:
     if isinstance(v, (int, float)) and not isinstance(v, bool):
         return float(v)
     if isinstance(v, str):
-        m = re.match(r"\s*~?\s*(\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)", v)
+        m = re.match(r"\s*(?:~|over|more than)?\s*(\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)", v, re.I)
         if m:
             return float(m.group(1).replace(",", ""))
     return None
@@ -65,6 +73,8 @@ def map_value(rec: dict) -> tuple[str, float | None, str | None, str] | None:
     qual = "approx" if ("approx" in f"{v} {unit}" or str(v).strip().startswith("~")) else "exact"
     if rec.get("attribute") == "tunnel_depth_max":
         qual = "max"
+    if re.match(r"\s*(over|more than)\b", str(v), re.I):
+        qual = "min"
     if kind == "status":
         w = status_word(str(v))
         return (attr, None, w, "exact") if w else None
@@ -87,7 +97,8 @@ def map_value(rec: dict) -> tuple[str, float | None, str | None, str] | None:
 def baseline_facts(seed: dict, cfg: dict) -> tuple[list[dict], dict]:
     """Seed records → facts (one per project × attribute; the record's primary value). Returns (facts, counts)."""
     projects = {p["id"]: p for p in cfg.get("projects", [])}
-    facts, counts = [], {"records": 0, "mapped": 0, "unmapped_attribute": 0, "null_value": 0, "unknown_project": 0, "duplicate": 0}
+    facts, counts = [], {"records": 0, "mapped": 0, "unmapped_attribute": 0, "null_value": 0, "unknown_project": 0, "duplicate": 0,
+                         "not_official": 0}
     seen = set()
     for r in seed.get("records", []):
         counts["records"] += 1
@@ -97,6 +108,10 @@ def baseline_facts(seed: dict, cfg: dict) -> tuple[list[dict], dict]:
             continue
         if r.get("value") is None:
             counts["null_value"] += 1
+            continue
+        alt_srcs = [s for a in (r.get("alt_values") or []) for s in (a["source"] if isinstance(a.get("source"), list) else [a.get("source")]) if s]
+        if not r.get("sources") or not all(is_official_url(s.get("url")) for s in r["sources"] + alt_srcs):
+            counts["not_official"] += 1
             continue
         mv = map_value(r)
         if mv is None:
@@ -120,7 +135,7 @@ def baseline_facts(seed: dict, cfg: dict) -> tuple[list[dict], dict]:
             "proposal_id": None, "origin": "seed", "certainty": "reported", "suitability": "screening",
             "evidence": [{"url": s.get("url"), "publisher": s.get("publisher"), "published_at": s.get("published"),
                           "quote": s.get("quote"), "quote_type": s.get("quote_type"), "quote_verified": s.get("quote_verified"),
-                          "tier": 1 if r.get("confidence") == "official" and "press" not in (s.get("publisher") or "").lower() else None}
+                          "tier": 1}
                          for s in r.get("sources", [])],
         })
     facts.sort(key=lambda f: (f["project_id"], f["attribute"]))

@@ -4,22 +4,23 @@
     "retrieved": "2026-11-21",
     "timezone": "Asia/Kolkata",
     "confidence_levels": {
-      "official": "stated by an official source (PIB, MoHUA, Parliament reply, Maha-Metro, PMRDA, PMC, PMO)",
-      "corroborated": "no official source found; stated by >=2 independent reputable outlets",
-      "single_source": "one non-official source only",
-      "conflicting": "sources disagree; primary value plus alt_values listed",
-      "unverified": "value null; no source verified"
+      "official": "stated by the responsible agency or Parliament on its own site; no other official value competes",
+      "official_conflicting": "two official sources disagree; the primary value is the newest official statement and alt_values holds the other official value(s)",
+      "slipped": "an official planned date that has passed and was replaced by a later official date (none in this version)"
     },
     "method": "Every quote was checked programmatically against the text of the page as fetched on the retrieval date (quote_verified). Quotes of type 'table_row' are cells of a PDF table joined by '|', not a prose sentence. as_of is the date the value was true per the source; null where the source gives no date (use publish date).",
     "counts": {
-      "official": 94,
-      "conflicting": 15,
-      "corroborated": 24,
-      "unverified": 6,
-      "single_source": 41
+      "official": 102,
+      "official_conflicting": 6
     },
     "project_count": 22,
-    "record_count": 180
+    "record_count": 108,
+    "dataset_version": 2,
+    "revised": "2026-11-21",
+    "official_only": true,
+    "official_rule": "Only values stated by the responsible agency or Parliament on its own site (gov.in, nic.in, punemetrorail.org, mahametro.org, sansad.in, msrdc.in; backend/updater/official.py) are in this file. News reports are not: their values are recorded only in PUNE_PROJECT_FACTS.md, section 'Not in the dataset: unofficial reports'.",
+    "not_available_count": 7,
+    "history": "v1 (2026-11-21, branch pune-facts b2eb8e8): 180 records from official and news sources. v2 (2026-11-21): official-only rule; 108 records kept with official sources only, 7 attributes with no official figure listed in not_available, the rest moved to PUNE_PROJECT_FACTS.md."
   },
   "projects": [
     {
@@ -355,7 +356,7 @@
       ],
       "unit": "list",
       "as_of": "2026-05-13",
-      "confidence": "conflicting",
+      "confidence": "official_conflicting",
       "slipped": false,
       "sources": [
         {
@@ -363,14 +364,6 @@
           "publisher": "Maha-Metro (Pune Metro Rail Project) press release",
           "published": "2026-05-13",
           "quote": "A total of five important underground stations are planned on this route: 1. Market Yard 2. Bibwewadi 3. Padmavati 4. Balajinagar 5. Katraj",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://timesofindia.indiatimes.com/city/pune/state-cabinet-approves-additional-683-crore-for-two-more-metro-stations-on-swargate-katraj-underground-line/articleshow/123684184.cms",
-          "publisher": "Times of India",
-          "published": "2025-09-04",
-          "quote": "State cabinet on Wednesday approved the provision of an additional Rs683.11 crore for the construction of two more Metro stations on the Swargate-Katraj underground Metro line, besides shifting the Katraj Metro station southwards by around 420m.",
           "quote_type": "sentence",
           "quote_verified": true
         }
@@ -403,7 +396,7 @@
           }
         }
       ],
-      "note": "Current official position (Maha-Metro PR May 2026) is 5 stations. The Maha-Metro Line 1B web page is internally inconsistent (table says 5 UG stations, text says three) and the 2024 Union Cabinet sanction covered 3. Bibwewadi and Balajinagar were added by the state (Feb/Sep 2025) as 'Stage 2' of the contract."
+      "note": "Maha-Metro's press release of 13 May 2026 lists five stations. Its Line 1B web page text names three, and the 2024 Union Cabinet sanction (PIB) covered three. All are official, so the record is official_conflicting."
     },
     {
       "id": "pune-metro-line-1b-swargate-katraj::station_count",
@@ -415,7 +408,7 @@
       "value": 5,
       "unit": null,
       "as_of": "2026-05-13",
-      "confidence": "official",
+      "confidence": "official_conflicting",
       "slipped": false,
       "sources": [
         {
@@ -440,73 +433,7 @@
           }
         }
       ],
-      "note": "3 in the 2024 sanction; 5 after 2025 state approval."
-    },
-    {
-      "id": "pune-metro-line-1b-swargate-katraj::tunnel_depth",
-      "project_id": "pune-metro-line-1b-swargate-katraj",
-      "project_name": "Pune Metro Line 1B (Purple Line extension) Swargate–Katraj",
-      "agency": "Maha-Metro (MAHA Metro Rail Corporation Ltd)",
-      "category": "metro",
-      "attribute": "tunnel_depth",
-      "value": 28,
-      "unit": "m below ground level (approx.)",
-      "as_of": "2026-11-04",
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/four-tbms-to-arrive-in-pune-in-november-for-swargate-katraj-underground-metro-work-101787248591423.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-08-21",
-          "quote": "The TBMs will operate at a depth of around 28 metres below ground level.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://punemirror.com/news/swargate-katraj-metro-extension-tunnelling-to-begin-in-january-as-first-tbm-arrives/",
-          "publisher": "Pune Times Mirror",
-          "published": "2026-11-04",
-          "quote": "The machines will work about 28 metres below ground level.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://primetime24.com/en/e/pune/story/first-tbm-reaches-pune-for-swargate-katraj-underground-metro-tunnelling-to-begin/",
-          "publisher": "Prime Time 24",
-          "published": "2026-11-04",
-          "quote": "The machines will work about 28 metres below the ground surface.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": "Reported by two independent outlets (HT, Pune Times Mirror; Prime Time 24 carries the same wording). Not stated in any Maha-Metro press release or in the text of the Revised Final DPR found online (DPR gives no tunnel/rail-level depth in text; borehole depths 12–30 m bgl). 'Around 28 m' is an approximate operating depth, not a design rail level; it will vary along the alignment (DPR limits tunnel gradient to 3%)."
-    },
-    {
-      "id": "pune-metro-line-1b-swargate-katraj::station_depths",
-      "project_id": "pune-metro-line-1b-swargate-katraj",
-      "project_name": "Pune Metro Line 1B (Purple Line extension) Swargate–Katraj",
-      "agency": "Maha-Metro (MAHA Metro Rail Corporation Ltd)",
-      "category": "metro",
-      "attribute": "station_depths",
-      "value": null,
-      "unit": "m",
-      "as_of": null,
-      "confidence": "unverified",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.punemetrorail.org/download/Swargate-Katraj%20DPR.pdf",
-          "publisher": "Maha-Metro, Revised Final DPR (Swargate-Katraj)",
-          "published": null,
-          "quote": "[table] Table 11 : summary of type of stations Proposed | 153.4 x 23.73 | 3 | 3 | Cut and Cover",
-          "quote_type": "table_row",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": "No published station depth found. DPR gives station box 153.4 m x 23.73 m, 3 levels, cut-and-cover, but no depth figure in its text."
+      "note": "5 in Maha-Metro's press release of 13 May 2026; 3 in the Union Cabinet sanction of 16 Aug 2024 (PIB)."
     },
     {
       "id": "pune-metro-line-1b-swargate-katraj::approval_union_cabinet",
@@ -534,56 +461,6 @@
       "note": null
     },
     {
-      "id": "pune-metro-line-1b-swargate-katraj::approval_state_additional_stations",
-      "project_id": "pune-metro-line-1b-swargate-katraj",
-      "project_name": "Pune Metro Line 1B (Purple Line extension) Swargate–Katraj",
-      "agency": "Maha-Metro (MAHA Metro Rail Corporation Ltd)",
-      "category": "metro",
-      "attribute": "approval_state_additional_stations",
-      "value": "2025-09-03",
-      "unit": "date",
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://timesofindia.indiatimes.com/city/pune/state-cabinet-approves-additional-683-crore-for-two-more-metro-stations-on-swargate-katraj-underground-line/articleshow/123684184.cms",
-          "publisher": "Times of India",
-          "published": "2025-09-04",
-          "quote": "State cabinet on Wednesday approved the provision of an additional Rs683.11 crore for the construction of two more Metro stations",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": "TOI dated 4 Sep 2025, 'Wednesday' = 3 Sep 2025. Several outlets (Punekar News, IE, HT) carried the same cabinet decision."
-    },
-    {
-      "id": "pune-metro-line-1b-swargate-katraj::contract_award_loa",
-      "project_id": "pune-metro-line-1b-swargate-katraj",
-      "project_name": "Pune Metro Line 1B (Purple Line extension) Swargate–Katraj",
-      "agency": "Maha-Metro (MAHA Metro Rail Corporation Ltd)",
-      "category": "metro",
-      "attribute": "contract_award_loa",
-      "value": "2025-11-20",
-      "unit": "date",
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://punemirror.com/city/metro-extension-in-march/",
-          "publisher": "Pune Times Mirror",
-          "published": "2025-12-04",
-          "quote": "Maha-Metro officials confirmed that a Letter of Acceptance (LoA) worth Rs 1,364.59 crore has been awarded to ITD Cementation India Limited for Stage 1 on November 20, 2025.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": "Contractor ITD Cementation, now renamed Cemindia Projects Ltd (Maha-Metro PR calls it 'CEM India')."
-    },
-    {
       "id": "pune-metro-line-1b-swargate-katraj::tunnel_segment_casting_start",
       "project_id": "pune-metro-line-1b-swargate-katraj",
       "project_name": "Pune Metro Line 1B (Purple Line extension) Swargate–Katraj",
@@ -609,101 +486,23 @@
       "note": null
     },
     {
-      "id": "pune-metro-line-1b-swargate-katraj::tbm_boring_start",
-      "project_id": "pune-metro-line-1b-swargate-katraj",
-      "project_name": "Pune Metro Line 1B (Purple Line extension) Swargate–Katraj",
-      "agency": "Maha-Metro (MAHA Metro Rail Corporation Ltd)",
-      "category": "metro",
-      "attribute": "tbm_boring_start",
-      "value": "2027-01 (expected)",
-      "unit": "month",
-      "as_of": "2026-11-04",
-      "confidence": "corroborated",
-      "slipped": true,
-      "sources": [
-        {
-          "url": "https://punemirror.com/news/swargate-katraj-metro-extension-tunnelling-to-begin-in-january-as-first-tbm-arrives/",
-          "publisher": "Pune Times Mirror",
-          "published": "2026-11-04",
-          "quote": "Tunnelling for the underground Metro extension from Swargate to Katraj is expected to start in January, when the first of four tunnel boring machines (TBMs) reaches Pune.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://primetime24.com/en/e/pune/story/first-tbm-reaches-pune-for-swargate-katraj-underground-metro-tunnelling-to-begin/",
-          "publisher": "Prime Time 24",
-          "published": "2026-11-04",
-          "quote": "Work on the underground extension that will take the Pimpri Chinchwad-Swargate Metro corridor to Katraj is expected to begin in January.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": [
-        {
-          "value": "2026-09 (earlier target)",
-          "source": {
-            "url": "https://www.hindustantimes.com/cities/pune-news/swargatekatraj-underground-metro-excavation-for-shafts-begins-at-multiple-locations-101780252736248.html",
-            "publisher": "Hindustan Times",
-            "published": "2026-06-01",
-            "quote": "The actual TBM operations will start from September.",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
-        }
-      ],
-      "note": "SLIPPED: Maha-Metro's director (works) said in May/June 2026 TBM operations would start in September 2026; by Nov 2026 the expected start is January (2027, since the articles are dated 4 Nov 2026). Not in any Maha-Metro press release."
-    },
-    {
-      "id": "pune-metro-line-1b-swargate-katraj::tbm_count",
-      "project_id": "pune-metro-line-1b-swargate-katraj",
-      "project_name": "Pune Metro Line 1B (Purple Line extension) Swargate–Katraj",
-      "agency": "Maha-Metro (MAHA Metro Rail Corporation Ltd)",
-      "category": "metro",
-      "attribute": "tbm_count",
-      "value": 4,
-      "unit": null,
-      "as_of": "2026-11-06",
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/four-tbms-to-arrive-in-pune-in-november-for-swargate-katraj-underground-metro-work-101787248591423.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-08-21",
-          "quote": "The tunnelling operation will eventually involve all four TBMs with two machines working from the Swargate side and two from the Katraj side.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://punemirror.com/news/swargate-katraj-metro-extension-tunnelling-to-begin-in-january-as-first-tbm-arrives/",
-          "publisher": "Pune Times Mirror",
-          "published": "2026-11-04",
-          "quote": "Tunnelling will be done from both ends at the same time, with two TBMs working from Swargate and two from Katraj.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
       "id": "pune-metro-line-1b-swargate-katraj::completion_target",
       "project_id": "pune-metro-line-1b-swargate-katraj",
       "project_name": "Pune Metro Line 1B (Purple Line extension) Swargate–Katraj",
       "agency": "Maha-Metro (MAHA Metro Rail Corporation Ltd)",
       "category": "metro",
       "attribute": "completion_target",
-      "value": "2030-12 (start of services)",
+      "value": "2028-09",
       "unit": "month",
-      "as_of": "2026-09-08",
-      "confidence": "conflicting",
-      "slipped": true,
+      "as_of": "2026-02-26",
+      "confidence": "official_conflicting",
+      "slipped": false,
       "sources": [
         {
-          "url": "https://punemirror.com/news/pune-metro-swargate-katraj-extension-december-2030/",
-          "publisher": "Pune Times Mirror",
-          "published": "2026-09-08",
-          "quote": "MahaMetro has set a target of December 2030 for the start of Metro services between Swargate and Katraj.",
+          "url": "https://www.punemetrorail.org/download/commuters_guide/Pune-Metro-Underground-Brochure-English.pdf",
+          "publisher": "Maha-Metro Underground brochure (PDF, created 2026-02-26; image-only, read by OCR)",
+          "published": "2026-02-26",
+          "quote": "is targeted for completion by September 2028.",
           "quote_type": "sentence",
           "quote_verified": true
         }
@@ -719,31 +518,9 @@
             "quote_type": "sentence",
             "quote_verified": true
           }
-        },
-        {
-          "value": "2029-12",
-          "source": {
-            "url": "https://www.hindustantimes.com/cities/pune-news/swargatekatraj-underground-metro-excavation-for-shafts-begins-at-multiple-locations-101780252736248.html",
-            "publisher": "Hindustan Times",
-            "published": "2026-06-01",
-            "quote": "Metro authorities have set a target of December 2029 for completion of the corridor.",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
-        },
-        {
-          "value": "2028-09",
-          "source": {
-            "url": "https://www.punemetrorail.org/download/commuters_guide/Pune-Metro-Underground-Brochure-English.pdf",
-            "publisher": "Maha-Metro Underground brochure (PDF, created 2026-02-26; image-only, read by OCR)",
-            "published": "2026-02-26",
-            "quote": "is targeted for completion by September 2028.",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
         }
       ],
-      "note": "Maha-Metro's own Feb 2026 brochure says Sept 2028 (and wrongly dates Cabinet approval to 4 Sep 2024; PIB says 16 Aug 2024). SLIPPED: Feb 2029 (Union Cabinet, Aug 2024) -> Dec 2029 (HT, Jun 2026) -> Dec 2030 services (MD Shravan Hardikar per Pune Times Mirror, Sep 2026)."
+      "note": "Maha-Metro's Underground brochure (Feb 2026): September 2028. Union Cabinet (PIB, 16 Aug 2024): February 2029. Both are official and both are still in the future, so they conflict. No later official date was found (checked 2026-11-21)."
     },
     {
       "id": "pune-metro-line-1b-swargate-katraj::cost_sanctioned",
@@ -779,31 +556,6 @@
       "note": null
     },
     {
-      "id": "pune-metro-line-1b-swargate-katraj::cost_revised",
-      "project_id": "pune-metro-line-1b-swargate-katraj",
-      "project_name": "Pune Metro Line 1B (Purple Line extension) Swargate–Katraj",
-      "agency": "Maha-Metro (MAHA Metro Rail Corporation Ltd)",
-      "category": "metro",
-      "attribute": "cost_revised",
-      "value": 3637.6,
-      "unit": "INR crore",
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://timesofindia.indiatimes.com/city/pune/state-cabinet-approves-additional-683-crore-for-two-more-metro-stations-on-swargate-katraj-underground-line/articleshow/123684184.cms",
-          "publisher": "Times of India",
-          "published": "2025-09-04",
-          "quote": "The overall cost of the entire project then rose from the earlier Rs2,954.53 crore to Rs3,637.6 crore",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": "= 2954.53 + 683.11 for two added stations (state approval). Pune Times Mirror (Dec 2025) rounds to 'approximately Rs 3,650 crore'."
-    },
-    {
       "id": "pune-metro-line-1b-swargate-katraj::physical_progress",
       "project_id": "pune-metro-line-1b-swargate-katraj",
       "project_name": "Pune Metro Line 1B (Purple Line extension) Swargate–Katraj",
@@ -822,39 +574,6 @@
           "published": "2026-07-30",
           "quote": "[table] Pune Metro Rail Project Phase- | 1 Extension (Swargate to | Katraj) | 5.464 | 6.2",
           "quote_type": "table_row",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "pune-metro-line-1b-swargate-katraj::status",
-      "project_id": "pune-metro-line-1b-swargate-katraj",
-      "project_name": "Pune Metro Line 1B (Purple Line extension) Swargate–Katraj",
-      "agency": "Maha-Metro (MAHA Metro Rail Corporation Ltd)",
-      "category": "metro",
-      "attribute": "status",
-      "value": "under construction: shafts/station excavation; first TBM assembling at Swargate launch shaft; tunnelling not yet started",
-      "unit": null,
-      "as_of": "2026-11-06",
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/first-tbm-arrives-for-swargate-katraj-metro-extension-101793902375774.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-11-06",
-          "quote": "The first TBM is being assembled at the Swargate launching shaft, while the second is being dispatched from Chennai, with its components expected to reach Pune by November-end.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://punemirror.com/news/swargate-katraj-metro-extension-tunnelling-to-begin-in-january-as-first-tbm-arrives/",
-          "publisher": "Pune Times Mirror",
-          "published": "2026-11-04",
-          "quote": "Preparatory work is already on. Excavation of the shaft at Market Yard station has begun.",
-          "quote_type": "sentence",
           "quote_verified": true
         }
       ],
@@ -969,7 +688,7 @@
       "value": 17.53,
       "unit": "km",
       "as_of": null,
-      "confidence": "conflicting",
+      "confidence": "official_conflicting",
       "slipped": false,
       "sources": [
         {
@@ -1031,7 +750,7 @@
       "value": 33,
       "unit": "m",
       "as_of": null,
-      "confidence": "conflicting",
+      "confidence": "official",
       "slipped": false,
       "sources": [
         {
@@ -1043,50 +762,8 @@
           "quote_verified": true
         }
       ],
-      "alt_values": [
-        {
-          "value": 28,
-          "source": {
-            "url": "https://www.hindustantimes.com/pune-news/pune-metro-underground-stations/story-QqB4i5EWqbfWMRVVz1a0jO.html",
-            "publisher": "Hindustan Times",
-            "published": "2019-12-24",
-            "quote": "Agriculture College (18 metres), Civil Court (28 metres), Budhwar peth (25 metres), Mandai (20 metres) and Swargate (22 metres).",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
-        }
-      ],
-      "note": "Official 2026 brochure says 33 m; HT 2019 (pre-construction figure) says 28 m. Prefer official 33 m."
-    },
-    {
-      "id": "pune-metro-line-1-purple::station_depths_other",
-      "project_id": "pune-metro-line-1-purple",
-      "project_name": "Pune Metro Line 1 (Purple) PCMC–Swargate",
-      "agency": "Maha-Metro",
-      "category": "metro",
-      "attribute": "station_depths_other",
-      "value": {
-        "Agriculture College/Shivajinagar": 18,
-        "Budhwar Peth/Kasba Peth": 25,
-        "Mandai": 20,
-        "Swargate": 22
-      },
-      "unit": "m",
-      "as_of": "2019-12-24",
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/pune-news/pune-metro-underground-stations/story-QqB4i5EWqbfWMRVVz1a0jO.html",
-          "publisher": "Hindustan Times",
-          "published": "2019-12-24",
-          "quote": "The Pune metro underground line runs from Shivajinagar to Swargate and includes five stations — Agriculture College (18 metres), Civil Court (28 metres), Budhwar peth (25 metres), Mandai (20 metres) and Swargate (22 metres).",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
       "alt_values": null,
-      "note": "2019 planning-stage figures; not confirmed by Maha-Metro as-built data."
+      "note": "Maha-Metro Underground brochure (Feb 2026): District Court is Maha-Metro's deepest underground station, 33 m."
     },
     {
       "id": "pune-metro-line-1-purple::tunnel_depth_below_mutha_river",
@@ -1106,31 +783,6 @@
           "publisher": "Maha-Metro Underground brochure (PDF, created 2026-02-26; image-only, read by OCR + visual check)",
           "published": "2026-02-26",
           "quote": "10m An underground tunnel 10 m below the Mutha River",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "pune-metro-line-1-purple::tunnel_depth_max",
-      "project_id": "pune-metro-line-1-purple",
-      "project_name": "Pune Metro Line 1 (Purple) PCMC–Swargate",
-      "agency": "Maha-Metro",
-      "category": "metro",
-      "attribute": "tunnel_depth_max",
-      "value": 30,
-      "unit": "m",
-      "as_of": "2019-12-24",
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/pune-news/pune-metro-underground-stations/story-QqB4i5EWqbfWMRVVz1a0jO.html",
-          "publisher": "Hindustan Times",
-          "published": "2019-12-24",
-          "quote": "We started digging at 18 metres (55-foot below ground level), however, there will be a gradual descent and the maximum tunnel depth which is 30 metres will be at the civil court station.",
           "quote_type": "sentence",
           "quote_verified": true
         }
@@ -1390,7 +1042,7 @@
       "value": 15.75,
       "unit": "km",
       "as_of": null,
-      "confidence": "conflicting",
+      "confidence": "official_conflicting",
       "slipped": false,
       "sources": [
         {
@@ -1524,7 +1176,7 @@
       "agency": "PMRDA (PPP concession to Tata (TRIL Urban Transport) – Siemens JV)",
       "category": "metro",
       "attribute": "agency",
-      "value": "PMRDA; built and operated by Tata–Siemens JV on PPP",
+      "value": "Public-Private Partnership (PPP)",
       "unit": null,
       "as_of": null,
       "confidence": "official",
@@ -1545,18 +1197,10 @@
           "quote": "[table] Pune Metro Line 3 | (Maan-Hinjawadi-Shivajinagar) | 23.20 | 95.73",
           "quote_type": "table_row",
           "quote_verified": true
-        },
-        {
-          "url": "https://press.siemens.com/global/en/pressrelease/pune-metro-indias-public-private-partnership-metro-rail-project-commences-passenger",
-          "publisher": "Siemens Mobility press release",
-          "published": "2026-11-03",
-          "quote": "The Pune Metropolitan Region Development Authority awarded the concession to the Tata-Siemens JV to develop Metro Line 3",
-          "quote_type": "sentence",
-          "quote_verified": true
         }
       ],
       "alt_values": null,
-      "note": "Concessionaire is the Tata (TRIL Urban Transport) – Siemens JV per Siemens press release."
+      "note": "The official sources held (PIB/PMO, Nov 2026) state the PPP model; they do not name the implementing authority or the concessionaire."
     },
     {
       "id": "pune-metro-line-3-hinjewadi-shivajinagar::alignment_endpoints",
@@ -1584,140 +1228,29 @@
       "note": null
     },
     {
-      "id": "pune-metro-line-3-hinjewadi-shivajinagar::type",
-      "project_id": "pune-metro-line-3-hinjewadi-shivajinagar",
-      "project_name": "Pune Metro Line 3 (Pink Line / 'Puneri Metro') Maan-Hinjewadi–Shivajinagar (District Court)",
-      "agency": "PMRDA (PPP concession to Tata (TRIL Urban Transport) – Siemens JV)",
-      "category": "metro",
-      "attribute": "type",
-      "value": "elevated",
-      "unit": null,
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/pune-metro-line-3-to-be-operational-from-november-4-101793469685744.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-11-01",
-          "quote": "Passenger services on the 23.2-km elevated corridor, also known as the 'Puneri Metro' or Pink Line, will commence at 6 am on November 4.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": "Elevated throughout per HT and PMRDA commissioner quote in HT."
-    },
-    {
       "id": "pune-metro-line-3-hinjewadi-shivajinagar::length",
       "project_id": "pune-metro-line-3-hinjewadi-shivajinagar",
       "project_name": "Pune Metro Line 3 (Pink Line / 'Puneri Metro') Maan-Hinjewadi–Shivajinagar (District Court)",
       "agency": "PMRDA (PPP concession to Tata (TRIL Urban Transport) – Siemens JV)",
       "category": "metro",
       "attribute": "length",
-      "value": 23.203,
+      "value": 23.2,
       "unit": "km",
-      "as_of": null,
-      "confidence": "corroborated",
+      "as_of": "2026-07-30",
+      "confidence": "official",
       "slipped": false,
       "sources": [
         {
-          "url": "https://www.hindustantimes.com/cities/pune-news/pune-metro-line-3-to-be-operational-from-november-4-101793469685744.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-11-01",
-          "quote": "Chaudhary said, \"The 23.203-km elevated corridor would connect Maan with the Rajiv Gandhi Infotech Park in Hinjewadi ...\"",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://primetime24.com/en/e/pune/story/hinjewadi-shivajinagar-metro-line-3-opens-after-missing-eight-launch-dates/",
-          "publisher": "Prime Time 24",
-          "published": "2026-11-03",
-          "quote": "The 23.203-km corridor has been built on a public-private partnership (PPP) model at an estimated cost of Rs 8,313 crore.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": [
-        {
-          "value": 23.2,
-          "source": {
-            "url": "https://sansad.in/getFile/lsapps/loksabhaquestions/annex/188/AU1943_vmUqd2.pdf",
-            "publisher": "Lok Sabha / MoHUA, Unstarred Q 1943",
-            "published": "2026-07-30",
-            "quote": "[table] Pune Metro Line 3 | (Maan-Hinjawadi-Shivajinagar) | 23.20 | 95.73",
-            "quote_type": "table_row",
-            "quote_verified": true
-          }
-        }
-      ],
-      "note": "Official sources round to ~23 km / 23.20 km."
-    },
-    {
-      "id": "pune-metro-line-3-hinjewadi-shivajinagar::station_count",
-      "project_id": "pune-metro-line-3-hinjewadi-shivajinagar",
-      "project_name": "Pune Metro Line 3 (Pink Line / 'Puneri Metro') Maan-Hinjewadi–Shivajinagar (District Court)",
-      "agency": "PMRDA (PPP concession to Tata (TRIL Urban Transport) – Siemens JV)",
-      "category": "metro",
-      "attribute": "station_count",
-      "value": 23,
-      "unit": null,
-      "as_of": null,
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/pune-metro-line-3-to-be-operational-from-november-4-101793469685744.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-11-01",
-          "quote": "Of the total 23 stations on the corridor, 17 will be opened for passengers initially.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://primetime24.com/en/e/pune/story/hinjewadi-shivajinagar-metro-line-3-opens-after-missing-eight-launch-dates/",
-          "publisher": "Prime Time 24",
-          "published": "2026-11-03",
-          "quote": "It has 23 stations in all, from Maan in Hinjewadi to Shivajinagar.",
-          "quote_type": "sentence",
+          "url": "https://sansad.in/getFile/lsapps/loksabhaquestions/annex/188/AU1943_vmUqd2.pdf",
+          "publisher": "Lok Sabha / MoHUA, Unstarred Q 1943",
+          "published": "2026-07-30",
+          "quote": "[table] Pune Metro Line 3 | (Maan-Hinjawadi-Shivajinagar) | 23.20 | 95.73",
+          "quote_type": "table_row",
           "quote_verified": true
         }
       ],
       "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "pune-metro-line-3-hinjewadi-shivajinagar::stations_open",
-      "project_id": "pune-metro-line-3-hinjewadi-shivajinagar",
-      "project_name": "Pune Metro Line 3 (Pink Line / 'Puneri Metro') Maan-Hinjewadi–Shivajinagar (District Court)",
-      "agency": "PMRDA (PPP concession to Tata (TRIL Urban Transport) – Siemens JV)",
-      "category": "metro",
-      "attribute": "stations_open",
-      "value": 17,
-      "unit": "of 23",
-      "as_of": "2026-11-19",
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://timesofindia.indiatimes.com/city/pune/two-more-puneri-metro-pink-line-stations-likely-to-open-in-dec/articleshow/135970623.cms",
-          "publisher": "Times of India",
-          "published": "2026-11-19",
-          "quote": "Their opening will take the number of operational stations on the 23.3km corridor to 19, up from the current 17.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/pune-metro-line-3-to-be-operational-from-november-4-101793469685744.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-11-01",
-          "quote": "Of the total 23 stations on the corridor, 17 will be opened for passengers initially.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": "Baner Gaon (PMR-15) and Baner–Pashan Link Road (PMR-16) expected first week Dec 2026; PMR-13, -14, -20, -22 by Jan 2027 (TOI)."
+      "note": "Lok Sabha reply (MoHUA, 30 Jul 2026) table: 23.20 km. The PMO (2 Nov 2026) says approximately 23 km."
     },
     {
       "id": "pune-metro-line-3-hinjewadi-shivajinagar::opening_date",
@@ -1726,7 +1259,7 @@
       "agency": "PMRDA (PPP concession to Tata (TRIL Urban Transport) – Siemens JV)",
       "category": "metro",
       "attribute": "opening_date",
-      "value": "2026-11-04",
+      "value": "2026-11-03 (inaugurated by the Prime Minister)",
       "unit": "date (passenger services; inaugurated 2026-11-03)",
       "as_of": null,
       "confidence": "official",
@@ -1739,76 +1272,10 @@
           "quote": "Prime Minister Shri Narendra Modi inaugurated and laid the foundation stone for Pune Metro projects worth around ₹21,800 crore today through video conferencing.",
           "quote_type": "sentence",
           "quote_verified": true
-        },
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/pune-metro-line-3-to-be-operational-from-november-4-101793469685744.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-11-01",
-          "quote": "Passenger services ... will commence at 6 am on November 4.",
-          "quote_type": "sentence",
-          "quote_verified": true
         }
       ],
       "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "pune-metro-line-3-hinjewadi-shivajinagar::completion_target_original",
-      "project_id": "pune-metro-line-3-hinjewadi-shivajinagar",
-      "project_name": "Pune Metro Line 3 (Pink Line / 'Puneri Metro') Maan-Hinjewadi–Shivajinagar (District Court)",
-      "agency": "PMRDA (PPP concession to Tata (TRIL Urban Transport) – Siemens JV)",
-      "category": "metro",
-      "attribute": "completion_target_original",
-      "value": "2025-03-25",
-      "unit": "date",
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": true,
-      "sources": [
-        {
-          "url": "https://primetime24.com/en/e/pune/story/hinjewadi-shivajinagar-metro-line-3-opens-after-missing-eight-launch-dates/",
-          "publisher": "Prime Time 24",
-          "published": "2026-11-03",
-          "quote": "The project was initially to be completed in 40 months, with a deadline of March 25, 2025. The concessionaire then sought an extension of 543 days, citing concurrent delays during construction. The deadline was extended to March 31, 2026.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": "SLIPPED: Mar 2025 -> Mar 2026 (extension) -> opened Nov 2026 with 17/23 stations; full corridor Jan 2027."
-    },
-    {
-      "id": "pune-metro-line-3-hinjewadi-shivajinagar::full_corridor_target",
-      "project_id": "pune-metro-line-3-hinjewadi-shivajinagar",
-      "project_name": "Pune Metro Line 3 (Pink Line / 'Puneri Metro') Maan-Hinjewadi–Shivajinagar (District Court)",
-      "agency": "PMRDA (PPP concession to Tata (TRIL Urban Transport) – Siemens JV)",
-      "category": "metro",
-      "attribute": "full_corridor_target",
-      "value": "2027-01",
-      "unit": "month",
-      "as_of": "2026-11-19",
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://timesofindia.indiatimes.com/city/pune/two-more-puneri-metro-pink-line-stations-likely-to-open-in-dec/articleshow/135970623.cms",
-          "publisher": "Times of India",
-          "published": "2026-11-19",
-          "quote": "The remaining four stations — PMR-13, PMR-14, PMR-20 and PMR-22 — are expected to be completed in phases by Jan 2027.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://primetime24.com/en/e/pune/story/hinjewadi-shivajinagar-metro-line-3-opens-after-missing-eight-launch-dates/",
-          "publisher": "Prime Time 24",
-          "published": "2026-11-03",
-          "quote": "The remaining stations are expected to open in phases, and the target for the entire corridor is January 2027.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
+      "note": "PIB (PMO), 3 Nov 2026: inaugurated that day by video conference. The date passenger services began is not in an official source held."
     },
     {
       "id": "pune-metro-line-3-hinjewadi-shivajinagar::cost",
@@ -1817,43 +1284,23 @@
       "agency": "PMRDA (PPP concession to Tata (TRIL Urban Transport) – Siemens JV)",
       "category": "metro",
       "attribute": "cost",
-      "value": 8313,
+      "value": "over 8,300",
       "unit": "INR crore",
-      "as_of": null,
-      "confidence": "corroborated",
+      "as_of": "2026-11-02",
+      "confidence": "official",
       "slipped": false,
       "sources": [
         {
-          "url": "https://www.hindustantimes.com/cities/pune-news/pune-metro-line-3-to-be-operational-from-november-4-101793469685744.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-11-01",
-          "quote": "The project has an estimated cost of ₹ 8,313 crore, including land acquisition and the relocation of utilities and services.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://primetime24.com/en/e/pune/story/hinjewadi-shivajinagar-metro-line-3-opens-after-missing-eight-launch-dates/",
-          "publisher": "Prime Time 24",
-          "published": "2026-11-03",
-          "quote": "built on a public-private partnership (PPP) model at an estimated cost of Rs 8,313 crore.",
+          "url": "https://www.pmindia.gov.in/en/news_updates/pm-to-inaugurate-and-lay-foundation-stone-of-pune-metro-projects-worth-around-%e2%82%b921800-crore-on-3rd-november/",
+          "publisher": "PMO / pmindia.gov.in",
+          "published": "2026-11-02",
+          "quote": "PM to Inaugurate Pune Metro Line 3 (Pink Line), Built at a Cost of Over ₹8,300 Crore",
           "quote_type": "sentence",
           "quote_verified": true
         }
       ],
-      "alt_values": [
-        {
-          "value": "over 8,300",
-          "source": {
-            "url": "https://www.pmindia.gov.in/en/news_updates/pm-to-inaugurate-and-lay-foundation-stone-of-pune-metro-projects-worth-around-%e2%82%b921800-crore-on-3rd-november/",
-            "publisher": "PMO / pmindia.gov.in",
-            "published": "2026-11-02",
-            "quote": "PM to Inaugurate Pune Metro Line 3 (Pink Line), Built at a Cost of Over ₹8,300 Crore",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
-        }
-      ],
-      "note": "Consistent with official 'over ₹8,300 crore'."
+      "alt_values": null,
+      "note": "PMO, 2 Nov 2026: 'Built at a Cost of Over ₹8,300 Crore'."
     },
     {
       "id": "pune-metro-line-3-hinjewadi-shivajinagar::physical_progress",
@@ -1874,39 +1321,6 @@
           "published": "2026-07-30",
           "quote": "[table] Pune Metro Line 3 | (Maan-Hinjawadi-Shivajinagar) | 23.20 | 95.73",
           "quote_type": "table_row",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "pune-metro-line-3-hinjewadi-shivajinagar::status",
-      "project_id": "pune-metro-line-3-hinjewadi-shivajinagar",
-      "project_name": "Pune Metro Line 3 (Pink Line / 'Puneri Metro') Maan-Hinjewadi–Shivajinagar (District Court)",
-      "agency": "PMRDA (PPP concession to Tata (TRIL Urban Transport) – Siemens JV)",
-      "category": "metro",
-      "attribute": "status",
-      "value": "operational (17 of 23 stations), remaining stations in phases",
-      "unit": null,
-      "as_of": "2026-11-19",
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://timesofindia.indiatimes.com/city/pune/two-more-puneri-metro-pink-line-stations-likely-to-open-in-dec/articleshow/135970623.cms",
-          "publisher": "Times of India",
-          "published": "2026-11-19",
-          "quote": "Their opening will take the number of operational stations on the 23.3km corridor to 19, up from the current 17.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://primetime24.com/en/e/pune/story/hinjewadi-shivajinagar-metro-line-3-opens-after-missing-eight-launch-dates/",
-          "publisher": "Prime Time 24",
-          "published": "2026-11-03",
-          "quote": "Passenger service is to begin on November 4, initially at 17 stations.",
-          "quote_type": "sentence",
           "quote_verified": true
         }
       ],
@@ -1953,7 +1367,7 @@
       ],
       "unit": "list",
       "as_of": null,
-      "confidence": "conflicting",
+      "confidence": "official_conflicting",
       "slipped": false,
       "sources": [
         {
@@ -1978,7 +1392,7 @@
           }
         }
       ],
-      "note": "Sanction (Oct 2023) was for 3 stations; Maha-Metro now lists 4 (fourth station funded by PCMC in June 2026 per Navarashtra)."
+      "note": "Maha-Metro's project profile lists four stations; the MoHUA sanction (23 Oct 2023) was for three elevated stations."
     },
     {
       "id": "pune-metro-line-1a-pcmc-nigdi::type",
@@ -2027,20 +1441,8 @@
           "quote_verified": true
         }
       ],
-      "alt_values": [
-        {
-          "value": 4.519,
-          "source": {
-            "url": "https://www.punemetrorail.org/projectupdate.aspx",
-            "publisher": "Maha-Metro Project Update page",
-            "published": "2026-10-28",
-            "quote": "Design and Construction of Elevated Viaduct of Length 4.519 Kms",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
-        }
-      ],
-      "note": "4.413 km = sanctioned passenger corridor; 4.519 km = civil viaduct contract scope."
+      "alt_values": null,
+      "note": "4.413 km is the sanctioned corridor (MoHUA sanction, 23 Oct 2023). Maha-Metro's Project Update page gives 4.519 km for the civil viaduct contract, a different measure."
     },
     {
       "id": "pune-metro-line-1a-pcmc-nigdi::approval_goi",
@@ -2112,30 +1514,10 @@
           "quote": "Contract Period : 15/03/2024 to 31/03/2027",
           "quote_type": "sentence",
           "quote_verified": true
-        },
-        {
-          "url": "https://timesofindia.indiatimes.com/city/pune/pcmc-to-take-up-recurring-water-pipeline-damage-with-maha-metro/articleshow/135815123.cms",
-          "publisher": "Times of India",
-          "published": "2026-11-14",
-          "quote": "The project is scheduled for completion by March 31, 2027.",
-          "quote_type": "sentence",
-          "quote_verified": true
         }
       ],
-      "alt_values": [
-        {
-          "value": "2027-07 (commencement of operation)",
-          "source": {
-            "url": "https://www.punemetrorail.org/download/ESIA_AND_ESMP-PCMC-NIGIDI_CORRIDOR.pdf",
-            "publisher": "Maha-Metro ESIA/ESMP PCMC–Nigdi",
-            "published": "2025-02",
-            "quote": "Commencement of Operation April 2025 July 2027",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
-        }
-      ],
-      "note": "SLIPPED: ESIA original plan was operation April 2025; status Feb 2025 says July 2027."
+      "alt_values": null,
+      "note": "Contract period 15/03/2024 to 31/03/2027 (Maha-Metro Project Update, as on 28 Oct 2026). Maha-Metro's ESIA/ESMP (Feb 2025) moved the commencement of operation from April 2025 to July 2027."
     },
     {
       "id": "pune-metro-line-1a-pcmc-nigdi::cost",
@@ -2160,7 +1542,7 @@
         }
       ],
       "alt_values": null,
-      "note": "Some 2026 outlets quote ₹960.18 crore (likely incl. 4th station); not verified officially."
+      "note": null
     },
     {
       "id": "pune-metro-line-1a-pcmc-nigdi::physical_progress",
@@ -2423,7 +1805,7 @@
       "value": "within four years of sanction (~2029)",
       "unit": null,
       "as_of": null,
-      "confidence": "conflicting",
+      "confidence": "official",
       "slipped": false,
       "sources": [
         {
@@ -2435,19 +1817,7 @@
           "quote_verified": true
         }
       ],
-      "alt_values": [
-        {
-          "value": "mid-2028 (Vanaz–Chandani Chowk)",
-          "source": {
-            "url": "https://indianexpress.com/article/cities/pune/pune-metro-extension-chandni-chowk-katraj-project-10702957",
-            "publisher": "The Indian Express",
-            "published": "2026-05-22",
-            "quote": "this extension route has to be completed by mid-2028.",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
-        }
-      ],
+      "alt_values": null,
       "note": null
     },
     {
@@ -2494,31 +1864,6 @@
           "published": "2026-07-30",
           "quote": "[table] Pune Metro Phase 2 (Vanaz to | Chandni Chowk & Ramwadi to | 12.75 | 1.88",
           "quote_type": "table_row",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "pune-metro-line-2a-2b-chandani-chowk-wagholi::status",
-      "project_id": "pune-metro-line-2a-2b-chandani-chowk-wagholi",
-      "project_name": "Pune Metro Phase-2 Lines 2A (Vanaz–Chandani Chowk) and 2B (Ramwadi–Wagholi/Vitthalwadi)",
-      "agency": "Maha-Metro",
-      "category": "metro",
-      "attribute": "status",
-      "value": "early works (soil testing / pre-construction); foundation stone laid 3 Nov 2026",
-      "unit": null,
-      "as_of": "2026-11-03",
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://indianexpress.com/article/cities/pune/pune-metro-extension-chandni-chowk-katraj-project-10702957",
-          "publisher": "The Indian Express",
-          "published": "2026-05-22",
-          "quote": "Tambekar said that as the Vanaz-Chandni Chowk route is elevated, soil testing work has started before pillar construction",
-          "quote_type": "sentence",
           "quote_verified": true
         }
       ],
@@ -2927,7 +2272,7 @@
       "unit": "date",
       "as_of": null,
       "confidence": "official",
-      "slipped": true,
+      "slipped": false,
       "sources": [
         {
           "url": "https://www.pmrda.gov.in/en/pune-metro-line-3/double-decker-flyover-pune-university",
@@ -2939,90 +2284,7 @@
         }
       ],
       "alt_values": null,
-      "note": "SLIPPED: 36 months from Nov 2021 = Nov 2024; arms opened Aug 2025 and Mar 2026."
-    },
-    {
-      "id": "flyover-university-chowk-ganeshkhind-double-decker::construction_start",
-      "project_id": "flyover-university-chowk-ganeshkhind-double-decker",
-      "project_name": "Integrated double-decker flyover, Savitribai Phule Pune University Chowk (Ganeshkhind Road)",
-      "agency": "PMRDA (built by Metro Line 3 concessionaire; PMC approval)",
-      "category": "flyover",
-      "attribute": "construction_start",
-      "value": "2022-08-26",
-      "unit": "date",
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://timesofindia.indiatimes.com/city/pune/baner-ramp-of-university-chowk-double-decker-flyover-opens-today-to-ease-traffic-congestion-on-ganeshkhind-road/articleshow/129232277.cms",
-          "publisher": "Times of India",
-          "published": "2026-03-08",
-          "quote": "The integrated 1.7km flyover with Metro was approved by Pune Municipal Corporation and PMRDA, and construction began on Aug 26, 2022.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "flyover-university-chowk-ganeshkhind-double-decker::opening_aundh_shivajinagar_arm",
-      "project_id": "flyover-university-chowk-ganeshkhind-double-decker",
-      "project_name": "Integrated double-decker flyover, Savitribai Phule Pune University Chowk (Ganeshkhind Road)",
-      "agency": "PMRDA (built by Metro Line 3 concessionaire; PMC approval)",
-      "category": "flyover",
-      "attribute": "opening_aundh_shivajinagar_arm",
-      "value": "2025-08",
-      "unit": "month",
-      "as_of": null,
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/traffic-relief-in-sight-as-cm-opens-one-arm-of-double-decker-flyover-at-sppu-chowk-101755630980392.html",
-          "publisher": "Hindustan Times",
-          "published": "2025-08-20",
-          "quote": "The newly opened stretch, connecting Aundh to Shivajinagar, is expected to ease congestion on the busy Ganeshkhind Road",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://timesofindia.indiatimes.com/city/pune/baner-ramp-of-university-chowk-double-decker-flyover-opens-today-to-ease-traffic-congestion-on-ganeshkhind-road/articleshow/129232277.cms",
-          "publisher": "Times of India",
-          "published": "2026-03-08",
-          "quote": "Baner ramp of the double-decker flyover at University Junction will open on Sunday, nearly six months after the Aundh ramp became operational last Aug.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "flyover-university-chowk-ganeshkhind-double-decker::opening_baner_ramp",
-      "project_id": "flyover-university-chowk-ganeshkhind-double-decker",
-      "project_name": "Integrated double-decker flyover, Savitribai Phule Pune University Chowk (Ganeshkhind Road)",
-      "agency": "PMRDA (built by Metro Line 3 concessionaire; PMC approval)",
-      "category": "flyover",
-      "attribute": "opening_baner_ramp",
-      "value": "2026-03-08",
-      "unit": "date",
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://timesofindia.indiatimes.com/city/pune/baner-ramp-of-university-chowk-double-decker-flyover-opens-today-to-ease-traffic-congestion-on-ganeshkhind-road/articleshow/129232277.cms",
-          "publisher": "Times of India",
-          "published": "2026-03-08",
-          "quote": "Baner ramp of the double-decker flyover at University Junction will open on Sunday",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": "TOI dated Sun 8 Mar 2026; IE and Punekar News also reported the 8 Mar inauguration."
+      "note": "36 months from the appointed date (25 Nov 2021) ends in November 2024 (computed from PMRDA's figures). No later official completion date was found (checked 2026-11-21)."
     },
     {
       "id": "flyover-university-chowk-ganeshkhind-double-decker::cost",
@@ -3042,282 +2304,6 @@
           "publisher": "PMRDA (pmrda.gov.in, Marathi page)",
           "published": "2025-11-07",
           "quote": "प्रकल्पाचा अंदाजित खर्च ₹277 कोटी असून, किंमतवाढीमुळे अतिरिक्त खर्च लागू शकतो.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/traffic-relief-in-sight-as-cm-opens-one-arm-of-double-decker-flyover-at-sppu-chowk-101755630980392.html",
-          "publisher": "Hindustan Times",
-          "published": "2025-08-20",
-          "quote": "The ₹277-crore project is designed to improve traffic flow at Vidyapeeth Chowk and along Ganeshkhind Road.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "flyover-university-chowk-ganeshkhind-double-decker::status",
-      "project_id": "flyover-university-chowk-ganeshkhind-double-decker",
-      "project_name": "Integrated double-decker flyover, Savitribai Phule Pune University Chowk (Ganeshkhind Road)",
-      "agency": "PMRDA (built by Metro Line 3 concessionaire; PMC approval)",
-      "category": "flyover",
-      "attribute": "status",
-      "value": "Aundh–Shivajinagar and Baner arms open; Pashan ramp status unverified after Mar 2026",
-      "unit": null,
-      "as_of": "2026-03-08",
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://timesofindia.indiatimes.com/city/pune/baner-ramp-of-university-chowk-double-decker-flyover-opens-today-to-ease-traffic-congestion-on-ganeshkhind-road/articleshow/129232277.cms",
-          "publisher": "Times of India",
-          "published": "2026-03-08",
-          "quote": "The Pashan ramp is nearing completion too, with only a 50-metre stretch pending due to the relocation of utilities.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": "Pashan ramp completion not confirmed by a fetched source."
-    },
-    {
-      "id": "flyover-sinhagad-road-rajaram-bridge-funtime::type",
-      "project_id": "flyover-sinhagad-road-rajaram-bridge-funtime",
-      "project_name": "Sinhagad Road flyover, Rajaram Bridge – Fun Time Cinema",
-      "agency": "Pune Municipal Corporation (PMC)",
-      "category": "flyover",
-      "attribute": "type",
-      "value": "elevated (three one-way flyover arms)",
-      "unit": null,
-      "as_of": null,
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://indianexpress.com/article/cities/pune/sinhagad-road-flyover-traffic-connectivity-pune-10223777/",
-          "publisher": "The Indian Express",
-          "published": "2025-09-01",
-          "quote": "a 520 metre long one way flyover bridge from Vithalwadi to Veer Baji Pasalkar Udyan ... a 2.1km long one-way flyover bridge from Vithalwadi to Funtime Cinema ... another arm of a 1.5 km long flyover bridge from Goel Ganga chowk to Hingane at Inamdar Chowk",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/sinhagad-road-flyover-now-open-to-public-101756754278050.html",
-          "publisher": "Hindustan Times",
-          "published": "2025-09-02",
-          "quote": "The flyover was erected by the Pune Municipal Corporation (PMC) in three phases.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "flyover-sinhagad-road-rajaram-bridge-funtime::length",
-      "project_id": "flyover-sinhagad-road-rajaram-bridge-funtime",
-      "project_name": "Sinhagad Road flyover, Rajaram Bridge – Fun Time Cinema",
-      "agency": "Pune Municipal Corporation (PMC)",
-      "category": "flyover",
-      "attribute": "length",
-      "value": "~2.5 km corridor; arms 0.52 + 2.1 + 1.5 km",
-      "unit": "km",
-      "as_of": null,
-      "confidence": "conflicting",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://indianexpress.com/article/cities/pune/sinhagad-road-flyover-traffic-connectivity-pune-10223777/",
-          "publisher": "The Indian Express",
-          "published": "2025-09-01",
-          "quote": "Constructed at an estimated cost of Rs 118 crore, the flyover is approximately 2.5km and includes a chain of bridges",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": [
-        {
-          "value": "2.6 km (Swarajya)"
-        },
-        {
-          "value": "4.1 km (sum of one-way arms, Daily Jagran)"
-        }
-      ],
-      "note": "Reported length depends on whether arms are summed. Official PMC project page could not be fetched (extraction failed)."
-    },
-    {
-      "id": "flyover-sinhagad-road-rajaram-bridge-funtime::phase_lengths_costs",
-      "project_id": "flyover-sinhagad-road-rajaram-bridge-funtime",
-      "project_name": "Sinhagad Road flyover, Rajaram Bridge – Fun Time Cinema",
-      "agency": "Pune Municipal Corporation (PMC)",
-      "category": "flyover",
-      "attribute": "phase_lengths_costs",
-      "value": {
-        "phase1": "500 m, ₹15 cr",
-        "phase2": "2.1 km Vitthalwadi–Fun Time, ₹61 cr",
-        "phase3": "1.5 km Veer Shivaji Kashid Chowk–Inamdar Chowk, ₹42 cr"
-      },
-      "unit": null,
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/sinhagad-road-flyover-now-open-to-public-101756754278050.html",
-          "publisher": "Hindustan Times",
-          "published": "2025-09-02",
-          "quote": "During phase one, the 500-metre stretch near Rajaram Bridge was erected at a cost of ₹15 crore. During phase two, the 2.1 km stretch between Vitthalwadi and Fun Time Cinema was erected at a cost of ₹61 crore. During phase three, the 1.5 km stretch ... at a cost of ₹42 crore.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "flyover-sinhagad-road-rajaram-bridge-funtime::cost",
-      "project_id": "flyover-sinhagad-road-rajaram-bridge-funtime",
-      "project_name": "Sinhagad Road flyover, Rajaram Bridge – Fun Time Cinema",
-      "agency": "Pune Municipal Corporation (PMC)",
-      "category": "flyover",
-      "attribute": "cost",
-      "value": 118.37,
-      "unit": "INR crore (+ ₹27 cr for metro pillars)",
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://indianexpress.com/article/cities/pune/building-pune-sinhagad-road-flyover-open-next-month-9964036/",
-          "publisher": "The Indian Express",
-          "published": "2025-04-24",
-          "quote": "The project is pegged at Rs 118.37 crore and additional Rs 27 crore for the metro pillars.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://indianexpress.com/article/cities/pune/sinhagad-road-flyover-traffic-connectivity-pune-10223777/",
-          "publisher": "The Indian Express",
-          "published": "2025-09-01",
-          "quote": "The work on the Rs 118 crore Sinhagad Road flyover, approximately 2.5 km long, commenced in 2021",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "flyover-sinhagad-road-rajaram-bridge-funtime::construction_start",
-      "project_id": "flyover-sinhagad-road-rajaram-bridge-funtime",
-      "project_name": "Sinhagad Road flyover, Rajaram Bridge – Fun Time Cinema",
-      "agency": "Pune Municipal Corporation (PMC)",
-      "category": "flyover",
-      "attribute": "construction_start",
-      "value": "2021",
-      "unit": "year",
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": true,
-      "sources": [
-        {
-          "url": "https://indianexpress.com/article/cities/pune/sinhagad-road-flyover-traffic-connectivity-pune-10223777/",
-          "publisher": "The Indian Express",
-          "published": "2025-09-01",
-          "quote": "commenced in 2021 and was scheduled for completion by 2024.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": "SLIPPED: scheduled 2024, fully opened Sep 2025."
-    },
-    {
-      "id": "flyover-sinhagad-road-rajaram-bridge-funtime::opening_phase1",
-      "project_id": "flyover-sinhagad-road-rajaram-bridge-funtime",
-      "project_name": "Sinhagad Road flyover, Rajaram Bridge – Fun Time Cinema",
-      "agency": "Pune Municipal Corporation (PMC)",
-      "category": "flyover",
-      "attribute": "opening_phase1",
-      "value": "2024-08",
-      "unit": "month",
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://indianexpress.com/article/cities/pune/building-pune-sinhagad-road-flyover-open-next-month-9964036/",
-          "publisher": "The Indian Express",
-          "published": "2025-04-24",
-          "quote": "The PMC completed Phase-1 of the project which is a 520 metre long flyover on Sinhagad road at Rajaram bridge chowk in August last year",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "flyover-sinhagad-road-rajaram-bridge-funtime::opening_full",
-      "project_id": "flyover-sinhagad-road-rajaram-bridge-funtime",
-      "project_name": "Sinhagad Road flyover, Rajaram Bridge – Fun Time Cinema",
-      "agency": "Pune Municipal Corporation (PMC)",
-      "category": "flyover",
-      "attribute": "opening_full",
-      "value": "2025-09-01",
-      "unit": "date",
-      "as_of": null,
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/sinhagad-road-flyover-now-open-to-public-101756754278050.html",
-          "publisher": "Hindustan Times",
-          "published": "2025-09-02",
-          "quote": "was opened to the public on Monday after the inauguration of its third and last phase",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://indianexpress.com/article/cities/pune/sinhagad-road-flyover-traffic-connectivity-pune-10223777/",
-          "publisher": "The Indian Express",
-          "published": "2025-09-01",
-          "quote": "Chief Minister Devendra Fadanavis on Monday inaugurated Pune city's longest flyover on Sinhagad Road",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "flyover-sinhagad-road-rajaram-bridge-funtime::status",
-      "project_id": "flyover-sinhagad-road-rajaram-bridge-funtime",
-      "project_name": "Sinhagad Road flyover, Rajaram Bridge – Fun Time Cinema",
-      "agency": "Pune Municipal Corporation (PMC)",
-      "category": "flyover",
-      "attribute": "status",
-      "value": "completed / open",
-      "unit": null,
-      "as_of": "2025-09-02",
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/sinhagad-road-flyover-now-open-to-public-101756754278050.html",
-          "publisher": "Hindustan Times",
-          "published": "2025-09-02",
-          "quote": "The city's longest flyover on Sinhagad Road – between Rajaram Bridge and Fun Time Cinema – was opened to the public on Monday",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://indianexpress.com/article/cities/pune/sinhagad-road-flyover-traffic-connectivity-pune-10223777/",
-          "publisher": "The Indian Express",
-          "published": "2025-09-01",
-          "quote": "Chief Minister Devendra Fadanavis on Monday inaugurated Pune city's longest flyover on Sinhagad Road",
           "quote_type": "sentence",
           "quote_verified": true
         }
@@ -3501,98 +2487,29 @@
       "note": null
     },
     {
-      "id": "flyover-katraj-junction-nh548dd::length",
-      "project_id": "flyover-katraj-junction-nh548dd",
-      "project_name": "Katraj Junction six-lane flyover (Katraj–Kondhwa Road to Mumbai–Bengaluru bypass), NH-548DD",
-      "agency": "NHAI (with PMC for Katraj–Kondhwa road widening)",
-      "category": "flyover",
-      "attribute": "length",
-      "value": null,
-      "unit": "km",
-      "as_of": null,
-      "confidence": "unverified",
-      "slipped": false,
-      "sources": [],
-      "alt_values": null,
-      "note": "~1.326 km appears only on a low-quality aggregator; not verified."
-    },
-    {
-      "id": "flyover-katraj-junction-nh548dd::cost",
-      "project_id": "flyover-katraj-junction-nh548dd",
-      "project_name": "Katraj Junction six-lane flyover (Katraj–Kondhwa Road to Mumbai–Bengaluru bypass), NH-548DD",
-      "agency": "NHAI (with PMC for Katraj–Kondhwa road widening)",
-      "category": "flyover",
-      "attribute": "cost",
-      "value": null,
-      "unit": "INR crore",
-      "as_of": null,
-      "confidence": "unverified",
-      "slipped": false,
-      "sources": [],
-      "alt_values": null,
-      "note": "₹169.15 crore appears only on a developer marketing blog; not verified."
-    },
-    {
       "id": "flyover-katraj-junction-nh548dd::completion_target",
       "project_id": "flyover-katraj-junction-nh548dd",
       "project_name": "Katraj Junction six-lane flyover (Katraj–Kondhwa Road to Mumbai–Bengaluru bypass), NH-548DD",
       "agency": "NHAI (with PMC for Katraj–Kondhwa road widening)",
       "category": "flyover",
       "attribute": "completion_target",
-      "value": "2026-12",
+      "value": "2026-06",
       "unit": "month",
-      "as_of": "2026-09-30",
-      "confidence": "conflicting",
-      "slipped": true,
-      "sources": [
-        {
-          "url": "https://indianexpress.com/article/cities/pune/pune-traffic-katraj-kondhwa-road-flyover-completion-2026-10900626",
-          "publisher": "The Indian Express",
-          "published": "2026-09-30",
-          "quote": "the flyover connecting the stretch to the Bangalore-Mumbai bypass at Katraj junction will be completed by the end of this year, while the 50-metre-wide road will be developed by March next year, according to Shruti Naik, executive engineer of the National Highways Authority of India (NHAI).",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": [
-        {
-          "value": "2026-06",
-          "source": {
-            "url": "https://www.pib.gov.in/PressReleasePage.aspx?PRID=2198344&lang=1&reg=3",
-            "publisher": "Press Information Bureau (MoRTH, Rajya Sabha reply)",
-            "published": "2025-12-03",
-            "quote": "Construction of Six lane flyover at Katraj Junction at km 3/880 of NH 548DD June, 2026",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
-        }
-      ],
-      "note": "SLIPPED: June 2026 (MoRTH, Dec 2025) -> Dec 2026 (NHAI EE, Sep 2026). Unverified reports say original deadline was Feb 2024."
-    },
-    {
-      "id": "flyover-katraj-junction-nh548dd::status",
-      "project_id": "flyover-katraj-junction-nh548dd",
-      "project_name": "Katraj Junction six-lane flyover (Katraj–Kondhwa Road to Mumbai–Bengaluru bypass), NH-548DD",
-      "agency": "NHAI (with PMC for Katraj–Kondhwa road widening)",
-      "category": "flyover",
-      "attribute": "status",
-      "value": "under construction (land for Kondhwa-side ramp handed over 2026)",
-      "unit": null,
-      "as_of": "2026-09-30",
-      "confidence": "single_source",
+      "as_of": "2025-12-03",
+      "confidence": "official",
       "slipped": false,
       "sources": [
         {
-          "url": "https://indianexpress.com/article/cities/pune/pune-traffic-katraj-kondhwa-road-flyover-completion-2026-10900626",
-          "publisher": "The Indian Express",
-          "published": "2026-09-30",
-          "quote": "As the Pune civic body accelerates work on the long-pending Katraj-Kondhwa road, the flyover connecting the stretch to the Bangalore-Mumbai bypass at Katraj junction will be completed by the end of this year",
+          "url": "https://www.pib.gov.in/PressReleasePage.aspx?PRID=2198344&lang=1&reg=3",
+          "publisher": "Press Information Bureau (MoRTH, Rajya Sabha reply)",
+          "published": "2025-12-03",
+          "quote": "Construction of Six lane flyover at Katraj Junction at km 3/880 of NH 548DD June, 2026",
           "quote_type": "sentence",
           "quote_verified": true
         }
       ],
       "alt_values": null,
-      "note": null
+      "note": "Target in a Rajya Sabha reply (MoRTH, via PIB, 3 Dec 2025). The date has passed; no later official date was found (checked 2026-11-21)."
     },
     {
       "id": "flyover-nal-stop-double-decker::type",
@@ -3626,35 +2543,23 @@
       "agency": "Maha-Metro (deposit work for PMC)",
       "category": "flyover",
       "attribute": "length",
-      "value": 572,
+      "value": 600,
       "unit": "m",
       "as_of": null,
-      "confidence": "conflicting",
+      "confidence": "official",
       "slipped": false,
       "sources": [
         {
-          "url": "https://www.hindustantimes.com/pune-news/maha-metro-sets-june-2021-deadline-to-complete-crucial-nal-stop-chowk-flyover/story-EK21Z0b88cGfRwGIdt29YK.html",
-          "publisher": "Hindustan Times",
-          "published": "2020-12-10",
-          "quote": "It is 572 metres in length and 6.1 metres wide.",
+          "url": "https://pib.gov.in/PressReleaseIframePage.aspx?PRID=1803341",
+          "publisher": "Press Information Bureau (MoHUA)",
+          "published": "2022-03-06",
+          "quote": "This Corridor also has a double decker flyover length 600 mts between Nal Stop and Abhinav chowk",
           "quote_type": "sentence",
           "quote_verified": true
         }
       ],
-      "alt_values": [
-        {
-          "value": 600,
-          "source": {
-            "url": "https://pib.gov.in/PressReleaseIframePage.aspx?PRID=1803341",
-            "publisher": "Press Information Bureau (MoHUA)",
-            "published": "2022-03-06",
-            "quote": "This Corridor also has a double decker flyover length 600 mts between Nal Stop and Abhinav chowk",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
-        }
-      ],
-      "note": null
+      "alt_values": null,
+      "note": "PIB (MoHUA), 6 Mar 2022: double-decker flyover of 600 m between Nal Stop and Abhinav Chowk."
     },
     {
       "id": "flyover-nal-stop-double-decker::opening",
@@ -3667,7 +2572,7 @@
       "unit": "date",
       "as_of": null,
       "confidence": "official",
-      "slipped": true,
+      "slipped": false,
       "sources": [
         {
           "url": "https://www.punemetrorail.org/download/annual-report-2021-22.pdf",
@@ -3679,32 +2584,7 @@
         }
       ],
       "alt_values": null,
-      "note": "SLIPPED: Maha-Metro had set a June 2021 deadline (HT, Dec 2020)."
-    },
-    {
-      "id": "flyover-nal-stop-double-decker::cost",
-      "project_id": "flyover-nal-stop-double-decker",
-      "project_name": "Nal Stop double-decker flyover (Atal Bihari Vajpayee flyover), Karve Road",
-      "agency": "Maha-Metro (deposit work for PMC)",
-      "category": "flyover",
-      "attribute": "cost",
-      "value": 56,
-      "unit": "INR crore (planned, 2020: PMC 30 + Maha-Metro 26)",
-      "as_of": "2020-12-10",
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/pune-news/maha-metro-sets-june-2021-deadline-to-complete-crucial-nal-stop-chowk-flyover/story-EK21Z0b88cGfRwGIdt29YK.html",
-          "publisher": "Hindustan Times",
-          "published": "2020-12-10",
-          "quote": "The corporation contributed Rs 30 crore and Pune metro will add Rs 26 crore to construct this flyover.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": "Planned figure only. PMC approved an extra ₹14 cr to Maha-Metro in Dec 2024 (Punekar News). Final total not confirmed by an official source."
+      "note": null
     },
     {
       "id": "flyover-nal-stop-double-decker::status",
@@ -3724,109 +2604,6 @@
           "publisher": "Maha-Metro Annual Report 2021-22",
           "published": null,
           "quote": "Double Decker Flyover at Nal Stop (Pune) was inaugurated for public use.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "flyover-karve-statue-warje-double-deckers-line4a::type",
-      "project_id": "flyover-karve-statue-warje-double-deckers-line4a",
-      "project_name": "Proposed double-decker flyovers at Karve Statue (Karve Road) and Dr Ambedkar Chowk (Warje) on Metro Line 4A",
-      "agency": "Maha-Metro / PMC",
-      "category": "flyover",
-      "attribute": "type",
-      "value": "elevated double-decker (road flyover below, Metro viaduct above)",
-      "unit": null,
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/pune-metro-double-decker-flyover-designs-finalised-for-karve-statue-ambedkar-chowk-101788712627369.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-09-06",
-          "quote": "The two structures will have road flyovers at the lower level and the Metro viaduct above them.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "flyover-karve-statue-warje-double-deckers-line4a::length",
-      "project_id": "flyover-karve-statue-warje-double-deckers-line4a",
-      "project_name": "Proposed double-decker flyovers at Karve Statue (Karve Road) and Dr Ambedkar Chowk (Warje) on Metro Line 4A",
-      "agency": "Maha-Metro / PMC",
-      "category": "flyover",
-      "attribute": "length",
-      "value": {
-        "Karve Statue": 1.6,
-        "Ambedkar Chowk Warje": 0.5
-      },
-      "unit": "km (approx.)",
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/pune-metro-double-decker-flyover-designs-finalised-for-karve-statue-ambedkar-chowk-101788712627369.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-09-06",
-          "quote": "The proposed flyover at Karve Statue will be around 1.6 km long ... The proposed flyover at Dr Babasaheb Ambedkar Chowk in Warje will be around 500 metres long.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "flyover-karve-statue-warje-double-deckers-line4a::cost",
-      "project_id": "flyover-karve-statue-warje-double-deckers-line4a",
-      "project_name": "Proposed double-decker flyovers at Karve Statue (Karve Road) and Dr Ambedkar Chowk (Warje) on Metro Line 4A",
-      "agency": "Maha-Metro / PMC",
-      "category": "flyover",
-      "attribute": "cost",
-      "value": 404,
-      "unit": "INR crore (preliminary; Karve Statue 327 + Warje 77; incl. metro viaduct works)",
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/pune-metro-double-decker-flyover-designs-finalised-for-karve-statue-ambedkar-chowk-101788712627369.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-09-06",
-          "quote": "The combined preliminary cost of the road flyovers and associated Metro viaduct works is estimated at ₹404 crore.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "flyover-karve-statue-warje-double-deckers-line4a::status",
-      "project_id": "flyover-karve-statue-warje-double-deckers-line4a",
-      "project_name": "Proposed double-decker flyovers at Karve Statue (Karve Road) and Dr Ambedkar Chowk (Warje) on Metro Line 4A",
-      "agency": "Maha-Metro / PMC",
-      "category": "flyover",
-      "attribute": "status",
-      "value": "designs finalised; PMC to confirm funding; not tendered",
-      "unit": null,
-      "as_of": "2026-09-06",
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/pune-metro-double-decker-flyover-designs-finalised-for-karve-statue-ambedkar-chowk-101788712627369.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-09-06",
-          "quote": "Designs for two proposed double-decker flyovers at Karve Statue and Dr Babasaheb Ambedkar Chowk in Warje have been finalised",
           "quote_type": "sentence",
           "quote_verified": true
         }
@@ -3910,22 +2687,6 @@
       "note": null
     },
     {
-      "id": "elevated-corridor-nashik-phata-khed-nh60::cost",
-      "project_id": "elevated-corridor-nashik-phata-khed-nh60",
-      "project_name": "Elevated corridor Nashik Phata – Khed, NH-60",
-      "agency": "NHAI / MoRTH",
-      "category": "flyover",
-      "attribute": "cost",
-      "value": null,
-      "unit": "INR crore",
-      "as_of": null,
-      "confidence": "unverified",
-      "slipped": false,
-      "sources": [],
-      "alt_values": null,
-      "note": "Not in the fetched official source."
-    },
-    {
       "id": "elevated-corridor-nashik-phata-khed-nh60::status",
       "project_id": "elevated-corridor-nashik-phata-khed-nh60",
       "project_name": "Elevated corridor Nashik Phata – Khed, NH-60",
@@ -3997,19 +2758,7 @@
           "quote_verified": true
         }
       ],
-      "alt_values": [
-        {
-          "value": 122.82,
-          "source": {
-            "url": "https://timesofindia.indiatimes.com/city/pune/pmrda-targets-dec-end-to-complete-land-acquisition-for-pune-ring-road/articleshow/135278089.cms",
-            "publisher": "Times of India",
-            "published": "2026-10-29",
-            "quote": "The proposed 122.82 km ring road, first included in the regional plan in 1997",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
-        }
-      ],
+      "alt_values": null,
       "note": "Not the same project as MSRDC's outer ring road."
     },
     {
@@ -4122,505 +2871,17 @@
       "agency": "PMRDA (PMC for the stretch within PMC limits; MSRDC for part of the 122.82 km alignment)",
       "category": "ring_road",
       "attribute": "status",
-      "value": "land acquisition in progress (target Dec 2026); construction not started",
+      "value": "land acquisition and forest land clearance in progress (Stage 1, Phases 1 and 2)",
       "unit": null,
       "as_of": "2026-10-29",
-      "confidence": "corroborated",
+      "confidence": "official",
       "slipped": false,
       "sources": [
-        {
-          "url": "https://timesofindia.indiatimes.com/city/pune/pmrda-targets-dec-end-to-complete-land-acquisition-for-pune-ring-road/articleshow/135278089.cms",
-          "publisher": "Times of India",
-          "published": "2026-10-29",
-          "quote": "PMRDA targeting to complete land acquisition for its 83.12 km stretch by Dec-end.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
         {
           "url": "https://www.pmrda.gov.in/en/inner-ring-road",
           "publisher": "PMRDA (pmrda.gov.in) Inner Ring Road page",
           "published": null,
           "quote": "Stage 1 – Phase 1 & Phase 2 Land acquisition and forest land clearance are in progress.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "ring-road-pmrda-inner::completion_target",
-      "project_id": "ring-road-pmrda-inner",
-      "project_name": "Pune Inner Ring Road (PMRDA section, Solu – Parandwadi)",
-      "agency": "PMRDA (PMC for the stretch within PMC limits; MSRDC for part of the 122.82 km alignment)",
-      "category": "ring_road",
-      "attribute": "completion_target",
-      "value": null,
-      "unit": null,
-      "as_of": null,
-      "confidence": "unverified",
-      "slipped": false,
-      "sources": [],
-      "alt_values": null,
-      "note": "No construction or completion date published."
-    },
-    {
-      "id": "ring-road-msrdc-outer::alignment_endpoints",
-      "project_id": "ring-road-msrdc-outer",
-      "project_name": "Pune Outer Ring Road (MSRDC): Western (Urse–Varve) and Eastern corridors",
-      "agency": "MSRDC (Maharashtra State Road Development Corporation)",
-      "category": "ring_road",
-      "attribute": "alignment_endpoints",
-      "value": "West: Urse (Mumbai–Pune Expressway) – Varve Budruk (Pune–Satara road); East: continues round the east side incl. 31.805 km shared stretch Valti/Sortapwadi – Shivare (NH-48)",
-      "unit": null,
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://indianexpress.com/article/cities/mumbai/pune-ring-road-gets-costlier-by-rs-10502-crore-as-maharashtras-bills-pile-up-10923692",
-          "publisher": "The Indian Express",
-          "published": "2026-10-16",
-          "quote": "The western stretch runs from Urse on the Mumbai-Pune Expressway to Varve Budruk on the Pune-Satara road.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "ring-road-msrdc-outer::type",
-      "project_id": "ring-road-msrdc-outer",
-      "project_name": "Pune Outer Ring Road (MSRDC): Western (Urse–Varve) and Eastern corridors",
-      "agency": "MSRDC (Maharashtra State Road Development Corporation)",
-      "category": "ring_road",
-      "attribute": "type",
-      "value": "access-controlled greenfield expressway (6–8 lanes) with tunnels and viaducts",
-      "unit": null,
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://punemirror.com/city/pune/pune-outer-ring-road-western-stretch-30-percent-completion/",
-          "publisher": "Pune Times Mirror",
-          "published": "2026-09-02",
-          "quote": "The six- to eight-lane western corridor is planned to be opened to traffic by December 2027",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "ring-road-msrdc-outer::length",
-      "project_id": "ring-road-msrdc-outer",
-      "project_name": "Pune Outer Ring Road (MSRDC): Western (Urse–Varve) and Eastern corridors",
-      "agency": "MSRDC (Maharashtra State Road Development Corporation)",
-      "category": "ring_road",
-      "attribute": "length",
-      "value": {
-        "west": 65.45,
-        "east": 71.35
-      },
-      "unit": "km",
-      "as_of": null,
-      "confidence": "conflicting",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://timesofindia.indiatimes.com/city/pune/msrdc-cracks-whip-on-two-pune-ring-road-contractors-over-slow-progress-issues-notices/articleshow/131377411.cms",
-          "publisher": "Times of India",
-          "published": "2026-05-28",
-          "quote": "The eastern corridor spans 71.35km and is expected to be completed by March 2028, while the 65.45km western corridor has a target completion date of Dec 2027.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": [
-        {
-          "value": "east 72.335 km (2024 revision)",
-          "source": {
-            "url": "https://indianexpress.com/article/cities/mumbai/pune-ring-road-gets-costlier-by-rs-10502-crore-as-maharashtras-bills-pile-up-10923692",
-            "publisher": "The Indian Express",
-            "published": "2026-10-16",
-            "quote": "In 2024, its length was revised to 72.335 km and its estimated cost increased to Rs 19,932.98 crore.",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
-        },
-        {
-          "value": "~170 km whole project, 69-km western stretch",
-          "source": {
-            "url": "https://punemirror.com/city/pune/pune-outer-ring-road-western-stretch-30-percent-completion/",
-            "publisher": "Pune Times Mirror",
-            "published": "2026-09-02",
-            "quote": "The larger Outer Ring Road project spans approximately 170 km around the Pune region",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
-        }
-      ],
-      "note": "Lengths differ by source and by whether the 31.8 km shared stretch is included. No MSRDC page fetched."
-    },
-    {
-      "id": "ring-road-msrdc-outer::cost",
-      "project_id": "ring-road-msrdc-outer",
-      "project_name": "Pune Outer Ring Road (MSRDC): Western (Urse–Varve) and Eastern corridors",
-      "agency": "MSRDC (Maharashtra State Road Development Corporation)",
-      "category": "ring_road",
-      "attribute": "cost",
-      "value": 53213.39,
-      "unit": "INR crore (revised, Aug 2026)",
-      "as_of": "2026-10-16",
-      "confidence": "conflicting",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://indianexpress.com/article/cities/mumbai/pune-ring-road-gets-costlier-by-rs-10502-crore-as-maharashtras-bills-pile-up-10923692",
-          "publisher": "The Indian Express",
-          "published": "2026-10-16",
-          "quote": "taking the total project cost to Rs 53,213.39 crore.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": [
-        {
-          "value": 42711.03,
-          "source": {
-            "url": "https://indianexpress.com/article/cities/mumbai/pune-ring-road-gets-costlier-by-rs-10502-crore-as-maharashtras-bills-pile-up-10923692",
-            "publisher": "The Indian Express",
-            "published": "2026-10-16",
-            "quote": "In 2024, the state Cabinet had approved a cost escalation of Rs 20,375.21 crore, taking the project cost to Rs 42,711.03 crore.",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
-        },
-        {
-          "value": "~55,000",
-          "source": {
-            "url": "https://timesofindia.indiatimes.com/city/pune/msrdc-cracks-whip-on-two-pune-ring-road-contractors-over-slow-progress-issues-notices/articleshow/131377411.cms",
-            "publisher": "Times of India",
-            "published": "2026-05-28",
-            "quote": "the Rs 55,000-crore Pune ring road project",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
-        },
-        {
-          "value": "~52,000",
-          "source": {
-            "url": "https://punemirror.com/city/pune/pune-outer-ring-road-western-stretch-30-percent-completion/",
-            "publisher": "Pune Times Mirror",
-            "published": "2026-09-02",
-            "quote": "has an estimated cost of Rs 52,000 crore.",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
-        }
-      ],
-      "note": "Cost has risen: ₹22,336 cr (2021 est. W+E) -> ₹42,711 cr (2024) -> ₹53,213 cr (Aug 2026, after taking over NHAI's 31.8 km package). State cabinet sub-committee decision of 18 Aug 2026 per IE."
-    },
-    {
-      "id": "ring-road-msrdc-outer::construction_start",
-      "project_id": "ring-road-msrdc-outer",
-      "project_name": "Pune Outer Ring Road (MSRDC): Western (Urse–Varve) and Eastern corridors",
-      "agency": "MSRDC (Maharashtra State Road Development Corporation)",
-      "category": "ring_road",
-      "attribute": "construction_start",
-      "value": "2024-11",
-      "unit": "month",
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://punemirror.com/city/pune/pune-outer-ring-road-western-stretch-30-percent-completion/",
-          "publisher": "Pune Times Mirror",
-          "published": "2026-09-02",
-          "quote": "Construction began in November 2024.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": "IE (Mar 2026) says 'a year after the actual start of work', i.e. early 2025 on the western corridor."
-    },
-    {
-      "id": "ring-road-msrdc-outer::progress_west",
-      "project_id": "ring-road-msrdc-outer",
-      "project_name": "Pune Outer Ring Road (MSRDC): Western (Urse–Varve) and Eastern corridors",
-      "agency": "MSRDC (Maharashtra State Road Development Corporation)",
-      "category": "ring_road",
-      "attribute": "progress_west",
-      "value": "~30%",
-      "unit": "% of western stretch",
-      "as_of": "2026-09-02",
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://punemirror.com/city/pune/pune-outer-ring-road-western-stretch-30-percent-completion/",
-          "publisher": "Pune Times Mirror",
-          "published": "2026-09-02",
-          "quote": "around 30% of the 69-km stretch now completed.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "ring-road-msrdc-outer::completion_target",
-      "project_id": "ring-road-msrdc-outer",
-      "project_name": "Pune Outer Ring Road (MSRDC): Western (Urse–Varve) and Eastern corridors",
-      "agency": "MSRDC (Maharashtra State Road Development Corporation)",
-      "category": "ring_road",
-      "attribute": "completion_target",
-      "value": {
-        "west": "2027-12",
-        "east": "2028-03"
-      },
-      "unit": null,
-      "as_of": "2026-05-28",
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://timesofindia.indiatimes.com/city/pune/msrdc-cracks-whip-on-two-pune-ring-road-contractors-over-slow-progress-issues-notices/articleshow/131377411.cms",
-          "publisher": "Times of India",
-          "published": "2026-05-28",
-          "quote": "The eastern corridor spans 71.35km and is expected to be completed by March 2028, while the 65.45km western corridor has a target completion date of Dec 2027.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://punemirror.com/city/pune/pune-outer-ring-road-western-stretch-30-percent-completion/",
-          "publisher": "Pune Times Mirror",
-          "published": "2026-09-02",
-          "quote": "The six- to eight-lane western corridor is planned to be opened to traffic by December 2027",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": "Shared 31.8 km stretch transferred from NHAI in 2026 has a later, unverified target (reports say 2028–2029)."
-    },
-    {
-      "id": "ring-road-msrdc-outer::status",
-      "project_id": "ring-road-msrdc-outer",
-      "project_name": "Pune Outer Ring Road (MSRDC): Western (Urse–Varve) and Eastern corridors",
-      "agency": "MSRDC (Maharashtra State Road Development Corporation)",
-      "category": "ring_road",
-      "attribute": "status",
-      "value": "under construction; two contractors issued notices for slow progress (<10%) in Apr 2026",
-      "unit": null,
-      "as_of": "2026-09-02",
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://timesofindia.indiatimes.com/city/pune/msrdc-cracks-whip-on-two-pune-ring-road-contractors-over-slow-progress-issues-notices/articleshow/131377411.cms",
-          "publisher": "Times of India",
-          "published": "2026-05-28",
-          "quote": "The Maharashtra State Road Development Corporation (MSRDC) last month issued notices to two of the five contractors appointed for the Rs 55,000-crore Pune ring road project after their progress remained below 10%",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://punemirror.com/city/pune/pune-outer-ring-road-western-stretch-30-percent-completion/",
-          "publisher": "Pune Times Mirror",
-          "published": "2026-09-02",
-          "quote": "around 30% of the 69-km stretch now completed.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "riverfront-development-mula-mutha::length",
-      "project_id": "riverfront-development-mula-mutha",
-      "project_name": "Mula-Mutha Riverfront Development (RFD)",
-      "agency": "Pune Municipal Corporation (PMC)",
-      "category": "river",
-      "attribute": "length",
-      "value": 44.4,
-      "unit": "km of river (Mula 22.2 + Mutha 10.4 + Mula-Mutha 11.8)",
-      "as_of": null,
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://indianexpress.com/article/cities/pune/feb-15-pune-mula-mutha-riverbank-rfd-project-10496879/",
-          "publisher": "The Indian Express",
-          "published": "2026-01-27",
-          "quote": "The development and beautification project covers both sides of the 44.4-km river stretch passing through the city, including 22.2 km of the Mula, 10.4 km of the Mutha, and 11.8 km of the Mula-Mula rivers.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://www.freepressjournal.in/pune/cwprs-to-assess-mula-mutha-flood-risks-in-six-months-before-pune-riverfront-project-advances",
-          "publisher": "Free Press Journal",
-          "published": "2026-11-20",
-          "quote": "The study will cover approximately 44 km of the river system, from the dam area to the PMC limits",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": "Official PMC riverfront page could not be fetched."
-    },
-    {
-      "id": "riverfront-development-mula-mutha::type",
-      "project_id": "riverfront-development-mula-mutha",
-      "project_name": "Mula-Mutha Riverfront Development (RFD)",
-      "agency": "Pune Municipal Corporation (PMC)",
-      "category": "river",
-      "attribute": "type",
-      "value": "at-grade riverbank works (embankments, promenades, river training)",
-      "unit": null,
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://indianexpress.com/article/cities/pune/feb-15-pune-mula-mutha-riverbank-rfd-project-10496879/",
-          "publisher": "The Indian Express",
-          "published": "2026-01-27",
-          "quote": "is being implemented along the lines of the Sabarmati riverfront development project in Ahmedabad.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "riverfront-development-mula-mutha::stretches",
-      "project_id": "riverfront-development-mula-mutha",
-      "project_name": "Mula-Mutha Riverfront Development (RFD)",
-      "agency": "Pune Municipal Corporation (PMC)",
-      "category": "river",
-      "attribute": "stretches",
-      "value": {
-        "Sangamwadi–Bund Garden (Stretch 9)": "3.7 km, ~90% done",
-        "Bund Garden–Mundhwa (Stretch 10-11, PPP)": "5.5 km",
-        "Aundh–Balewadi": "8.1 km"
-      },
-      "unit": null,
-      "as_of": null,
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://indianexpress.com/article/cities/pune/feb-15-pune-mula-mutha-riverbank-rfd-project-10496879/",
-          "publisher": "The Indian Express",
-          "published": "2026-01-27",
-          "quote": "The first stretch is a 3.7-km section from Sangamwadi to Bund Garden. Following that, the development of a 5.5-km stretch from Bund Garden to Mundhwa and an 8.1-km stretch from Aundh to Balewadi was taken up.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://pudhari.news/maharashtra/pune/pune-municipal-budget-mula-mutha-river-rejuvenation-sk04",
-          "publisher": "Pudhari (Marathi)",
-          "published": "2026-03-10",
-          "quote": "संगमवाडी पूल ते बंडगार्डन पूल (स्ट्रेच-9) या सुमारे 265 कोटी रुपयांच्या कामांपैकी 90 टक्के काम पूर्ण झाले असून, ते अंतिम टप्प्यात आहे.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "riverfront-development-mula-mutha::cost",
-      "project_id": "riverfront-development-mula-mutha",
-      "project_name": "Mula-Mutha Riverfront Development (RFD)",
-      "agency": "Pune Municipal Corporation (PMC)",
-      "category": "river",
-      "attribute": "cost",
-      "value": 4727,
-      "unit": "INR crore",
-      "as_of": null,
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://indianexpress.com/article/cities/pune/feb-15-pune-mula-mutha-riverbank-rfd-project-10496879/",
-          "publisher": "The Indian Express",
-          "published": "2026-01-27",
-          "quote": "The PMC's Rs 4,727-crore RFD project",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://www.freepressjournal.in/pune/cwprs-to-assess-mula-mutha-flood-risks-in-six-months-before-pune-riverfront-project-advances",
-          "publisher": "Free Press Journal",
-          "published": "2026-11-20",
-          "quote": "the Rs 4,727-crore project does not compromise Pune's flood safety.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "riverfront-development-mula-mutha::completion_target",
-      "project_id": "riverfront-development-mula-mutha",
-      "project_name": "Mula-Mutha Riverfront Development (RFD)",
-      "agency": "Pune Municipal Corporation (PMC)",
-      "category": "river",
-      "attribute": "completion_target",
-      "value": null,
-      "unit": null,
-      "as_of": null,
-      "confidence": "unverified",
-      "slipped": false,
-      "sources": [],
-      "alt_values": null,
-      "note": "No current overall completion date published. 5-km Sangamwadi–Kalyaninagar was targeted for end-March 2026 (IE, Jan 2026); a 1.5-km public opening set for 15 Feb 2026 was postponed (IE, 14 Feb 2026)."
-    },
-    {
-      "id": "riverfront-development-mula-mutha::status",
-      "project_id": "riverfront-development-mula-mutha",
-      "project_name": "Mula-Mutha Riverfront Development (RFD)",
-      "agency": "Pune Municipal Corporation (PMC)",
-      "category": "river",
-      "attribute": "status",
-      "value": "priority stretch ~90% complete; remaining 8.8 km to be redesigned; CWPRS 6-month flood-risk study started Nov 2026",
-      "unit": null,
-      "as_of": "2026-11-20",
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://timesofindia.indiatimes.com/city/pune/an-ecologically-sound-rfd-pmc-plans-redesign-of-9km/articleshow/132002594.cms",
-          "publisher": "Times of India",
-          "published": "2026-06-26",
-          "quote": "the remaining 8.8km section of the Pune Riverfront Development Project will be redesigned.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://www.freepressjournal.in/pune/cwprs-to-assess-mula-mutha-flood-risks-in-six-months-before-pune-riverfront-project-advances",
-          "publisher": "Free Press Journal",
-          "published": "2026-11-20",
-          "quote": "Central Water and Power Research Station (CWPRS), Pune, will complete a six-month scientific assessment of the Mula-Mutha river system to determine whether the proposed riverfront development project could increase flood risks in the city.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://indianexpress.com/article/cities/pune/pmc-halts-mula-mutha-riverfront-opening-ajit-pawar-demise-10532052/",
-          "publisher": "The Indian Express",
-          "published": "2026-02-14",
-          "quote": "The Pune civic body has postponed the opening of a stretch of the Mula-Mutha riverbank to the public",
           "quote_type": "sentence",
           "quote_verified": true
         }
@@ -4635,10 +2896,10 @@
       "agency": "Maha-Metro (hub built by a third-party contractor); MSRTC, PMPML",
       "category": "transit_hub",
       "attribute": "components",
-      "value": "underground Line 1 Swargate station (open 2024-09-29); underpass to MSRTC terminus (open 2026-02-14); PMPML bus terminal on 2.5 acres behind station (phase 1); Line 1B interface",
+      "value": "Metro station, MSRTC bus stand and PMPML bus stand, integrated with the Line 1B extension",
       "unit": null,
       "as_of": null,
-      "confidence": "corroborated",
+      "confidence": "official",
       "slipped": false,
       "sources": [
         {
@@ -4646,105 +2907,6 @@
           "publisher": "Press Information Bureau (GoI)",
           "published": "2024-08-16",
           "quote": "This extension will integrate with the Swargate Multimodal Hub, which includes the Metro Station, the MSRTC Bus Stand, and the PMPML Bus Stand",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://timesofindia.indiatimes.com/city/pune/metro-opens-underpass-in-swargate-but-work-on-another-entry-exit-gate-drags-on/articleshow/128359777.cms",
-          "publisher": "Times of India",
-          "published": "2026-02-15",
-          "quote": "Maha Metro on Saturday opened an underpass connecting the Swargate Metro station to the MSRTC bus terminus",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/22crore-bus-terminal-coming-up-behind-swargate-metro-station-101782242264161.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-06-24",
-          "quote": "a modern bus terminal is being developed on approximately 2.5 acres of land behind the Swargate metro station as part of the first phase of the multi-modal hub project.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "swargate-multimodal-hub::cost_phase1_bus_terminal",
-      "project_id": "swargate-multimodal-hub",
-      "project_name": "Swargate Multimodal Transport Hub (Metro + MSRTC + PMPML)",
-      "agency": "Maha-Metro (hub built by a third-party contractor); MSRTC, PMPML",
-      "category": "transit_hub",
-      "attribute": "cost_phase1_bus_terminal",
-      "value": 22,
-      "unit": "INR crore",
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/22crore-bus-terminal-coming-up-behind-swargate-metro-station-101782242264161.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-06-24",
-          "quote": "The project is estimated to cost around ₹22 crore and is expected to be completed and handed over to the PMPML within six months.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": "Total hub cost not found in any fetched source."
-    },
-    {
-      "id": "swargate-multimodal-hub::completion_target_bus_terminal",
-      "project_id": "swargate-multimodal-hub",
-      "project_name": "Swargate Multimodal Transport Hub (Metro + MSRTC + PMPML)",
-      "agency": "Maha-Metro (hub built by a third-party contractor); MSRTC, PMPML",
-      "category": "transit_hub",
-      "attribute": "completion_target_bus_terminal",
-      "value": "~2026-12 (six months from Jun 2026)",
-      "unit": null,
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/22crore-bus-terminal-coming-up-behind-swargate-metro-station-101782242264161.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-06-24",
-          "quote": "expected to be completed and handed over to the PMPML within six months.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "swargate-multimodal-hub::status",
-      "project_id": "swargate-multimodal-hub",
-      "project_name": "Swargate Multimodal Transport Hub (Metro + MSRTC + PMPML)",
-      "agency": "Maha-Metro (hub built by a third-party contractor); MSRTC, PMPML",
-      "category": "transit_hub",
-      "attribute": "status",
-      "value": "metro structure complete; entry-exits 2 of 3 open (Feb 2026); hub parking not yet usable; MSRTC station redevelopment approved Sep 2026",
-      "unit": null,
-      "as_of": "2026-11-07",
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/pune-metro-fails-to-provide-parking-at-swargate-stn-commuters-forced-to-park-on-roads-101793990768206.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-11-07",
-          "quote": "Atul Gadgil, director (works), Maha-Metro, said, \"We have completed the metro structure at Swargate. The hub is being developed by a third-party contractor and there is a parking facility at the ground level.\"",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://timesofindia.indiatimes.com/city/pune/metro-opens-underpass-in-swargate-but-work-on-another-entry-exit-gate-drags-on/articleshow/128359777.cms",
-          "publisher": "Times of India",
-          "published": "2026-02-15",
-          "quote": "Of the three planned entry-exit points, two are currently operational.",
           "quote_type": "sentence",
           "quote_verified": true
         }
@@ -4812,7 +2974,7 @@
       "value": "2022-03-06 (PM inauguration)",
       "unit": "date",
       "as_of": null,
-      "confidence": "conflicting",
+      "confidence": "official",
       "slipped": false,
       "sources": [
         {
@@ -4824,20 +2986,8 @@
           "quote_verified": true
         }
       ],
-      "alt_values": [
-        {
-          "value": "2020-09",
-          "source": {
-            "url": "https://www.hindustantimes.com/cities/pune-news/five-stps-to-be-operational-by-juneend-101776106386715.html",
-            "publisher": "Hindustan Times",
-            "published": "2026-04-14",
-            "quote": "The project started in September 2020.",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
-        }
-      ],
-      "note": "Sep 2020 is when JICA approved repackaging (PMC page), not physical works."
+      "alt_values": null,
+      "note": "PMC page (updated 16 Aug 2025): the Prime Minister inaugurated the project on 06/03/2022. JICA's approval of the repackaging (Sep 2020, same page) is not the start of works."
     },
     {
       "id": "sewer-parmm-jica-mula-mutha::capacity",
@@ -4857,31 +3007,6 @@
           "publisher": "Pune Municipal Corporation (pmc.gov.in), page updated 16/08/2025",
           "published": "2025-08-16",
           "quote": "Total 396",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "sewer-parmm-jica-mula-mutha::trunk_sewers",
-      "project_id": "sewer-parmm-jica-mula-mutha",
-      "project_name": "Pollution Abatement of River Mula-Mutha (PARMM), JICA-funded under NRCP: 11 STPs + trunk sewers",
-      "agency": "PMC with NRCD (Jal Shakti) / JICA",
-      "category": "sewer",
-      "attribute": "trunk_sewers",
-      "value": "~50 km at 19 locations; 18 km done (Apr 2026)",
-      "unit": null,
-      "as_of": "2026-04-14",
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/five-stps-to-be-operational-by-juneend-101776106386715.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-04-14",
-          "quote": "The project also includes laying nearly 50 km of trunk sewer lines across 19 locations, of which 18 km has been completed so far.",
           "quote_type": "sentence",
           "quote_verified": true
         }
@@ -4912,64 +3037,6 @@
         }
       ],
       "alt_values": null,
-      "note": "Free Press Journal (Jan 2026) reports overall cost risen to ~₹1,173 crore; not officially confirmed here."
-    },
-    {
-      "id": "sewer-parmm-jica-mula-mutha::completion_target",
-      "project_id": "sewer-parmm-jica-mula-mutha",
-      "project_name": "Pollution Abatement of River Mula-Mutha (PARMM), JICA-funded under NRCP: 11 STPs + trunk sewers",
-      "agency": "PMC with NRCD (Jal Shakti) / JICA",
-      "category": "sewer",
-      "attribute": "completion_target",
-      "value": "2026-12 (9 of 11 STPs); Tanajiwadi 15 MLD Sep 2027; Botanical Garden 10 MLD later",
-      "unit": null,
-      "as_of": "2026-11-09",
-      "confidence": "single_source",
-      "slipped": true,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/five-stps-to-be-operational-by-juneend-101776106386715.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-04-14",
-          "quote": "The original deadline of March 2026 has been extended to December 2026.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://urbanacres.in/pune-stp-project-nears-major-milestone-but-two-plants-face-delays/",
-          "publisher": "Urban Acres (citing PMC sewage dept)",
-          "published": "2026-11-09",
-          "quote": "nine of 11 sewage treatment plants expected to be completed and operational by the end of December, while two plants face further delays",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": "SLIPPED: Mar 2026 -> Dec 2026; two STPs beyond."
-    },
-    {
-      "id": "sewer-parmm-jica-mula-mutha::status",
-      "project_id": "sewer-parmm-jica-mula-mutha",
-      "project_name": "Pollution Abatement of River Mula-Mutha (PARMM), JICA-funded under NRCP: 11 STPs + trunk sewers",
-      "agency": "PMC with NRCD (Jal Shakti) / JICA",
-      "category": "sewer",
-      "attribute": "status",
-      "value": "5 STPs (111 MLD) operational: Warje, Wadgaon, Mundhwa, Hadapsar Fish Seed Centre, Kharadi",
-      "unit": null,
-      "as_of": "2026-11-09",
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://urbanacres.in/pune-stp-project-nears-major-milestone-but-two-plants-face-delays/",
-          "publisher": "Urban Acres (citing PMC sewage dept)",
-          "published": "2026-11-09",
-          "quote": "Five sewage treatment plants with a combined capacity of 111 million litres per day are already operational under the project.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
       "note": null
     },
     {
@@ -4990,363 +3057,6 @@
           "publisher": "Rajya Sabha / MoHUA, Unstarred Q 1651",
           "published": "2026-08-03",
           "quote": "Pune (Maharashtra) 9 250 36.69 286.69 75",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "stormwater-pune-flood-mitigation::ucf_flood_project_cost",
-      "project_id": "stormwater-pune-flood-mitigation",
-      "project_name": "Pune stormwater / urban flood mitigation programme (NDMF UFRMP Phase I, Urban Challenge Fund ₹400 cr, AMRUT 2.0 merged villages)",
-      "agency": "PMC (funding: MoHUA / NDMA / State)",
-      "category": "stormwater",
-      "attribute": "ucf_flood_project_cost",
-      "value": 400,
-      "unit": "INR crore",
-      "as_of": null,
-      "confidence": "corroborated",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/centre-approves-water-supply-flood-mitigation-works-costing-rs-1290-cr-for-pune-101778518828016.html",
-          "publisher": "Hindustan Times (citing PMC release)",
-          "published": "2026-05-11",
-          "quote": "A total of ₹400 crore has been approved for flood control measures in Pune city, the release said.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        },
-        {
-          "url": "https://indianexpress.com/article/pune/pune-municipal-corporation-pmc-ifc-loan-water-sewage-flood-urban-challenge-fund-10830249",
-          "publisher": "The Indian Express",
-          "published": "2026-08-12",
-          "quote": "It has proposed 103 km of drainage improvements, including widening and deepening of drains, construction of culverts, pipe drains and box drains, at a cost of Rs 400 crore.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "stormwater-pune-flood-mitigation::ucf_approval",
-      "project_id": "stormwater-pune-flood-mitigation",
-      "project_name": "Pune stormwater / urban flood mitigation programme (NDMF UFRMP Phase I, Urban Challenge Fund ₹400 cr, AMRUT 2.0 merged villages)",
-      "agency": "PMC (funding: MoHUA / NDMA / State)",
-      "category": "stormwater",
-      "attribute": "ucf_approval",
-      "value": "2026-05-11",
-      "unit": "date (MoHUA UCF apex committee)",
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/centre-approves-water-supply-flood-mitigation-works-costing-rs-1290-cr-for-pune-101778518828016.html",
-          "publisher": "Hindustan Times (citing PMC release)",
-          "published": "2026-05-11",
-          "quote": "The approval was granted at the first apex committee meeting chaired by the Secretary of the Union Ministry of Housing and Urban Affairs during the day",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "stormwater-pune-flood-mitigation::flood_prone_locations",
-      "project_id": "stormwater-pune-flood-mitigation",
-      "project_name": "Pune stormwater / urban flood mitigation programme (NDMF UFRMP Phase I, Urban Challenge Fund ₹400 cr, AMRUT 2.0 merged villages)",
-      "agency": "PMC (funding: MoHUA / NDMA / State)",
-      "category": "stormwater",
-      "attribute": "flood_prone_locations",
-      "value": 335,
-      "unit": "locations",
-      "as_of": null,
-      "confidence": "conflicting",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/centre-approves-water-supply-flood-mitigation-works-costing-rs-1290-cr-for-pune-101778518828016.html",
-          "publisher": "Hindustan Times (citing PMC release)",
-          "published": "2026-05-11",
-          "quote": "It will involve storm water drainage measures at 335 flood-prone locations across Pune city.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": [
-        {
-          "value": "~300 across 23 sub-catchments",
-          "source": {
-            "url": "https://indianexpress.com/article/pune/pune-municipal-corporation-pmc-ifc-loan-water-sewage-flood-urban-challenge-fund-10830249",
-            "publisher": "The Indian Express",
-            "published": "2026-08-12",
-            "quote": "the PMC has identified around 300 flood-prone areas across 23 sub-catchments.",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
-        }
-      ],
-      "note": null
-    },
-    {
-      "id": "stormwater-pune-flood-mitigation::drain_length",
-      "project_id": "stormwater-pune-flood-mitigation",
-      "project_name": "Pune stormwater / urban flood mitigation programme (NDMF UFRMP Phase I, Urban Challenge Fund ₹400 cr, AMRUT 2.0 merged villages)",
-      "agency": "PMC (funding: MoHUA / NDMA / State)",
-      "category": "stormwater",
-      "attribute": "drain_length",
-      "value": "103 km improvements (UCF); 1,070 km rainwater channels planned in old limits, 220 km done",
-      "unit": null,
-      "as_of": "2026-08-12",
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://indianexpress.com/article/pune/pune-municipal-corporation-pmc-ifc-loan-water-sewage-flood-urban-challenge-fund-10830249",
-          "publisher": "The Indian Express",
-          "published": "2026-08-12",
-          "quote": "The PMC has planned 1,070 km of rainwater channels in the old PMC limits, covering 243 sq km. So far, 220 km of channels and 101 culverts have been completed.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "stormwater-pune-flood-mitigation::amrut_merged_villages_cost",
-      "project_id": "stormwater-pune-flood-mitigation",
-      "project_name": "Pune stormwater / urban flood mitigation programme (NDMF UFRMP Phase I, Urban Challenge Fund ₹400 cr, AMRUT 2.0 merged villages)",
-      "agency": "PMC (funding: MoHUA / NDMA / State)",
-      "category": "stormwater",
-      "attribute": "amrut_merged_villages_cost",
-      "value": 326.76,
-      "unit": "INR crore (16 merged villages; GR 3 Sep 2025)",
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/state-approves-326-76-crore-for-stormwater-drainage-in-16-newly-merged-pmc-villages-101757443751454.html",
-          "publisher": "Hindustan Times",
-          "published": "2025-09-10",
-          "quote": "The approval was issued on September 3, 2025, through a government resolution (GR) by the state urban development department (UDD) under the Centre's AMRUT (Atal Mission for Rejuvenation and Urban Transformation) 2.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": "Punekar News reports ₹323 crore for the same item."
-    },
-    {
-      "id": "stormwater-pune-flood-mitigation::status",
-      "project_id": "stormwater-pune-flood-mitigation",
-      "project_name": "Pune stormwater / urban flood mitigation programme (NDMF UFRMP Phase I, Urban Challenge Fund ₹400 cr, AMRUT 2.0 merged villages)",
-      "agency": "PMC (funding: MoHUA / NDMA / State)",
-      "category": "stormwater",
-      "attribute": "status",
-      "value": "NDMA scheme: 66 flood-prone areas, work done at 29, underway at 13; UCF works financing (IFC loan) being arranged",
-      "unit": null,
-      "as_of": "2026-08-12",
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://indianexpress.com/article/pune/pune-municipal-corporation-pmc-ifc-loan-water-sewage-flood-urban-challenge-fund-10830249",
-          "publisher": "The Indian Express",
-          "published": "2026-08-12",
-          "quote": "Under the National Disaster Management Authority scheme, 66 flood-prone areas have been identified, with work completed at 29 locations and underway at 13.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "metro-proposed-nigdi-chakan::type",
-      "project_id": "metro-proposed-nigdi-chakan",
-      "project_name": "Proposed Metro: Nigdi–Bhakti Shakti–Wakad–Nashik Phata–Chakan",
-      "agency": "PCMC / Maha-Metro (DPR)",
-      "category": "metro",
-      "attribute": "type",
-      "value": "elevated",
-      "unit": null,
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.thebridgechronicle.com/pune/pune-bhakti-shakti-chakan-metro-dpr-approved-land-acquisition-conditions-agn97",
-          "publisher": "The Bridge Chronicle",
-          "published": "2026-09-05",
-          "quote": "The proposed Nigde–Bhakti Shakti–Wakad–Nashik Phata–Chakan Metro corridor will be 45.295 km long and fully elevated.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "metro-proposed-nigdi-chakan::length",
-      "project_id": "metro-proposed-nigdi-chakan",
-      "project_name": "Proposed Metro: Nigdi–Bhakti Shakti–Wakad–Nashik Phata–Chakan",
-      "agency": "PCMC / Maha-Metro (DPR)",
-      "category": "metro",
-      "attribute": "length",
-      "value": 45.295,
-      "unit": "km",
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.thebridgechronicle.com/pune/pune-bhakti-shakti-chakan-metro-dpr-approved-land-acquisition-conditions-agn97",
-          "publisher": "The Bridge Chronicle",
-          "published": "2026-09-05",
-          "quote": "will be 45.295 km long and fully elevated.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "metro-proposed-nigdi-chakan::station_count",
-      "project_id": "metro-proposed-nigdi-chakan",
-      "project_name": "Proposed Metro: Nigdi–Bhakti Shakti–Wakad–Nashik Phata–Chakan",
-      "agency": "PCMC / Maha-Metro (DPR)",
-      "category": "metro",
-      "attribute": "station_count",
-      "value": 34,
-      "unit": null,
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.thebridgechronicle.com/pune/pune-bhakti-shakti-chakan-metro-dpr-approved-land-acquisition-conditions-agn97",
-          "publisher": "The Bridge Chronicle",
-          "published": "2026-09-05",
-          "quote": "The original plan includes 34 stations.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "metro-proposed-nigdi-chakan::status",
-      "project_id": "metro-proposed-nigdi-chakan",
-      "project_name": "Proposed Metro: Nigdi–Bhakti Shakti–Wakad–Nashik Phata–Chakan",
-      "agency": "PCMC / Maha-Metro (DPR)",
-      "category": "metro",
-      "attribute": "status",
-      "value": "DPR approved by PCMC General Body (conditional); not sanctioned by State/GoI",
-      "unit": null,
-      "as_of": "2026-09-05",
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.thebridgechronicle.com/pune/pune-bhakti-shakti-chakan-metro-dpr-approved-land-acquisition-conditions-agn97",
-          "publisher": "The Bridge Chronicle",
-          "published": "2026-09-05",
-          "quote": "The Pimpri-Chinchwad Municipal Corporation's (PCMC) General Body has approved the Detailed Project Report (DPR) for the proposed Bhakti Shakti–Chakan Metro corridor",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "hcmtr-high-capacity-mass-transit-route::length",
-      "project_id": "hcmtr-high-capacity-mass-transit-route",
-      "project_name": "High Capacity Mass Transit Route (HCMTR), Pune",
-      "agency": "PMC",
-      "category": "road",
-      "attribute": "length",
-      "value": null,
-      "unit": "km",
-      "as_of": null,
-      "confidence": "conflicting",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://www.hindustantimes.com/cities/pune-news/inner-ring-road-alignment-finalised-at-65-metre-width-three-realignments-in-pmc-limits-101789583414929.html",
-          "publisher": "Hindustan Times",
-          "published": "2026-09-17",
-          "quote": "A joint meeting at the district collector's office on Tuesday reviewed the progress of the Inner Ring Road and the 24-km High-Capacity Mass Transit Route (HCMTR).",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": [
-        {
-          "value": "24 m wide (not 24 km)",
-          "source": {
-            "url": "https://swarajyamag.com/news-brief/inner-ring-road-and-hcmtr-land-surveys-must-be-completed-by-month-end-to-speed-up-pune-acquisition-process",
-            "publisher": "Swarajya",
-            "published": "2026-10-18",
-            "quote": "finish surveys for the Pune Municipal Corporation's 24-metre-wide high-capacity mass transit route (HCMTR)",
-            "quote_type": "sentence",
-            "quote_verified": true
-          }
-        }
-      ],
-      "note": "'24' is reported as length (HT) and as width (Swarajya). Unresolved; left null."
-    },
-    {
-      "id": "hcmtr-high-capacity-mass-transit-route::land_acquisition_sanction",
-      "project_id": "hcmtr-high-capacity-mass-transit-route",
-      "project_name": "High Capacity Mass Transit Route (HCMTR), Pune",
-      "agency": "PMC",
-      "category": "road",
-      "attribute": "land_acquisition_sanction",
-      "value": 2634,
-      "unit": "INR crore",
-      "as_of": null,
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://swarajyamag.com/news-brief/inner-ring-road-and-hcmtr-land-surveys-must-be-completed-by-month-end-to-speed-up-pune-acquisition-process",
-          "publisher": "Swarajya",
-          "published": "2026-10-18",
-          "quote": "The Pune Municipal Corporation's Standing Committee has approved land acquisition proposals worth Rs 3,722 crore, sanctioning Rs 2,634 crore for HCMTR and Rs 1,088.50 crore for the Inner Ring Road.",
-          "quote_type": "sentence",
-          "quote_verified": true
-        }
-      ],
-      "alt_values": null,
-      "note": null
-    },
-    {
-      "id": "hcmtr-high-capacity-mass-transit-route::status",
-      "project_id": "hcmtr-high-capacity-mass-transit-route",
-      "project_name": "High Capacity Mass Transit Route (HCMTR), Pune",
-      "agency": "PMC",
-      "category": "road",
-      "attribute": "status",
-      "value": "land surveys/acquisition",
-      "unit": null,
-      "as_of": "2026-10-18",
-      "confidence": "single_source",
-      "slipped": false,
-      "sources": [
-        {
-          "url": "https://swarajyamag.com/news-brief/inner-ring-road-and-hcmtr-land-surveys-must-be-completed-by-month-end-to-speed-up-pune-acquisition-process",
-          "publisher": "Swarajya",
-          "published": "2026-10-18",
-          "quote": "District collector Jitendra Dudi instructed officials to finish surveys",
           "quote_type": "sentence",
           "quote_verified": true
         }
@@ -5466,66 +3176,80 @@
         "sewer/STP, riverfront compliance"
       ],
       "notes": "Status reports/affidavits filed by PMC/PCMC/PMRDA."
+    }
+  ],
+  "not_available": [
+    {
+      "id": "pune-metro-line-1b-swargate-katraj::station_depths",
+      "project_id": "pune-metro-line-1b-swargate-katraj",
+      "project_name": "Pune Metro Line 1B (Purple Line extension) Swargate–Katraj",
+      "attribute": "station_depths",
+      "unit": "m",
+      "note": "No official station depth found. Maha-Metro's Revised Final DPR gives the station box (153.4 m x 23.73 m, three levels, cut-and-cover) but no depth figure in its text.",
+      "sources": [
+        {
+          "url": "https://www.punemetrorail.org/download/Swargate-Katraj%20DPR.pdf",
+          "publisher": "Maha-Metro, Revised Final DPR (Swargate-Katraj)",
+          "published": null,
+          "quote": "[table] Table 11 : summary of type of stations Proposed | 153.4 x 23.73 | 3 | 3 | Cut and Cover",
+          "quote_type": "table_row",
+          "quote_verified": true
+        }
+      ]
     },
     {
-      "name": "Hindustan Times – Pune",
-      "url": "https://www.hindustantimes.com/feeds/rss/cities/pune-news/rssfeed.xml",
-      "kind": "rss",
-      "official": false,
-      "covers": [
-        "all"
-      ],
-      "notes": "Verified RSS 2026-11-21."
+      "id": "flyover-katraj-junction-nh548dd::length",
+      "project_id": "flyover-katraj-junction-nh548dd",
+      "project_name": "Katraj Junction six-lane flyover (Katraj–Kondhwa Road to Mumbai–Bengaluru bypass), NH-548DD",
+      "attribute": "length",
+      "unit": "km",
+      "note": "No official figure found (checked 2026-11-21).",
+      "sources": []
     },
     {
-      "name": "Times of India – Pune",
-      "url": "https://timesofindia.indiatimes.com/rssfeeds/-2128821991.cms",
-      "kind": "rss",
-      "official": false,
-      "covers": [
-        "all"
-      ],
-      "notes": "Verified RSS 2026-11-21."
+      "id": "flyover-katraj-junction-nh548dd::cost",
+      "project_id": "flyover-katraj-junction-nh548dd",
+      "project_name": "Katraj Junction six-lane flyover (Katraj–Kondhwa Road to Mumbai–Bengaluru bypass), NH-548DD",
+      "attribute": "cost",
+      "unit": "INR crore",
+      "note": "No official figure found (checked 2026-11-21).",
+      "sources": []
     },
     {
-      "name": "Indian Express – Pune",
-      "url": "https://indianexpress.com/section/cities/pune/feed/",
-      "kind": "rss",
-      "official": false,
-      "covers": [
-        "all"
-      ],
-      "notes": "Verified RSS 2026-11-21."
+      "id": "elevated-corridor-nashik-phata-khed-nh60::cost",
+      "project_id": "elevated-corridor-nashik-phata-khed-nh60",
+      "project_name": "Elevated corridor Nashik Phata – Khed, NH-60",
+      "attribute": "cost",
+      "unit": "INR crore",
+      "note": "No official figure found (checked 2026-11-21).",
+      "sources": []
     },
     {
-      "name": "Pune Times Mirror",
-      "url": "https://punemirror.com/feed/",
-      "kind": "rss",
-      "official": false,
-      "covers": [
-        "all"
-      ],
-      "notes": "Verified RSS 2026-11-21."
+      "id": "ring-road-pmrda-inner::completion_target",
+      "project_id": "ring-road-pmrda-inner",
+      "project_name": "Pune Inner Ring Road (PMRDA section, Solu – Parandwadi)",
+      "attribute": "completion_target",
+      "unit": null,
+      "note": "No official figure found (checked 2026-11-21).",
+      "sources": []
     },
     {
-      "name": "Punekar News",
-      "url": "https://www.punekarnews.in/feed/",
-      "kind": "rss",
-      "official": false,
-      "covers": [
-        "all"
-      ],
-      "notes": "RSS verified; article pages return 403 to plain curl."
+      "id": "riverfront-development-mula-mutha::completion_target",
+      "project_id": "riverfront-development-mula-mutha",
+      "project_name": "Mula-Mutha Riverfront Development (RFD)",
+      "attribute": "completion_target",
+      "unit": null,
+      "note": "No official figure found (checked 2026-11-21).",
+      "sources": []
     },
     {
-      "name": "The Metro Rail Guy – Pune Metro",
-      "url": "https://themetrorailguy.com/category/pune-metro/feed/",
-      "kind": "rss",
-      "official": false,
-      "covers": [
-        "metro contracts/tenders"
-      ],
-      "notes": "Specialist blog; good for contract awards. Verified RSS."
+      "id": "hcmtr-high-capacity-mass-transit-route::length",
+      "project_id": "hcmtr-high-capacity-mass-transit-route",
+      "project_name": "High Capacity Mass Transit Route (HCMTR), Pune",
+      "attribute": "length",
+      "unit": "km",
+      "note": "No official figure found (checked 2026-11-21).",
+      "sources": []
     }
   ]
 }

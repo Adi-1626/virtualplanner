@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from database.connection import get_db
 from planning.audit import acting_as
-from updater import audit, config as cfgmod, facts as facts_mod, review
+from updater import audit, config as cfgmod, facts as facts_mod, official, review
 from updater.models import FuProposalEntity, FuRunEntity
 from updater.proposals import evaluate_all, groups_by_status, proposal_dict
 
@@ -69,9 +69,10 @@ def status(db: Session = Depends(get_db)):
     runs = list(db.scalars(select(FuRunEntity).order_by(FuRunEntity.started_at.desc()).limit(5)))
     active = facts_mod.read_active(db)
     return {"proposals": groups_by_status(db), "last_runs": [_run_dict(r) for r in runs],
-            "facts": {k: active[k] for k in ("version_id", "version_label", "sha256_ok", "error")} | {"count": len(active["facts"])},
-            "audit": audit.verify_chain(db), "watched_projects": len(cfg["projects"]),
-            "sources": [{"id": s["id"], "kind": s["kind"], "enabled": s.get("enabled", True), "tier": s.get("tier", 3),
+            "facts": {k: active[k] for k in ("version_id", "version_label", "sha256_ok", "error")}
+            | {"count": len(active["facts"]), "withheld": active.get("withheld", [])},
+            "audit": audit.verify_chain(db), "watched_projects": len(cfg["projects"]), "official_rule": official.describe(),
+            "sources": [{"id": s["id"], "kind": s["kind"], "enabled": s.get("enabled", True), "tier": 1,
                          "publisher": s.get("publisher"), "url": s.get("url"), "note": s.get("note", "")} for s in cfg["sources"]]}
 
 
@@ -122,7 +123,7 @@ def apply(body: ApplyBody, db: Session = Depends(get_db)):
             v = review.apply_approved(db, body.reviewer, body.note or "", body.activate, cfg)
             evaluate_all(db, facts_mod.read_active(db), int(cfgmod.setting(cfg, "max_article_age_days", 400)))
             db.commit()
-    except review.ReviewError as e:
+    except (review.ReviewError, ValueError) as e:   # ValueError: facts.UnofficialFactError
         db.rollback()
         raise HTTPException(400, str(e)) from None
     return {"version_id": v.id, "version_label": v.version_label, "review_status": v.review_status, "sha256": v.sha256}

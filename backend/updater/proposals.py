@@ -1,15 +1,20 @@
 """
-Claims → proposals, and each proposal's verdict (DATA_FRESHNESS_RESEARCH.md §4.2–4.4).
+Claims → proposals, and each proposal's verdict (DATA_FRESHNESS_RESEARCH.md §4 and §11).
+
+Official sources only (user rule 2026-11-21; updater.official). A claim whose page is not on the official allow-list
+never creates or joins a proposal, and a proposal with any non-official evidence (only possible in a database written
+before the rule) is REJECTED by the system and can never be approved or applied.
 
 Grouping: a claim joins an existing proposal of the same (project, attribute) whose value it AGREES with, else it opens
 a new pending proposal. Agreement: equal after unit normalisation, compared at the precision of the less precise value
 (5.463 km ≈ 5.46 km; 2,954.53 ≠ 2,954.75), or within ±5 % when either side is hedged ("about", "around"); months and
 ranges must be identical.
 
-Corroborated = ≥ 1 official (tier 1) source, or ≥ 2 INDEPENDENT reputable-press (tier 2) sources. Independent: different
-registrable domains, not the same normalised sentence (syndicated copy counts once), not an article that says it is
-repeating another report. Undated, stale (older than max_article_age_days) and tier-3 sources never count.
-LLM-extracted evidence always needs the 2-independent-source route.
+Confidence (the only three levels):
+  official              stated by the responsible agency or Parliament, and no other official value competes
+  official_conflicting  two official sources disagree; both values are shown, a reviewer decides with a note
+  slipped               an official planned date that has passed and was replaced by a later official date
+News, however many outlets repeat it, never counts.
 """
 from __future__ import annotations
 
@@ -24,6 +29,7 @@ from . import audit
 from .extract import ATTRIBUTES, decimals, label, value_key
 from .facts import current_value
 from .models import FuClaimEntity, FuDocumentEntity, FuProposalEntity
+from .official import is_official_url, official_domain
 
 DECIDED = ("approved", "rejected", "applied", "superseded", "rolled_back")
 COMPETING = ("pending", "approved", "applied")
@@ -57,15 +63,32 @@ def _date(s: str | None) -> dt.date | None:
         return None
 
 
+SYSTEM_ACTOR = "system (official-only rule)"
+NOT_OFFICIAL_NOTE = ("rejected by the official-only rule (2026-11-21): its evidence is not from an official source "
+                     "(government or agency site); it cannot be approved or applied")
+
+
+def doc_is_official(d: FuDocumentEntity) -> bool:
+    """Decided again from the stored URLs by code; the stored tier is not trusted (older rows were tiered by config)."""
+    return is_official_url(d.url) and is_official_url(d.final_url or d.url)
+
+
+def evidence_is_official(evidence: list[tuple[FuClaimEntity, FuDocumentEntity]]) -> bool:
+    return bool(evidence) and all(doc_is_official(d) for c, d in evidence)
+
+
 def assign(db: Session, actor: str = "updater") -> list[str]:
-    """Attach every unassigned claim to a proposal. Returns ids of proposals created."""
+    """Attach every unassigned claim from an OFFICIAL page to a proposal. Returns ids of proposals created. A claim from
+    any other page (only possible in an old database) is left unassigned and never becomes a proposal."""
     created: list[str] = []
     rows = db.execute(select(FuClaimEntity, FuDocumentEntity).join(FuDocumentEntity, FuDocumentEntity.id == FuClaimEntity.document_id)
                       .where(FuClaimEntity.proposal_id.is_(None))).all()
-    rows.sort(key=lambda r: (r[1].tier, -(_date(r[1].published_at) or dt.date.min).toordinal(), r[0].id))
+    rows = [r for r in rows if doc_is_official(r[1])]
+    rows.sort(key=lambda r: (-(_date(r[1].published_at) or dt.date.min).toordinal(), r[0].id))
     for c, doc in rows:
-        props = list(db.scalars(select(FuProposalEntity).where(FuProposalEntity.project_id == c.project_id,
-                                                                FuProposalEntity.attribute == c.attribute)))
+        props = [p for p in db.scalars(select(FuProposalEntity).where(FuProposalEntity.project_id == c.project_id,
+                                                                       FuProposalEntity.attribute == c.attribute))
+                 if not any(not doc_is_official(d) for c2, d in _evidence(db, p.id))]   # never join a pre-rule proposal
         props.sort(key=lambda p: (ASSIGN_ORDER.get(p.status, 9), p.created_at or dt.datetime.min, p.id))
         hit = next((p for p in props if agree(c.attribute, c.value_num, c.value_text, c.qualifier, p.value_num, p.value_text, p.qualifier)), None)
         if hit is None:
@@ -89,87 +112,76 @@ def _evidence(db: Session, proposal_id: str) -> list[tuple[FuClaimEntity, FuDocu
                            .where(FuClaimEntity.proposal_id == proposal_id)).all())
 
 
-def corroboration(evidence: list[tuple[FuClaimEntity, FuDocumentEntity]], today: dt.date, max_age_days: int) -> dict:
-    counting = []
-    for c, d in evidence:
-        pub = _date(d.published_at)
-        if pub is None or c.cites_other or d.tier > 2:
-            continue
-        if (today - pub).days > max_age_days:
-            continue
-        counting.append((c, d))
-    official = sorted({d.domain for c, d in counting if d.tier == 1 and not c.extractor.startswith("llm:")})
-    # tier-2 independence: union-find over domains joined by an identical normalised sentence
-    press = [(c, d) for c, d in counting if d.tier == 2]
-    parent: dict[str, str] = {}
-
-    def find(x):
-        parent.setdefault(x, x)
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-    by_quote: dict[str, str] = {}
-    for c, d in press:
-        find(d.domain)
-        if c.quote_sha256 in by_quote:
-            parent[find(d.domain)] = find(by_quote[c.quote_sha256])
-        else:
-            by_quote[c.quote_sha256] = d.domain
-    groups = {find(d.domain) for c, d in press}
-    independent = len(groups)
-    llm_only = bool(counting) and all(c.extractor.startswith("llm:") for c, d in counting)
-    corroborated = (len(official) >= 1 and not llm_only) or independent >= 2
-    return {"official": len(official), "independent_press": independent, "counting": len(counting),
-            "corroborated": corroborated, "llm_only": llm_only,
-            "independent_sources": len(official) + independent}
+def corroboration(evidence: list[tuple[FuClaimEntity, FuDocumentEntity]], today: dt.date, max_age_days: int) -> dict:  # noqa: ARG001
+    """How many OFFICIAL domains state this value. Only official pages count; there is no press route any more.
+    (today / max_age_days are kept for the callers: an old official source still counts, and is flagged.)"""
+    official_rows = [(c, d) for c, d in evidence if doc_is_official(d)]
+    domains = sorted({official_domain(d.final_url or d.url) for c, d in official_rows if not c.extractor.startswith("llm:")})
+    llm_only = bool(official_rows) and all(c.extractor.startswith("llm:") for c, d in official_rows)
+    all_official = evidence_is_official(evidence)
+    return {"official": len(domains), "official_domains": domains, "counting": len(official_rows),
+            "all_official": all_official, "llm_only": llm_only,
+            "corroborated": all_official and (len(domains) >= 1 or llm_only),
+            "independent_sources": len(domains)}
 
 
 def evaluate_group(db: Session, project_id: str, attribute: str, active: dict, max_age_days: int,
                    today: dt.date | None = None, actor: str = "updater") -> None:
     today = today or dt.date.today()
-    # durable figures (length, cost, depth, counts) stay citable for 5 years; plans and status go stale sooner
+    # durable figures (length, cost, depth, counts) stay current for 5 years; plans and status go stale sooner
     max_age_days = int(ATTRIBUTES[attribute].get("max_age_days", max_age_days))
     props = list(db.scalars(select(FuProposalEntity).where(FuProposalEntity.project_id == project_id,
                                                             FuProposalEntity.attribute == attribute)))
     ev = {p.id: _evidence(db, p.id) for p in props}
     info = {p.id: corroboration(ev[p.id], today, max_age_days) for p in props}
+    # official-only rule: a proposal resting on anything but official pages is rejected by the system, whatever its
+    # status, and leaves the competition (it can never be approved or applied)
+    for p in props:
+        if not info[p.id]["all_official"] and p.status != "rejected":
+            before = p.status
+            p.status, p.decided_by, p.decided_at, p.decision_note = "rejected", SYSTEM_ACTOR, _now(), NOT_OFFICIAL_NOTE
+            audit.log(db, SYSTEM_ACTOR, "reject", p.id, {"value": label(attribute, p.value_num, p.value_text, p.qualifier),
+                                                         "from_status": before, "reason": "not_official"})
     newest = {p.id: max([d.published_at for c, d in ev[p.id] if d.published_at] or [None], key=lambda x: x or "") for p in props}
-    has_official = {p.id: any(d.tier == 1 for c, d in ev[p.id]) for p in props}
     cur = current_value(active, project_id, attribute)
     kind = ATTRIBUTES[attribute]["kind"]
-    slipped_by = slips(props, ev, newest, kind, today)
+    live = [p for p in props if info[p.id]["all_official"]]
+    slipped_by = slips(live, ev, newest, kind, today)
     for p in props:
         e = ev[p.id]
         i = info[p.id]
-        # representative value while pending: best tier, then most precise, then newest
+        if not i["all_official"]:
+            p.verdict, p.confidence = "not_official", "not_official"
+            p.official_sources, p.independent_sources, p.evidence_count = i["official"], i["independent_sources"], len(e)
+            p.flags_json = json.dumps([{"code": "not_official", "detail": NOT_OFFICIAL_NOTE}], ensure_ascii=False)
+            p.conflicts_json = "[]"
+            p.current_value_json = json.dumps(cur, ensure_ascii=False) if cur else None
+            p.newest_evidence_at = newest[p.id]
+            continue
+        # representative value while pending: most precise, then newest (every source is official)
         if p.status == "pending" and e:
-            best = sorted(e, key=lambda r: (r[1].tier, -decimals(r[0].value_num), -(_date(r[1].published_at) or dt.date.min).toordinal()))[0][0]
+            best = sorted(e, key=lambda r: (-decimals(r[0].value_num), -(_date(r[1].published_at) or dt.date.min).toordinal()))[0][0]
             if (best.value_num, best.value_text) != (p.value_num, p.value_text):
                 audit.log(db, actor, "proposal_updated", p.id, {"value_from": label(attribute, p.value_num, p.value_text, p.qualifier),
                                                                  "value_to": label(attribute, best.value_num, best.value_text, best.qualifier),
-                                                                 "reason": "a better-ranked or more precise source agrees"})
+                                                                 "reason": "a more precise or newer official source agrees"})
                 p.value_num, p.value_text = best.value_num, best.value_text
                 p.value_key = value_key(attribute, best.value_num, best.value_text)
             p.qualifier = best.qualifier
             p.temporal = next((c.temporal for c, d in sorted(e, key=lambda r: r[1].published_at or "", reverse=True) if c.temporal), None)
         flags: list[dict] = []
         dated = [(c, d) for c, d in e if d.published_at]
-        if any(not d.published_at for c, d in e):
-            flags.append({"code": "undated_source", "detail": "a source has no machine-readable publish date; it does not count towards corroboration"})
         stale = [d for c, d in dated if (today - _date(d.published_at)).days > max_age_days]
         if stale:
-            flags.append({"code": "stale_source", "detail": f"{len(stale)} source(s) older than {max_age_days} days; not counted"})
-        if e and all(d.tier == 3 for c, d in e):
-            flags.append({"code": "tier3_only", "detail": "only aggregator / other sources; never enough on their own"})
+            flags.append({"code": "stale_source", "detail": f"{len(stale)} official source(s) older than {max_age_days} days; "
+                                                            "check the agency has not changed it since"})
         if i["llm_only"]:
-            flags.append({"code": "llm_only", "detail": "extracted by the optional LLM extractor only; needs 2 independent sources"})
+            flags.append({"code": "llm_only", "detail": "extracted by the optional LLM extractor only (from an official page); "
+                                                        "approving it needs a note saying the quote was checked"})
         if e and all(c.attribution in ("article", "previous_sentence") for c, d in e):
-            flags.append({"code": "attribution_by_context", "detail": "no quote names the project in the same sentence; check the article is about it"})
+            flags.append({"code": "attribution_by_context", "detail": "no quote names the project in the same sentence; check the page is about it"})
         if any("year not stated" in (c.note or "") for c, d in e):
             flags.append({"code": "year_resolved", "detail": next(c.note for c, d in e if "year not stated" in (c.note or ""))})
-        if any(c.cites_other for c, d in e):
-            flags.append({"code": "cites_other_report", "detail": "a source repeats another report; it is not counted as independent"})
         if any(d.published_from == "retrieved" for c, d in e):
             flags.append({"code": "official_page_undated", "detail": "an official page with no date: its value is what the page showed when retrieved; official pages can be out of date"})
         if kind == "month" and p.value_text and len(p.value_text) == 7 and p.temporal == "planned" and p.value_text < today.strftime("%Y-%m"):
@@ -178,22 +190,18 @@ def evaluate_group(db: Session, project_id: str, attribute: str, active: dict, m
         if p.id in slipped_by:
             o = next(x for x in props if x.id == slipped_by[p.id])
             flags.append({"code": "slipped", "detail": f"planned for {label(attribute, p.value_num, p.value_text)}, which has passed; "
-                                                       f"newer reports ({(newest[o.id] or '')[:10]}) give {label(attribute, o.value_num, o.value_text)}"})
-        for o in props:
+                                                       f"newer official sources ({(newest[o.id] or '')[:10]}) give {label(attribute, o.value_num, o.value_text)}"})
+        for o in live:
             if o.id == p.id or o.status not in COMPETING or not ev[o.id]:
                 continue
             if slipped_by.get(o.id) == p.id or slipped_by.get(p.id) == o.id:
                 continue          # a slipped earlier plan is history, not a disagreement
             conflicts.append({"kind": "source_disagreement", "proposal_id": o.id, "value": label(attribute, o.value_num, o.value_text, o.qualifier),
                               "status": o.status, "newest_evidence_at": newest[o.id],
-                              "detail": f"{len(ev[o.id])} quote(s) say {label(attribute, o.value_num, o.value_text, o.qualifier)}"})
+                              "detail": f"{len(ev[o.id])} official quote(s) say {label(attribute, o.value_num, o.value_text, o.qualifier)}"})
             if newest[o.id] and newest[p.id] and newest[o.id] > newest[p.id]:
                 if not any(f["code"] == "newer_competitor" for f in flags):
-                    flags.append({"code": "newer_competitor", "detail": f"a competing value has newer evidence ({newest[o.id][:10]})"})
-            if has_official[p.id] and not has_official[o.id] and newest[o.id] and (newest[p.id] or "") < newest[o.id]:
-                flags.append({"code": "official_may_be_outdated", "detail": "newer press reports disagree with the official page; the page may not have been updated"})
-            if has_official[o.id] and not has_official[p.id]:
-                flags.append({"code": "official_disagrees", "detail": f"an official source says {label(attribute, o.value_num, o.value_text, o.qualifier)}"})
+                    flags.append({"code": "newer_competitor", "detail": f"a competing official value has newer evidence ({newest[o.id][:10]})"})
         if cur and cur.get("proposal_id") != p.id:
             same = agree(attribute, cur.get("value_num"), cur.get("value_text"), cur.get("qualifier", "exact"), p.value_num, p.value_text, p.qualifier)
             if not same:
@@ -206,20 +214,13 @@ def evaluate_group(db: Session, project_id: str, attribute: str, active: dict, m
             uniq.setdefault(f["code"], f)
         flags = list(uniq.values())
         disagree = any(x["kind"] == "source_disagreement" for x in conflicts)
-        verdict = "conflict" if disagree else ("corroborated" if i["corroborated"] else "needs_corroboration")
-        p.verdict = verdict
+        p.verdict = "conflict" if disagree else "official"
         if p.id in slipped_by:
             p.confidence = "slipped"
         elif disagree:
-            p.confidence = "conflicting"
-        elif i["official"] >= 1 and not i["llm_only"]:
-            p.confidence = "official"
-        elif i["independent_press"] >= 2:
-            p.confidence = "corroborated"
-        elif i["counting"] >= 1:
-            p.confidence = "single_source"
+            p.confidence = "official_conflicting"
         else:
-            p.confidence = "unverified"
+            p.confidence = "official"
         p.official_sources = i["official"]
         p.independent_sources = i["independent_sources"]
         p.evidence_count = len(e)
@@ -228,6 +229,10 @@ def evaluate_group(db: Session, project_id: str, attribute: str, active: dict, m
         p.current_value_json = json.dumps(cur, ensure_ascii=False) if cur else None
         p.newest_evidence_at = newest[p.id]
     db.flush()
+
+
+def _now():
+    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
 
 
 def slips(props, ev, newest, kind: str, today: dt.date) -> dict[str, str]:
@@ -260,8 +265,8 @@ def evaluate_all(db: Session, active: dict, max_age_days: int, today: dt.date | 
     return len(groups)
 
 
-def is_corroborated(p: FuProposalEntity) -> bool:
-    return p.verdict == "corroborated"
+def is_official(p: FuProposalEntity) -> bool:
+    return p.verdict in ("official", "conflict") and p.confidence != "not_official"
 
 
 def proposal_dict(db: Session, p: FuProposalEntity, cfg: dict | None = None, with_evidence: bool = True) -> dict:
@@ -281,7 +286,7 @@ def proposal_dict(db: Session, p: FuProposalEntity, cfg: dict | None = None, wit
            "created_at": p.created_at.isoformat() + "Z" if p.created_at else None}
     if with_evidence:
         ev = _evidence(db, p.id)
-        ev.sort(key=lambda r: (r[1].tier, -(_date(r[1].published_at) or dt.date.min).toordinal()))
+        ev.sort(key=lambda r: -(_date(r[1].published_at) or dt.date.min).toordinal())
         out["evidence"] = [evidence_dict(c, d) for c, d in ev]
     return out
 
@@ -290,7 +295,8 @@ def evidence_dict(c: FuClaimEntity, d: FuDocumentEntity) -> dict:
     return {"claim_id": c.id, "quote": c.quote, "quote_sha256": c.quote_sha256, "attribution": c.attribution,
             "extractor": c.extractor, "cites_other": bool(c.cites_other), "note": c.note,
             "value": label(c.attribute, c.value_num, c.value_text, c.qualifier), "temporal": c.temporal,
-            "document_id": d.id, "url": d.final_url or d.url, "domain": d.domain, "publisher": d.publisher, "tier": d.tier,
+            "document_id": d.id, "url": d.final_url or d.url, "domain": d.domain, "publisher": d.publisher,
+            "tier": 1 if doc_is_official(d) else 3, "official": doc_is_official(d),
             "title": d.title, "published_at": d.published_at, "published_from": d.published_from,
             "retrieved_at": d.retrieved_at.isoformat() + "Z" if d.retrieved_at else None, "sha256": d.sha256,
             "manual": bool(d.manual)}
