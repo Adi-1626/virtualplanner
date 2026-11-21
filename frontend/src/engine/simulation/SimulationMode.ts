@@ -25,6 +25,8 @@ const junctionOptions = (junctions: readonly JunctionObject[] | undefined) => {
   const { placed, edits } = splitJunctionObjects(junctions);
   return { junctions: placed, junctionEdits: edits.length ? edits : undefined };
 };
+import { createLiveRun, type LiveRun } from './liveTrafficRun';
+import type { LiveInit } from './liveTrafficCore';
 import { snapDemandPlan, contentKey, networkContentKey, demandContextKey, type SimulationContext, type DemandPlan, type DemandProvenance } from './StudyDemand';
 export type { SimulationContext } from './StudyDemand';
 import { fetchCountDataset, DEFAULT_COUNT_DATASET, type CountDataset } from '../calibration/observedCounts';
@@ -74,6 +76,8 @@ export interface TrafficRunState {
   hour: number | null;
   /** Simulated seconds of warm-up run before the live view is shown. */
   warmupS: number;
+  /** The machine cannot step the live view as fast as the chosen speed: it runs slower than that (the figures stay correct). */
+  behind?: boolean;
 }
 
 /** Time-of-day periods offered in the main controls (hourly detail stays under Details). */
@@ -122,7 +126,9 @@ export interface TimelineRow {
 }
 
 /** What is computing right now, for the panel and for tests: nothing should be listed while Simulate is closed or stopped. */
-export interface ResourceReport { liveSim: boolean; animationFrame: boolean; warmup: boolean; analysisRunning: boolean; comparisonRunning: boolean; timelineRunning: boolean; timers: number; vehicles: number }
+export interface ResourceReport { liveSim: boolean; animationFrame: boolean; warmup: boolean; analysisRunning: boolean; comparisonRunning: boolean; timelineRunning: boolean; timers: number; vehicles: number;
+  /** Where the live simulation runs: true in a Web Worker, false on the main thread, null when there is none. */
+  liveThreaded?: boolean | null }
 
 export type MapOverlay = 'none' | 'select-link' | 'area-vc' | 'cause' | 'comparison';
 
@@ -193,6 +199,8 @@ export interface RoadAnalysisState {
    * demand is the peak hour's (factor 1) whatever the clock shows (docs/OVERHAUL.md §19).
    */
   timeProfile?: 'loaded' | 'unavailable';
+  /** Inputs the output was computed from (SimulationMode.runFingerprint); a baseline or proposal run with the same fingerprint reuses it. */
+  fingerprint?: string;
 }
 
 /** Demand options the user can change. */
@@ -348,8 +356,6 @@ const EMPTY_ANALYSIS: RoadAnalysisState = { status: 'idle', progress: 0, output:
 const EMPTY_TIMELINE: TimelineState = { status: 'idle', progress: 0, rows: [], error: null, key: null };
 /** The live view starts from the same warm-up the analysis counts from: vehicles already on the roads, in a state the model reached itself. */
 export const LIVE_WARMUP_S = 300;
-/** Real milliseconds of warm-up simulation per frame, so the page stays responsive. */
-const WARMUP_SLICE_MS = 14;
 
 const EMPTY_CALIBRATION: CalibrationState = {
   datasetStatus: 'idle', dataset: null, datasetError: null, junctions: [], rows: [], before: null, after: null, fit: null,
@@ -364,8 +370,6 @@ const KEPT_RESULTS = 6;
 /** How often live figures reach the UI, and how often road stretches are recoloured (real ms). */
 const METRICS_EVERY_MS = 500;
 const RECOLOUR_EVERY_MS = 1000;
-/** Most simulation steps run in one frame; beyond this the run falls behind real time rather than freezing. */
-const MAX_STEPS_PER_FRAME = 200;
 
 /**
  * State of Simulation mode: which roads the study area grows from, how far,
@@ -430,10 +434,11 @@ export class SimulationMode {
   private revision = 0;
   private recomputeTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly trafficVisualizer = new MicroTrafficVisualizer();
-  private sim: TrafficMicroSim | null = null;
+  /** The live run (its simulation in a Web Worker when the browser has them; liveTrafficRun.ts). */
+  private live: LiveRun | null = null;
+  /** Test hook: builds the live run's worker (null: the browser's own worker, or none). */
+  public liveWorkerFactory: (() => Worker) | null = null;
   private frameHandle: number | null = null;
-  private lastFrameAt = 0;
-  private stepDebt = 0;
   private lastMetricsAt = 0;
   private lastRecolourAt = 0;
 
@@ -463,8 +468,6 @@ export class SimulationMode {
   private signalTiming: 'webster' | 'equal' = 'webster';
   private roadsCache: { n: number; layer: NetworkCorrectionLayer | null; enabled: boolean; rev: number; roads: DrivableObject[] } | null = null;
   private speedReport: SpeedReport | null = null;
-  /** Live warm-up in progress (cancelled by Stop, a new area, or leaving Simulate). */
-  private warmupHandle: ReturnType<typeof setTimeout> | null = null;
   private timelineRun: RunningAnalysis | null = null;
   private timelineGeneration = 0;
   /** Start was pressed before the analysis was ready: start once it is. */
@@ -648,11 +651,11 @@ export class SimulationMode {
 
   /** What is computing now (nothing, once stopped or closed). */
   public resources(): ResourceReport {
-    let vehicles = 0;
-    this.sim?.forEachVehicle(() => { vehicles++; });
-    return { liveSim: this.sim !== null, animationFrame: this.frameHandle !== null, warmup: this.warmupHandle !== null, analysisRunning: this.analysisRun !== null,
+    const warmup = this.live?.warming() ?? false;
+    return { liveSim: this.live !== null, animationFrame: this.frameHandle !== null, warmup, analysisRunning: this.analysisRun !== null,
       comparisonRunning: this.comparisonRun !== null, timelineRunning: this.timelineRun !== null,
-      timers: [this.analysisTimer, this.recomputeTimer, this.warmupHandle].filter(t => t !== null).length, vehicles };
+      timers: [this.analysisTimer, this.recomputeTimer].filter(t => t !== null).length + (warmup && !this.live?.threaded ? 1 : 0), vehicles: this.live?.vehicleCount() ?? 0,
+      liveThreaded: this.live?.threaded ?? null };
   }
 
   public dismissNotice() { if (this.state.notice) this.setState({ notice: null }); }
@@ -751,7 +754,10 @@ export class SimulationMode {
 
   /** Roads changed or the scenario switched. Re-maps the current area shortly after. */
   public networkChanged() {
-    this.invalidateComparison('The network changed. Run the comparison again.');
+    // Editing the network after saving the baseline is the intended step: only a comparison already on show (or
+    // running) is out of date. "Run the comparison again" before any comparison had run read as an error.
+    const c = this.state.comparison;
+    this.invalidateComparison(c.result || c.running ? 'The network changed since this comparison. Press Compare to test the proposal as it is now.' : null);
     this.revision++;
     if (!this.state.active || this.state.seedRoadIds.length === 0) return;
     this.cancelPendingRecompute();
@@ -976,54 +982,63 @@ export class SimulationMode {
       return;
     }
     this.pendingStart = false;
-    const roads = new Map(this.getRoads().map(r => [r.id, r]));
+    // Only the roads of the corridor's network go to the run (not the whole city): less to copy to its worker
+    const all = new Map(this.getRoads().map(r => [r.id, r]));
+    const roads = new Map<string, DrivableObject>();
+    corridor.network.edges.forEach(e => { const r = all.get(e.roadId); if (r) roads.set(e.roadId, r); });
     const context = this.getContext();
     const plan = out.corridorPlan;
-    const sim = new TrafficMicroSim(corridor, roads, {
-      demandLevel: this.state.traffic.demandLevel,
-      seed: this.state.traffic.seed,
-      watchRoadIds: area.seedRoadIds, watchSegmentKeys: this.state.section?.segmentKeys,
-      signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming,
-      ...junctionOptions(context.junctions),
-      demandTrips: snapDemandPlan(plan, corridor.network, 60, new Set(corridor.segments.map(s => s.key))),
-    });
-    sim.setHourFactor(1);
-    const metrics = sim.getMetrics();
-    this.setTraffic({ demand: { ...plan.provenance }, hour: this.state.analysis.hour });
-    if (metrics.entries === 0) {
-      this.setTraffic({ status: 'idle', preparing: null, error: 'No traffic is routed through this road\'s neighbourhood at this hour, so there is nothing to show.' });
+    this.setTraffic({ demand: { ...plan.provenance }, hour: this.state.analysis.hour, behind: false });
+    const init: LiveInit = {
+      corridor, roads, plan, warmupS: this.state.traffic.warmupS,
+      options: {
+        demandLevel: this.state.traffic.demandLevel, seed: this.state.traffic.seed,
+        watchRoadIds: area.seedRoadIds, watchSegmentKeys: this.state.section?.segmentKeys,
+        signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming,
+        ...junctionOptions(context.junctions),
+      },
+    };
+    let live: LiveRun;
+    const mine = () => this.live === live;
+    try {
+      live = createLiveRun(this.liveWorkerFactory ? structuredClone(init) : init, this.state.traffic.speed, {
+        progress: share => { if (mine()) this.setTraffic({ preparing: { stage: 'warmup', progress: share } }); },
+        ready: metrics => {
+          if (!mine()) return;
+          this.setTraffic({ status: 'running', preparing: null, metrics });
+          live.run();
+          this.startLoop();
+        },
+        empty: () => {
+          if (!mine()) return;
+          this.live = null;
+          this.visualizer.setMarkersVisible(true);
+          this.setTraffic({ status: 'idle', preparing: null, error: 'No traffic is routed through this road\'s neighbourhood at this hour, so there is nothing to show.' });
+        },
+        metrics: (metrics, behind) => { if (mine()) this.setTraffic({ metrics, behind }); },
+        error: message => { if (mine()) { this.stopTraffic(); this.setTraffic({ error: `The live view stopped: ${message}` }); } },
+      }, this.liveWorkerFactory ?? undefined);
+    } catch (err) {
+      this.setTraffic({ status: 'idle', preparing: null, error: `The live view could not start: ${err instanceof Error ? err.message : String(err)}` });
       return;
     }
-    this.sim = sim;
+    this.live = live;
     this.visualizer.setMarkersVisible(false);
-    this.setTraffic({ status: 'preparing', preparing: { stage: 'warmup', progress: 0 }, metrics, error: null });
-    const target = Math.round(this.state.traffic.warmupS / STEP_S);
-    let done = 0;
-    const slice = () => {
-      this.warmupHandle = null;
-      if (this.sim !== sim) return;
-      const t0 = performance.now();
-      while (done < target && performance.now() - t0 < WARMUP_SLICE_MS) { sim.step(); done++; }
-      if (done < target) {
-        this.setTraffic({ preparing: { stage: 'warmup', progress: done / target } });
-        this.warmupHandle = setTimeout(slice, 0);
-        return;
-      }
-      this.setTraffic({ status: 'running', preparing: null, metrics: sim.getMetrics() });
-      this.startLoop();
-    };
-    this.warmupHandle = setTimeout(slice, 0);
+    this.setTraffic({ status: 'preparing', preparing: { stage: 'warmup', progress: 0 }, error: null });
+    live.start();
   }
 
   public pauseTraffic() {
     if (this.state.traffic.status !== 'running') return;
     this.stopLoop();
-    this.setTraffic({ status: 'paused', metrics: this.sim?.getMetrics() ?? null });
+    this.live?.pause();
+    this.setTraffic({ status: 'paused', metrics: this.live?.metrics() ?? this.state.traffic.metrics });
   }
 
   public resumeTraffic() {
     if (this.state.traffic.status !== 'paused') return;
     this.setTraffic({ status: 'running' });
+    this.live?.run();
     this.startLoop();
   }
 
@@ -1033,16 +1048,17 @@ export class SimulationMode {
    */
   public stopTraffic() {
     this.pendingStart = false;
-    if (this.warmupHandle !== null) { clearTimeout(this.warmupHandle); this.warmupHandle = null; }
-    const wasRunning = this.sim !== null;
+    const wasRunning = this.live !== null;
     this.stopLoop();
-    this.sim = null;
+    // Ends the worker (or the inline warm-up) and drops the simulation
+    this.live?.dispose();
+    this.live = null;
     if (this.state.selectedVehicleId !== null) this.setState({ selectedVehicleId: null });
     this.trafficVisualizer.clear();
     this.visualizer.setMarkersVisible(true);
     if (wasRunning && this.state.area && this.state.active) { this.visualizer.render(this.state.area, false, new Set(this.state.section?.segmentKeys ?? [])); this.redrawOverlay(); }
     const t = this.state.traffic;
-    if (t.status !== 'idle' || t.metrics || t.error || t.preparing) this.setTraffic({ status: 'idle', metrics: null, error: null, preparing: null, hour: null });
+    if (t.status !== 'idle' || t.metrics || t.error || t.preparing || t.behind) this.setTraffic({ status: 'idle', metrics: null, error: null, preparing: null, hour: null, behind: false });
   }
 
   /** Earlier name of stopTraffic. */
@@ -1055,22 +1071,22 @@ export class SimulationMode {
   }
 
   public setTrafficSpeed(speed: number) {
+    this.live?.setSpeed(speed);
     this.setTraffic({ speed });
   }
 
   public setDemandLevel(level: number) {
     const demandLevel = Math.max(0, Math.min(1, level));
     this.invalidateComparison('Demand settings changed. Restore the baseline settings or capture a new baseline.');
-    this.sim?.setDemandLevel(demandLevel);
-    this.sim?.setFocusLoad(focusLoadFor({ focus: this.state.traffic.focus, demandLevel }));
-    this.setTraffic({ demandLevel, metrics: this.sim?.getMetrics() ?? this.state.traffic.metrics });
+    this.live?.setDemand(demandLevel, focusLoadFor({ focus: this.state.traffic.focus, demandLevel }));
+    this.setTraffic({ demandLevel, metrics: this.live?.metrics() ?? this.state.traffic.metrics });
   }
 
   /** Turns the extra through traffic on the selected roads on or off. */
   public setFocus(focus: boolean) {
     this.invalidateComparison('Focus settings changed. Restore the baseline settings or capture a new baseline.');
-    this.sim?.setFocusLoad(focusLoadFor({ focus, demandLevel: this.state.traffic.demandLevel }));
-    this.setTraffic({ focus, metrics: this.sim?.getMetrics() ?? this.state.traffic.metrics });
+    this.live?.setDemand(this.state.traffic.demandLevel, focusLoadFor({ focus, demandLevel: this.state.traffic.demandLevel }));
+    this.setTraffic({ focus, metrics: this.live?.metrics() ?? this.state.traffic.metrics });
   }
 
   private studyKey() {
@@ -1081,12 +1097,12 @@ export class SimulationMode {
     return demandContextKey(this.getContext());
   }
 
-  private invalidateComparison(reason: string) {
-    this.invalidateCalibration(reason);
+  private invalidateComparison(reason: string | null) {
+    this.invalidateCalibration(reason ?? 'The network changed. Measure again.');
     this.comparisonGeneration++;
     if (!this.state.comparison.baseline && !this.state.comparison.running) return;
     if (this.state.comparison.running) this.comparisonRun?.cancel();
-    this.setState({ comparison: { ...this.state.comparison, current: null, result: null, staleReason: reason, running: false } });
+    this.setState({ comparison: { ...this.state.comparison, current: null, result: null, staleReason: reason ?? this.state.comparison.staleReason, running: false } });
   }
 
   /** A trial must run on the area mapped from the current roads, not one still waiting out its debounce. */
@@ -1208,6 +1224,7 @@ export class SimulationMode {
     this.analysisTimer = null;
     this.analysisRun?.cancel();
     this.analysisRun = null;
+    this.runningAnalysis = null;
   }
 
   /**
@@ -1242,19 +1259,22 @@ export class SimulationMode {
     const key = this.analysisKey();
     this.setState({ analysis: { ...this.state.analysis, status: 'running', progress: 0, error: null, hour, demandVph } });
     const networkKey = this.currentNetworkKey();
+    const fingerprint = this.runFingerprint(plan, DEFAULT_ANALYSIS.measureS, this.analysisSeeds, hourFactor);
     const run = startAnalysisJob(this.analysisJob(plan, area, section), progress => {
       if (this.analysisRun !== run) return;
       this.setState({ analysis: { ...this.state.analysis, progress } });
       if (this.pendingStart) this.setTraffic({ preparing: { stage: 'analysis', progress } });
     });
     this.analysisRun = run;
+    this.runningAnalysis = { fingerprint, promise: run.promise };
     try {
       const output = await run.promise;
       if (this.analysisRun !== run) return null;
       this.analysisRun = null;
+      this.runningAnalysis = null;
       this.analysisNetworkKey = networkKey;
-      this.keepResult(key, networkKey, { status: 'ready', progress: 1, output, error: null, hour, demandVph, key, hourFactor, timeProfile });
-      this.setState({ analysis: { status: 'ready', progress: 1, output, error: null, hour, demandVph, key, hourFactor, timeProfile },
+      this.keepResult(key, networkKey, { status: 'ready', progress: 1, output, error: null, hour, demandVph, key, hourFactor, timeProfile, fingerprint });
+      this.setState({ analysis: { status: 'ready', progress: 1, output, error: null, hour, demandVph, key, hourFactor, timeProfile, fingerprint },
         comparison: { ...this.state.comparison, showingProposal: this.showsProposal(this.state.comparison.baseline) } });
       this.clearAnalysisStopNotice();
       this.redrawOverlay();
@@ -1262,6 +1282,7 @@ export class SimulationMode {
       if (this.pendingStart && this.state.traffic.status === 'preparing') { this.setTraffic({ status: 'idle' }); this.startTraffic(); }
       return output;
     } catch (err) {
+      if (this.runningAnalysis?.promise === run.promise) this.runningAnalysis = null;
       if (this.analysisRun !== run) return null;
       this.analysisRun = null;
       this.setState({ analysis: { ...this.state.analysis, status: 'error', error: err instanceof Error ? err.message : String(err) } });
@@ -1385,19 +1406,69 @@ export class SimulationMode {
     };
   }
 
+  /**
+   * The network key hashes every road (about 0.5 s for the full Pune network, headless): it is kept until the roads
+   * (a new array after every change, see getRoads), the junction settings or the mapped signals change.
+   */
+  private netKeyCache: { roads: unknown; signals: unknown; junctions: string; key: string } | null = null;
   private currentNetworkKey() {
-    return networkContentKey(this.getRoads(), this.getContext().junctions, this.signalPoints);
+    const roads = this.getRoads(), junctions = this.getContext().junctions, signals = this.signalPoints;
+    const jKey = contentKey(junctions ?? null);
+    const c = this.netKeyCache;
+    if (c && c.roads === roads && c.signals === signals && c.junctions === jKey) return c.key;
+    const key = networkContentKey(roads, junctions, signals);
+    this.netKeyCache = { roads, signals, junctions: jKey, key };
+    return key;
   }
+
+  /**
+   * Everything a run's output depends on (docs/urbanos/SIMULATE_AUDIT.md): the demand's content, the network, the
+   * study road and range, the hour factor, seeds, warm-up and measured window, and the simulator options. Runs with
+   * the same fingerprint give the same output (the analysis is deterministic), so one is never computed twice.
+   */
+  private runFingerprint(plan: DemandPlan, measureS: number, seeds: readonly number[], hourFactor: number = this.state.timeOfDay.factor): string {
+    const t = this.state.traffic;
+    return contentKey({ plan: this.keyOfPlan(plan), net: this.currentNetworkKey(), study: this.studyKey(), section: this.state.section?.segmentKeys ?? null,
+      hourFactor, seeds: [...seeds], measureS, warmupS: DEFAULT_ANALYSIS.warmupS, demandLevel: t.demandLevel, seed: t.seed, signalTiming: this.signalTiming,
+      counts: this.state.calibration.dataset ? true : false });
+  }
+  /** Fingerprint of the road analysis now running (null when none). */
+  private runningAnalysis: { fingerprint: string; promise: Promise<AnalysisOutput> } | null = null;
 
   /** Whether the analysis on show ran on a network other than the baseline's. */
   private showsProposal(baseline: TrafficRunSnapshot | null) {
     return !!baseline && this.analysisNetworkKey !== null && this.analysisNetworkKey !== baseline.networkKey;
   }
 
+  /**
+   * A baseline or proposal run. The same inputs give the same output, so when the road analysis already computed (or
+   * is computing) exactly this run, its output is used instead of running it again: "Save existing city" right after
+   * an analysis, and Compare right after the re-analysis of the edited network, re-ran a full analysis each (143 s and
+   * 94 s headless), and Compare during that re-analysis ran two analyses at once (docs/urbanos/SIMULATE_AUDIT.md).
+   * Otherwise the automatic analysis is cancelled first (never two analysis jobs at once), and the run's output is
+   * shown as the road analysis when it is the run that analysis would make.
+   */
   private async runJob(plan: DemandPlan, measureS: number, generation: number, seeds?: readonly number[]): Promise<AnalysisOutput> {
     const area = this.state.area, section = this.state.section;
     if (!area || !section) throw new Error('Select a study road before running a trial.');
     this.comparisonRun?.cancel();
+    const runSeeds = seeds ?? this.analysisSeeds;
+    const fingerprint = this.runFingerprint(plan, measureS, runSeeds);
+    const shown = this.state.analysis;
+    if (shown.status === 'ready' && shown.output && shown.fingerprint === fingerprint) { this.lastRunReused = true; return shown.output; }
+    const pending = this.runningAnalysis;
+    if (pending && pending.fingerprint === fingerprint) {
+      const out = await pending.promise.catch(() => null);
+      if (generation !== this.comparisonGeneration) throw new Error('The project changed while the run was being captured. Run it again.');
+      if (out) { this.lastRunReused = true; return out; }
+    }
+    this.lastRunReused = false;
+    // One analysis job at a time: the automatic one is re-scheduled after this run when this run does not stand for it
+    if (this.analysisRun || this.analysisTimer) {
+      this.cancelAnalysis();
+      this.analysisStale = true;
+      if (this.state.analysis.status === 'running') this.setState({ analysis: { ...this.state.analysis, status: this.state.analysis.output ? 'ready' : 'idle', progress: 0 } });
+    }
     const run = startAnalysisJob(this.analysisJob(plan, area, section, measureS, { seeds }), progress => {
       if (generation === this.comparisonGeneration) this.setState({ comparison: { ...this.state.comparison, progress } });
     });
@@ -1405,10 +1476,32 @@ export class SimulationMode {
     try {
       const out = await run.promise;
       if (generation !== this.comparisonGeneration) throw new Error('The project changed while the run was being captured. Run it again.');
+      this.adoptAsAnalysis(out, fingerprint, plan);
       return out;
     } finally {
       if (this.comparisonRun === run) this.comparisonRun = null;
+      if (this.analysisStale && !this.analysisRun) this.maybeAutoStart();
     }
+  }
+  /** Whether the last baseline or proposal run reused an analysis output instead of running (for the panel and tests). */
+  public lastRunReused = false;
+
+  /** A baseline or proposal run that is exactly the road analysis the panel would run now becomes that analysis's result. */
+  private adoptAsAnalysis(output: AnalysisOutput, fingerprint: string, plan: DemandPlan) {
+    const current = this.studyPlan();
+    if (!current || this.state.analysis.fingerprint === fingerprint) return;
+    if (this.runFingerprint(current, DEFAULT_ANALYSIS.measureS, this.analysisSeeds) !== fingerprint) return;
+    void plan;
+    const key = this.analysisKey(), networkKey = this.currentNetworkKey(), t = this.state.timeOfDay;
+    const analysis: RoadAnalysisState = { status: 'ready', progress: 1, output, error: null, hour: t.hour, demandVph: current.provenance.vehiclesPerHour * t.factor, key,
+      hourFactor: t.factor, timeProfile: t.status === 'ready' ? 'loaded' : 'unavailable', fingerprint };
+    this.cancelAnalysis();
+    this.analysisStale = false;
+    this.analysisNetworkKey = networkKey;
+    this.keepResult(key, networkKey, analysis);
+    this.setState({ analysis, comparison: { ...this.state.comparison, showingProposal: this.showsProposal(this.state.comparison.baseline) } });
+    this.clearAnalysisStopNotice();
+    this.redrawOverlay();
   }
 
   /**
@@ -1884,13 +1977,13 @@ export class SimulationMode {
 
   public getVehicleViews(): VehicleView[] {
     const vehicles: VehicleView[] = [];
-    this.sim?.forEachVehicle(v => vehicles.push({ ...v }), this.stepDebt);
+    this.live?.forEachVehicle(v => vehicles.push({ ...v }));
     return vehicles;
   }
 
   public inspectVehicle(id: number): VehicleView | null {
     let result: VehicleView | null = null;
-    this.sim?.forEachVehicle(v => { if (v.id === id) result = { ...v }; }, this.stepDebt);
+    this.live?.forEachVehicle(v => { if (v.id === id) result = { ...v }; });
     return result;
   }
 
@@ -1901,41 +1994,32 @@ export class SimulationMode {
   public pickVehicleAt(lng: number, lat: number, maxDistanceM = 8): VehicleView | null {
     let selected: VehicleView | null = null, best = maxDistanceM;
     const kx = 111320 * Math.cos(lat * Math.PI / 180);
-    this.sim?.forEachVehicle(v => {
+    this.live?.forEachVehicle(v => {
       const distance = Math.hypot((v.lng - lng) * kx, (v.lat - lat) * 111320);
       if (v.opacity > .1 && distance < best) { best = distance; selected = { ...v }; }
-    }, this.stepDebt);
+    });
     return selected;
   }
 
+  /**
+   * The live view's animation frame: draws the run's vehicles (the worker steps on its own; the inline run steps here
+   * within a budget), recolours the roads once a second and passes the figures twice a second.
+   */
   private startLoop() {
     this.stopLoop();
-    this.lastFrameAt = performance.now();
-    this.stepDebt = 0;
     const frame = (now: number) => {
-      const sim = this.sim;
-      if (!sim) return;
-      // Clamp long gaps (a background tab) instead of simulating them all at once
-      const realDt = Math.min(0.25, (now - this.lastFrameAt) / 1000);
-      this.lastFrameAt = now;
-      const simDt = realDt * this.state.traffic.speed;
-      this.stepDebt += simDt;
-      let steps = Math.floor(this.stepDebt / STEP_S);
-      this.stepDebt -= steps * STEP_S;
-      if (steps > MAX_STEPS_PER_FRAME) {
-        steps = MAX_STEPS_PER_FRAME;
-        this.stepDebt = 0;
-      }
-      for (let i = 0; i < steps; i++) sim.step();
-      // Drawn between steps too: vehicles carry on by the time since the last one
-      this.trafficVisualizer.draw(sim, this.stepDebt, simDt);
+      const live = this.live;
+      if (!live) return;
+      live.advance(now);
+      this.trafficVisualizer.draw(live);
       if (now - this.lastRecolourAt > RECOLOUR_EVERY_MS) {
-        this.lastRecolourAt = now;
-        this.visualizer.setSegmentSpeeds(sim.segmentSpeedRatios());
+        const ratios = live.ratios();
+        if (ratios) { this.lastRecolourAt = now; this.visualizer.setSegmentSpeeds(ratios); }
       }
-      if (now - this.lastMetricsAt > METRICS_EVERY_MS) {
+      if (!live.threaded && now - this.lastMetricsAt > METRICS_EVERY_MS) {
         this.lastMetricsAt = now;
-        this.setTraffic({ metrics: sim.getMetrics() });
+        const metrics = live.metrics();
+        if (metrics) this.setTraffic({ metrics, behind: live.behind() });
       }
       this.frameHandle = requestAnimationFrame(frame);
     };

@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowDown, ArrowUp, Minus } from 'lucide-react';
 import type { Delta } from '../engine/simulation/ScenarioComparison';
+import { fmtDeltaValue } from './simulate/format';
 
 /**
  * Pieces of the road analysis panel that show the existing city against a
@@ -8,11 +9,6 @@ import type { Delta } from '../engine/simulation/ScenarioComparison';
  * Every value is the comparison's own (Delta.before / after / change / good);
  * nothing here recomputes or rounds differently from the old table.
  */
-
-const fmt = (n: number) => Math.round(n).toLocaleString();
-
-const fmtDeltaValue = (d: Delta, v: number | null) =>
-  v === null ? '—' : `${d.unit === 's' || d.unit === 'km/h' ? Math.round(v) : fmt(v)}${d.unit === 's' ? ' s' : d.unit === 'km/h' ? ' km/h' : d.unit === '%' ? '%' : d.unit === 'veh·h' ? ' veh·h' : ''}`;
 
 /**
  * Change as a percentage, or null when it is too small to show. Under 10% it keeps one decimal: the noise
@@ -99,9 +95,9 @@ export const DeltaKpi: React.FC<{ d: Delta; label?: string }> = ({ d, label }) =
   </div>
 );
 
-/** Marks figures that come from the network as edited in Build, not the existing city. */
+/** Marks figures that come from the network as edited in Design, not the existing city. */
 export const ProposalBadge: React.FC = () => (
-  <span data-testid="proposal-badge" title="These figures are for the network as edited in Build, not the existing city saved as the baseline."
+  <span data-testid="proposal-badge" title="These figures are for the network as edited in Design, not the existing city saved as the baseline."
     className="inline-flex items-center gap-1 rounded-full border border-indigo-400/40 bg-indigo-500/20 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-indigo-200">
     Proposal
   </span>

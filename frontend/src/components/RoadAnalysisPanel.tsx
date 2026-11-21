@@ -25,6 +25,8 @@ import { sourceOf } from './ui/dataSource';
 import { DeltaKpi, DeltaRows, ProposalBadge } from './ScenarioDeltaTable';
 import { useCameraHeading } from '../hooks/useCameraHeading';
 import { CapacityStretchCard, LaneInsightCard } from './LaneBottleneckCard';
+import { ComparisonHourNote, EvidenceTag, ResultHeading } from './simulate/SimulatePieces';
+import { useShellStore } from '../shell/useShellStore';
 import { JunctionCompareCard } from './JunctionCompareCard';
 import {
   StatusChip, StatusHeader, WorstKpis, DirectionsGrid, WhyCard, LoadCard, AccountingCard, SourcesCard, BottlenecksCard, SuggestionCard, PerRunDetail, MethodNote, type AnalysisActions,
@@ -72,6 +74,7 @@ const DataBadges: React.FC<{ r: RoadAnalysisResult; proposal: boolean }> = ({ r,
   return (
     <>
       {proposal && <ProposalBadge />}
+      <EvidenceTag kind={r.evidence.demand?.source === 'hypothetical' ? 'hypothetical' : 'modelled'} testId="evidence-status" />
       {demand && (
         <span className="inline-flex items-center gap-1 text-[11px] text-slate-500" title={demand.source === 'calibrated' ? 'Demand fitted to traffic counts' : 'Demand estimated, not counted'}>
           demand <SourceBadge source={sourceOf(demand.source)} />
@@ -151,7 +154,7 @@ const Measured: React.FC<{ sim: SimulationModeState; r: RoadAnalysisResult }> = 
     <section className="space-y-2">
       <div className="flex items-baseline justify-between gap-2">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Counted traffic on this road</h3>
-        <Chip tone={far ? 'warn' : 'good'} title="Model's routed volume as a share of the count">{Math.round(100 * ratio)}% of count</Chip>
+        <span className="flex items-center gap-1.5"><Chip tone={far ? 'warn' : 'good'} title="Model's routed volume as a share of the count">{Math.round(100 * ratio)}% of count</Chip><EvidenceTag kind="measured" testId="evidence-measured-count" /></span>
       </div>
       <Card testId="measured" tone="good">
         <ul className="space-y-1.5">
@@ -247,7 +250,7 @@ export const TimesOfDay: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   const seeds = tl.rows.find(r => r.seeds)?.seeds ?? mode.analysisSeeds;
   return (
     <section className="space-y-2">
-      <div className="flex items-center gap-2 flex-wrap"><h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Through the day</h3><TrustBadge trust="fails_validation" testId="trust-timeline" /></div>
+      <div className="flex items-center gap-2 flex-wrap"><h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Through the day</h3><TrustBadge trust="fails_validation" testId="trust-timeline" /><EvidenceTag kind="modelled" testId="evidence-timeline" /></div>
       <Card testId="timeline">
         {tl.status !== 'running' && tl.rows.every(r => !r.result) && <p className="text-xs text-slate-400">Analyse the road at the morning peak, midday, the evening peak and night, on the same network, to see when it is a problem.</p>}
         <div className="flex gap-2 items-center">
@@ -306,24 +309,30 @@ const VERDICT: Record<Verdict, { label: string; tone: Tone; icon: typeof Trendin
 /** Existing city against a proposal on the same frozen demand, hour and seeds. */
 export const ScenarioTest: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   const mode = engineInstance.simMode;
-  const { baseline, result, staleReason, running, progress, demandChanged } = sim.comparison;
+  const setWorkspace = useShellStore(s => s.setWorkspace);
+  const { baseline, result, staleReason, running, progress, demandChanged, showingProposal } = sim.comparison;
   const busy = running || sim.osmRoads.status === 'loading' || sim.signals.status === 'loading';
   const steps = [
     { n: 1, label: 'Save existing city', done: !!baseline, title: baseline ? `Saved at ${hourLabel(baseline.hour)}, ${fmt(baseline.demandVph)} veh/h of demand` : 'Save the existing city as the baseline' },
-    { n: 2, label: 'Edit in Build', done: false, title: 'Change roads, junctions or signals in Build' },
+    { n: 2, label: 'Change it in Design', done: showingProposal || !!result, title: 'Draw or edit roads, lanes, junctions or signals in the Design workspace, then come back here', action: () => setWorkspace('design') },
     { n: 3, label: 'Compare', done: !!result, title: `The same trips, hour and ${mode.analysisSeeds.length} seeds on both` },
   ];
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Before vs after</h3>
+      <ResultHeading title="Before vs after" kind="modelled" />
       <div className="rounded-2xl border border-indigo-400/25 bg-gradient-to-br from-indigo-500/10 to-slate-900/50 p-3 space-y-2.5" data-testid="scenario-test">
         <ol className="grid grid-cols-3 gap-1.5 text-[11px]">
-          {steps.map(s => (
-            <li key={s.n} title={s.title} className={`flex items-center gap-1.5 rounded-lg border px-1.5 py-1 ${s.done ? 'border-emerald-400/30 text-emerald-200' : 'border-white/10 text-slate-300'}`}>
-              {s.done ? <CheckCircle2 size={12} className="shrink-0" /> : <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[11px]">{s.n}</span>}
-              <span className="leading-tight">{s.label}</span>
-            </li>
-          ))}
+          {steps.map(s => {
+            const body = <>{s.done ? <CheckCircle2 size={12} className="shrink-0" /> : <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/10 text-[11px]">{s.n}</span>}<span className="leading-tight">{s.label}</span></>;
+            const cls = `flex items-center gap-1.5 rounded-lg border px-1.5 py-1 ${s.done ? 'border-emerald-400/30 text-emerald-200' : 'border-white/10 text-slate-300'}`;
+            return (
+              <li key={s.n} title={s.title}>
+                {s.action && baseline
+                  ? <button type="button" onClick={s.action} data-testid="open-design" className={`${cls} w-full text-left cursor-pointer hover:border-cyan-300/50 hover:text-white`}>{body}</button>
+                  : <span className={cls}>{body}</span>}
+              </li>
+            );
+          })}
         </ol>
         {baseline && <p className="text-[11px] text-slate-500">Baseline: {hourLabel(baseline.hour)}, {fmt(baseline.demandVph)} veh/h of demand · {mode.analysisSeeds.length} seeds on both</p>}
         <div className="flex gap-2 flex-wrap">
@@ -337,6 +346,7 @@ export const ScenarioTest: React.FC<{ sim: SimulationModeState }> = ({ sim }) =>
             Land use changed since the baseline. Compare keeps the baseline's demand (road changes alone); include the new land use for a development scenario.
           </Notice>
         )}
+        {result && sim.comparison.current && <ComparisonHourNote comparisonHour={sim.comparison.current.hour} currentHour={sim.timeOfDay.hour} />}
         {result && <ComparisonView c={result} overlay={sim.overlay} />}
       </div>
     </section>
@@ -373,7 +383,7 @@ const ComparisonView: React.FC<{ c: ComparisonResult; overlay: string }> = ({ c,
         <div className="flex items-center gap-2 flex-wrap">
           <Chip tone={v.tone} icon={v.icon} size="md" testId="verdict">{v.label}</Chip>
           <Chip tone={c.confidence.level === 'low' ? 'warn' : c.confidence.level === 'high' ? 'good' : 'neutral'} testId="confidence" title={c.confidence.text}>Confidence: {c.confidence.level}</Chip>
-          {sim.length > 0 && <Chip tone={agreeing === sim.length ? 'neutral' : 'warn'} title={`Simulated changes of 5% or more: ${agreeing} of ${sim.length} show the same direction in every run`}>runs agree on {agreeing}/{sim.length} changes</Chip>}
+          {sim.length > 0 && <Chip tone={agreeing === sim.length ? 'neutral' : 'warn'} title={`Simulated changes of 5% or more: ${agreeing} of ${sim.length} show the same direction in every run`}>{agreeing} of {sim.length} changes over 5% seen in every run</Chip>}
         </div>
         <div className="grid grid-cols-3 gap-1.5" data-testid="verdict-levels">
           {([['Road', c.verdict.section], ['Neighbourhood', c.verdict.network], ['Area', c.verdict.area]] as const).map(([k, vv]) => (

@@ -42,6 +42,21 @@ const SAVES_AT_ONCE = 3;
  *
  * getAll()/getById() show the active scenario's materialised view: baseline ⊕ the active proposal's changes.
  */
+/** The changed-types marker of a notification that changed no object (ObjectManager.notifyViewOnly). */
+export const VIEW_ONLY_CHANGE = '__view_only__';
+
+/**
+ * What an object-store notification means for the engine: 'view' (nothing changed: redraw only), 'network' (roads,
+ * junctions or flyovers, or an unspecified change: rebuild the traffic graph and re-map Simulate's area) or 'other'
+ * (buildings, zones, demand objects...). A workspace switch notified with no types and so read as 'network': it
+ * rebuilt the city graph and cleared Simulate's comparison every time (docs/urbanos/SIMULATE_AUDIT.md).
+ */
+export function classifyObjectChange(changedTypes: ReadonlySet<string>): 'view' | 'network' | 'other' {
+  if (changedTypes.size === 1 && changedTypes.has(VIEW_ONLY_CHANGE)) return 'view';
+  if (changedTypes.size === 0 || ['road', 'junction', 'flyover', 'metro_flyover'].some(t => changedTypes.has(t))) return 'network';
+  return 'other';
+}
+
 export class ObjectManager {
   private objects: Map<string, CityObject> = new Map();
   private overlays: Map<string, Map<string, CityObject | null>> = new Map();
@@ -197,6 +212,14 @@ export class ObjectManager {
     return () => {
       this.onChangeListener = this.onChangeListener.filter(cb => cb !== callback);
     };
+  }
+
+  /**
+   * Listeners re-read what they show, but no object changed (e.g. the app switched workspace). The engine then
+   * redraws without rebuilding the traffic graph or telling Simulate the network changed (docs/urbanos/SIMULATE_AUDIT.md).
+   */
+  public notifyViewOnly() {
+    this.notify(new Set([VIEW_ONLY_CHANGE]));
   }
 
   public notify(changedTypes?: Set<string>) {

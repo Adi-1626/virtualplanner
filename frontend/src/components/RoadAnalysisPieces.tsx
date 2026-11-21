@@ -90,7 +90,7 @@ export const WorstKpis: React.FC<{ r: RoadAnalysisResult }> = ({ r }) => {
         </KpiCard>
         <KpiCard label="Delay" value={d.delay ? Math.round(d.delay.total) : '—'} unit="s/veh" sub={d.travelTimeS !== null ? `${Math.round(d.travelTimeS)} s vs ${Math.round(d.freeTimeS)} s` : 'no time measured'} testId="kpi-delay"
           title="Delay per vehicle: time to drive the section minus its free-flow time (mean of the runs)" />
-        <KpiCard label="Load v/c" value={`${Math.round(d.vc * 100)}%`} sub={`of ${fmt(d.capacityPcu)}`} tone={vcTone} testId="kpi-vc"
+        <KpiCard label="Load v/c" value={`${Math.round(d.vc * 100)}%`} sub={`of ${fmt(d.capacityPcu)} PCU/h`} tone={vcTone} testId="kpi-vc"
           title={`Traffic routed along it (assignment, ${fmt(d.demandPcu)} PCU/h) over its capacity (${fmt(d.capacityPcu)} PCU/h, ${d.capacityBasis === 'signal' ? 'stop line of the signal at its end, Indo-HCM' : `mid-block, ${d.lanes} lane${d.lanes === 1 ? '' : 's'}${d.lanesRange && d.lanesRange[0] !== d.lanesRange[1] ? ` on its narrowest ${fmt(d.narrowestM)} of ${fmt(d.lengthM)} m` : ''}, IRC:106-1990`})`}>
           <div className="mt-1"><Meter value={Math.min(1, d.vc)} color={vcColour(d.vc)} height="xs" /></div>
         </KpiCard>
@@ -152,7 +152,7 @@ export const DirectionCard: React.FC<{ d: DirectionFlow; index: number; heading:
       <Metric label="Speed" value={d.meanSpeedKmh === null ? '—' : `${Math.round(d.meanSpeedKmh)}`} sub={`/ ${Math.round(d.freeSpeedKmh)} km/h`} title="Mean speed (runs' mean) against free-flow speed">
         <Meter value={d.meanSpeedKmh ?? 0} max={Math.max(1, d.freeSpeedKmh)} color={TONE_FILL[tone]} />
       </Metric>
-      <Metric label="Load" value={`${Math.round(d.vc * 100)}%`} sub={`of ${fmt(d.capacityPcu)}`} title={`${Math.round(d.vc * 100)}% of capacity (${fmt(d.capacityPcu)} PCU/h ${d.capacityBasis === 'signal' ? 'at the signal at its end' : `mid-block, ${d.lanes} lane${d.lanes === 1 ? '' : 's'}`})`}>
+      <Metric label="Load" value={`${Math.round(d.vc * 100)}%`} sub={`of ${fmt(d.capacityPcu)} PCU/h`} title={`${Math.round(d.vc * 100)}% of capacity (${fmt(d.capacityPcu)} PCU/h ${d.capacityBasis === 'signal' ? 'at the signal at its end' : `mid-block, ${d.lanes} lane${d.lanes === 1 ? '' : 's'}`})`}>
         <Meter value={Math.min(1, d.vc)} color={vcColour(d.vc)} />
       </Metric>
       <div className="grid grid-cols-2 gap-1 text-[11px]">
@@ -360,7 +360,7 @@ export const BottlenecksCard: React.FC<{ r: RoadAnalysisResult; overlay: MapOver
   <section className="space-y-2">
     <div className="flex items-baseline justify-between gap-2">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Worst places in the area</h3>
-      <Chip tone={r.assignment.overCapacityLinks > 0 ? 'bad' : 'good'} title="Road stretches in the study area whose routed traffic exceeds capacity (area assignment)">{fmt(r.assignment.overCapacityLinks)} over capacity</Chip>
+      <Chip tone={r.assignment.overCapacityLinks > 0 ? 'bad' : 'good'} title="Road stretches in the study area whose routed traffic exceeds capacity (area assignment)">{fmt(r.assignment.overCapacityLinks)} stretches over capacity</Chip>
     </div>
     <Card testId="bottlenecks">
       {r.areaBottlenecks.length === 0 ? <p className="text-xs text-slate-400">No road in the area is over 90% of its capacity at this hour.</p> : (
@@ -420,7 +420,7 @@ export const SuggestionCard: React.FC<{ s: Suggestion; full?: boolean; onTest?: 
       ) : !s.figure && <p className="text-[11px] text-slate-400 leading-snug line-clamp-2" title={s.evidence}>{s.evidence}</p>}
       {((onTest && (TESTABLE.has(s.kind) || s.kind === 'times')) || s.action) && (
         <div className="flex gap-1.5 flex-wrap">
-          {onTest && TESTABLE.has(s.kind) && <Button size="sm" variant="primary" onClick={onTest} title="Go to Improve & compare: save the existing city, make the change in Build, then compare">Test it<ChevronRight size={13} /></Button>}
+          {onTest && TESTABLE.has(s.kind) && <Button size="sm" variant="primary" onClick={onTest} title="Go to Improve & compare: save the existing city, make the change in Design, then compare">Test it<ChevronRight size={13} /></Button>}
           {onTest && s.kind === 'times' && <Button size="sm" variant="secondary" onClick={onTest} title="Go to Improve & compare, where the road can be analysed at other times of day">Other times of day<ChevronRight size={13} /></Button>}
           {s.action && <Button size="sm" variant={onTest ? 'secondary' : 'secondary'} icon={Hammer} onClick={() => actions.editInBuild(s.action!.roadIds, s.action!.at, s.action!.junction)}>{s.action.label}</Button>}
         </div>
