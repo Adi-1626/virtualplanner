@@ -276,3 +276,57 @@ Run against the live sites on a **copy** of the database, with the seed list loa
   - national metro statistics and a sidebar headline attributed to Line 3;
   - "Purple Line's 5.46 km extension" given to Line 1;
   - "Phase 1's 3.3 km section" given to Line 1B.
+
+---
+
+## 10. Integration QA (next-phase), 2026-11-21
+
+Branch `next-phase` = main `9e56ccc` + `env-refine` + `data-updater` (both merged cleanly). Tested on a **copy** of the
+database, with a separate data folder for the fact versions; the original `twincity.db` was never opened by the app.
+
+**Gates on the merged tree:** `tsc -p tsconfig.app.json` 0 errors · oxlint 0 errors (8 warnings) · vite build OK ·
+full vitest (`--maxWorkers=1`) **105 files passed, 6 skipped; 870 tests passed, 7 skipped** (868 before the fixes) · full backend pytest **355 passed, 3 skipped** (354 before the fixes). No merge-induced failure.
+
+**Set-up used:** `python -m updater seed-baseline` (v2, 48 mapped facts) and one run on the recorded test pages
+(`backend/tests/fixtures/updater`, no network): 11 proposals for Swargate–Katraj, among them **~28 m, Corroborated,
+2 independent / 0 official** (Hindustan Times 2026-08-21, Pune Times Mirror 2026-11-04), and conflicts on stations
+(3 vs 5) and completion (Feb 2029 / Dec 2029 / Dec 2030).
+
+**Browser (headless Chromium, real clicks):**
+
+| Check | Result |
+|---|---|
+| Fact updates layout: intro, last run, apply bar, project group, cards | Pass |
+| Card: quote, source link, tier (Press / Official), corroboration count, conflict warning, flags | Pass |
+| Reject with a note | Pass (stored with reviewer and note; leaves the queue) |
+| Approve → Apply → v3 → Roll back to v2 | Pass |
+| Approve the rolled-back proposal again → Apply → v4 | **Failed, fixed** (see below) → Pass |
+| Empty state | Pass ("Nothing to review") |
+| Backend down | **Misleading, fixed** → now only "Could not load the review queue … Last run unknown" |
+| Underground: hover the Purple Line tunnel | Pass: "Depth not mapped in OSM · reported up to 30 m below ground (Hindustan Times 2019-12-24 · single source · not surveyed)" |
+| Environment smoke: get-started, essentials, trees for a new 458 m road | Pass (47 trees, 168 with margin, 0.6 s) |
+| Underground smoke: cutaway window, look from below, check conflicts | Pass (1.9 s; 7 Requires investigation, 4 Insufficient data) |
+| Design smoke: draw a road | Pass |
+| Console errors / 5xx | 0 / 0 (apart from the intended connection-refused errors in the backend-down test) |
+
+**Fixed (commits `456fa61`, `a0fcd73`):**
+- A rolled-back proposal disappeared from the queue (the app asked only for pending and approved), although §4 says it
+  "shows Rolled back and can be approved again". It is now listed, with Approve and Reject.
+- Approving a rolled-back proposal again did nothing useful: it kept its old version id, so Apply said "nothing to
+  apply". Approving now puts it back in the apply queue (the old version stays in the registry and the audit log).
+- With the backend down the pane said "The service has not run yet", "no version yet" and "Nothing to review". It now
+  says only that the queue could not be loaded.
+- Version notes showed registry ids ("superseded by dsv_6ad9…"); they now name the version ("superseded by v3").
+- `GET /api/updater/proposals?status=all` filtered on the literal word "all" and returned nothing; it now means no
+  filter, as in the CLI.
+- Apply no longer looks up a proposal with an empty id for seed facts (SQLAlchemy warning).
+
+**Open:**
+- When a version is superseded, the registry overwrites its "reviewed by" with the person who superseded it, so the
+  version list no longer shows who approved the old version (shared `datasets/registry.py`; the audit log still has it).
+- `add-evidence` for the Punekar News TBM article finds the ~28 m depth only with `--project
+  pune_metro_line_1b_swargate_katraj` (the sentence names "the machines", not the project). Without it the depth stays
+  single-source. §9 should say the flag was used.
+- The pane shows the browser's raw "Failed to fetch" text in the backend-down message.
+- In Underground, an area imported with Study area adds OSM metro objects to the scenario, so a check lists the same
+  Purple Line twice ("… Purple Line" and "… Purple Line (OSM)"). This was there before the merge.
