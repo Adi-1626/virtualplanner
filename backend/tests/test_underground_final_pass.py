@@ -41,3 +41,9 @@ def test_imported_metro_and_the_osm_index_copy_are_one_asset(client, monkeypatch
     others = [f["other"]["id"] for f in r.json()["findings"] if f.get("other")]
     assert "osm_way_11" in others and "osm_m_way_11" not in others
     assert not any("Elevated" in (f.get("other") or {}).get("kind_label", "") for f in r.json()["findings"])
+
+
+def test_depth_range_wording_never_unknown_to_unknown():
+    assert S.depth_range_text(None, None) == "depth unknown"
+    assert S.depth_range_text(16.0, 22.3) == "16.0 m to 22.3 m"
+    assert "bottom unknown" in S.depth_range_text(1.0, None)

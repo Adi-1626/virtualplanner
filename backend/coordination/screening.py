@@ -430,6 +430,15 @@ def design_asset(obj: dict, status: str) -> Optional[Asset]:
     return None
 
 
+def depth_range_text(top: Optional[float], bottom: Optional[float]) -> str:
+    """'16.0 m to 22.3 m', 'top 1.0 m, bottom unknown', or 'depth unknown' (never 'unknown to unknown')."""
+    if top is None and bottom is None:
+        return "depth unknown"
+    if top is None or bottom is None:
+        return f"top {_fmt(top)}, bottom {_fmt(bottom)}"
+    return f"{_fmt(top)} to {_fmt(bottom)}"
+
+
 def _osm_ref(obj: dict) -> Optional[str]:
     """'osm_way_123' for a Design object imported from OpenStreetMap (same id as osm_metro_assets), else None."""
     p = obj.get("properties") or {}
@@ -698,10 +707,10 @@ def evaluate_pair(p: Asset, o: Asset, cfg: dict) -> Optional[dict]:
     if width_unknown:
         plan += f"; a footprint width is unknown, so {cfg['unknown_width_allowance_m']:.1f} m half-width was assumed per unknown side"
     found.append(f"{p.label()} {plan}.")
-    o_depth = f"{_fmt(o_crown)} to {_fmt(o_inv)}"
+    o_depth = depth_range_text(o_crown, o_inv)
     if o.meta.get("depth_note") and (o_crown is not None or o_inv is not None):
         o_depth += f" ({o.meta['depth_note']})"
-    found.append(f"Depth where they meet: proposed {_fmt(p_crown)} to {_fmt(p_inv)}; {o.label()} {o_depth}.")
+    found.append(f"Depth where they meet: proposed {depth_range_text(p_crown, p_inv)}; {o.label()} {o_depth}.")
     for a, c0, c1 in ((p, pc0, pc1), (o, oc0, oc1)):
         if defaults_used(a, c0, c1):
             found.append(f"The depth of {a.label()} there is the typical-cover default for its type, not an entered or measured "
