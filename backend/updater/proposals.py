@@ -294,10 +294,22 @@ def proposal_dict(db: Session, p: FuProposalEntity, cfg: dict | None = None, wit
            "applied_version_id": p.applied_version_id,
            "created_at": p.created_at.isoformat() + "Z" if p.created_at else None}
     if with_evidence:
-        ev = _evidence(db, p.id)
+        ev = distinct_evidence(_evidence(db, p.id))
         ev.sort(key=lambda r: -(_date(r[1].published_at) or dt.date.min).toordinal())
         out["evidence"] = [evidence_dict(c, d) for c, d in ev]
     return out
+
+
+def distinct_evidence(evidence: list[tuple[FuClaimEntity, FuDocumentEntity]]) -> list[tuple[FuClaimEntity, FuDocumentEntity]]:
+    """One row per (page, quote), the latest retrieval kept. A page whose bytes change on every fetch (ASP.NET view state)
+    is a new document each run, so the same sentence piled up once per run in the review card (Final QA 2026-11-21)."""
+    best: dict[tuple[str, str], tuple[FuClaimEntity, FuDocumentEntity]] = {}
+    for c, d in evidence:
+        k = (d.final_url or d.url, " ".join((c.quote or "").split()))
+        cur = best.get(k)
+        if cur is None or (d.retrieved_at or dt.datetime.min) > (cur[1].retrieved_at or dt.datetime.min):
+            best[k] = (c, d)
+    return list(best.values())
 
 
 def evidence_dict(c: FuClaimEntity, d: FuDocumentEntity) -> dict:

@@ -20,6 +20,7 @@ import { engineInstance } from '../../engine/TwinCityEngine';
 import { Cancelled, envDataApi, timeoutOr, type AqStation, type EnvDataLayer } from '../../lib/envDataApi';
 import { clipBbox, renderWidth, streamEntityId } from './envDataModel';
 import { redactPaths } from '../../lib/redactPaths';
+import { trackedFetch } from '../../lib/api';
 import { clearTips, registerPickable, setTip, setTipResolver, type EnvTip } from './envTips';
 import { useShellStore } from '../../shell/useShellStore';
 import { dropTreeLayer, drawTreeTiles, setTreeLayerShown, treeLayerCounts } from './treeLayer';
@@ -141,7 +142,7 @@ async function drawRaster(v: Viewer, l: EnvDataLayer, st: EnvDataOverlayState, b
   if (!blob) {
     // Probe first so an error is reported instead of an empty map
     let r: Response;
-    try { r = await fetch(url, { signal: timeoutOr(cancel, TIMEOUT_MS) }); } catch (e) { if (cancel.aborted) throw new Superseded(); throw e; }
+    try { r = await trackedFetch(url, { signal: timeoutOr(cancel, TIMEOUT_MS) }); } catch (e) { if (cancel.aborted) throw new Superseded(); throw e; }
     if (!r.ok) {
       let detail = `${r.status}`;
       try { const j = await r.json(); if (typeof j.detail === 'string') detail = `${r.status} ${j.detail}`; } catch { /* keep status */ }
@@ -275,7 +276,7 @@ async function draw(l: EnvDataLayer): Promise<void> {
     if (e instanceof Superseded || e instanceof Cancelled || !alive()) return;
     const msg = e instanceof Error
       ? (e.name === 'TimeoutError' ? `no answer from the data server within ${TIMEOUT_MS / 1000} s`
-        : /failed to fetch|networkerror|load failed/i.test(e.message) ? 'the data server did not answer (check that it is running, then show the layer again)' : redactPaths(e.message))
+        : /failed to fetch|networkerror|load failed|could not be reached/i.test(e.message) ? 'the data server did not answer (check that it is running, then show the layer again)' : redactPaths(e.message))
       : String(e);
     dropMapObjects(l.id, v);   // never leave an older view's drawing under an error message
     store.set(l.id, { status: 'error', error: msg, message: null });

@@ -85,6 +85,17 @@ export type EditingMode = 'select' | 'draw_road' | 'draw_building' | 'draw_junct
  * (imports used to store -6 m). metroLevel.ts recognises it from the tags and draws it plan-only, labelled
  * "depth not mapped"; the screening treats its depth as UNKNOWN.
  */
+/**
+ * Display name of an OSM metro track. An unnamed piece (a crossover, a siding) used to read "Metro Line 1479326197",
+ * the OSM way id; the id stays in osmSourceId (Final QA 2026-11-21).
+ */
+export function osmMetroLineName(tags: Record<string, string | undefined>): string {
+  if (tags.name) return tags.name;
+  if (tags.ref) return `Metro Line ${tags.ref}`;
+  const kind = tags.service === 'crossover' ? 'crossover' : tags.service === 'siding' ? 'siding' : tags.service === 'yard' ? 'depot track' : 'track';
+  return `Metro ${kind} (unnamed in OpenStreetMap)`;
+}
+
 export function osmMetroLevel(tags: Record<string, string | undefined>): number {
   return tags.bridge === 'yes' || Number(tags.layer) > 0 ? 12 : 0;
 }
@@ -1914,7 +1925,7 @@ export class EditingEngine {
           const lineObj = {
             id,
             type: 'metro_line' as const,
-            name: tags.name || `Metro Line ${tags.ref || el.id}`,
+            name: osmMetroLineName(tags),
             layerId: 'metro',
             scenarioId: activeScenarioId,
             coordinates,

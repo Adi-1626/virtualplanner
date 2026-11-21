@@ -3,7 +3,7 @@
  * datasets, server-rendered raster views, capped bbox vector/point APIs, air-quality station series, rainfall summaries.
  * No UI here.
  */
-import { API_BASE } from './api';
+import { API_BASE, trackedFetch } from './api';
 import { redactPaths } from './redactPaths';
 import type { TreeTile } from '../components/environment/treeTiles';
 
@@ -88,7 +88,7 @@ export class Cancelled extends Error { constructor() { super('cancelled'); this.
 async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown, cancel?: AbortSignal): Promise<T> {
   let r: Response;
   try {
-    r = await fetch(`${BASE}${path}`, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined, signal: timeoutOr(cancel) });
+    r = await trackedFetch(`${BASE}${path}`, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined, signal: timeoutOr(cancel) });
   } catch (e) {
     if (cancel?.aborted) throw new Cancelled();
     throw new Error(e instanceof Error && e.name === 'TimeoutError' ? 'no answer from the data server within 60 s' : 'the data server did not answer (check that it is running, then try again)');

@@ -6,7 +6,7 @@ import type { StudyAreaSummary } from '../../engine/editing/studyAreaSummary';
 import type { LocalOsmStatus } from '../../engine/editing/LocalOsmIndex';
 import type { Area } from '../../engine/objects/types';
 import { STUDY_AREA_ROADS_PREFIX } from '../../engine/simulation/osmCoverage';
-import { API_BASE } from '../../lib/api';
+import { API_BASE, trackedFetch } from '../../lib/api';
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
 
 const CATEGORY_LABEL: Record<InfrastructureCategory, string> = {
@@ -133,7 +133,7 @@ export const ImportAreaPanel: React.FC = () => {
     ];
     let alive = true;
     // Ask the backend directly (not the cached LocalOsmIndex promise) so a missing index / offline backend is reported
-    fetch(`${API_BASE}/api/osm/status`)
+    trackedFetch(`${API_BASE}/api/osm/status`)
       .then(r => r.ok ? r.json() : Promise.reject(new Error(String(r.status))))
       .then(st => { if (alive) setStatus(st); })
       .catch(() => { if (alive) setStatus('offline'); });

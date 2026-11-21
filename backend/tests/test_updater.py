@@ -842,3 +842,16 @@ def test_watchlist_validates():
     assert {p["seed_id"] for p in cfg["projects"]} == seed_ids
     with pytest.raises(cfgmod.ConfigError):
         cfgmod.validate({"projects": [{"id": "Bad-Id", "aliases": ["x"]}], "sources": []})
+
+
+def test_review_card_lists_each_page_quote_once():
+    """Final QA 2026-11-21: an .aspx page with changing view state is a new document each run; the same quote must not
+    repeat in the review card once per run. The latest retrieval is the one shown."""
+    from updater.proposals import distinct_evidence
+    old = FuDocumentEntity(id="d1", url="https://www.punemetrorail.org/Line_b.aspx", domain="punemetrorail.org", retrieved_at=dt.datetime(2026, 11, 21, 12))
+    new = FuDocumentEntity(id="d2", url="https://www.punemetrorail.org/Line_b.aspx", domain="punemetrorail.org", retrieved_at=dt.datetime(2026, 11, 21, 18))
+    other = FuDocumentEntity(id="d3", url="https://punemetrorail.org/project-profile", domain="punemetrorail.org", retrieved_at=dt.datetime(2026, 11, 21, 18))
+    q = "Line 1 B Extension Swargate - Katraj 5.46 KM 5"
+    ev = [(FuClaimEntity(id="c1", quote=q), old), (FuClaimEntity(id="c2", quote=q + " "), new), (FuClaimEntity(id="c3", quote=q), other)]
+    out = distinct_evidence(ev)
+    assert sorted(c.id for c, _ in out) == ["c2", "c3"]

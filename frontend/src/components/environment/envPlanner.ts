@@ -252,6 +252,14 @@ export function relativeEmissions(deltas: { label: string; change: number | null
   return (deltas ?? []).filter(d => !/idling/i.test(d.label)).map(d => ({ label: d.label, change: d.change, agreement: d.agreement }));
 }
 export const fmtPct = (c: number | null) => c == null ? 'UNKNOWN' : `${c > 0 ? '+' : c < 0 ? '−' : '±'}${Math.abs(c * 100).toFixed(1)} %`;
+/**
+ * One emissions row as Simulate shows it: under 0.5 % reads "no change" with no run count, and the count says
+ * "runs" (Final QA 2026-11-21: Environment showed "+0.4 % 1/3 seeds" for a row Simulate showed as "no change").
+ */
+export function emissionRowText(r: EmissionDelta): { pct: string; runs: string } {
+  if (r.change != null && Math.abs(r.change) < 0.005) return { pct: 'no change', runs: '' };
+  return { pct: fmtPct(r.change), runs: r.agreement && r.change != null ? `${r.agreement.same}/${r.agreement.of} runs` : '' };
+}
 
 // ── records: CSV and chart readout ─────────────────────────────────────────────
 /** India NAAQS 2009 24-hour limits (µg/m³; CO is 1-hour/8-hour only, so none here), for reading a daily chart. Not a compliance check. */
