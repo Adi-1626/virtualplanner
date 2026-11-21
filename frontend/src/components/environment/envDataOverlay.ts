@@ -257,7 +257,10 @@ async function draw(l: EnvDataLayer): Promise<void> {
     store.set(l.id, { status: 'shown', bbox: box?.bbox ?? null, bboxFrom: box?.from ?? null, message });
   } catch (e) {
     if (e instanceof Superseded || !alive()) return;
-    const msg = e instanceof Error ? (e.name === 'TimeoutError' ? `no answer from the server within ${TIMEOUT_MS / 1000} s` : e.message) : String(e);
+    const msg = e instanceof Error
+      ? (e.name === 'TimeoutError' ? `no answer from the data server within ${TIMEOUT_MS / 1000} s`
+        : /failed to fetch|networkerror|load failed/i.test(e.message) ? 'the data server did not answer (check that it is running, then show the layer again)' : redactPaths(e.message))
+      : String(e);
     dropMapObjects(l.id, v);   // never leave an older view's drawing under an error message
     store.set(l.id, { status: 'error', error: msg, message: null });
   }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  airCsv, boxHolds, requestBox, ESSENTIALS, evidenceOf, fmtArea, fmtPct, greenOf, impactCsv, lineLengthM, metaOfCoord, metaOfEnv, NAAQS_24H, plainReason,
+  airCsv, boxHolds, pointDate, requestBox, ESSENTIALS, evidenceOf, fmtArea, fmtPct, greenOf, impactCsv, lineLengthM, metaOfCoord, metaOfEnv, NAAQS_24H, plainReason,
   PLANNER_GROUPS, readoutIndex, relativeEmissions, ringsOf, shortDataDate, shortLicence, shortSource, toCsv, unavailableOf,
 } from '../../components/environment/envPlanner';
 import { pickedId, setTip, tipFor, clearTips } from '../../components/environment/envTips';
@@ -122,6 +122,12 @@ describe('records', () => {
     const c = airCsv({ station_id: 'site_292', label: 'PM2.5', unit: 'µg/m³', agg: 'day', points: [{ t: '2024-01-01T00:00:00+05:30', v: 41.3, n: 96 }] }, 'Karve Road, Pune');
     expect(c).toContain('"Karve Road, Pune"'); expect(c).toContain('2024-01-01T00:00:00+05:30,41.3,96');
     expect(NAAQS_24H.pm25_ugm3).toBe(60); expect(NAAQS_24H.co_mgm3).toBeUndefined();
+  });
+  it('bucket labels from the series timestamps', () => {
+    expect(pointDate('Mon 2024-01-01 12:00 AM IST (UTC+05:30)', 'day')).toBe('2024-01-01');
+    expect(pointDate('Mon 2024-01-01 12:00 AM IST (UTC+05:30)', 'month')).toBe('2024-01');
+    expect(pointDate('2024-11-05T00:00:00+05:30', 'day')).toBe('2024-11-05');
+    expect(pointDate('n/a', 'day')).toBe('n/a');
   });
   it('chart readout index', () => {
     expect(readoutIndex(0, 0.5)).toBe(-1); expect(readoutIndex(11, 0.5)).toBe(5); expect(readoutIndex(11, -1)).toBe(0); expect(readoutIndex(11, 2)).toBe(10);

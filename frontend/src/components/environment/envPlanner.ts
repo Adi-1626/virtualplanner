@@ -277,6 +277,13 @@ export function rainCsv(cell: { cell_lon: number; cell_lat: number; annual: { ye
   ]);
 }
 
+/** Bucket label for a series point: "Mon 2024-01-01 12:00 AM IST (UTC+05:30)" or ISO → "2024-01-01" (day) / "2024-01" (month). */
+export function pointDate(t: string, agg: string): string {
+  const m = /(\d{4}-\d{2})(-\d{2})?/.exec(t);
+  if (!m) return t;
+  return agg === 'month' ? m[1] : `${m[1]}${m[2] ?? ''}`;
+}
+
 /** Index of the series point under a pointer at fraction `x` (0..1) of the chart width. */
 export function readoutIndex(n: number, x: number): number {
   if (n <= 0) return -1;

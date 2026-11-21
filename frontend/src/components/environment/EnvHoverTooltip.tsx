@@ -20,7 +20,7 @@ function tipAt(v: { scene: { pick: (p: Cartesian2) => unknown; drillPick: (p: Ca
 }
 
 export const EnvHoverTooltip: React.FC = () => {
-  const [tip, setTip] = useState<{ t: EnvTip; x: number; y: number } | null>(null);
+  const [tip, setTip] = useState<{ t: EnvTip; x: number; y: number; right: number; bottom: number } | null>(null);
   const last = useRef({ x: -99, y: -99, at: 0 });
   useEffect(() => {
     const v = engineInstance.getViewer?.();
@@ -48,7 +48,7 @@ export const EnvHoverTooltip: React.FC = () => {
       const st = ((window as unknown as { __envHoverMs?: number[] }).__envHoverMs ??= []);
       st.push(Math.round(performance.now() - t0)); if (st.length > 50) st.shift();
       const r = canvas.getBoundingClientRect();
-      setTip(t ? { t, x: r.left + pos.x, y: r.top + pos.y } : null);
+      setTip(t ? { t, x: r.left + pos.x, y: r.top + pos.y, right: r.right, bottom: r.bottom } : null);
     };
     handler.setInputAction((m: { endPosition: Cartesian2 }) => {
       if (dragging) return;
@@ -73,8 +73,9 @@ export const EnvHoverTooltip: React.FC = () => {
     };
   }, []);
   if (!tip) return null;
-  const left = Math.min(tip.x + 14, window.innerWidth - 300);
-  const top = Math.min(tip.y + 14, window.innerHeight - 120);
+  // keep the tooltip over the map: side panels sit above it, so flip it left / up near the canvas edges
+  const left = tip.x + 14 + 290 > tip.right ? Math.max(0, tip.x - 14 - 290) : tip.x + 14;
+  const top = tip.y + 14 + 110 > tip.bottom ? Math.max(0, tip.y - 14 - 110) : tip.y + 14;
   return (
     <div role="tooltip" data-testid="env-hover-tip" className="pointer-events-none fixed z-50 max-w-[288px] rounded-md border border-border bg-surface-2/95 px-2.5 py-1.5 text-meta text-text-1 shadow-lg"
       style={{ left, top }}>

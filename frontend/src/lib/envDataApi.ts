@@ -74,7 +74,7 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Pr
   try {
     r = await fetch(`${BASE}${path}`, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(60000) });
   } catch (e) {
-    throw new Error(e instanceof Error && e.name === 'TimeoutError' ? 'no answer from the server within 60 s' : 'backend unreachable');
+    throw new Error(e instanceof Error && e.name === 'TimeoutError' ? 'no answer from the data server within 60 s' : 'the data server did not answer (check that it is running, then try again)');
   }
   if (!r.ok) {
     let msg = `${r.status}`;
