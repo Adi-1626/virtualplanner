@@ -10,9 +10,10 @@ Attribution (which project a sentence is about):
                      nearest alias before it, with no other project's alias in between)
   previous_sentence  the sentence refers back ("the line", "the corridor", "the TBMs", …) and the previous 3 sentences
                      (document order) name exactly one project
-  article            the page title names exactly one watched project, the sentence and the previous 3 sentences name
-                     no other watched project, and the sentence does not mention another phase / line (weaker: flagged
-                     for review)
+  article            the page title names exactly one watched project, the page names no other watched project, and
+                     the sentence is not about something wider (the country, other cities, the network) or another
+                     phase / line (weaker: flagged for review). Tightened after the first live run attributed national
+                     metro statistics and sidebar headlines to Line 3 (sidebars are now dropped: <article> text only).
 """
 from __future__ import annotations
 
@@ -53,6 +54,9 @@ OTHER_PHASE = re.compile(r"\b(?:phase[- ]?(?:1|i|one)\b|first phase|phase one|ot
 FUTURE = re.compile(r"\b(?:will|would|shall|expected|set to|scheduled|likely|plans?|planned|proposed|targets?|targeted|"
                     r"to begin|to start|to commence|is to|are to|aims?|anticipated?|slated)\b")
 PAST = re.compile(r"\b(?:began|begun|started|commenced|has started|have started|was launched|kicked off|completed|was completed|opened)\b")
+# sentences about something wider than the project (national statistics, other cities, the whole network)
+ELSEWHERE = re.compile(r"\b(?:country|countries|nation\w*|india|indian cities|cities|state-wide|statewide|across the|network|"
+                       r"other (?:lines?|projects?|corridors?)|mumbai|nagpur|delhi|bengaluru|chennai|hyderabad)\b")
 CITES = re.compile(r"\b(?:as (?:first |earlier )?reported by|reported earlier by|according to (?:a |media )?reports?|"
                    r"reports? (?:said|suggest)|as per (?:a |media )?reports?)\b")
 
@@ -192,7 +196,12 @@ def x_station_count(ns: str, ctx: dict) -> list:
     for m in re.finditer(NUMWORD + r"\s+(?:(?:new|more|important|major|planned|proposed)\s+)?(?:(?P<kind>underground|elevated|metro)\s+)?stations\b", ns):
         before = ns[max(0, m.start() - 25):m.start()]
         after = ns[m.end():m.end() + 25]
-        if re.search(r"\b(?:first|of the|among|other|remaining|another|existing)\s*$", before):
+        if re.search(r"\b(?:first|among|other|remaining|another|existing|these|those|at|the)\s*$", before) and not re.search(r"\btotal\s*$", before):
+            continue
+        total_before = re.search(r"\b(?:will have|will include|includes?|including|comprises?|comprising|total(?: of)?|has|have|with|"
+                                 r"consists? of|consisting of|spanning)\s+(?:a total of\s+|the total\s+)?$", before)
+        total_after = re.match(r"\s*(?:are|will be)\s+(?:planned|proposed|built|constructed)\b|\s+in (?:this|the) (?:project|line|corridor|route)", after)
+        if not (total_before or total_after):
             continue
         if re.match(r"\s*(?:are|were)?\s*(?:open|opened|operational|functional|under construction|awaiting)", after):
             continue
@@ -289,6 +298,9 @@ def x_completion(ns: str, ctx: dict) -> list:
         return []
     if re.search(r"\b(?:shaft|station box|casting|segment|survey|dpr|tender)\b", ns):
         return []
+    if re.search(r"\b(?:\d+|two|three|four|five|six|seven|eight|nine|ten)\s+(?:\w+\s+)?stations?\b|\bremaining\b|\bramps?\b|\barms?\b|"
+                 r"\bfirst phase\b|\bphase[- ]?(?:1|i|one)\b|\bstretch of\b", ns):
+        return []      # a part of the project (some stations, a ramp, a phase) is not the project's completion
     out = []
     rev = re.search(r"\b(?:extended|revised|pushed(?: back)?|postponed|deferred|shifted)\s+to\b", ns)
     start = rev.end() - 2 if rev else 0       # keep the "to" so the pattern below sees a preposition
@@ -391,7 +403,9 @@ def extract_page(paragraphs: list[str], title: str, projects: list[dict], publis
     """All claims on a page. `only_attributes`: project id -> attributes tracked (default: the project's own list)."""
     tracked = only_attributes or {p["id"]: set(p.get("attributes", [])) for p in projects}
     title_projects = projects_in(norm_for_match(title), projects)
-    article_project = next(iter(title_projects)) if len(title_projects) == 1 else None
+    page_projects = projects_in(norm_for_match(title + "\n" + "\n".join(paragraphs)), projects)
+    # article context only when the title names one project and the page names no other watched project at all
+    article_project = next(iter(title_projects)) if (len(title_projects) == 1 and page_projects == title_projects) else None
     ctx = {"published": published}
     out: list[Claim] = []
     seen: set[tuple] = set()
@@ -417,7 +431,7 @@ def extract_page(paragraphs: list[str], title: str, projects: list[dict], publis
                         # "the project / the line / the TBMs": the one project the previous sentences were about (a
                         # sentence's subject = the first project it names)
                         pid, how = next(iter(subjects)), "previous_sentence"
-                    elif article_project and recent <= {article_project} and not OTHER_PHASE.search(ns):
+                    elif article_project and not OTHER_PHASE.search(ns) and not ELSEWHERE.search(ns):
                         pid, how = article_project, "article"
                     else:
                         continue

@@ -19,7 +19,7 @@ from datasets.timeutil import parse_ts
 
 BLOCK_TAGS = {"p", "div", "br", "li", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "td", "th", "section", "article",
               "header", "footer", "blockquote", "figcaption", "table", "ul", "ol", "dd", "dt"}
-SKIP_TAGS = {"script", "style", "noscript", "svg", "nav", "form", "iframe", "button", "select", "template"}
+SKIP_TAGS = {"script", "style", "noscript", "svg", "nav", "form", "iframe", "button", "select", "template", "aside", "footer"}
 
 
 class _Extractor(HTMLParser):
@@ -34,6 +34,8 @@ class _Extractor(HTMLParser):
         self._in_title = False
         self._in_jsonld = False
         self._buf: list[str] = []
+        self.article_parts: list[str] = []
+        self._article = 0
 
     def handle_starttag(self, tag, attrs):
         a = {k.lower(): (v or "") for k, v in attrs}
@@ -49,11 +51,15 @@ class _Extractor(HTMLParser):
             return
         if tag == "title":
             self._in_title = True
+        if tag == "article":
+            self._article += 1
         if tag in SKIP_TAGS:
             self.skip += 1
             return
         if tag in BLOCK_TAGS:
             self.parts.append("\n")
+            if self._article:
+                self.article_parts.append("\n")
 
     def handle_endtag(self, tag):
         if tag == "script" and self._in_jsonld:
@@ -62,11 +68,16 @@ class _Extractor(HTMLParser):
             return
         if tag == "title":
             self._in_title = False
+        if tag == "article":
+            self._article = max(0, self._article - 1)
+            self.article_parts.append("\n")
         if tag in SKIP_TAGS:
             self.skip = max(0, self.skip - 1)
             return
         if tag in BLOCK_TAGS:
             self.parts.append("\n")
+            if self._article:
+                self.article_parts.append("\n")
 
     def handle_data(self, data):
         if self._in_jsonld:
@@ -78,6 +89,8 @@ class _Extractor(HTMLParser):
         if self.skip:
             return
         self.parts.append(data)
+        if self._article:
+            self.article_parts.append(data)
 
 
 class Page:
@@ -106,9 +119,12 @@ def parse_html(body: bytes | str, url: str = "") -> Page:
         p.close()
     except Exception:  # noqa: BLE001 — malformed HTML: keep what was parsed
         pass
-    text = "".join(p.parts)
-    paras = [_clean(x) for x in re.split(r"\n\s*\n|\n", text)]
-    paras = [x for x in paras if len(x) >= 2]
+    def split(t: str) -> list[str]:
+        return [x for x in (_clean(y) for y in re.split(r"\n\s*\n|\n", t)) if len(x) >= 2]
+    paras = split("".join(p.parts))
+    art = split("".join(p.article_parts))
+    if sum(len(x) for x in art) >= 300:     # an <article> element with real text: read only it (no sidebars / related links)
+        paras = art
     title = _clean(html.unescape(p.meta.get("og:title") or p.title or ""))
     pub, how = publish_date(p, url)
     return Page(title, paras, pub, how)
