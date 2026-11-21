@@ -55,3 +55,24 @@ export function enableRenderOnDemand(v: Viewer, subscribe: (fn: () => void) => (
   req();
   return stop;
 }
+
+/** The camera counts as still when its view has not changed for this long (no pick pass while it moves). */
+export const STILL_MS = 150;
+
+/**
+ * Whether the camera is still, judged from its view matrix itself (sampled on each call), not from Cesium's
+ * moveStart / moveEnd: moveEnd is only raised from a later Scene.render, so with render-on-demand or a paused render
+ * loop it can arrive late or never, and a flag waiting for it blocked every hover pick.
+ */
+export function stillness(view: () => ArrayLike<number>, now: () => number = () => performance.now()) {
+  const v0 = view();
+  const last = Float64Array.from({ length: 16 }, (_, i) => v0[i]);
+  let changedAt = -Infinity;
+  return () => {
+    const m = view();
+    let moved = false;
+    for (let i = 0; i < 16; i++) if (Math.abs(m[i] - last[i]) > 1e-9 * Math.max(1, Math.abs(last[i]))) { moved = true; break; }
+    if (moved) { for (let i = 0; i < 16; i++) last[i] = m[i]; changedAt = now(); }
+    return now() - changedAt >= STILL_MS;
+  };
+}

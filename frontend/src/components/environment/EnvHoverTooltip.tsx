@@ -8,10 +8,10 @@ import { Cartesian2, ScreenSpaceEventHandler, ScreenSpaceEventType } from 'cesiu
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { anythingToPick, pickedId, tipFor, type EnvTip } from './envTips';
 import { useEnvFocus } from './envFocus';
+import { stillness, STILL_MS } from './envPerf';
 
 const THROTTLE_MS = 120;
 const DRILL = 4;
-
 function tipAt(v: { scene: { pick: (p: Cartesian2) => unknown; drillPick: (p: Cartesian2, n: number) => unknown[] } }, pos: Cartesian2): EnvTip | null {
   const one = (p: unknown) => { const id = pickedId(p); return id ? tipFor(id, (p as { id?: { name?: string } }).id?.name ?? null) : null; };
   const top = v.scene.pick(pos);
@@ -38,14 +38,13 @@ export const EnvHoverTooltip: React.FC = () => {
     canvas.addEventListener('pointerdown', down);
     window.addEventListener('pointerup', up);
     canvas.addEventListener('pointerleave', leave);
-    // no pick passes while the camera moves (a pick re-renders the scene): only once it has stopped
-    let moving = false;
+    // no pick passes while the camera moves (a pick re-renders the scene): wait until it has been still for STILL_MS
+    const still = stillness(() => v.camera.viewMatrix);
     const offCam = v.camera.changed.addEventListener(() => setTip(null));
-    const offStart = v.camera.moveStart.addEventListener(() => { moving = true; setTip(null); });
-    const offEnd = v.camera.moveEnd.addEventListener(() => { moving = false; });
     const run = () => {
       pending = null;
-      if (!pos || dragging || moving || v.isDestroyed()) return;
+      if (!pos || dragging || v.isDestroyed()) return;
+      if (!still()) { setTip(null); pending = window.setTimeout(run, STILL_MS); return; }
       if (!anythingToPick()) { setTip(null); return; }
       if (engineInstance.editing.getMode() !== 'select') { setTip(null); return; }
       last.current = { x: pos.x, y: pos.y, at: performance.now() };
@@ -73,7 +72,7 @@ export const EnvHoverTooltip: React.FC = () => {
     return () => {
       if (pending !== null) window.clearTimeout(pending);
       handler.destroy();
-      offCam(); offStart(); offEnd();
+      offCam();
       canvas.removeEventListener('pointerdown', down);
       window.removeEventListener('pointerup', up);
       canvas.removeEventListener('pointerleave', leave);

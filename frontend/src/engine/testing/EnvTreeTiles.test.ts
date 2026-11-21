@@ -3,7 +3,7 @@ import {
   CELL_DEG, clusterLabel, clusterPx, levelFor, Lru, MAX_TILES, MAX_TILES_ACROSS, POINT_CAP, POINT_CAP_CLOSE, POINT_CAP_FINE, pointCapFor, requestKey,
   summarize, summaryText, tileDeg, tilesFor, type TreeTile,
 } from '../../components/environment/treeTiles';
-import { sameBox, wantsOnDemand, ENV_WORKSPACES } from '../../components/environment/envPerf';
+import { sameBox, stillness, STILL_MS, wantsOnDemand, ENV_WORKSPACES } from '../../components/environment/envPerf';
 import { anythingToPick, clearTips, registerPickable, setTip, setTipResolver, tipFor } from '../../components/environment/envTips';
 
 const tile = (over: Partial<TreeTile>): TreeTile => ({ level: 2, cell_deg: 0.0025, tile: [0, 0], bbox: [0, 0, 0.01, 0.01], total: 0, total_exact: true, limit: 500, mode: 'points', returned: 0, ...over });
@@ -116,5 +116,21 @@ describe('lazy tooltips', () => {
     clearTips('env_overlay_aq_');
     setTipResolver('env_overlay_tree_', null);
     expect(tipFor('env_overlay_tree_7')).toBeNull();
+  });
+});
+
+describe('hover guard: camera stillness from the view matrix (no moveEnd needed)', () => {
+  it('is still at start, not still right after a change, still again after STILL_MS without changes', () => {
+    const mat = (x: number) => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 0, 0, 1];
+    let m = mat(0);
+    let t = 1000;
+    const still = stillness(() => m, () => t);
+    expect(still()).toBe(true);
+    m = mat(5);
+    expect(still()).toBe(false);                 // first sample after a move
+    t += STILL_MS - 1; expect(still()).toBe(false);
+    t += 1; expect(still()).toBe(true);          // no moveEnd event involved
+    m = mat(6); t += 1000;
+    expect(still()).toBe(false);
   });
 });
