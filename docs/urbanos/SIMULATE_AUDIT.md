@@ -93,7 +93,96 @@ conclusion) · **missing** (expected, absent).
 | Memory across repeated runs | see after-fix section | Each analysis worker adds about 300 MB to the renderer while it runs (sampled with `ps`: 349 → 761 → ~640 MB) and is terminated when done. |
 
 ## Fixes and commits
-(filled in as the work lands)
+
+Branch `simulate-refine`, after `0a7d2ef`. The calibration was not changed.
+
+| Commit | Finding | Root cause | Fix |
+|---|---|---|---|
+| `8c5b8f4` | Environment's Traffic emissions empty after a real comparison; a full city traffic-graph rebuild on every workspace switch | A workspace switch called `objects.notify()` with no changed types, which the engine reads as "everything changed" | `ObjectManager.notifyViewOnly()` and `classifyObjectChange()`: a switch is `'view'` (redraw only); roads, junctions and flyovers are still `'network'` |
+| `264f626` | Save existing city 143 s, Compare 94 s, two analysis jobs at once; "Run the comparison again" before any comparison | Baseline and proposal runs re-ran the deterministic analysis already on show or running; the network-change notice was shown unconditionally | `runFingerprint` (demand content, network, study, section, hour factor, seeds, window, warm-up, simulator options): a run with the fingerprint of the analysis on show, or the one running, reuses it; otherwise the automatic analysis is cancelled first; a run that is the analysis is adopted as it. The notice appears only when a comparison is on show or running |
+| `8c830f4` | "Build" everywhere; bare numbers in comparison rows; "136 % of 2,409" | Old workspace name; `fmtDeltaValue` printed only four units | Design wording; every unit printed (L/h, kg/h, g/h, veh/h, PCU/h, trips, stretches), one decimal under 10 |
+| `4b7ba20` | Emissions totals quotable; no hour on the comparison; tab lost when coming back from Design; no get-started; no measured/modelled labels | — | Emissions as relative change, distance driven and CO₂ per vehicle-km first, totals under "Model totals (not for quoting)" (Simulate and Environment); comparison hour note and a mismatch warning; remembered tab (reset when another road is chosen); get-started card with the four steps; Measured / Modelled / Hypothetical chips; step 2 is a button to Design; developer references removed from the context panel |
+| `5774208` | Live view stepped on the main thread (8.4 ms per step, 51 ms at 4× throttle; ~1 s frames) | `TrafficMicroSim.step()` in `requestAnimationFrame` | The live simulation runs in a Web Worker (`liveTraffic*.ts`); the main thread only interpolates frames and draws. Stepping is time-boxed: when a tick's budget is spent the run falls behind real time instead of freezing. Inline fallback when module workers are unavailable. Only the corridor's roads are sent to the worker |
+| `1e2eb4f` | — | — | Tests: the real worker code behind a fake worker that structured-clones every message (`attachLiveWorker`), frame interpolation, step budget and clamp, frame packing, error path, inline fallback, the panel run through the worker and Stop terminating it |
+| `2d86582` | Vehicles beyond the 600-model cap not drawn at all | The cap released them with nothing in their place | Vehicles without a model (beyond the cap, beyond 6 km, model not loaded or failed) are points in one `PointPrimitiveCollection`, reused frame to frame; `lastDraw` reports models and points |
+| `20d84c3` | The "behind" state was not shown | — | A note under the live controls when the computer cannot keep the chosen speed; lint clean-up |
+| `bf9e497` | Found in the re-test: "Failed to fetch" shown to the user with the server down; Environment's emission values wrapped mid-figure ("−0.7" / "%") | Raw browser error text; table cell without `nowrap` | `readableLoadError`: "the server could not be reached."; values kept on one line |
 
 ## After the fixes
-(filled in after the re-test)
+
+Same build procedure, place and proposal as the baseline (Karve Road `osm_246580195`, 2 km, 09:00 weekday; a new
+local road drawn with real clicks from (73.83914, 18.51513) to (73.84086, 18.51613), 4 vertices). All timings are
+**HEADLESS** (SwiftShader, shared 2-CPU box).
+
+**Test-data trap found and removed.** The baseline session's proposal road (`Road 5kc3`) had been saved to the DB copy,
+so the first re-test's "existing city" already contained the proposal and the comparison correctly said "No clear
+change". Both copies were deleted in Design, the comparison was re-run on the true existing city, and all test objects
+(roads, the underground alignment) were deleted at the end and confirmed absent from the DB copy.
+
+| Check (real clicks) | Before | After |
+|---|---|---|
+| Get started | two "click a road" hints | four-step card; results labelled Modelled |
+| Pick a road → analysis ready | 65.8 s | 86.7 s (same work; machine load varies) |
+| Save existing city | 143 s | **1.8–2.1 s**, analysis reused (`lastRunReused`) |
+| Step 2 | label "Edit in Build" | button "Change it in Design" opens Design |
+| Back from Design | tab 1 "What's wrong" | tab 2 "Improve & compare" |
+| Message after drawing the proposal | "The network changed. Run the comparison again." | none (no comparison yet) |
+| Re-analysis of the edited network | 66 s | 74.5–88.9 s |
+| Compare | 94 s (second worker if pressed during the re-analysis) | **0.5–0.6 s**, reused |
+| Result | Worse, low; road 59 → 64 s (+9.6%, 3/3) | identical figures field by field to the baseline's freshly computed runs: Worse, low; 59 → 64 s (+9.6%, 3/3); fuel 1,976 → 1,995 L/h; CO₂ 4,647 → 4,689 kg/h |
+| Comparison hour | not named | "Existing city vs proposal at 09:00" |
+| Units | bare numbers | 6,584 veh/h, 2,613 trips, 721 stretches, 0 veh, PCU/h on load |
+| Emissions | absolute totals first | relative: distance driven −0.7% (2/3 runs), CO₂ per veh-km +1.7% (2/3), fuel +1.0% (3/3), CO₂ +0.9% (3/3), NOx −0.5% (2/3), PM no clear change; totals behind "not for quoting" |
+| Environment → Traffic emissions after the real comparison | empty | filled (same six rows, 09:00, relative only); the comparison is still there after returning to Simulate |
+| Live view click → running | 15.9 s | 11.9 s |
+| Where it runs | main thread | worker: `assets/liveTraffic.worker-*.js` listed in `page.workers`, `resources().liveThreaded = true`; gone from `page.workers` after Stop |
+| Vehicles drawn | ≤ 600 (rest invisible) | 1,135–1,496: 597–600 models + 570–895 points |
+
+**Performance, 20×, same build and road, worker vs the inline path (forced with `__VP_NO_WORKER__`), 6 s probe each.
+HEADLESS.** "Main-thread ms per frame" is `advance()` + `draw()`, the live view's own work per frame.
+
+| | Vehicles | Main-thread ms per frame (median / p95) | Event-loop lag ms (median / p95 / max) | Simulated s per real s (target 20) | Behind |
+|---|---|---|---|---|---|
+| Worker, normal CPU | 1,378 | 2.9 / 8.6 | 3.9 / 13.9 / 261 | 17.0 | no |
+| Inline, normal CPU | 1,276 | 21.5 / 41.7 | 24.8 / 72.8 / 113 | 10.9 | yes |
+| Worker, 4× CPU throttle | 1,496 | 19.4 / 53.3 | 27.5 / 157 / 569 | 13.9 | no |
+| Inline, 4× CPU throttle | 1,313 | 56.1 / 93.6 | 91.4 / 278 / 367 | 2.8 | yes |
+
+The worker takes stepping off the main thread (about 7× less live-view work per frame at normal CPU, 3× at 4×) and
+keeps the simulation near the chosen speed. At 4× throttle the remaining main-thread cost is drawing about 1,500
+vehicles (600 glTF models); long tasks up to 349 ms remain there (Cesium), and the max lag was higher than inline in
+this one sample. Drawing cost, not stepping, is now the limit on a slow machine (open).
+
+**Memory, 3 repeated live runs (worker), main-thread JS heap after a forced GC. HEADLESS.** 187 → 187 → 187 → 187 MB
+after each Stop (206–209 MB while running); primitives back to 128 after each Stop (930–932 while running); one live
+worker per run, terminated by Stop. `resources()` all false/0 after each Stop.
+
+**Server down** (backend on :8387 stopped mid-session, another road picked): top bar shows Offline; the analysis
+still completes in the browser; "Some roads around this area could not be loaded, so it may stop short" with Retry;
+mapped signals fail (`signals.status = 'error'`; the panel's signals note for that state says signals are placed where two main roads cross, read from the code, its collapsed section was not opened); Count checks says "Traffic data
+could not be read" (now "the server could not be reached") while the bundled 2008 bridge counts still show. Nothing
+unknown is shown as zero. No console errors other than the refused connections.
+
+**Through the day:** four periods in 277.9 s on the edited network: 09:00 and 19:00 identical by design (both the
+peak-hour demand, ×1.00), midday ×0.70, night ×0.18. Night reads "Severe" at 13 km/h with runs disagreeing, and "got
+through" (1,242 veh/h) above demand (1,158 veh/h): model behaviour, reported, not changed (calibration out of scope).
+
+**Regression smoke after the workspace-switch change (real clicks):** Design: road drawn (18,274 → 18,275) and Undo
+removed it (→ 18,274). Environment: proposal road selected by a map click, "Count trees & green area": 12 census trees
+in the footprint, 39 with the 10 m margin, 500 / 1,700 m² green area. Underground: alignment drawn through the
+editing API (as the Underground QA does), "Check conflicts" by click: findings listed (three metro crossings with
+"Vertical: not checkable", two sewer clearances, cover, nalla). Switching workspaces kept Simulate's comparison; the
+Design edit (a real network change) marked it stale, as intended.
+
+**Gates:** see the report in the commit message history and below.
+
+### Still open
+- At 4× CPU throttle the main thread still spends ~20 ms per frame drawing ~1,500 vehicles; instancing the vehicle
+  models (one draw per variant) is the next step.
+- Simulate's emissions list shows PM as "no clear change" (+0.4%, 1/3 runs, under its 3% threshold) while Environment's
+  card prints +0.4% (1/3 seeds): same data, different display threshold.
+- The live figures strip at the bottom of the map is clipped on the right at 1440 px with both side panels open
+  ("MEAN SPEE… 7 km/").
+- Night (23:00) "Severe" and throughput above demand: traffic-model behaviour under the current (unchanged) calibration.
+- The worker path is verified in headless Chromium only; Safari/Firefox module-worker support falls back to the
+  inline path (tested in unit tests, not in those browsers).
