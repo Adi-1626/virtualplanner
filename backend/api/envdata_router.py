@@ -8,6 +8,7 @@ from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import Response
 
 from envdata import catalogue as cat
+from envdata import footprint as fp
 from envdata import render, series, trees, vectors
 
 router = APIRouter(prefix="/env-data", tags=["environment-data"])
@@ -87,6 +88,15 @@ def tree_points(bbox: str = Query(...), limit: int = Query(2000, ge=1, le=trees.
     if not trees.db_path().exists():
         raise HTTPException(404, "tree index not built: python -m datasets.pipelines.tree_index")
     return trees.query(_bbox(bbox), limit)
+
+
+@router.post("/footprint")
+def line_footprint(coordinates: list = Body(..., embed=True), width_m: float = Body(..., embed=True)):
+    """Footprint polygon (WGS84) of a drawn line: centreline ± width/2, flat ends, mitred corners (metric buffer)."""
+    try:
+        return fp.footprint(coordinates, width_m)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
 
 
 @router.post("/trees/count")

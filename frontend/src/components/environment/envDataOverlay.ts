@@ -17,6 +17,8 @@ import { engineInstance } from '../../engine/TwinCityEngine';
 import { envDataApi, type AqStation, type EnvDataLayer } from '../../lib/envDataApi';
 import { clipBbox, renderWidth, streamEntityId } from './envDataModel';
 import { redactPaths } from '../../lib/redactPaths';
+import { clearTips, setTip } from './envTips';
+import { useShellStore } from '../../shell/useShellStore';
 
 export interface EnvDataOverlayState {
   status: 'off' | 'loading' | 'shown' | 'error';
@@ -82,6 +84,9 @@ function dropMapObjects(id: string, v: Viewer | null) {
   const ds = sources.get(id);
   if (ds && v) v.dataSources.remove(ds, true);
   sources.delete(id);
+  clearTips(`env_overlay_${id}_`);
+  if (id === 'tree_census_2019') { clearTips('env_overlay_tree_'); clearTips('env_overlay_treecl_'); }
+  if (id === 'air_cpcb_caaqms') clearTips('env_overlay_aq_');
 }
 
 /** Thrown when a newer draw (or a hide) superseded this one: nothing may be added to the map after that. */
@@ -92,7 +97,11 @@ async function swapSource(v: Viewer, id: string, ds: CustomDataSource, alive: ()
   const prev = sources.get(id);
   await v.dataSources.add(ds);
   if (!alive()) { v.dataSources.remove(ds, true); throw new Superseded(); }
-  if (prev) v.dataSources.remove(prev, true);
+  if (prev) {
+    for (const e of prev.entities.values) if (!ds.entities.getById(e.id)) clearTips(e.id);
+    v.dataSources.remove(prev, true);
+  }
+  ds.show = shownHere();
   sources.set(id, ds);
 }
 
@@ -117,7 +126,7 @@ async function drawRaster(v: Viewer, l: EnvDataLayer, st: EnvDataOverlayState, b
   (layer as unknown as { __uosEnvOverlay: boolean }).__uosEnvOverlay = true;
   const prev = imagery.get(l.id);
   v.imageryLayers.add(layer);
-  layer.show = true;
+  layer.show = shownHere();
   layer.alpha = RASTER_ALPHA;
   if (prev) v.imageryLayers.remove(prev, true);
   imagery.set(l.id, layer);
@@ -137,7 +146,10 @@ async function drawStreams(v: Viewer, l: EnvDataLayer, box: NonNullable<ReturnTy
     const lines = f.geometry.type === 'MultiLineString' ? (f.geometry.coordinates as number[][][]) : [f.geometry.coordinates as number[][]];
     lines.forEach((c, i) => {
       if (c.length < 2) return;
-      ds.entities.add({ id: streamEntityId(l.id, f, k, i), polyline: { positions: c.map(p => lift(p[0], p[1])), width: 2, material: STREAM_COLOR } });
+      const eid = streamEntityId(l.id, f, k, i);
+      ds.entities.add({ id: eid, polyline: { positions: c.map(p => lift(p[0], p[1])), width: 3, material: STREAM_COLOR } });
+      setTip(eid, { type: 'Flow path · computed', name: 'Where rain would run downhill', detail: 'From a 30 m surface model (includes buildings and trees). Not a mapped drain or nalla.',
+        evidence: 'Modelled — D8 routing on Copernicus GLO-30' });
     });
   });
   await swapSource(v, l.id, ds, alive);
@@ -159,15 +171,22 @@ async function drawTrees(v: Viewer, l: EnvDataLayer, box: NonNullable<ReturnType
         description: `${p.botanical_name ?? 'species UNKNOWN'} (${p.common_name ?? '—'}); girth ${p.girth_cm ?? '?'} cm, height ${p.height_m ?? '?'} m, ` +
           `canopy ${p.canopy_dia_m ?? '?'} m; ${p.condition ?? 'condition UNKNOWN'}; ${p.ownership ?? ''}; ward ${p.ward ?? '?'}. PMC tree census 2019 (as published).`,
       });
+      setTip(`env_overlay_tree_${p.id}`, { type: `Tree · PMC census 2019${p.is_rare === 1 ? ' · rare' : ''}`, name: p.common_name ?? p.botanical_name ?? 'Species UNKNOWN',
+        detail: `${p.botanical_name ?? 'botanical name UNKNOWN'} · girth ${p.girth_cm ?? 'UNKNOWN'} cm · height ${p.height_m ?? 'UNKNOWN'} m · ${p.condition ?? 'condition UNKNOWN'}`,
+        evidence: 'Measured — 2019 survey; may have changed since' });
     }
   } else {
     // size by count relative to the 90th percentile, so one dense cell does not flatten the rest
     const ns = res.clusters.map(c => c.n).sort((a, b) => a - b);
     const maxN = Math.max(1, ns[Math.floor(ns.length * 0.9)] ?? 1);
     for (const c of res.clusters) {
+      const cid = `env_overlay_treecl_${c.lon.toFixed(5)}_${c.lat.toFixed(5)}`;
+      setTip(cid, { type: 'Trees · PMC census 2019', name: `${c.n.toLocaleString()} trees in this ${res.cell_deg}° cell`, detail: 'Zoom in to see single trees with species and girth.',
+        evidence: 'Measured — 2019 survey; counts as published' });
       ds.entities.add({
-        id: `env_overlay_treecl_${c.lon.toFixed(5)}_${c.lat.toFixed(5)}`, position: lift(c.lon, c.lat),
-        point: { pixelSize: 5 + 17 * Math.sqrt(Math.min(1, c.n / maxN)), color: TREE_COLOR.withAlpha(0.7), outlineColor: Color.WHITE, outlineWidth: 1,
+        id: cid, position: lift(c.lon, c.lat),
+        // modest sizes and a dark outline: clusters must not hide the land cover or a proposal's outline
+        point: { pixelSize: 4 + 12 * Math.sqrt(Math.min(1, c.n / maxN)), color: Color.fromCssColorString('#7CFC9A').withAlpha(0.55), outlineColor: Color.BLACK.withAlpha(0.7), outlineWidth: 1,
           disableDepthTestDistance: Number.POSITIVE_INFINITY },
         label: res.clusters.length <= 400 && c.n >= maxN * 0.5 ? { text: `${c.n >= 1000 ? `${(c.n / 1000).toFixed(c.n >= 10000 ? 0 : 1)}k` : c.n} trees`, font: '11px sans-serif',
           fillColor: Color.WHITE, outlineColor: Color.BLACK, outlineWidth: 3, style: LabelStyle.FILL_AND_OUTLINE, verticalOrigin: VerticalOrigin.CENTER,
@@ -195,6 +214,9 @@ async function drawStations(v: Viewer, l: EnvDataLayer, alive: () => boolean) {
   for (const s of st) {
     if (s.lon == null || s.lat == null) continue;
     drawn++;
+    setTip(`env_overlay_aq_${s.station_id}`, { type: 'Air-quality station', name: s.name, stationId: s.has_series ? s.station_id : undefined,
+      detail: s.has_series ? `${s.agency ?? 'agency UNKNOWN'} · ${Object.keys(s.parameters).length} pollutants · click to see its readings` : 'Listed by CPCB; no readings downloaded',
+      evidence: 'Measured — continuous monitor' });
     ds.entities.add({
       id: `env_overlay_aq_${s.station_id}`, name: s.name, position: lift(s.lon, s.lat),
       point: { pixelSize: 11, color: s.has_series ? STATION_COLOR : Color.GRAY, outlineColor: Color.BLACK, outlineWidth: 1.5,
@@ -235,7 +257,10 @@ async function draw(l: EnvDataLayer): Promise<void> {
     store.set(l.id, { status: 'shown', bbox: box?.bbox ?? null, bboxFrom: box?.from ?? null, message });
   } catch (e) {
     if (e instanceof Superseded || !alive()) return;
-    const msg = e instanceof Error ? (e.name === 'TimeoutError' ? `no answer from the server within ${TIMEOUT_MS / 1000} s` : e.message) : String(e);
+    const msg = e instanceof Error
+      ? (e.name === 'TimeoutError' ? `no answer from the data server within ${TIMEOUT_MS / 1000} s`
+        : /failed to fetch|networkerror|load failed/i.test(e.message) ? 'the data server did not answer (check that it is running, then show the layer again)' : redactPaths(e.message))
+      : String(e);
     dropMapObjects(l.id, v);   // never leave an older view's drawing under an error message
     store.set(l.id, { status: 'error', error: msg, message: null });
   }
@@ -270,4 +295,25 @@ export function cameraBox(): number[] | null {
   const v = viewer();
   const r = v?.camera.computeViewRectangle();
   return r ? [r.west, r.south, r.east, r.north].map(CesiumMath.toDegrees) : null;
+}
+
+/**
+ * Environment layers belong to the Environment workspace: hidden (not removed) in Design, Underground, Simulate, Projects
+ * and Reports so a drape or tree clusters never sit under another workspace's drawing; shown again on return.
+ */
+export const ENV_WORKSPACES = new Set(['environment', 'explore']);
+function shownHere(): boolean { return ENV_WORKSPACES.has(useShellStore.getState().workspace); }
+function applyWorkspaceVisibility() {
+  const on = shownHere();
+  for (const il of imagery.values()) il.show = on;
+  for (const ds of sources.values()) ds.show = on;
+  viewer()?.scene.requestRender();
+}
+useShellStore.subscribe((s, prev) => { if (s.workspace !== prev.workspace) applyWorkspaceVisibility(); });
+
+/** For the headless QA: what is drawn now. */
+export function envOverlayCounts(): { imagery: number; sources: number; entities: number; shown: boolean } {
+  let entities = 0;
+  for (const ds of sources.values()) entities += ds.entities.values.length;
+  return { imagery: imagery.size, sources: sources.size, entities, shown: shownHere() };
 }

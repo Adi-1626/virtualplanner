@@ -91,6 +91,12 @@ def test_catalogue_statuses(client, derived):
     assert rows["landcover_worldcover2021"]["status"] == "available"
     assert rows["landcover_worldcover2021"]["processing"]["sha256"] == "f" * 64
     assert rows["s2_ndvi"]["status"] == "missing"            # not in the fixture tree: never claimed
+    # a missing file is named inside the data folder, never by the server's absolute path
+    from datasets.public_text import redact_paths
+    body = client.get("/api/env-data/catalogue").json()
+    assert "Expected file not found in the data folder" in rows["s2_ndvi"]["status_reason"]
+    assert all(redact_paths(r["status_reason"]) == r["status_reason"] for r in rows.values())
+    assert body["data_dir"] in ("configured", "not found (set URBANOS_DATA_DIR)")
     assert rows["flood_lines_pmc"]["status"] == "blocked" and "PMC permission" in rows["flood_lines_pmc"]["status_reason"]
     assert rows["s2_builtup_change"]["status"] == "rejected" and "F1 0.457" in rows["s2_builtup_change"]["status_reason"]
     for r in rows.values():
@@ -156,3 +162,21 @@ def test_out_of_coverage_and_errors(client, derived):
     assert r.status_code == 200                                          # fully transparent tile
     assert client.get("/api/env-data/layers/s2_ndvi/render.png", params={"bbox": "73.8,18.5,73.9,18.6"}).status_code == 404  # not on disk
     assert client.get("/api/env-data/layers/dem_streams/render.png", params={"bbox": "73.8,18.5,73.9,18.6"}).status_code == 422  # vector layer has no raster renderer
+
+
+def test_line_footprint_metric_buffer(client):
+    from envdata.footprint import footprint
+    # 1 km east-west line at Pune, 20 m wide: ~20,000 m², flat ends
+    f = footprint([[73.85, 18.52], [73.8594735, 18.52]], 20)
+    assert 990 < f["properties"]["length_m"] < 1010
+    assert abs(f["properties"]["area_m2"] - 20 * f["properties"]["length_m"]) < 5
+    assert f["geometry"]["type"] == "Polygon"
+    # a drawing that doubles back on itself still gives one valid footprint (no twisted ring)
+    g = footprint([[73.8238, 18.50134], [73.8238, 18.50120], [73.8239, 18.50135], [73.8262, 18.5050]], 10)
+    from shapely.geometry import shape
+    assert shape(g["geometry"]).is_valid
+    # duplicates are dropped; bad input is a 422, not a 500
+    assert client.post("/api/env-data/footprint", json={"coordinates": [[73.85, 18.52], [73.85, 18.52]], "width_m": 10}).status_code == 422
+    assert client.post("/api/env-data/footprint", json={"coordinates": [[73.85, 18.52], [73.86, 18.52]], "width_m": 0}).status_code == 422
+    r = client.post("/api/env-data/footprint", json={"coordinates": [[73.85, 18.52], [73.86, 18.52]], "width_m": 19})
+    assert r.status_code == 200 and r.json()["properties"]["width_m"] == 19

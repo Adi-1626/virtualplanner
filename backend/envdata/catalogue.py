@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import paths
+from datasets.public_text import public_path
 
 PUNE_BBOX = [73.70, 18.40, 74.05, 18.70]
 
@@ -246,7 +247,9 @@ def row(l: Layer) -> dict[str, Any]:
     elif p is not None and p.exists():
         status, reason = "available", ""
     else:
-        status, reason = "missing", f"Expected file not found: {p} (run the pipeline; set URBANOS_DATA_DIR)."
+        # never send the server's folder layout to the UI (datasets/public_text.py): name the file inside the data folder
+        status, reason = "missing", (f"Expected file not found in the data folder: {public_path(p, paths.derived_dir()) or l.file or 'UNKNOWN'} "
+                                     "(run the pipeline; set URBANOS_DATA_DIR).")
     pj = paths.processing(l.dataset, l.version) if l.dataset and l.version else None
     proc = None
     if pj is not None:
@@ -280,4 +283,5 @@ def catalogue() -> dict:
             "note": "Real datasets on disk (derived from raw downloads; see each row's processing). Status is computed on read. "
                     "Blocked and rejected rows are listed with their reason and never drawn. Absence of a feature on a layer "
                     "proves nothing.",
-            "data_dir": str(paths.derived_dir())}
+            # configured or not, never the absolute path (it is in the server log at start-up)
+            "data_dir": "configured" if paths.derived_dir().exists() else "not found (set URBANOS_DATA_DIR)"}

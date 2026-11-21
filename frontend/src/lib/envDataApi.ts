@@ -74,7 +74,7 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Pr
   try {
     r = await fetch(`${BASE}${path}`, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(60000) });
   } catch (e) {
-    throw new Error(e instanceof Error && e.name === 'TimeoutError' ? 'no answer from the server within 60 s' : 'backend unreachable');
+    throw new Error(e instanceof Error && e.name === 'TimeoutError' ? 'no answer from the data server within 60 s' : 'the data server did not answer (check that it is running, then try again)');
   }
   if (!r.ok) {
     let msg = `${r.status}`;
@@ -87,7 +87,7 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Pr
 const bb = (b: number[]) => b.map(v => v.toFixed(6)).join(',');
 
 export const envDataApi = {
-  catalogue: () => call<{ layers: EnvDataLayer[]; note: string; data_dir: string }>('GET', '/catalogue'),
+  catalogue: () => call<{ layers: EnvDataLayer[]; note: string; data_dir: string /* 'configured' or 'not found (…)', never a path */ }>('GET', '/catalogue'),
   renderUrl: (id: string, bbox: number[], width: number, variant?: string | null) =>
     `${BASE}/layers/${id}/render.png?bbox=${bb(bbox)}&width=${Math.round(width)}${variant ? `&variant=${encodeURIComponent(variant)}` : ''}`,
   landcoverAreasBbox: (bbox: number[]) => call<LandcoverAreas>('GET', `/layers/landcover_worldcover2021/areas?bbox=${bb(bbox)}`),
@@ -95,6 +95,9 @@ export const envDataApi = {
   features: (id: string, bbox: number[], limit = 2000) =>
     call<{ total: number; returned: number; not_shown: number; limit: number; geojson: { features: { id: number; properties: Record<string, unknown>; geometry: { type: string; coordinates: number[][] | number[][][] } }[] } }>('GET', `/layers/${id}/features?bbox=${bb(bbox)}&limit=${limit}`),
   trees: (bbox: number[], limit = 2000) => call<TreesResponse>('GET', `/trees?bbox=${bb(bbox)}&limit=${limit}`),
+  /** Footprint of a drawn line, buffered in metres on the server (flat ends, mitred corners). */
+  footprint: (coordinates: number[][], widthM: number) =>
+    call<{ type: 'Feature'; geometry: { type: 'Polygon' | 'MultiPolygon'; coordinates: number[][][] | number[][][][] }; properties: { length_m: number; width_m: number; area_m2: number; method: string } }>('POST', '/footprint', { coordinates, width_m: widthM }),
   treesInPolygon: (geometry: unknown) => call<{ count: number; rare: number; vintage: string; note: string }>('POST', '/trees/count', { geometry }),
   airStations: () => call<{ stations: AqStation[]; parameters: Record<string, AqParamInfo>; note: string }>('GET', '/air/stations'),
   airSeries: (station: string, param: string, agg: 'hour' | 'day' | 'month' = 'day') =>

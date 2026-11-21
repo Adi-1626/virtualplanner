@@ -1,27 +1,32 @@
-import React, { useEffect, useState, useSyncExternalStore } from 'react';
-import { CircleHelp, Eye, EyeOff, Loader2, RefreshCw, ScanSearch, Wind } from 'lucide-react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { CircleHelp, Eye, EyeOff, Layers, Leaf, Loader2, RefreshCw, ScanSearch, Wind } from 'lucide-react';
 import { PanelSection } from '../../components/ui/Panel';
 import { Disclosure } from '../../components/ui/Disclosure';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { DataStatus } from '../../components/ui/badges/DataStatus';
 import { TrustBadge } from '../../components/ui/badges/TrustBadge';
 import { FeasibilityPanel } from '../../components/FeasibilityPanel';
 import { coordinationApi, type EnvironmentLayer } from '../../lib/coordinationApi';
-import { dataStatusOf, MAP_TOGGLES } from '../../components/environment/envCatalogue';
+import { MAP_TOGGLES } from '../../components/environment/envCatalogue';
 import { envDataApi, type EnvDataLayer } from '../../lib/envDataApi';
-import { mergeCatalogue } from '../../components/environment/envDataModel';
 import { EnvDataRow } from '../../components/environment/EnvDataRow';
 import { AirQualityPanel, LandcoverAreasPanel, RainfallPanel } from '../../components/environment/EnvDataPanels';
 import { OVERLAY_STYLE, setOverlayVisible, useEnvOverlayStore } from '../../components/environment/constraintOverlay';
+import { setEnvDataVisible, useEnvDataOverlayStore } from '../../components/environment/envDataOverlay';
+import { EnvImpact } from '../../components/environment/EnvImpact';
+import { EnvHoverTooltip } from '../../components/environment/EnvHoverTooltip';
+import { EvidenceChip, LayerMeta } from '../../components/environment/EnvBits';
+import { useEnvFocus } from '../../components/environment/envFocus';
+import {
+  ESSENTIALS, evidenceOf, fmtPct, metaOfCoord, PLAIN, PLANNER_GROUPS, plainTitle, relativeEmissions, unavailableOf,
+} from '../../components/environment/envPlanner';
+import { loadOverlayMeta, setTerrainOverlay, useTerrainOverlayStore } from '../../components/explore/terrainOverlay';
 import { useSimulationMode } from '../../hooks/useSimulationMode';
 import { useSelectedId } from '../../hooks/useAppMode';
 import { SelectionDetailsButton } from '../SelectionDetailsButton';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { isProposalObject } from '../../engine/feasibility/proposal';
-import { hourLabel } from '../../engine/simulation/timeOfDay';
+import { redactPaths } from '../../lib/redactPaths';
 import { useShellStore } from '../useShellStore';
-
-const fmt = (v: number, d = 0) => v.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d });
 
 /** Engine layer visibility, re-rendering on change (LayerManager registry). */
 function useEngineLayerVisible(id: string): boolean {
@@ -31,186 +36,284 @@ function useEngineLayerVisible(id: string): boolean {
   );
 }
 
+const ShowBtn: React.FC<{ on: boolean; loading?: boolean; label: string; testId: string; status?: string; onClick: () => void }> = ({ on, loading, label, testId, status, onClick }) => (
+  <button type="button" className="uos-btn uos-btn-sm shrink-0" aria-pressed={on} aria-label={`${on ? 'Hide' : 'Show'} ${label} on the map`}
+    data-testid={testId} data-status={status} disabled={loading} onClick={onClick}>
+    {loading ? <Loader2 size={13} aria-hidden className="animate-spin" /> : on ? <Eye size={13} aria-hidden /> : <EyeOff size={13} aria-hidden />}
+    {loading ? 'Loading' : on ? 'Shown' : 'Show'}
+  </button>
+);
+
 const EngineLayerToggle: React.FC<{ layerId: string; label: string }> = ({ layerId, label }) => {
   const visible = useEngineLayerVisible(layerId);
-  return (
-    <button type="button" className="uos-btn uos-btn-sm shrink-0" aria-pressed={visible} aria-label={`${visible ? 'Hide' : 'Show'} ${label} on the map`}
-      data-testid={`env-toggle-${layerId}`} onClick={() => engineInstance.layers.setVisibility(layerId, !visible)}>
-      {visible ? <Eye size={13} aria-hidden /> : <EyeOff size={13} aria-hidden />}{visible ? 'Shown' : 'Show'}
-    </button>
-  );
+  return <ShowBtn on={visible} label={label} testId={`env-toggle-${layerId}`} onClick={() => engineInstance.layers.setVisibility(layerId, !visible)} />;
 };
 
-const OverlayToggle: React.FC<{ k: keyof typeof OVERLAY_STYLE }> = ({ k }) => {
-  const st = useEnvOverlayStore(s => s.overlays[k]);
-  const on = st.status === 'shown' || st.status === 'loading';
-  return (
-    <button type="button" className="uos-btn uos-btn-sm shrink-0" aria-pressed={on} aria-label={`${on ? 'Hide' : 'Show'} ${OVERLAY_STYLE[k].label} on the map`}
-      data-testid={`env-toggle-${k}`} data-status={st.status} disabled={st.status === 'loading'} onClick={() => void setOverlayVisible(k, !on)}>
-      {st.status === 'loading' ? <Loader2 size={13} aria-hidden className="animate-spin" /> : on ? <Eye size={13} aria-hidden /> : <EyeOff size={13} aria-hidden />}
-      {st.status === 'loading' ? 'Loading' : on ? 'Shown' : 'Show'}
-    </button>
-  );
-};
-
-const OverlayNote: React.FC<{ k: keyof typeof OVERLAY_STYLE }> = ({ k }) => {
-  const st = useEnvOverlayStore(s => s.overlays[k]);
-  if (st.status === 'error') return <p className="text-meta text-warn" role="status" data-testid={`env-overlay-error-${k}`}>Could not draw: {st.error}</p>;
-  if (st.status !== 'shown') return null;
-  return (
-    <p className="text-meta text-text-2 flex items-center gap-1.5" data-testid={`env-overlay-info-${k}`}>
-      <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: OVERLAY_STYLE[k].css }} aria-hidden />
-      {st.count?.toLocaleString()} features drawn for the {st.bboxFrom} box. Absence on the map proves nothing.
-    </p>
-  );
-};
-
-const LayerRow: React.FC<{ l: EnvironmentLayer }> = ({ l }) => {
+/** OSM-derived rows of the coordination catalogue (water, heritage, railway overlays; metro engine layer). */
+const CoordRow: React.FC<{ l: EnvironmentLayer }> = ({ l }) => {
   const t = MAP_TOGGLES[l.id];
-  const available = l.status === 'available';
+  const k = t?.kind === 'overlay' ? t.key : null;
+  const st = useEnvOverlayStore(s => (k ? s.overlays[k] : null));
+  const on = !!st && (st.status === 'shown' || st.status === 'loading');
   return (
-    <li className="rounded-md border border-border px-2 py-1.5 space-y-1" data-testid={`env-layer-${l.id}`} data-available={available ? 'true' : 'false'}>
+    <li className="rounded-md border border-border px-2 py-1.5 space-y-1 min-w-0" data-testid={`env-layer-${l.id}`} data-available="true">
       <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="text-body text-text-1 leading-snug">{l.name}</p>
-          <DataStatus name={l.name} value={dataStatusOf(l)} />
-          {available && l.feature_count != null && <p className="text-meta text-text-3">{l.feature_count.toLocaleString()} features in the local file</p>}
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <p className="text-body text-text-1 leading-snug" title={l.name}>{plainTitle(l.id, l.name)}</p>
+          <LayerMeta m={metaOfCoord(l)} testId={`env-meta-${l.id}`} />
         </div>
-        {available && t?.kind === 'overlay' && <OverlayToggle k={t.key} />}
-        {available && t?.kind === 'engine' && <EngineLayerToggle layerId={t.layerId} label={l.name} />}
+        {k && st && <ShowBtn on={on} loading={st.status === 'loading'} label={l.name} testId={`env-toggle-${k}`} status={st.status} onClick={() => void setOverlayVisible(k, !on)} />}
+        {t?.kind === 'engine' && <EngineLayerToggle layerId={t.layerId} label={l.name} />}
       </div>
-      {available && t?.kind === 'overlay' && <OverlayNote k={t.key} />}
-      {(l.limitations || (!available && l.recommended_sources.length > 0)) && (
-        <Disclosure summary={available ? 'Limitations' : 'Recommended source'}>
-          {l.limitations && <p className="text-meta text-text-2">{l.limitations}</p>}
-          {!available && l.recommended_sources.map(r => (
-            <div key={r.name} className="text-meta text-text-2 mt-1">
-              <p className="text-text-1">{r.url ? <a className="uos-link" href={r.url} target="_blank" rel="noreferrer">{r.name}</a> : r.name}{r.publisher ? ` · ${r.publisher}` : ''}</p>
-              <p>Licence: {r.licence || 'UNKNOWN'}{r.notes ? ` · ${r.notes}` : ''}</p>
-            </div>
-          ))}
-          {!available && <p className="text-meta text-text-3 mt-1">No import path in UrbanOS yet for this dataset.</p>}
-        </Disclosure>
+      {k && st?.status === 'shown' && (
+        <>
+          {PLAIN[l.id] && <p className="text-meta text-text-2">{PLAIN[l.id].what}</p>}
+          <p className="text-meta text-text-2 flex items-center gap-1.5" data-testid={`env-overlay-info-${k}`}>
+            <span className="inline-block h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: OVERLAY_STYLE[k].css }} aria-hidden />
+            {st.count?.toLocaleString()} features drawn for the {st.bboxFrom === 'camera view' ? 'camera view (with a margin; redrawn when you move)' : 'whole mapped area'}. Absence on the map proves nothing.
+          </p>
+        </>
       )}
+      {k && st?.status === 'error' && <p className="text-meta text-warn" role="status" data-testid={`env-overlay-error-${k}`}>Could not draw: {redactPaths(st.error)}</p>}
+      <Disclosure summary="Details, limits & licence">
+        <p className="text-meta text-text-1">{l.name}</p>
+        {l.limitations && <p className="text-meta text-text-2">{redactPaths(l.limitations)}</p>}
+        <p className="text-meta text-text-3">Licence: {l.licence || 'UNKNOWN'} · © OpenStreetMap contributors{l.feature_count != null ? ` · ${l.feature_count.toLocaleString()} features in the local extract` : ''}</p>
+      </Disclosure>
     </li>
   );
 };
 
-/** Latest real emissions result in this session (the Simulate analysis); empty when none has run. */
-const EmissionsSummary: React.FC = () => {
+/** Slope classes from the DEM (shared with Explore → Terrain). */
+const SlopeRow: React.FC = () => {
+  const st = useTerrainOverlayStore();
+  useEffect(() => { void loadOverlayMeta(); }, []);
+  const s = st.shown.slope, on = s === 'shown' || s === 'loading';
+  const m = st.meta;
+  const legend = m && Array.isArray(m.overlays.slope.legend) ? m.overlays.slope.legend : [];
+  const e = evidenceOf('slope');
+  return (
+    <li className="rounded-md border border-border px-2 py-1.5 space-y-1 min-w-0" data-testid="env-layer-slope" data-available={m ? 'true' : 'unknown'}>
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <p className="text-body text-text-1 leading-snug">{PLAIN.slope.title}</p>
+          <LayerMeta m={{ evidence: e.kind, evidenceLabel: e.label, why: e.why, source: 'Copernicus DEM, computed by UrbanOS', date: '2011–2015', licence: 'Copernicus DEM licence' }} testId="env-meta-slope" />
+        </div>
+        <ShowBtn on={on} loading={s === 'loading'} label="Slope" testId="env-toggle-slope" status={s} onClick={() => void setTerrainOverlay('slope', !on)} />
+      </div>
+      {s === 'shown' && (
+        <>
+          <p className="text-meta text-text-2">{PLAIN.slope.what}</p>
+          <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-meta text-text-2" data-testid="env-slope-legend">
+            {legend.map(l => <span key={l.label} className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: `rgba(${l.rgba[0]},${l.rgba[1]},${l.rgba[2]},${(l.rgba[3] ?? 255) / 255})` }} aria-hidden />{l.label.replace(/deg/g, '°')}</span>)}
+          </div>
+          <p className="text-meta text-text-3">Unit: degrees from horizontal, 30 m grid. Screening only — not for design levels.</p>
+        </>
+      )}
+      {(s === 'error' || st.metaError) && <p className="text-meta text-warn" role="status" data-testid="env-slope-error">Slope is not available: {redactPaths(st.error ?? st.metaError)}</p>}
+    </li>
+  );
+};
+
+/** Emissions as relative change from a Simulate before/after comparison only (roadmap theme 7). */
+const EmissionsChange: React.FC = () => {
   const sim = useSimulationMode();
   const setWorkspace = useShellStore(s => s.setWorkspace);
-  const r = sim.analysis.output?.result;
-  const e = r?.emissions, a = r?.areaEmissions;
-  if (!e && !a) {
+  const c = sim.comparison.result;
+  const rows = relativeEmissions(c?.emissions?.deltas);
+  if (!c || rows.length === 0) {
     return (
-      <EmptyState icon={Wind} title="No emissions result in this session"
+      <EmptyState icon={Wind} title="No before / after comparison yet"
         action={{ label: 'Open Simulate', onClick: () => setWorkspace('simulate'), 'data-testid': 'env-open-simulate' }}>
-        Emissions are estimated from a traffic analysis of a selected road. None has run yet.
+        {sim.analysis.output?.result?.emissions
+          ? 'A traffic analysis has run, but a single run has no comparison. Capture a baseline and compare the proposal in Simulate to see the relative change here.'
+          : 'Compare a proposal with the existing city in Simulate; the change in traffic emissions near the studied road shows here as a percentage.'}
       </EmptyState>
     );
   }
   return (
-    <div className="space-y-1.5" data-testid="env-emissions-summary">
-      <TrustBadge trust="fails_validation" label="Traffic input fails validation (TAG M3.1)" testId="trust-env-emissions" />
-      <p className="text-meta text-text-2">{sim.section?.name ?? 'Study road'}{sim.analysis.hour != null ? ` · ${hourLabel(sim.analysis.hour)}` : ''} · estimated</p>
-      {e && (
-        <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-label tabular-nums">
-          <dt className="text-text-2">Fuel</dt><dd className="text-right text-text-1">{fmt(e.perHour.fuelL, 1)} L/h</dd>
-          <dt className="text-text-2">CO₂</dt><dd className="text-right text-text-1">{fmt(e.perHour.co2G / 1000, 1)} kg/h</dd>
-          <dt className="text-text-2">NOx</dt><dd className="text-right text-text-1">{fmt(e.perHour.noxG)} g/h</dd>
-          <dt className="text-text-2">PM</dt><dd className="text-right text-text-1">{fmt(e.perHour.pmG, 1)} g/h</dd>
-        </dl>
-      )}
-      {a && <p className="text-meta text-text-2 tabular-nums">Whole study area (ARAI cross-check): CO₂ {fmt(a.co2KgPerHour)} kg/h</p>}
-      <p className="text-meta text-text-3">Neighbourhood of the studied road, per hour. Full breakdown: Simulate → drawer → Emissions.</p>
+    <div className="space-y-1.5" data-testid="env-emissions-change">
+      <div className="flex flex-wrap gap-1.5">
+        <TrustBadge trust="not_validated" label="Model-based · not validated" testId="trust-env-emissions" />
+        <TrustBadge trust="fails_validation" label="Traffic input fails validation (TAG M3.1)" testId="trust-env-traffic" />
+      </div>
+      <table className="w-full text-label tabular-nums">
+        <tbody>
+          {rows.map(r => (
+            <tr key={r.label}>
+              <td className="text-text-2 py-0.5">{r.label}</td>
+              <td className="text-right text-text-1" data-testid="env-emissions-pct">{fmtPct(r.change)}</td>
+              <td className="text-right text-text-3 w-20">{r.agreement ? `${r.agreement.same}/${r.agreement.of} seeds` : ''}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="text-meta text-text-3">Proposal vs existing, same demand and seeds, neighbourhood of the studied road. Relative change only: absolute totals from this traffic model are not reliable enough to quote. Model: {c.emissions?.model ?? 'UNKNOWN'} (European vehicle classes as stand-ins).</p>
     </div>
   );
 };
 
+const GetStarted: React.FC<{ onEssentials: () => void; busy: boolean; onRecords: () => void }> = ({ onEssentials, busy, onRecords }) => (
+  <div className="uos-card flex flex-col gap-2" data-testid="env-get-started">
+    <p className="text-body text-text-1">See what is on the ground here, then check what a proposal would touch.</p>
+    <ol className="text-label text-text-2 list-decimal pl-4 space-y-0.5">
+      <li>Move the map to your site and show the essentials (land cover, trees, flow paths, air monitors).</li>
+      <li>Select a proposed road, flyover or double-deck: count the trees and green area it covers.</li>
+      <li>Read the air-quality and rainfall records for context.</li>
+    </ol>
+    <div className="flex flex-col gap-1.5">
+      <button type="button" className="uos-btn justify-start" data-testid="env-start-essentials" onClick={onEssentials} disabled={busy}>
+        {busy ? <Loader2 size={14} aria-hidden className="animate-spin" /> : <Layers size={14} aria-hidden />} Show the essentials for this view
+      </button>
+      <button type="button" className="uos-btn justify-start" data-testid="env-start-records" onClick={onRecords}>
+        <Wind size={14} aria-hidden /> Air-quality and rainfall records
+      </button>
+    </div>
+    <p className="text-meta text-text-3">Every layer says how it is known: <EvidenceChip kind="measured" label="Measured" /> <EvidenceChip kind="modelled" label="Modelled" /> <EvidenceChip kind="inferred" label="Inferred" />.
+      This is screening from available data — not an environmental impact assessment.</p>
+  </div>
+);
+
 export const EnvironmentContext: React.FC = () => {
   const [layers, setLayers] = useState<EnvironmentLayer[] | null>(null);
-  const [envData, setEnvData] = useState<EnvDataLayer[]>([]);
+  const [envData, setEnvData] = useState<EnvDataLayer[] | null>(null);
   const [envDataError, setEnvDataError] = useState<string | null>(null);
-  const [note, setNote] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [screening, setScreening] = useState<string | null>(null);
+  const [essBusy, setEssBusy] = useState(false);
+  const [recordsOpen, setRecordsOpen] = useState(false);
+  const recordsRef = useRef<HTMLDivElement>(null);
   const selectedId = useSelectedId();
   const selected = selectedId ? engineInstance.objects.getById(selectedId) : undefined;
   const screenable = selected && isProposalObject(selected) ? selected : null;
+  const focusNonce = useEnvFocus(s => s.nonce);
+  const shownIds = useEnvDataOverlayStore(s => Object.entries(s.overlays).filter(([, o]) => o.status === 'shown' || o.status === 'loading').map(([k]) => k).join(','));
 
   const load = () => {
     setLoading(true); setError(null);
     coordinationApi.environmentLayers()
-      .then(j => { setLayers(j.layers); setNote(j.note); })
-      .catch((e: Error) => setError(e.message || 'Backend unreachable'))
+      .then(j => setLayers(j.layers))
+      .catch((e: Error) => setError(redactPaths(e.message) || 'backend unreachable'))
       .finally(() => setLoading(false));
     envDataApi.catalogue()
       .then(j => { setEnvData(j.layers); setEnvDataError(null); })
-      .catch((e: Error) => setEnvDataError(e.message || 'Backend unreachable'));
+      .catch((e: Error) => setEnvDataError(redactPaths(e.message) || 'backend unreachable'));
   };
   useEffect(load, []);
+  // a station clicked on the map opens the records with its readings
+  useEffect(() => { if (focusNonce > 0) { setRecordsOpen(true); setTimeout(() => recordsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); } }, [focusNonce]);
 
   const screenObj = screening ? engineInstance.objects.getById(screening) : undefined;
   if (screenObj && isProposalObject(screenObj)) {
     return <div className="uos-embed-panel [&>div]:!w-full [&>div]:!rounded-none [&>div]:!border-0" data-testid="env-feasibility"><FeasibilityPanel obj={screenObj} onBack={() => setScreening(null)} /></div>;
   }
 
-  const groups = layers ? mergeCatalogue(layers, envData) : [];
-  const hasEnv = (id: string) => envData.some(l => l.id === id && l.status === 'available');
+  const env = envData ?? [];
+  const envById = new Map(env.map(l => [l.id, l]));
+  const coordById = new Map((layers ?? []).map(l => [l.id, l]));
+  const hasEnv = (id: string) => envById.get(id)?.status === 'available';
+  const unavailable = layers || envData ? unavailableOf(layers ?? [], env) : [];
+  const essentials = async () => {
+    setEssBusy(true);
+    try { await Promise.all(ESSENTIALS.map(id => envById.get(id)).filter((l): l is EnvDataLayer => !!l && l.status === 'available').map(l => setEnvDataVisible(l, true))); }
+    finally { setEssBusy(false); }
+  };
+  const openRecords = () => { setRecordsOpen(true); setTimeout(() => recordsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); };
+  const catalogueDown = !!(error && envDataError);
+
   return (
     <div className="space-y-5">
-      <PanelSection title="Constraint screening">
-        {screenable
-          ? <div className="flex flex-wrap gap-2"><button type="button" className="uos-btn uos-btn-sm" data-testid="env-screen-proposal" onClick={() => setScreening(screenable.id)}><ScanSearch size={13} aria-hidden />Screen “{screenable.name || screenable.type}”</button><SelectionDetailsButton /></div>
-          : <p className="text-label text-text-2" data-testid="env-screen-hint">Select a road, flyover or double-deck on the map to screen it against the constraint layers.</p>}
+      <EnvHoverTooltip />
+      {!shownIds && <GetStarted onEssentials={() => void essentials()} busy={essBusy} onRecords={openRecords} />}
+
+      <PanelSection title="What would a proposal touch?">
+        {screenable ? (
+          <div className="space-y-2" data-testid="env-proposal">
+            <p className="text-label text-text-1">Selected: <span className="font-semibold">{screenable.name || screenable.type}</span></p>
+            <EnvImpact obj={screenable} />
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="uos-btn uos-btn-sm" data-testid="env-screen-proposal" onClick={() => setScreening(screenable.id)}><ScanSearch size={13} aria-hidden />Check against constraint layers</button>
+              <SelectionDetailsButton />
+            </div>
+          </div>
+        ) : (
+          <p className="text-label text-text-2" data-testid="env-screen-hint">Select a proposed road, flyover or double-deck on the map (or in “Your projects”) to count the census trees and green area inside its footprint and check it against water, heritage and rail.</p>
+        )}
       </PanelSection>
 
-      <PanelSection title="Emissions">
-        <EmissionsSummary />
-      </PanelSection>
-
-      <PanelSection title="Environmental data"
-        aside={<button type="button" onClick={load} className="uos-link inline-flex items-center gap-1" aria-label="Recheck data status"><RefreshCw size={12} aria-hidden />Recheck</button>}>
-        {loading && !layers && <p className="text-label text-text-2 flex items-center gap-2"><Loader2 size={14} className="animate-spin" aria-hidden />Loading the catalogue…</p>}
-        {error && <p className="text-label text-warn" role="status" data-testid="env-catalogue-error">Catalogue unavailable ({error}). Every environmental layer is UNKNOWN until the backend answers.</p>}
-        {envDataError && <p className="text-label text-warn" role="status" data-testid="env-data-catalogue-error">Environment data catalogue unavailable ({envDataError}); real datasets are UNKNOWN until it answers.</p>}
+      <PanelSection title="Map layers"
+        aside={<button type="button" onClick={load} className="uos-link inline-flex items-center gap-1" aria-label="Reload the layer list" data-testid="env-reload"><RefreshCw size={12} aria-hidden />Reload</button>}>
+        {loading && !layers && !envData && <p className="text-label text-text-2 flex items-center gap-2"><Loader2 size={14} className="animate-spin" aria-hidden />Loading the layer list…</p>}
+        {catalogueDown && (
+          <div className="uos-card space-y-1" role="status" data-testid="env-catalogue-down">
+            <p className="text-label text-warn">The data server is not answering, so no environmental layer can be shown. Nothing here means “no constraint”: everything is UNKNOWN until it answers.</p>
+            <button type="button" className="uos-btn uos-btn-sm" onClick={load} data-testid="env-retry"><RefreshCw size={13} aria-hidden />Try again</button>
+          </div>
+        )}
+        {!catalogueDown && error && <p className="text-meta text-warn" role="status" data-testid="env-catalogue-error">OpenStreetMap layers (water, heritage, rail) are unavailable ({error}); UNKNOWN until the server answers.</p>}
+        {!catalogueDown && envDataError && <p className="text-meta text-warn" role="status" data-testid="env-data-catalogue-error">Environmental datasets are unavailable ({envDataError}); UNKNOWN until the server answers.</p>}
         <div className="space-y-3" data-testid="environment-layers">
-          {groups.map(g => (
-            <section key={g.id} data-testid={`env-group-${g.id}`} aria-label={g.label}>
-              <h4 className="text-meta font-semibold uppercase tracking-wide text-text-3 mb-1 flex justify-between">
-                <span>{g.label}</span><span className="tabular-nums">{g.available}/{g.rows.length} available</span>
-              </h4>
-              {g.rows.length === 0
-                ? <p className="text-meta text-text-3 flex items-center gap-1.5"><CircleHelp size={12} aria-hidden className="text-unknown" />No dataset catalogued · UNKNOWN</p>
-                : <ul className="space-y-1.5">{g.rows.map(r => r.kind === 'coord' ? <LayerRow key={r.layer.id} l={r.layer} /> : <EnvDataRow key={r.layer.id} l={r.layer} />)}</ul>}
-            </section>
-          ))}
+          {(layers || envData) && PLANNER_GROUPS.map(g => {
+            const rows = g.ids.map(id => {
+              if (id === 'slope') return <SlopeRow key={id} />;
+              const e = envById.get(id);
+              if (e && e.status === 'available') return <EnvDataRow key={id} l={e} />;
+              const c = coordById.get(id);
+              if (c && c.status === 'available' && (MAP_TOGGLES[id] || id === 'osm_trees')) return id === 'osm_trees' ? null : <CoordRow key={id} l={c} />;
+              return null;
+            }).filter(Boolean);
+            return (
+              <section key={g.id} data-testid={`env-group-${g.id}`} aria-label={g.label}>
+                <h4 className="text-meta font-semibold uppercase tracking-wide text-text-3 mb-1 flex justify-between gap-2">
+                  <span>{g.label}</span><span className="normal-case font-normal tracking-normal">{g.question}</span>
+                </h4>
+                {rows.length === 0
+                  ? <p className="text-meta text-text-3 flex items-center gap-1.5"><CircleHelp size={12} aria-hidden className="text-unknown" />No layer available here · UNKNOWN</p>
+                  : <ul className="space-y-1.5">{rows}</ul>}
+              </section>
+            );
+          })}
+          <section aria-label="City model" data-testid="env-group-scene">
+            <div className="flex items-center gap-2 text-label text-text-1"><span className="flex-1">Buildings (city model)</span><EngineLayerToggle layerId="buildings" label="Buildings" /></div>
+          </section>
         </div>
       </PanelSection>
 
-      {hasEnv('landcover_worldcover2021') && (
-        <PanelSection title="Land cover areas">
-          <LandcoverAreasPanel />
-        </PanelSection>
+      {(hasEnv('air_cpcb_caaqms') || hasEnv('rain_imd_025') || hasEnv('landcover_worldcover2021')) && (
+        <div ref={recordsRef} data-testid="env-records">
+          <PanelSection title="Records">
+            {hasEnv('air_cpcb_caaqms') && <Disclosure summary="Air quality — measured at stations" open={recordsOpen || undefined} data-testid="env-air-disclosure"><AirQualityPanel /></Disclosure>}
+            {hasEnv('rain_imd_025') && <Disclosure summary="Rainfall — IMD grid, CHIRPS, district" open={recordsOpen || undefined} data-testid="env-rain-disclosure"><RainfallPanel /></Disclosure>}
+            {hasEnv('landcover_worldcover2021') && <Disclosure summary="Land-cover areas — this view or a proposal" data-testid="env-lc-disclosure"><LandcoverAreasPanel /></Disclosure>}
+          </PanelSection>
+        </div>
       )}
 
-      {(hasEnv('air_cpcb_caaqms') || hasEnv('rain_imd_025')) && (
-        <PanelSection title="Stations & series">
-          {hasEnv('air_cpcb_caaqms') && <Disclosure summary="Air quality — measured at stations" data-testid="env-air-disclosure"><AirQualityPanel /></Disclosure>}
-          {hasEnv('rain_imd_025') && <Disclosure summary="Rainfall — IMD grid, CHIRPS, district" data-testid="env-rain-disclosure"><RainfallPanel /></Disclosure>}
-        </PanelSection>
-      )}
-
-      <PanelSection title="Scene layers">
-        <div className="flex items-center gap-2 text-label text-text-1"><span className="flex-1">Buildings (loaded city model)</span><EngineLayerToggle layerId="buildings" label="Buildings" /></div>
+      <PanelSection title="Traffic emissions">
+        <EmissionsChange />
       </PanelSection>
 
-      <Disclosure>
-        <p className="text-label text-text-2">Catalogue: GET /api/coordination/environment-layers. Status of OSM-derived rows is computed on read from the local files; everything else is “Not imported — UNKNOWN” and is never treated as no risk. Water, heritage and railway are drawn from GET /api/feasibility/site-data (the features screening reads); metro and buildings toggle the existing engine layers. OpenStreetMap data © OpenStreetMap contributors, ODbL.
-          Real datasets (land cover, Sentinel-2 indices, JRC surface water, DEM-derived streams/catchments, soil, tree census, air quality, rainfall): GET /api/env-data/catalogue; rasters are rendered by the backend for the camera view, vectors and trees come from capped bbox APIs (docs/urbanos/ENVIRONMENT_DATA.md). A covered “Not imported” row is replaced by the real dataset row.</p>
-        {note && <p className="text-meta text-text-3 mt-1">{note}</p>}
+      {unavailable.length > 0 && (
+        <Disclosure summary={`Not available yet (${unavailable.length})`} data-testid="env-unavailable">
+          <p className="text-meta text-text-2">These are missing on purpose, not hidden: there is no usable data for them yet. Their absence never means “no issue”.</p>
+          <ul className="space-y-1.5 mt-1">
+            {unavailable.map(u => (
+              <li key={u.id} className="text-meta" data-testid={`env-unavailable-${u.id}`}>
+                <p className="text-text-1"><Leaf size={11} aria-hidden className="inline mr-1 text-unknown" />{plainTitle(u.id, u.title)} <span className="text-text-3">· {u.status}</span></p>
+                {u.why && <p className="text-text-2">{u.why}</p>}
+                {u.needs && <p className="text-text-3">Needs: {u.needs}</p>}
+                {u.sources && u.sources.length > 0 && <p className="text-text-3">Suggested source: {u.sources.map((r, i) => <React.Fragment key={r.name}>{i ? '; ' : ''}{r.url ? <a className="uos-link" href={r.url} target="_blank" rel="noreferrer">{r.name}</a> : r.name}{r.licence ? ` (${r.licence})` : ''}</React.Fragment>)}</p>}
+              </li>
+            ))}
+          </ul>
+        </Disclosure>
+      )}
+
+      <Disclosure summary="About this data">
+        <p className="text-label text-text-2">Layers come from real files on this server (ESA, Copernicus, JRC, ISRIC, PMC, CPCB, IMD, OpenStreetMap). Rasters are drawn for the camera view;
+          trees, flow paths and OpenStreetMap features are fetched for the view with a margin and redrawn when you move. Several sources (PMC, IMD, OpenCity) are for internal use: do not redistribute.
+          Nothing here is engineering-grade.</p>
       </Disclosure>
     </div>
   );

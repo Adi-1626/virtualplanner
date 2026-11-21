@@ -10,28 +10,32 @@ import { Disclosure } from '../ui/Disclosure';
 import type { EnvDataLayer, EnvLegend } from '../../lib/envDataApi';
 import { classLine, envDataStatus, hasMapToggle, legendOf, rampCss, STATUS_LABEL } from './envDataModel';
 import { setEnvDataVariant, setEnvDataVisible, useEnvDataOverlayStore } from './envDataOverlay';
-import { displayPath } from '../../lib/redactPaths';
+import { displayPath, redactPaths } from '../../lib/redactPaths';
+import { LayerMeta } from './EnvBits';
+import { LEGEND_UNITS, metaOfEnv, PLAIN, plainTitle } from './envPlanner';
 
 const selCls = 'max-w-full min-w-0 rounded-md bg-white/[0.05] border border-white/10 px-1.5 py-0.5 text-label text-text-1 focus:outline-none focus:border-cyan-400/60';
 
-export const Legend: React.FC<{ legend: EnvLegend; testId?: string }> = ({ legend, testId }) => {
+
+export const Legend: React.FC<{ legend: EnvLegend; testId?: string; unitNote?: string }> = ({ legend, testId, unitNote }) => {
   if (legend.type === 'ramp') {
     const s = legend.stops;
     return (
       <div className="space-y-0.5" data-testid={testId}>
         <p className="text-meta text-text-2">{legend.label}</p>
         <div className="h-2.5 rounded-sm border border-white/10" style={{ background: rampCss(s) }} aria-hidden />
-        <div className="flex justify-between text-meta text-text-3 tabular-nums"><span>≤ {s[0].value}</span><span>{legend.unit}</span><span>≥ {s[s.length - 1].value}</span></div>
+        <div className="flex justify-between text-meta text-text-3 tabular-nums"><span>≤ {s[0].value} {legend.unit}</span><span>≥ {s[s.length - 1].value} {legend.unit}</span></div>
       </div>
     );
   }
   return (
-    <ul className="grid grid-cols-2 gap-x-3 gap-y-0.5" data-testid={testId}>
+    <ul className="grid grid-cols-2 gap-x-3 gap-y-0.5" data-testid={testId} data-units={unitNote ?? ''}>
       {legend.items.map(i => (
         <li key={i.label} className="flex items-center gap-1.5 text-meta text-text-2">
           <span className={legend.type === 'line' ? 'inline-block h-0.5 w-3' : 'inline-block h-2.5 w-2.5 rounded-sm'} style={{ background: i.color }} aria-hidden />{i.label}
         </li>
       ))}
+      {unitNote && <li className="col-span-2 text-meta text-text-3">{unitNote}</li>}
     </ul>
   );
 };
@@ -58,11 +62,11 @@ export const EnvDataRow: React.FC<{ l: EnvDataLayer }> = ({ l }) => {
     <li className="rounded-md border border-border px-2 py-1.5 space-y-1 min-w-0 [overflow-wrap:anywhere]" data-testid={`env-data-${l.id}`} data-status={l.status} data-shown={on ? 'true' : 'false'}>
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1 space-y-0.5">
-          <p className="text-body text-text-1 leading-snug">{l.name}</p>
-          <StatusLine l={l} variant={variant} />
-          {l.status === 'available' && (
-            <p className="text-meta text-text-3" data-testid={`env-data-class-${l.id}`}>{classLine(l)}{l.vintage_note ? ` · ${l.vintage_note}` : ''}</p>
-          )}
+          <p className="text-body text-text-1 leading-snug" title={l.name}>{plainTitle(l.id, l.name)}</p>
+          {l.status === 'available'
+            ? <LayerMeta m={metaOfEnv(l, l.variants.find(x => x.id === variant)?.data_date)} testId={`env-meta-${l.id}`} />
+            : <StatusLine l={l} variant={variant} />}
+          {l.status === 'available' && on && PLAIN[l.id] && <p className="text-meta text-text-2" data-testid={`env-data-what-${l.id}`}>{PLAIN[l.id].what}</p>}
         </div>
         {toggle && (
           <button type="button" className="uos-btn uos-btn-sm shrink-0" aria-pressed={on} aria-label={`${on ? 'Hide' : 'Show'} ${l.name} on the map`}
@@ -81,14 +85,17 @@ export const EnvDataRow: React.FC<{ l: EnvDataLayer }> = ({ l }) => {
           </select>
         </label>
       )}
-      {on && legend && <Legend legend={legend} testId={`env-data-legend-${l.id}`} />}
+      {on && legend && <Legend legend={legend} testId={`env-data-legend-${l.id}`} unitNote={LEGEND_UNITS[l.id]} />}
       {status === 'error' && <p className="text-meta text-warn" role="status" data-testid={`env-data-error-${l.id}`}>Could not draw: {st?.error}</p>}
       {status === 'shown' && st?.message && (
-        <p className="text-meta text-text-2" data-testid={`env-data-info-${l.id}`}>{st.message} Absence on the map proves nothing.</p>
+        <p className="text-meta text-text-2" data-testid={`env-data-info-${l.id}`}>{redactPaths(st.message)} Absence on the map proves nothing.</p>
       )}
       {on && l.attribution && <p className="text-meta text-text-3">{l.attribution}</p>}
-      <Disclosure summary={l.status === 'available' ? 'Limitations & provenance' : 'Details'}>
-        <p className="text-meta text-text-2">{l.limitations}</p>
+      <Disclosure summary={l.status === 'available' ? 'Details, limits & licence' : 'Details'}>
+        <p className="text-meta text-text-1">{l.name}</p>
+        {l.status === 'available' && <StatusLine l={l} variant={variant} />}
+        {l.status === 'available' && <p className="text-meta text-text-3" data-testid={`env-data-class-${l.id}`}>{classLine(l)}{l.vintage_note ? ` · ${l.vintage_note}` : ''}</p>}
+        <p className="text-meta text-text-2">{redactPaths(l.limitations)}</p>
         <p className="text-meta text-text-3 mt-1">Source: {l.source} · {l.publisher}</p>
         <p className="text-meta text-text-3">Licence: {l.licence_url ? <a className="uos-link" href={l.licence_url} target="_blank" rel="noreferrer">{l.licence}</a> : l.licence}</p>
         {l.processing && (

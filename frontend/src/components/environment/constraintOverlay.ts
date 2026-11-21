@@ -14,6 +14,7 @@ import type { OsmElement } from '../../engine/feasibility/types';
 import { API_BASE } from '../../lib/api';
 import type { OverlayKey } from './envCatalogue';
 import { redactPaths } from '../../lib/redactPaths';
+import { boxHolds, requestBox, WIDE_VIEW_DEG } from './envPlanner';
 
 export interface OverlayState {
   status: 'off' | 'loading' | 'shown' | 'error';
@@ -44,26 +45,51 @@ export const useEnvOverlayStore = create<Store>(set => ({
 }));
 
 const sources = new Map<OverlayKey, CustomDataSource>();
-let requestSeq = 0;
+const requestSeq: Record<string, number> = {};
 
 function viewer(): Viewer | null {
   const v = engineInstance.getViewer() as Viewer | null;
   return v && !v.isDestroyed() ? v : null;
 }
 
-async function coverageBox(): Promise<{ bbox: number[]; from: OverlayState['bboxFrom'] } | null> {
+let coverage: number[] | null | undefined;
+async function coverageBbox(): Promise<number[] | null> {
+  if (coverage !== undefined) return coverage;
   try {
     const r = await fetch(`${API_BASE}/api/feasibility/status`);
     if (r.ok) {
-      const j = await r.json();
-      const b = j?.layers?.bbox;
-      if (Array.isArray(b) && b.length === 4) return { bbox: b, from: 'layer coverage' };
+      const b = (await r.json())?.layers?.bbox;
+      if (Array.isArray(b) && b.length === 4) return (coverage = b);
     }
-  } catch { /* fall back to the camera */ }
-  const v = viewer();
-  const rect = v?.camera.computeViewRectangle();
-  if (!rect) return null;
-  return { bbox: [rect.west, rect.south, rect.east, rect.north].map(CesiumMath.toDegrees), from: 'camera view' };
+  } catch { /* unknown: the camera view is used */ }
+  return null;
+}
+
+function cameraView(): number[] | null {
+  const rect = viewer()?.camera.computeViewRectangle();
+  return rect ? [rect.west, rect.south, rect.east, rect.north].map(CesiumMath.toDegrees) : null;
+}
+
+async function coverageBox(): Promise<{ bbox: number[]; from: OverlayState['bboxFrom'] } | null> {
+  return requestBox(cameraView(), await coverageBbox());
+}
+
+let removeMove: (() => void) | null = null;
+let moveTimer: ReturnType<typeof setTimeout> | null = null;
+function ensureMoveListener(v: Viewer) {
+  if (removeMove) return;
+  removeMove = v.camera.moveEnd.addEventListener(() => {
+    if (moveTimer) clearTimeout(moveTimer);
+    moveTimer = setTimeout(() => {
+      const st = useEnvOverlayStore.getState().overlays;
+      const view = cameraView();
+      for (const k of Object.keys(st) as OverlayKey[]) {
+        const o = st[k];
+        if (o.status !== 'shown' || o.bboxFrom === 'layer coverage' && (view ? view[2] - view[0] > WIDE_VIEW_DEG : true)) continue;
+        if (!boxHolds(o.bbox, view)) void setOverlayVisible(k, true);
+      }
+    }, 500);
+  });
 }
 
 // City models sit at ellipsoid height (engine/layers/LayerManager: terrain is off by default), so overlays are drawn just
@@ -108,6 +134,7 @@ export async function setOverlayVisible(key: OverlayKey, visible: boolean): Prom
   const st = useEnvOverlayStore.getState();
   const v = viewer();
   if (!visible) {
+    requestSeq[key] = (requestSeq[key] ?? 0) + 1;
     const ds = sources.get(key);
     if (ds && v) v.dataSources.remove(ds, true);
     sources.delete(key);
@@ -115,15 +142,17 @@ export async function setOverlayVisible(key: OverlayKey, visible: boolean): Prom
     return;
   }
   if (!v) { st.set(key, { status: 'error', error: 'The map is not ready.' }); return; }
-  const seq = ++requestSeq;
+  ensureMoveListener(v);
+  const seq = (requestSeq[key] = (requestSeq[key] ?? 0) + 1);
   st.set(key, { status: 'loading', error: null, count: null });
   try {
     const cov = await coverageBox();
-    if (!cov) throw new Error('No area to request: layer coverage unknown and the camera view could not be read.');
+    if (!cov) throw new Error('The camera view is outside the area these layers cover (Pune OSM extract).');
     // near_bbox only bounds the dense layers (buildings, roads, trees) the overlay does not use: keep it tiny.
     const [x0, y0] = cov.bbox;
     const res = await fetchSiteData(cov.bbox, [x0, y0, x0 + 0.0001, y0 + 0.0001]);
-    if (seq !== requestSeq && useEnvOverlayStore.getState().overlays[key].status !== 'loading') return;
+    // a newer request for this layer, or a hide, superseded this one: draw nothing
+    if (seq !== requestSeq[key] || useEnvOverlayStore.getState().overlays[key].status !== 'loading') return;
     const layerStatus = res.layers[key];
     if (!layerStatus?.available) throw new Error(redactPaths(layerStatus?.reason) ?? 'Layer not available');
     const prev = sources.get(key);
@@ -135,6 +164,7 @@ export async function setOverlayVisible(key: OverlayKey, visible: boolean): Prom
     v.scene.requestRender();
     st.set(key, { status: 'shown', count: n, bbox: cov.bbox, bboxFrom: cov.from });
   } catch (e) {
-    st.set(key, { status: 'error', error: e instanceof Error ? e.message : String(e) });
+    if (seq !== requestSeq[key]) return;
+    st.set(key, { status: 'error', error: redactPaths(e instanceof Error ? e.message : String(e)) });
   }
 }
