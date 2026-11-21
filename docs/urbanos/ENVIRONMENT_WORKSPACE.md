@@ -18,7 +18,7 @@ Open **Environment** in the left rail. The panel opens with three steps:
 
 1. Move the map to your site and press **Show the essentials for this view**. This turns on land cover, PMC census trees,
    computed flow paths and air-quality monitors together.
-2. Select a proposed road, flyover or double-deck, on the map or in "Your projects", and press **Count trees & green area**.
+2. Select a proposed road, flyover or double-deck, on the map or in "Your drawn works", and press **Count trees & green area**.
 3. Open **Air-quality and rainfall records** for context.
 
 The card hides once a dataset layer is on; it comes back when they are all off.

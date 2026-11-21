@@ -14,6 +14,7 @@ import { isUserBuilt, TYPE_LABELS } from '../engine/objects/builtBy';
 import { filterObjectsForScenario } from '../engine/scenarios/scenarioFilter';
 import { isDrivable, polylineLengthM } from '../engine/simulation/StudyAreaExplorer';
 import { formatDistanceM } from '../lib/format';
+import { plural } from '../lib/plural';
 import { useSelectedId } from '../hooks/useAppMode';
 import { SidePanel, PanelHeader, PanelBody, Section, Facts, Button, Notice } from './ui/kit';
 
@@ -29,7 +30,7 @@ export const InfoPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
   const obj = selectedId ? engineInstance.objects.getById(selectedId) : undefined;
   if (obj) return <ObjectDetails key={obj.id} obj={obj} version={version} />;
-  return <ProjectList version={version} onClose={onClose} />;
+  return <DrawnWorksList version={version} onClose={onClose} />;
 };
 
 // ── Projects ──────────────────────────────────────────────────────────────────
@@ -44,7 +45,8 @@ const GROUPS: { title: string; icon: LucideIcon; types: CityObject['type'][] }[]
 const lineLength = (o: CityObject) =>
   Array.isArray(o.coordinates[0]) && o.type !== 'building' && o.type !== 'zone' ? polylineLengthM(o.coordinates as number[][]) : null;
 
-const ProjectList: React.FC<{ version: number; onClose: () => void }> = ({ version, onClose }) => {
+/** Objects drawn in the active alternative (not planning projects: those are in the Projects workspace). */
+const DrawnWorksList: React.FC<{ version: number; onClose: () => void }> = ({ version, onClose }) => {
   const built = useMemo(
     () => filterObjectsForScenario(engineInstance.objects.getAll(), engineInstance.scenarios.getActiveScenarioId()).filter(isUserBuilt),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -57,10 +59,10 @@ const ProjectList: React.FC<{ version: number; onClose: () => void }> = ({ versi
   };
 
   return (
-    <SidePanel label="Your projects">
+    <SidePanel label="Your drawn works">
       <PanelHeader
-        title="Your projects"
-        subtitle={built.length === 0 ? 'Nothing built yet' : `${built.length} thing${built.length === 1 ? '' : 's'} you have built`}
+        title="Your drawn works"
+        subtitle={built.length === 0 ? 'Nothing drawn yet' : `${plural(built.length, 'object')} you have drawn (planning projects are in Projects)`}
         onClose={onClose}
         closeLabel="Hide panel"
       />
