@@ -4,13 +4,16 @@
  * average, IMD district via NWDP; descriptive only — not IDF curves, not design storms).
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Download, Loader2 } from 'lucide-react';
 import { envDataApi, type AqSeries, type AqStation, type LandcoverAreas, type RainfallSummary } from '../../lib/envDataApi';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { isProposalObject } from '../../engine/feasibility/proposal';
 import { useSelectedId } from '../../hooks/useAppMode';
 import { istDate, lineFootprint, MONTHS, seriesPath } from './envDataModel';
 import { cameraBox, loadStations } from './envDataOverlay';
+import { airCsv, NAAQS_24H, rainCsv, readoutIndex } from './envPlanner';
+import { downloadText } from './download';
+import { useEnvFocus } from './envFocus';
 
 const selCls = 'max-w-full min-w-0 rounded-md bg-white/[0.05] border border-white/10 px-1.5 py-0.5 text-label text-text-1 focus:outline-none focus:border-cyan-400/60';
 const fmt = (v: number, d = 0) => v.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d });
@@ -77,7 +80,7 @@ export const LandcoverAreasPanel: React.FC = () => {
           </table>
           {res.classes.length === 0 && <p className="text-meta text-text-2" data-testid="env-lc-empty">No land-cover pixels in this area (outside the Pune study box) — UNKNOWN, not zero.</p>}
           {res.nodata_pixels > 0 && <p className="text-meta text-text-3">{fmt(res.nodata_pixels)} pixels ({fmt(res.nodata_pixels * 100 / 1e6, 3)} km²) outside the data, not counted in %.</p>}
-          <p className="text-meta text-text-3">{res.method}. Land cover is not land use or zoning.</p>
+          <p className="text-meta text-text-3">{res.method.replace(/\s+on\s+[\w.-]+\.tif\b[^.;]*/i, '')} (ESA WorldCover 10 m pixels). Inferred by a machine-learning classification; land cover is not land use or zoning.</p>
         </div>
       )}
     </div>
@@ -85,29 +88,63 @@ export const LandcoverAreasPanel: React.FC = () => {
 };
 
 // ── charts ─────────────────────────────────────────────────────────────────────
-const LineChart: React.FC<{ values: number[]; labels: [string, string]; unit: string; testId: string; color?: string }> = ({ values, labels, unit, testId, color = '#ffb300' }) => {
-  const W = 300, H = 90;
-  const { d, min, max } = seriesPath(values, W, H);
+/** Value under the pointer for a chart (index into its series), with a readout line above the chart. */
+function useReadout(n: number) {
+  const [i, setI] = useState(-1);
+  const onMove = (e: React.PointerEvent<Element>) => { const r = e.currentTarget.getBoundingClientRect(); setI(readoutIndex(n, (e.clientX - r.left) / (r.width || 1))); };
+  return { i, onMove, onLeave: () => setI(-1) };
+}
+
+const LineChart: React.FC<{ values: number[]; times?: string[]; labels: [string, string]; unit: string; testId: string; color?: string; refLine?: { value: number; label: string } }> = ({ values, times, labels, unit, testId, color = '#ffb300', refLine }) => {
+  const W = 300, H = 90, pad = 2;
+  // one axis for the series and the reference line (seriesPath's own range, widened to include the line)
+  const { min, max } = seriesPath(refLine ? [...values, refLine.value] : values, W, H);
+  const path = seriesPathScaled(values, W, H, min, max);
+  const ry = refLine ? H - pad - ((refLine.value - min) / (max - min || 1)) * (H - 2 * pad) : 0;
+  const ro = useReadout(values.length);
+  const x = ro.i >= 0 && values.length > 1 ? pad + ro.i * ((W - 2 * pad) / (values.length - 1)) : null;
   return (
     <figure className="space-y-0.5" data-testid={testId} data-points={values.length}>
-      <div className="flex justify-between text-meta text-text-3 tabular-nums"><span>max {fmt(max, 1)} {unit}</span><span>axis from {fmt(min, 1)} {unit}</span></div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[90px] rounded bg-white/[0.03] border border-white/10" role="img" aria-label={`Series ${labels[0]} to ${labels[1]}`}>
-        <path d={d} fill="none" stroke={color} strokeWidth={1.2} />
+      <div className="flex justify-between text-meta text-text-3 tabular-nums" data-testid={`${testId}-readout`}>
+        {ro.i >= 0
+          ? <span className="text-text-1">{times?.[ro.i] ?? `#${ro.i + 1}`}: {fmt(values[ro.i], 1)} {unit}</span>
+          : <><span>top of axis {fmt(max, 1)} {unit}</span><span>bottom {fmt(min, 1)} {unit}</span></>}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[90px] rounded bg-white/[0.03] border border-white/10 cursor-crosshair" role="img" aria-label={`Series ${labels[0]} to ${labels[1]}, ${values.length} values, max ${fmt(Math.max(...values), 1)} ${unit}`}
+        onPointerMove={ro.onMove} onPointerLeave={ro.onLeave} data-testid={`${testId}-svg`}>
+        {refLine && <line x1={0} x2={W} y1={ry} y2={ry} stroke="#E8B04A" strokeDasharray="4 3" strokeWidth={0.8} />}
+        <path d={path} fill="none" stroke={color} strokeWidth={1.2} />
+        {x != null && <line x1={x} x2={x} y1={0} y2={H} stroke="#ffffff" strokeOpacity={0.5} strokeWidth={0.6} />}
       </svg>
       <figcaption className="flex justify-between text-meta text-text-3"><span>{labels[0]}</span><span>{labels[1]}</span></figcaption>
+      {refLine && <p className="text-meta" style={{ color: '#E8B04A' }} data-testid={`${testId}-ref`}>Dashed line: {refLine.label}</p>}
     </figure>
   );
 };
 
+/** Series path on a fixed value range (so a reference line and the series share one axis). */
+function seriesPathScaled(values: number[], w: number, h: number, min: number, max: number, pad = 2): string {
+  const span = max - min || 1;
+  const step = values.length > 1 ? (w - 2 * pad) / (values.length - 1) : 0;
+  return values.map((v, i) => `${i ? 'L' : 'M'}${(pad + i * step).toFixed(1)},${(h - pad - ((v - min) / span) * (h - 2 * pad)).toFixed(1)}`).join('');
+}
+
 const Bars: React.FC<{ items: { label: string; v: number; flag?: boolean }[]; unit: string; testId: string; color?: string }> = ({ items, unit, testId, color = '#4FA3FF' }) => {
   const max = Math.max(1, ...items.map(i => i.v));
+  const ro = useReadout(items.length);
+  const cur = ro.i >= 0 ? items[ro.i] : null;
   return (
-    <div className="flex items-end gap-px h-[80px] rounded bg-white/[0.03] border border-white/10 px-1 pt-1" data-testid={testId} role="img"
-      aria-label={`Bar chart, ${items.length} bars, max ${fmt(max)} ${unit}`}>
-      {items.map(i => (
-        <div key={i.label} className="flex-1 min-w-0" title={`${i.label}: ${fmt(i.v, 1)} ${unit}${i.flag ? ' — flagged suspect (as stored)' : ''}`}
-          style={{ height: `${(i.v / max) * 100}%`, background: i.flag ? '#E8B04A' : color, opacity: i.flag ? 1 : 0.85 }} />
-      ))}
+    <div className="space-y-0.5">
+      <p className="text-meta text-text-3 tabular-nums" data-testid={`${testId}-readout`}>
+        {cur ? <span className="text-text-1">{cur.label}: {fmt(cur.v, 1)} {unit}{cur.flag ? ' · flagged suspect (value as stored)' : ''}</span> : <>top of axis {fmt(max)} {unit} · point at a bar for its value</>}
+      </p>
+      <div className="flex items-end gap-px h-[80px] rounded bg-white/[0.03] border border-white/10 px-1 pt-1 cursor-crosshair" data-testid={testId} role="img"
+        aria-label={`Bar chart, ${items.length} bars, max ${fmt(max)} ${unit}`} onPointerMove={ro.onMove} onPointerLeave={ro.onLeave}>
+        {items.map((i, k) => (
+          <div key={i.label} className="flex-1 min-w-0" title={`${i.label}: ${fmt(i.v, 1)} ${unit}${i.flag ? ' — flagged suspect (as stored)' : ''}`}
+            style={{ height: `${(i.v / max) * 100}%`, background: i.flag ? '#E8B04A' : color, opacity: k === ro.i ? 1 : i.flag ? 1 : 0.8, outline: k === ro.i ? '1px solid #fff' : undefined }} />
+        ))}
+      </div>
     </div>
   );
 };
@@ -121,10 +158,17 @@ export const AirQualityPanel: React.FC = () => {
   const [series, setSeries] = useState<AqSeries | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const focus = useEnvFocus(s => s.station);
+  const focusNonce = useEnvFocus(s => s.nonce);
   useEffect(() => {
-    loadStations().then(s => { setStations(s); const first = s.find(x => x.has_series && x.lon != null) ?? s.find(x => x.has_series); if (first) setSid(first.station_id); })
-      .catch((e: Error) => setErr(e.message));
+    loadStations().then(s => {
+      setStations(s);
+      const f = useEnvFocus.getState().station;
+      const first = (f && s.find(x => x.station_id === f && x.has_series)) || s.find(x => x.has_series && x.lon != null) || s.find(x => x.has_series);
+      if (first) setSid(first.station_id);
+    }).catch((e: Error) => setErr(e.message));
   }, []);
+  useEffect(() => { if (focus && stations?.some(x => x.station_id === focus)) setSid(focus); }, [focus, focusNonce, stations]);
   const st = stations?.find(s => s.station_id === sid);
   const params = st ? Object.entries(st.parameters) : [];
   useEffect(() => {
@@ -158,14 +202,18 @@ export const AirQualityPanel: React.FC = () => {
           </div>
           {st && (
             <p className="text-meta text-text-2" data-testid="env-air-meta">
-              {st.name} · {st.agency ?? 'agency UNKNOWN'} · Observed · coordinates {st.lon != null ? 'from CPCB list' : 'UNKNOWN (not drawn)'} ·
+              {st.name} · {st.agency ?? 'agency UNKNOWN'} · Measured · coordinates {st.lon != null ? 'from CPCB list' : 'UNKNOWN (not drawn)'} ·
               data {istDate(st.parameters[param]?.first)} → {istDate(st.parameters[param]?.last)} · {st.parameters[param] ? `${fmt(st.parameters[param].samples ?? 0)} 15-min samples` : 'no samples for this parameter'}
             </p>
           )}
           {series && series.points.length === 0 && <p className="text-meta text-text-2" data-testid="env-air-empty">No values for this parameter at this station — UNKNOWN, not zero.</p>}
           {series && series.points.length > 0 && (
             <>
-              <LineChart values={series.points.map(p => p.v)} labels={[istDate(series.first), istDate(series.last)]} unit={series.unit} testId="env-air-chart" />
+              <LineChart values={series.points.map(p => p.v)} times={series.points.map(p => istDate(p.t).replace(/T.*$/, ''))} labels={[istDate(series.first), istDate(series.last)]} unit={series.unit} testId="env-air-chart"
+                refLine={agg === 'day' && NAAQS_24H[param] ? { value: NAAQS_24H[param], label: `India NAAQS 24-hour limit ${NAAQS_24H[param]} ${series.unit}, for reading the chart only (a compliance check needs the full NAAQS method).` } : undefined} />
+              <button type="button" className="uos-btn uos-btn-sm" data-testid="env-air-csv" onClick={() => downloadText(`air-${series.station_id}-${series.parameter}-${agg}.csv`, airCsv(series, st?.name ?? series.station_id), 'text/csv')}>
+                <Download size={13} aria-hidden />Download CSV
+              </button>
               <p className="text-meta text-text-3">{series.label} {agg === 'day' ? 'daily' : 'monthly'} mean of published 15-min values, {series.points.length} buckets with data
                 {series.samples_per_full_bucket ? `; ${partial} days have fewer than ${series.samples_per_full_bucket} samples` : ''}. No gap filling, no interpolation, not a NAAQS compliance check.</p>
             </>
@@ -201,6 +249,9 @@ export const RainfallPanel: React.FC = () => {
           <div>
             <p className="text-meta text-text-2">Annual total, {cell.annual[0]?.year}–{cell.annual[cell.annual.length - 1]?.year} (mm; amber = flagged suspect, value as stored)</p>
             <Bars items={cell.annual.map(a => ({ label: `${a.year}`, v: a.mm, flag: !!a.qa_flag }))} unit="mm" testId="env-rain-annual" />
+            <button type="button" className="uos-btn uos-btn-sm mt-1" data-testid="env-rain-csv" onClick={() => downloadText(`rainfall-imd-${cell.cell_lon.toFixed(2)}E-${cell.cell_lat.toFixed(2)}N.csv`, rainCsv(cell), 'text/csv')}>
+              <Download size={13} aria-hidden />Download CSV
+            </button>
             {cell.suspect_years.length > 0 && <p className="text-meta text-warn" data-testid="env-rain-flags">Suspect: {cell.suspect_years.join(', ')} — {s.imd_grid.suspect_rule}.</p>}
           </div>
           <div>
