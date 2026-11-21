@@ -1,4 +1,4 @@
-import { Viewer, Cartesian3, Color, Model, Matrix4, ColorBlendMode, ShadowMode } from 'cesium';
+import { Viewer, Cartesian3, Color, Model, Matrix4, ColorBlendMode, ShadowMode, PointPrimitiveCollection, type PointPrimitive } from 'cesium';
 import { scenePoint } from '../../terrain/groundHeight';
 import type { SignalState, VehicleView } from '../../simulation/TrafficMicroSim';
 import type { VehicleSource } from '../../simulation/liveTrafficRun';
@@ -21,6 +21,9 @@ const MODEL_RANGE_M = 6000;
 const ROAD_CLEARANCE_M = 0.04;
 /** Small on screen when zoomed out, but never so small it disappears. */
 const MIN_PIXEL_SIZE = 14;
+/** Vehicles without a model (beyond MAX_MODELS, beyond MODEL_RANGE_M, or models failed): one point each, in one batched collection. */
+const POINT_PIXEL_SIZE = 5;
+const POINT_COLOURS = Array.from({ length: 21 }, (_, i) => Color.fromCssColorString('#e2e8f0').withAlpha(i / 20));
 const MAX_ZOOM_OUT_SCALE = 5;
 
 const DEG = Math.PI / 180;
@@ -106,6 +109,10 @@ export class MicroTrafficVisualizer {
   /** Bumped when the models are removed, so ones still loading are dropped when they arrive. */
   private generation = 0;
   private modelError = false;
+  /** Vehicles drawn as points (no model): one primitive for all of them, its points reused frame to frame. */
+  private points: PointPrimitiveCollection | null = null;
+  /** What the last draw showed: vehicles as 3D models and as points (for the panel's checks and tests). */
+  public lastDraw = { models: 0, points: 0 };
 
   public setViewer(viewer: Viewer) {
     this.dispose();
@@ -159,17 +166,38 @@ export class MicroTrafficVisualizer {
     // Models for the vehicles nearest the camera
     if (live.length > MAX_MODELS) live.sort((a, b) => a.cameraDist2 - b.cameraDist2);
     const range2 = MODEL_RANGE_M * MODEL_RANGE_M;
+    let models = 0, points = 0;
     for (let i = 0; i < live.length; i++) {
       const t = live[i];
-      if (i >= MAX_MODELS || t.cameraDist2 > range2 || t.opacity <= 0.01) {
+      if (t.opacity <= 0.01) { this.release(t); continue; }
+      if (i >= MAX_MODELS || t.cameraDist2 > range2) {
         this.release(t);
+        this.point(points++, t);
         continue;
       }
       if (!t.slot) t.slot = this.acquire(t.variant);
-      if (t.slot) this.pose(t.slot, t);
+      if (t.slot?.model) { this.pose(t.slot, t); models++; }
+      else { if (t.slot) this.pose(t.slot, t); this.point(points++, t); }
     }
+    // Points not used this frame are hidden (kept for the next)
+    const pc = this.points;
+    if (pc) for (let i = points; i < pc.length; i++) { const p = pc.get(i); if (p.show) p.show = false; }
+    this.lastDraw = { models, points };
 
     this.drawSignals(sim);
+  }
+
+  /**
+   * Point `index` of the batched collection at the vehicle: vehicles beyond the model cap (or whose model is not
+   * loaded) are still drawn, as one primitive for all of them, rather than vanishing from the map.
+   */
+  private point(index: number, t: Track) {
+    if (!this.points) this.points = this.viewer!.scene.primitives.add(new PointPrimitiveCollection());
+    const pc = this.points!;
+    const p: PointPrimitive = index < pc.length ? pc.get(index) : pc.add({ pixelSize: POINT_PIXEL_SIZE, outlineWidth: 0 });
+    p.position = t.position;
+    p.color = POINT_COLOURS[Math.max(0, Math.min(20, Math.round(t.opacity * 20)))];
+    if (!p.show) p.show = true;
   }
 
   /** Points the slot's model along the vehicle's heading and slope, at its position. */
@@ -283,6 +311,7 @@ export class MicroTrafficVisualizer {
     if (this.viewer && !this.viewer.isDestroyed()) {
       const primitives = this.viewer.scene.primitives;
       for (const s of this.slots) if (s.model) primitives.remove(s.model);
+      if (this.points) primitives.remove(this.points);
       this.signals.forEach(head => {
         for (const m of Object.values(head.models)) if (m) primitives.remove(m);
       });
@@ -291,6 +320,8 @@ export class MicroTrafficVisualizer {
     this.tracks.clear();
     this.freeSlots.clear();
     this.slots = [];
+    this.points = null;
+    this.lastDraw = { models: 0, points: 0 };
     this.live.length = 0;
   }
 
