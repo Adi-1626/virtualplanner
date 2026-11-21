@@ -17,7 +17,13 @@ export const ProjectPage: React.FC<{ id: string; user: string; onBack: () => voi
   const { bundle: b, error, reload, setError } = useProjectBundle(id);
   const [tab, setTab] = useState<ProjectTab>(initialTab ?? 'overview');
   const act = async (f: () => Promise<unknown>) => { setError(null); try { await f(); } catch (e) { setError((e as Error).message); } await reload(); };
-  if (!b) return (<><PanelHeader title="Planning project" onBack={onBack} backLabel="All projects" onClose={onClose} /><PanelBody>{error ? <Notice tone="bad">{error}</Notice> : <Notice icon={Loader2} spin>Loading…</Notice>}</PanelBody></>);
+  if (!b) return (
+    <><PanelHeader title="Planning project" onBack={onBack} backLabel="All projects" onClose={onClose} />
+      <PanelBody>{error
+        ? (/^404\b/.test(error)
+          ? <span data-testid="project-gone"><Notice tone="warn">This project no longer exists (it was deleted). Go back to all projects.</Notice></span>
+          : <Notice tone="bad" action={<button type="button" className="uos-link" onClick={() => void reload()}>Try again</button>}>The project could not be loaded ({error}).</Notice>)
+        : <Notice icon={Loader2} spin>Loading…</Notice>}</PanelBody></>);
   const who = user.trim();
   const p = b.project;
   const open = openActionableCount(b.issues);

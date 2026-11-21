@@ -9,6 +9,7 @@ import { inputCls, labelCls } from './projects/projectData';
 import { ProjectList } from './projects/ProjectList';
 import { ProjectPage } from './projects/ProjectPage';
 import { GetStarted } from './projects/GetStarted';
+import { useShellStore } from '../shell/useShellStore';
 
 /**
  * Planning & Approval Workspace (docs/PLANNING_WORKSPACE.md) redesigned as the Projects & Coordination workspace
@@ -46,7 +47,7 @@ export const PlanningPanel: React.FC<{ onClose: () => void; /** Open this projec
     <SidePanel label="Planning projects" wide>
       {openId
         ? <ProjectPage id={openId} user={user} onBack={() => { setOpenId(null); void reload(); }} onClose={onClose}
-            onDeleted={() => { setOpenId(null); void reload(); }} />
+            onDeleted={() => { setOpenId(null); if (useShellStore.getState().openProjectId) useShellStore.getState().openProject(null); void reload(); }} />
         : (
           <>
             <PanelHeader title="Planning projects" subtitle="One project per planning activity: its alternatives, conflicts with other agencies’ projects, assessments and decisions" onClose={onClose} />
