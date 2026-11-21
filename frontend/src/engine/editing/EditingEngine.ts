@@ -32,6 +32,7 @@ import {
   type AngleSnapMode, type DrawRadius, type DrawReadoutData, type ResolvedCursor, type TangentGuide, type TypedInput,
 } from './drawConstraints';
 import type { HorizontalAlignment } from '../geometry/alignment/index';
+import { GEOMETRY_DEFAULTS } from '../geometry/alignment/defaults';
 
 /** Tool defaults (HYPOTHETICAL, editable in the tool settings): not data. */
 export const DEFAULT_BUILDING_FLOORS = 4;
@@ -247,6 +248,17 @@ export class EditingEngine {
    * length / bearing, the continuation guide) so the point lands where the preview showed it. `sharp` (Ctrl+click)
    * makes this PI a sharp corner (radius 0).
    */
+  /**
+   * Auto-curve (toolbar toggle, GEOMETRY_DEFAULTS.autoFillet): new interior PIs get the automatic radius. Off → sharp
+   * angle points; Ctrl+click then gives a curve at that point (Ctrl inverts the default).
+   */
+  public autoCurve: boolean = GEOMETRY_DEFAULTS.autoFillet;
+  public setAutoCurve(on: boolean) {
+    if (this.autoCurve === on) return;
+    this.autoCurve = on;
+    this.notify();
+  }
+
   public addDrawingPoint(point: [number, number, number], opts: { sharp?: boolean } = {}) {
     // A throttled hover preview may still describe an older pointer location.
     // A study-area boundary is not a road: it does not snap to road points.
@@ -275,7 +287,7 @@ export class EditingEngine {
 
     this.drawingPoints.push(resolvedPoint);
     this.drawingRadii.length = this.drawingPoints.length - 1;
-    this.drawingRadii.push(opts.sharp ? 0 : null);
+    this.drawingRadii.push(!!opts.sharp === this.autoCurve ? 0 : null);
     this.typed = emptyTypedInput();
     // Study area, rectangle shape: the second click is the opposite corner, and the area is complete
     if (this.activeMode === 'import_osm' && this.areaShape === 'rectangle' && this.drawingPoints.length === 2 && !this.redrawingAreaId) {
