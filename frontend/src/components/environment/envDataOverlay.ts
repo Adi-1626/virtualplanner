@@ -185,7 +185,8 @@ async function drawTrees(v: Viewer, l: EnvDataLayer, box: NonNullable<ReturnType
         evidence: 'Measured — 2019 survey; counts as published' });
       ds.entities.add({
         id: cid, position: lift(c.lon, c.lat),
-        point: { pixelSize: 5 + 17 * Math.sqrt(Math.min(1, c.n / maxN)), color: TREE_COLOR.withAlpha(0.7), outlineColor: Color.WHITE, outlineWidth: 1,
+        // modest sizes and a dark outline: clusters must not hide the land cover or a proposal's outline
+        point: { pixelSize: 4 + 12 * Math.sqrt(Math.min(1, c.n / maxN)), color: Color.fromCssColorString('#7CFC9A').withAlpha(0.55), outlineColor: Color.BLACK.withAlpha(0.7), outlineWidth: 1,
           disableDepthTestDistance: Number.POSITIVE_INFINITY },
         label: res.clusters.length <= 400 && c.n >= maxN * 0.5 ? { text: `${c.n >= 1000 ? `${(c.n / 1000).toFixed(c.n >= 10000 ? 0 : 1)}k` : c.n} trees`, font: '11px sans-serif',
           fillColor: Color.WHITE, outlineColor: Color.BLACK, outlineWidth: 3, style: LabelStyle.FILL_AND_OUTLINE, verticalOrigin: VerticalOrigin.CENTER,

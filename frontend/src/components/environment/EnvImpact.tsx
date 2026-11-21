@@ -6,7 +6,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Download, Loader2, Trees } from 'lucide-react';
-import { Cartesian3, Color, CustomDataSource, type Viewer } from 'cesium';
+import { Cartesian3, Color, ColorMaterialProperty, CustomDataSource, PolylineDashMaterialProperty, type Viewer } from 'cesium';
 import { envDataApi, type LandcoverAreas } from '../../lib/envDataApi';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { fmtArea, greenOf, IMPACT_BUFFER_M, impactCsv, ringsOf, type ImpactArea, type ImpactResult } from './envPlanner';
@@ -14,7 +14,7 @@ import { clearTips, setTip } from './envTips';
 import { downloadText } from './download';
 import type { CityObject } from '../../engine/objects/types';
 
-const FOOT = Color.fromCssColorString('#ff5c8a');
+const FOOT = Color.fromCssColorString('#ff2fd0');
 let ds: CustomDataSource | null = null;
 function viewer(): Viewer | null { const v = engineInstance.getViewer() as Viewer | null; return v && !v.isDestroyed() ? v : null; }
 
@@ -33,7 +33,9 @@ function drawFootprint(rings: { ring: number[][]; label: string; dashed: boolean
   const s = new CustomDataSource('env-impact');
   rings.forEach((r, i) => {
     const id = `env_overlay_impact_${i}`;
-    s.entities.add({ id, polyline: { positions: r.ring.map(p => Cartesian3.fromDegrees(p[0], p[1], 2.5)), width: r.dashed ? 2 : 3, material: r.dashed ? FOOT.withAlpha(0.6) : FOOT } });
+    // drawn through buildings and above every drape (depth-fail material), so the outline is never hidden
+    const mat = r.dashed ? new PolylineDashMaterialProperty({ color: FOOT, dashLength: 12 }) : new ColorMaterialProperty(FOOT);
+    s.entities.add({ id, polyline: { positions: r.ring.map(p => Cartesian3.fromDegrees(p[0], p[1], 3)), width: r.dashed ? 3 : 4, material: mat, depthFailMaterial: mat } });
     setTip(id, { type: 'Screening footprint', name: r.label, detail: 'Approximate: centreline ± width/2. Used for the tree and green-area counts.', evidence: 'Modelled — drawn from the proposal geometry' });
   });
   void v.dataSources.add(s);
@@ -98,7 +100,7 @@ export const EnvImpact: React.FC<{ obj: CityObject }> = ({ obj }) => {
       {err && <p className="text-meta text-warn" role="status" data-testid="env-impact-error">{err}</p>}
       {res && (
         <div data-testid="env-impact-result">
-          <p className="text-meta text-text-2">{res.name} · {Math.round(res.lengthM).toLocaleString()} m long · {res.widthM} m wide (outlined in pink on the map)</p>
+          <p className="text-meta text-text-2">{res.name} · {Math.round(res.lengthM).toLocaleString()} m long · {res.widthM} m wide (outlined in magenta on the map: solid = footprint, dashed = with margin)</p>
           <table className="w-full text-label mt-1">
             <thead><tr className="text-meta text-text-3"><th className="text-left font-normal">Inside</th><th className="text-right font-normal">footprint</th><th className="text-right font-normal">with {IMPACT_BUFFER_M} m margin</th></tr></thead>
             <tbody>
