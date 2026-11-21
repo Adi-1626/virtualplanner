@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   airCsv, boxHolds, pointDate, requestBox, ESSENTIALS, evidenceOf, fmtArea, fmtPct, greenOf, impactCsv, lineLengthM, metaOfCoord, metaOfEnv, NAAQS_24H, plainReason,
-  PLANNER_GROUPS, readoutIndex, relativeEmissions, ringsOf, shortDataDate, shortLicence, shortSource, toCsv, unavailableOf,
+  PLANNER_GROUPS, readoutIndex, relativeEmissions, emissionRowText, ringsOf, shortDataDate, shortLicence, shortSource, toCsv, unavailableOf,
 } from '../../components/environment/envPlanner';
 import { pickedId, setTip, tipFor, clearTips } from '../../components/environment/envTips';
 import { redactPaths } from '../../lib/redactPaths';
@@ -113,6 +113,11 @@ describe('emissions: relative change only', () => {
     expect(Object.keys(r[0])).not.toContain('before');
     expect(fmtPct(-0.042)).toBe('−4.2 %'); expect(fmtPct(0.1)).toBe('+10.0 %'); expect(fmtPct(null)).toBe('UNKNOWN');
     expect(relativeEmissions(undefined)).toEqual([]);
+  });
+  it('reads like Simulate: under 0.5 % is "no change", agreement counts runs', () => {
+    expect(emissionRowText({ label: 'PM', change: 0.0042, agreement: { same: 1, of: 3 } })).toEqual({ pct: 'no change', runs: '' });
+    expect(emissionRowText({ label: 'CO₂', change: 0.009, agreement: { same: 3, of: 3 } })).toEqual({ pct: '+0.9 %', runs: '3/3 runs' });
+    expect(emissionRowText({ label: 'NOx', change: null })).toEqual({ pct: 'UNKNOWN', runs: '' });
   });
 });
 

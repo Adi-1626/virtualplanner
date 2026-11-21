@@ -17,7 +17,7 @@ import { EnvHoverTooltip } from '../../components/environment/EnvHoverTooltip';
 import { EvidenceChip, LayerMeta } from '../../components/environment/EnvBits';
 import { useEnvFocus } from '../../components/environment/envFocus';
 import {
-  ESSENTIALS, evidenceOf, fmtPct, metaOfCoord, PLAIN, PLANNER_GROUPS, plainTitle, relativeEmissions, unavailableOf,
+  ESSENTIALS, emissionRowText, evidenceOf, metaOfCoord, PLAIN, PLANNER_GROUPS, plainTitle, relativeEmissions, unavailableOf,
 } from '../../components/environment/envPlanner';
 import { loadOverlayMeta, setTerrainOverlay, useTerrainOverlayStore } from '../../components/explore/terrainOverlay';
 import { useSimulationMode } from '../../hooks/useSimulationMode';
@@ -142,13 +142,13 @@ const EmissionsChange: React.FC = () => {
           {rows.map(r => (
             <tr key={r.label}>
               <td className="text-text-2 py-0.5">{r.label}</td>
-              <td className="text-right text-text-1 whitespace-nowrap pl-2" data-testid="env-emissions-pct">{fmtPct(r.change)}</td>
-              <td className="text-right text-text-3 w-20 whitespace-nowrap">{r.agreement ? `${r.agreement.same}/${r.agreement.of} seeds` : ''}</td>
+              <td className="text-right text-text-1 whitespace-nowrap pl-2" data-testid="env-emissions-pct">{emissionRowText(r).pct}</td>
+              <td className="text-right text-text-3 w-20 whitespace-nowrap">{emissionRowText(r).runs}</td>
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="text-meta text-text-3">Proposal vs existing{sim.comparison.current ? ` at ${String(sim.comparison.current.hour).padStart(2, '0')}:00` : ''}, same demand and seeds, neighbourhood of the studied road. Read the distance driven first: a proposal that lets more traffic through burns more fuel in total. Relative change only: absolute totals from this traffic model are not reliable enough to quote. Model: {c.emissions?.model ?? 'UNKNOWN'} (European vehicle classes as stand-ins).</p>
+      <p className="text-meta text-text-3">Proposal vs existing{sim.comparison.current ? ` at ${String(sim.comparison.current.hour).padStart(2, '0')}:00` : ''}, same trips and runs on both, neighbourhood of the studied road. Read the distance driven first: a proposal that lets more traffic through burns more fuel in total. Relative change only: absolute totals from this traffic model are not reliable enough to quote. Model: {c.emissions?.model ?? 'UNKNOWN'} (European vehicle classes as stand-ins).</p>
     </div>
   );
 };
