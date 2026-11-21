@@ -39,6 +39,7 @@ export function startUndergroundRuntime() {
     syncCutaway();
   };
   const syncView = (ws: string) => {
+    undergroundRenderer.setInUnderground(ws === 'underground');
     if (ws === 'underground') { undergroundView.enter(viewer()); return; }
     undergroundView.leave();
     // legend "Show …" toggles only apply in Underground
@@ -59,6 +60,10 @@ export function startUndergroundRuntime() {
     renderManagerInstance.setTypeOpacityCap('building', on && st.xray ? XRAY_BUILDING_OPACITY : null);
   };
   undergroundView.onChange(syncCutaway);
+  // Legend "Show drawn utilities" also hides the to-scale pipe models of the main renderer (it used to hide only the lines)
+  undergroundRenderer.onVisibilityChange(() => {
+    renderManagerInstance.setTypeOpacityCap('utility', undergroundRenderer.isGroupVisible('utilities') ? null : 0);
+  });
   engineInstance.objects.onChange(redraw);
   engineInstance.scenarios.onChange(redraw);
   engineInstance.selection.onChange(redraw);
