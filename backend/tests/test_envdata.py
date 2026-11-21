@@ -143,6 +143,36 @@ def test_trees_points_clusters_and_cap(client, derived):
     assert cnt["count"] == 4 and cnt["rare"] == 1 and cnt["vintage"] == "2019"
 
 
+def test_tree_tiles_partition_the_census_exactly(client, derived):
+    """Browser tree tiles (GET /trees/tile): the tiles of a level hold every tree exactly once, in points and in cluster
+    mode, mixed or not. The fixture trees sit on exact 0.001° multiples, i.e. on tile edges (0.01° tiles at level 2)."""
+    levels = [0.04, 0.01, 0.0025, 0.000625]
+    for level, s in enumerate(levels):
+        T = 4 * s
+        tx0, tx1 = int(73.80 // T) - 1, int(73.83 // T) + 1
+        ty0, ty1 = int(18.50 // T) - 1, int(18.53 // T) + 1
+        for limit in (5000, 30, 1):      # all points / mixed / all clusters
+            ids, total, in_clusters = [], 0, 0
+            for tx in range(tx0, tx1 + 1):
+                for ty in range(ty0, ty1 + 1):
+                    j = client.get("/api/env-data/trees/tile", params={"level": level, "tx": tx, "ty": ty, "limit": limit}).json()
+                    assert j["total_exact"] is True and j["cell_deg"] == s
+                    total += j["total"]
+                    if j["mode"] == "points":
+                        assert j["returned"] == j["total"] == len(j["points"]) and j["total"] <= limit
+                        ids += [p["id"] for p in j["points"]]
+                    else:
+                        assert j["total"] > limit and len(j["clusters"]) <= 16
+                        in_clusters += sum(c["n"] for c in j["clusters"])
+            assert total == 900, (level, limit, total)
+            assert len(ids) == len(set(ids)) and len(ids) + in_clusters == 900, (level, limit)
+    one = client.get("/api/env-data/trees/tile", params={"level": 1, "tx": int(73.80 // 0.04), "ty": int(18.50 // 0.04), "limit": 2000}).json()
+    p = next(x for x in one["points"] if x["id"] == 1)
+    assert p["common_name"] == "Mango" and p["is_rare"] == 1            # same attributes as the bbox API
+    assert client.get("/api/env-data/trees/tile", params={"level": 9, "tx": 0, "ty": 0}).status_code == 422
+    assert client.get("/api/env-data/trees/tile", params={"level": 7, "tx": 0, "ty": 0}).status_code == 422
+
+
 def test_feature_wiring_flags(client):
     fs = {f["id"]: f for f in client.get("/api/datasets/features").json()["features"]}
     for fid in ("environment.vegetation", "environment.air_quality", "environment.surface_water", "environment.rainfall",

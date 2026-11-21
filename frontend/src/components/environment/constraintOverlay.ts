@@ -4,10 +4,16 @@
  * screening reads, for the layers' own coverage box (GET /api/feasibility/status → layers.bbox), or the camera view
  * when no coverage box is reported. Nothing is drawn without data; a failed fetch is reported, never filled in.
  *
- * Entity ids are prefixed `env_overlay_` so the engine's pick handler never treats them as city objects.
+ * Object ids are prefixed `env_overlay_` so the engine's pick handler never treats them as city objects.
+ * Performance: drawn as GPU batches (one polygon Primitive, one polyline / point / label collection per layer) instead
+ * of one Entity per feature, and the three layers share one site-data request per box (it returns all three).
  */
 import { create } from 'zustand';
-import { Cartesian3, Color, CustomDataSource, HeightReference, LabelStyle, PolygonHierarchy, VerticalOrigin, Math as CesiumMath, type Viewer } from 'cesium';
+import {
+  Cartesian3, Color, ColorGeometryInstanceAttribute, GeometryInstance, LabelCollection, LabelStyle, PerInstanceColorAppearance,
+  PointPrimitiveCollection, PolygonGeometry, PolygonHierarchy, Primitive, PrimitiveCollection, VerticalOrigin,
+  Math as CesiumMath, type Viewer,
+} from 'cesium';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { fetchSiteData } from '../../engine/feasibility/feasibilityApi';
 import type { OsmElement } from '../../engine/feasibility/types';
@@ -15,6 +21,10 @@ import { API_BASE } from '../../lib/api';
 import type { OverlayKey } from './envCatalogue';
 import { redactPaths } from '../../lib/redactPaths';
 import { boxHolds, requestBox, WIDE_VIEW_DEG } from './envPlanner';
+import { osmTip, registerPickable, setTipResolver } from './envTips';
+import { ENV_WORKSPACES } from './envPerf';
+import { staticLines, type StaticLine } from './staticLines';
+import { useShellStore } from '../../shell/useShellStore';
 
 export interface OverlayState {
   status: 'off' | 'loading' | 'shown' | 'error';
@@ -44,7 +54,27 @@ export const useEnvOverlayStore = create<Store>(set => ({
   set: (k, s) => set(st => ({ overlays: { ...st.overlays, [k]: { ...st.overlays[k], ...s } } })),
 }));
 
-const sources = new Map<OverlayKey, CustomDataSource>();
+const sources = new Map<OverlayKey, PrimitiveCollection>();
+registerPickable(() => sources.size > 0);
+/** Feature names by drawn id, for the hover tooltip. */
+const names = new Map<string, string | undefined>();
+setTipResolver('env_overlay_', id => (names.has(id) ? osmTip(id, names.get(id)) : null));
+const clearNames = (key: OverlayKey) => { for (const k of [...names.keys()]) if (k.startsWith(`env_overlay_${key}_`)) names.delete(k); };
+/** One request per box serves water, heritage and railway (the endpoint returns all of them). */
+const siteData = new Map<string, Promise<Awaited<ReturnType<typeof fetchSiteData>>>>();
+function siteDataFor(bbox: number[]) {
+  const k = bbox.map(x => x.toFixed(5)).join(',');
+  let p = siteData.get(k);
+  if (!p) {
+    const [x0, y0] = bbox;
+    // near_bbox only bounds the dense layers (buildings, roads, trees) the overlay does not use: keep it tiny.
+    p = fetchSiteData(bbox, [x0, y0, x0 + 0.0001, y0 + 0.0001]);
+    p.catch(() => siteData.delete(k));
+    siteData.set(k, p);
+    while (siteData.size > 3) siteData.delete(siteData.keys().next().value as string);
+  }
+  return p;
+}
 const requestSeq: Record<string, number> = {};
 
 function viewer(): Viewer | null {
@@ -81,6 +111,7 @@ function ensureMoveListener(v: Viewer) {
   removeMove = v.camera.moveEnd.addEventListener(() => {
     if (moveTimer) clearTimeout(moveTimer);
     moveTimer = setTimeout(() => {
+      if (!shownHere()) return;
       const st = useEnvOverlayStore.getState().overlays;
       const view = cameraView();
       for (const k of Object.keys(st) as OverlayKey[]) {
@@ -97,36 +128,57 @@ function ensureMoveListener(v: Viewer) {
 const LIFT_M = 1.5;
 const ring = (pts: { lon: number; lat: number }[]) => Cartesian3.fromDegreesArrayHeights(pts.flatMap(p => [p.lon, p.lat, LIFT_M]));
 
-function draw(ds: CustomDataSource, key: OverlayKey, els: OsmElement[]): number {
+function draw(root: PrimitiveCollection, key: OverlayKey, els: OsmElement[]): number {
   const { color } = OVERLAY_STYLE[key];
+  const fill = ColorGeometryInstanceAttribute.fromColor(color.withAlpha(0.35));
+  const polys: GeometryInstance[] = [];
+  const lines: StaticLine[] = [];
+  const points = new PointPrimitiveCollection();
+  const labels = new LabelCollection();
+  const line = (id: string, positions: Cartesian3[], width: number) => { lines.push({ id, positions, width }); };
   let n = 0;
   for (const e of els) {
     const id = `env_overlay_${key}_${e.type}_${e.id}`;
     const name = e.tags?.name ?? e.tags?.['name:en'] ?? undefined;
     if (e.type === 'node' && e.lon !== undefined && e.lat !== undefined) {
-      ds.entities.add({
-        id, name,
-        position: Cartesian3.fromDegrees(e.lon, e.lat),
-        point: { pixelSize: 9, color, outlineColor: Color.BLACK, outlineWidth: 1.5, heightReference: HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY },
-        label: name && key === 'heritage' ? { text: name, font: '12px sans-serif', fillColor: Color.WHITE, outlineColor: Color.BLACK, outlineWidth: 3, style: LabelStyle.FILL_AND_OUTLINE, verticalOrigin: VerticalOrigin.BOTTOM, pixelOffset: undefined, heightReference: HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY, distanceDisplayCondition: undefined, scale: 1 } : undefined,
-      });
+      const position = Cartesian3.fromDegrees(e.lon, e.lat, LIFT_M);
+      points.add({ id, position, pixelSize: 9, color, outlineColor: Color.BLACK, outlineWidth: 1.5, disableDepthTestDistance: Number.POSITIVE_INFINITY });
+      if (name && key === 'heritage') labels.add({ id, position, text: name, font: '12px sans-serif', fillColor: Color.WHITE, outlineColor: Color.BLACK, outlineWidth: 3,
+        style: LabelStyle.FILL_AND_OUTLINE, verticalOrigin: VerticalOrigin.BOTTOM, disableDepthTestDistance: Number.POSITIVE_INFINITY });
+      names.set(id, name);
       n++;
     } else if (e.outer && e.outer.length) {
       e.outer.forEach((o, i) => {
         if (o.length < 3) return;
-        ds.entities.add({ id: `${id}_${i}`, name, polygon: { hierarchy: new PolygonHierarchy(ring(o)), height: 0.5, material: color.withAlpha(0.35), outline: false } });
-        ds.entities.add({ id: `${id}_${i}_edge`, name, polyline: { positions: ring(o), width: 2, material: color, clampToGround: false } });
+        polys.push(new GeometryInstance({ id: `${id}_${i}`, geometry: new PolygonGeometry({ polygonHierarchy: new PolygonHierarchy(ring(o)), height: 0.5 }), attributes: { color: fill } }));
+        line(`${id}_${i}_edge`, ring(o), 2);
+        names.set(`${id}_${i}`, name); names.set(`${id}_${i}_edge`, name);
       });
       n++;
     } else if (e.geometry && e.geometry.length >= 2) {
-      ds.entities.add({ id, name, polyline: { positions: ring(e.geometry), width: key === 'railway' ? 2 : 3, material: color, clampToGround: false } });
+      line(id, ring(e.geometry), key === 'railway' ? 2 : 3);
+      names.set(id, name);
       n++;
     } else if (e.members?.length) {
-      e.members.forEach((m, i) => { if (m.geometry?.length >= 2) ds.entities.add({ id: `${id}_m${i}`, name, polyline: { positions: ring(m.geometry), width: 2, material: color, clampToGround: false } }); });
+      e.members.forEach((m, i) => { if (m.geometry?.length >= 2) { line(`${id}_m${i}`, ring(m.geometry), 2); names.set(`${id}_m${i}`, name); } });
       n++;
     }
   }
+  if (polys.length) root.add(new Primitive({ geometryInstances: polys, appearance: new PerInstanceColorAppearance({ flat: true, translucent: true }) }));
+  // static lines as one batched Primitive: a PolylineCollection rebuilt its draw commands on every frame (staticLines.ts)
+  const linePrim = staticLines(lines, color);
+  if (linePrim) root.add(linePrim);
+  if (points.length) root.add(points); else points.destroy();
+  if (labels.length) root.add(labels); else labels.destroy();
   return n;
+}
+
+function remove(key: OverlayKey, v: Viewer | null) {
+  const root = sources.get(key);
+  if (root && v && !v.isDestroyed()) v.scene.primitives.remove(root);   // destroys the GPU batches
+  else if (root && !root.isDestroyed()) root.destroy();
+  sources.delete(key);
+  clearNames(key);
 }
 
 /** Shows or hides one overlay. Showing fetches the features (once per show) and draws them. */
@@ -135,10 +187,9 @@ export async function setOverlayVisible(key: OverlayKey, visible: boolean): Prom
   const v = viewer();
   if (!visible) {
     requestSeq[key] = (requestSeq[key] ?? 0) + 1;
-    const ds = sources.get(key);
-    if (ds && v) v.dataSources.remove(ds, true);
-    sources.delete(key);
+    remove(key, v);
     st.set(key, OFF);
+    v?.scene.requestRender();
     return;
   }
   if (!v) { st.set(key, { status: 'error', error: 'The map is not ready.' }); return; }
@@ -148,19 +199,16 @@ export async function setOverlayVisible(key: OverlayKey, visible: boolean): Prom
   try {
     const cov = await coverageBox();
     if (!cov) throw new Error('The camera view is outside the area these layers cover (Pune OSM extract).');
-    // near_bbox only bounds the dense layers (buildings, roads, trees) the overlay does not use: keep it tiny.
-    const [x0, y0] = cov.bbox;
-    const res = await fetchSiteData(cov.bbox, [x0, y0, x0 + 0.0001, y0 + 0.0001]);
+    const res = await siteDataFor(cov.bbox);
     // a newer request for this layer, or a hide, superseded this one: draw nothing
-    if (seq !== requestSeq[key] || useEnvOverlayStore.getState().overlays[key].status !== 'loading') return;
+    if (seq !== requestSeq[key] || useEnvOverlayStore.getState().overlays[key].status !== 'loading' || !shownHere()) return;
     const layerStatus = res.layers[key];
     if (!layerStatus?.available) throw new Error(redactPaths(layerStatus?.reason) ?? 'Layer not available');
-    const prev = sources.get(key);
-    if (prev) v.dataSources.remove(prev, true);
-    const ds = new CustomDataSource(`env-overlay-${key}`);
-    const n = draw(ds, key, res.elements[key] ?? []);
-    await v.dataSources.add(ds);
-    sources.set(key, ds);
+    remove(key, v);
+    const root = new PrimitiveCollection({ destroyPrimitives: true });
+    const n = draw(root, key, res.elements[key] ?? []);
+    v.scene.primitives.add(root);
+    sources.set(key, root);
     v.scene.requestRender();
     st.set(key, { status: 'shown', count: n, bbox: cov.bbox, bboxFrom: cov.from });
   } catch (e) {
@@ -168,3 +216,21 @@ export async function setOverlayVisible(key: OverlayKey, visible: boolean): Prom
     st.set(key, { status: 'error', error: redactPaths(e instanceof Error ? e.message : String(e)) });
   }
 }
+
+/**
+ * The overlays belong to Environment and Explore (the panels that toggle them): outside those workspaces their GPU
+ * batches are freed (they used to stay drawn over Design / Underground / Simulate), and drawn again on return from the
+ * shared site-data cache. The layers stay "on" in the panels meanwhile.
+ */
+const shownHere = () => ENV_WORKSPACES.has(useShellStore.getState().workspace);
+useShellStore.subscribe((s, prev) => {
+  if (s.workspace === prev.workspace || ENV_WORKSPACES.has(s.workspace) === ENV_WORKSPACES.has(prev.workspace)) return;
+  const v = viewer();
+  const st = useEnvOverlayStore.getState().overlays;
+  for (const k of Object.keys(st) as OverlayKey[]) {
+    if (st[k].status !== 'shown' && st[k].status !== 'loading') continue;
+    if (!shownHere()) { requestSeq[k] = (requestSeq[k] ?? 0) + 1; remove(k, v); }
+    else void setOverlayVisible(k, true);
+  }
+  v?.scene.requestRender();
+});

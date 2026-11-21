@@ -5,6 +5,7 @@
  */
 import { API_BASE } from './api';
 import { redactPaths } from './redactPaths';
+import type { TreeTile } from '../components/environment/treeTiles';
 
 export type EnvDataStatus = 'available' | 'missing' | 'blocked' | 'rejected';
 export type EnvDataKind = 'raster' | 'vector' | 'points' | 'stations' | 'series' | 'none';
@@ -69,11 +70,27 @@ export interface RainfallSummary {
 
 const BASE = `${API_BASE}/api/env-data`;
 
-async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+/** The 60 s timeout, plus the caller's cancel signal (a map layer cancels a request the view no longer needs). */
+export function timeoutOr(signal?: AbortSignal, ms = 60000): AbortSignal {
+  const t = AbortSignal.timeout(ms);
+  if (!signal) return t;
+  const c = new AbortController();
+  const relay = (s: AbortSignal) => () => { if (!c.signal.aborted) c.abort(s.reason); };
+  if (signal.aborted) c.abort(signal.reason);
+  else signal.addEventListener('abort', relay(signal), { once: true });
+  t.addEventListener('abort', relay(t), { once: true });
+  return c.signal;
+}
+
+/** Thrown when the caller cancelled the request: not an error to show. */
+export class Cancelled extends Error { constructor() { super('cancelled'); this.name = 'Cancelled'; } }
+
+async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown, cancel?: AbortSignal): Promise<T> {
   let r: Response;
   try {
-    r = await fetch(`${BASE}${path}`, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(60000) });
+    r = await fetch(`${BASE}${path}`, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined, signal: timeoutOr(cancel) });
   } catch (e) {
+    if (cancel?.aborted) throw new Cancelled();
     throw new Error(e instanceof Error && e.name === 'TimeoutError' ? 'no answer from the data server within 60 s' : 'the data server did not answer (check that it is running, then try again)');
   }
   if (!r.ok) {
@@ -92,9 +109,12 @@ export const envDataApi = {
     `${BASE}/layers/${id}/render.png?bbox=${bb(bbox)}&width=${Math.round(width)}${variant ? `&variant=${encodeURIComponent(variant)}` : ''}`,
   landcoverAreasBbox: (bbox: number[]) => call<LandcoverAreas>('GET', `/layers/landcover_worldcover2021/areas?bbox=${bb(bbox)}`),
   landcoverAreasPolygon: (geometry: unknown, label: string) => call<LandcoverAreas>('POST', '/layers/landcover_worldcover2021/areas', { geometry, label }),
-  features: (id: string, bbox: number[], limit = 2000) =>
-    call<{ total: number; returned: number; not_shown: number; limit: number; geojson: { features: { id: number; properties: Record<string, unknown>; geometry: { type: string; coordinates: number[][] | number[][][] } }[] } }>('GET', `/layers/${id}/features?bbox=${bb(bbox)}&limit=${limit}`),
+  features: (id: string, bbox: number[], limit = 2000, cancel?: AbortSignal) =>
+    call<{ total: number; returned: number; not_shown: number; limit: number; geojson: { features: { id: number; properties: Record<string, unknown>; geometry: { type: string; coordinates: number[][] | number[][][] } }[] } }>('GET', `/layers/${id}/features?bbox=${bb(bbox)}&limit=${limit}`, undefined, cancel),
   trees: (bbox: number[], limit = 2000) => call<TreesResponse>('GET', `/trees?bbox=${bb(bbox)}&limit=${limit}`),
+  /** One tree tile (4 × 4 grid cells of `level`); see components/environment/treeTiles.ts. */
+  treeTile: (level: number, tx: number, ty: number, limit: number, cancel?: AbortSignal) =>
+    call<TreeTile>('GET', `/trees/tile?level=${level}&tx=${tx}&ty=${ty}&limit=${limit}`, undefined, cancel),
   /** Footprint of a drawn line, buffered in metres on the server (flat ends, mitred corners). */
   footprint: (coordinates: number[][], widthM: number) =>
     call<{ type: 'Feature'; geometry: { type: 'Polygon' | 'MultiPolygon'; coordinates: number[][][] | number[][][][] }; properties: { length_m: number; width_m: number; area_m2: number; method: string } }>('POST', '/footprint', { coordinates, width_m: widthM }),
