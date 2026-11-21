@@ -5,6 +5,8 @@ import { undergroundRenderer } from '../../engine/underground/UndergroundRendere
 import { objectTip, pickObjectId, pickRecordId, recordTip, type HoverTip } from '../../engine/underground/hoverInfo';
 import { isUnmappedMetroTunnel, unmappedUndergroundStation } from '../../engine/underground/metroLevel';
 import type { CityObject } from '../../engine/objects/types';
+import { loadReportedFacts, reportedDepthFor, reportedDepthText, reportedFacts } from '../../engine/underground/reportedFacts';
+import { freshnessApi } from '../../lib/freshnessApi';
 
 /** Minimum time between two picks while the mouse moves (ms), and the move (px) below which no new pick is made. */
 export const HOVER_THROTTLE_MS = 120;
@@ -29,6 +31,10 @@ function tipOf(p: unknown): HoverTip | null {
   if (!o) return null;
   return objectTip(o, {
     unmappedMetro: (x: CityObject) => (isUnmappedMetroTunnel(x) ? { inferred: false } : unmappedUndergroundStation(x, engineInstance.objects.getAll())),
+    reportedDepth: (x: CityObject) => {
+      const f = reportedDepthFor(x, reportedFacts());
+      return f ? reportedDepthText(f) : null;
+    },
   });
 }
 
@@ -40,6 +46,7 @@ function tipOf(p: unknown): HoverTip | null {
 export const HoverTooltip: React.FC = () => {
   const [tip, setTip] = useState<{ t: HoverTip; x: number; y: number } | null>(null);
   const last = useRef({ x: -99, y: -99, at: 0 });
+  useEffect(() => { void loadReportedFacts(freshnessApi.facts); }, []);
   useEffect(() => {
     const v = engineInstance.getViewer?.();
     if (!v) return;

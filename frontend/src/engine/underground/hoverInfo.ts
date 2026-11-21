@@ -106,30 +106,32 @@ export function alignmentTip(a: UndergroundAlignmentObject): HoverTip {
 }
 
 /** Tooltip for an existing metro line or station. `unmapped` = underground with no depth in the source (metroLevel.ts). */
-export function metroTip(o: MetroLineObject | MetroStationObject, unmapped: boolean, inferred = false): HoverTip {
+export function metroTip(o: MetroLineObject | MetroStationObject, unmapped: boolean, inferred = false, reported?: string | null): HoverTip {
   const live = (o as MetroLineObject).status === 'under_construction' ? 'Under construction' : 'Existing';
+  // a reviewed published depth (data-freshness service) is added as text only; the drawing stays "not mapped"
+  const unmappedDepth = reported ? `${DEPTH_NOT_MAPPED} in OSM · ${reported}` : DEPTH_NOT_MAPPED;
   if (o.type === 'metro_station') {
     const name = o.stationName || o.name || 'Metro station';
     return unmapped
-      ? { type: 'Underground metro station', name, depth: DEPTH_NOT_MAPPED, status: `${live} · plan position only (OpenStreetMap)${inferred ? ', on a tunnel section' : ''}` }
+      ? { type: 'Underground metro station', name, depth: unmappedDepth, status: `${live} · plan position only (OpenStreetMap)${inferred ? ', on a tunnel section' : ''}` }
       : { type: 'Metro station (elevated)', name, depth: `Platform ~${m1(o.elevation)} m above ground (model)`, status: `${live} · OpenStreetMap / drawn` };
   }
   return unmapped
-    ? { type: 'Metro tunnel', name: o.name || 'Metro line', depth: DEPTH_NOT_MAPPED, status: `${live} · plan position only (OpenStreetMap)` }
+    ? { type: 'Metro tunnel', name: o.name || 'Metro line', depth: unmappedDepth, status: `${live} · plan position only (OpenStreetMap)` }
     : { type: 'Metro viaduct (elevated)', name: o.name || 'Metro line', depth: `Deck ~${m1(o.elevation)} m above ground (model)`, status: `${live} · OpenStreetMap / drawn` };
 }
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Tooltip for any hoverable underground object, or null for objects that get none (buildings, roads, …). */
-export function objectTip(o: CityObject, ctx: { unmappedMetro?: (o: CityObject) => { inferred: boolean } | null } = {}): HoverTip | null {
+export function objectTip(o: CityObject, ctx: { unmappedMetro?: (o: CityObject) => { inferred: boolean } | null; reportedDepth?: (o: CityObject) => string | null } = {}): HoverTip | null {
   switch (o.type) {
     case 'utility': return utilityTip(o);
     case 'underground_alignment': return alignmentTip(o);
     case 'metro_line':
     case 'metro_station': {
       const u = ctx.unmappedMetro?.(o) ?? null;
-      return metroTip(o, !!u, u?.inferred);
+      return metroTip(o, !!u, u?.inferred, u ? ctx.reportedDepth?.(o) ?? null : null);
     }
     default: return null;
   }

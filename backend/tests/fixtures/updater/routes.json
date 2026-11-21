@@ -1,0 +1,100 @@
+{
+ "_doc": "HTTP fixtures for backend/tests/test_updater.py: trimmed copies of real pages (real URLs, headlines, publish dates and the quoted sentences verified in docs/urbanos/pune_project_facts.json; page chrome and other paragraphs removed). robots.txt files as fetched 2026-11-21. Any robots.txt not listed answers allow-all.",
+ "routes": {
+  "https://www.hindustantimes.com/feeds/rss/cities/pune-news/rssfeed.xml": [
+   "ht_feed.xml",
+   200,
+   "application/xml"
+  ],
+  "https://punemirror.com/feed/": [
+   "punemirror_feed.xml",
+   200,
+   "application/rss+xml"
+  ],
+  "https://www.punekarnews.in/feed/": [
+   "punekar_feed.xml",
+   200,
+   "application/rss+xml"
+  ],
+  "https://themetrorailguy.com/category/pune-metro/feed/": [
+   "metrorailguy_feed.xml",
+   200,
+   "application/rss+xml"
+  ],
+  "https://www.pmrda.gov.in/feed/": [
+   "pmrda_feed.xml",
+   200,
+   "application/rss+xml"
+  ],
+  "https://indianexpress.com/section/cities/pune/feed/": [
+   "ie_feed.xml",
+   200,
+   "application/rss+xml"
+  ],
+  "https://www.hindustantimes.com/cities/pune-news/four-tbms-to-arrive-in-pune-in-november-for-swargate-katraj-underground-metro-work-101787248591423.html": [
+   "ht_2026-08-21_tbms.html",
+   200,
+   "text/html"
+  ],
+  "https://www.hindustantimes.com/cities/pune-news/swargatekatraj-underground-metro-excavation-for-shafts-begins-at-multiple-locations-101780252736248.html": [
+   "ht_2026-05-31_shafts.html",
+   200,
+   "text/html"
+  ],
+  "https://punemirror.com/city/first-tbm-reaches-pune-swargate-katraj/": [
+   "punemirror_2026-11-04_tbm.html",
+   200,
+   "text/html"
+  ],
+  "https://punemirror.com/city/swargate-katraj-metro-services-by-december-2030/": [
+   "punemirror_2026-09-08_target.html",
+   200,
+   "text/html"
+  ],
+  "https://www.punekarnews.in/pune-swargate-katraj-metro-extension-tunnelling-to-begin-in-january-as-first-tbm-arrives": [
+   "punekarnews_2026-11-04_tbm.html",
+   200,
+   "text/html"
+  ],
+  "https://primetime24.com/en/e/pune/story/first-tbm-reaches-pune-for-swargate-katraj-underground-metro-tunnelling-to-begin/": [
+   "primetime24_2026-11-04.html",
+   200,
+   "text/html"
+  ],
+  "https://pib.gov.in/PressReleaseIframePage.aspx?PRID=2046088": [
+   "pib_2024-08-16_cabinet.html",
+   200,
+   "text/html"
+  ],
+  "https://www.punemetrorail.org/Line_b.aspx": [
+   "punemetrorail_line_b.html",
+   200,
+   "text/html"
+  ],
+  "https://punemetrorail.org/project-profile": [
+   "punemetrorail_line_b.html",
+   200,
+   "text/html"
+  ],
+  "https://www.hindustantimes.com/cities/pune-news/weather-1.html": [
+   "ht_2026-08-21_tbms.html",
+   200,
+   "text/html"
+  ],
+  "https://timesofindia.indiatimes.com/rssfeeds/-2128821991.cms": [
+   null,
+   503,
+   "text/html"
+  ],
+  "https://news.google.com/robots.txt": [
+   "robots_news_google.txt",
+   200,
+   "text/plain"
+  ],
+  "https://www.freepressjournal.in/robots.txt": [
+   "robots_fpj.txt",
+   200,
+   "text/plain"
+  ]
+ }
+}

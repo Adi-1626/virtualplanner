@@ -53,7 +53,7 @@ export const THEME_LABEL: Record<string, string> = {
   heritage_list: 'Municipal heritage list', dp_road_lines: 'Development-plan road lines / right of way',
   metro_structures: 'Metro structure levels (tunnel crown/invert, deck)', vehicle_fleet: 'Vehicle fleet composition', emission_factors: 'Emission factors',
   demo_seed: 'Demonstration seed objects', satellite_imagery: 'Satellite imagery and derived indices', transit: 'Public transport (stops, depots, routes)',
-  amenities: 'Public facilities and amenities', land_parcels: 'Revenue / cadastral parcels (gut, TP scheme)', other: 'Other',
+  amenities: 'Public facilities and amenities', land_parcels: 'Revenue / cadastral parcels (gut, TP scheme)', project_facts: 'Published infrastructure project facts (reviewed)', other: 'Other',
 };
 const humanise = (id: string) => { const t = id.replace(/[_.]+/g, ' ').trim(); return t ? t[0].toUpperCase() + t.slice(1) : UNKNOWN; };
 export const themeLabel = (t: string | null | undefined): string => (t ? THEME_LABEL[t] ?? humanise(t) : UNKNOWN);
