@@ -128,7 +128,7 @@ export const MetroStationEditor: React.FC<{ s: MetroStationObject; onUpdate: Upd
       </div>
       {unmapped ? (
         <p className="text-[11px] flex items-center gap-1.5 flex-wrap" style={note} data-testid="metro-station-underground-note">
-          <CertaintyBadge certainty="unknown" /> {METRO_STATION_LABEL}{unmapped.inferred ? ` (no level in OpenStreetMap; it sits on the tunnel section ${unmapped.tunnelName ?? ''})` : ' (OpenStreetMap)'}: plan position only, drawn as a dashed outline on the surface. Box depth is UNKNOWN (Pune Line-1 underground station bases are 18–28 m deep per the DPR — context, not this station's value).
+          <CertaintyBadge certainty="unknown" /> {METRO_STATION_LABEL}{unmapped.inferred ? ` (no level in OpenStreetMap; it sits on the tunnel section ${unmapped.tunnelName ?? ''})` : ' (OpenStreetMap)'}: plan position only, drawn as a dashed outline on the surface. Box depth is UNKNOWN: no official figure for this station in the dataset (Maha-Metro's Feb 2026 brochure gives 33 m for District Court, its deepest underground station — context, not this station's value).
         </p>
       ) : (<>
       <Slider id="st-len" testId="station-length" label="Platform length" unit="m" min={80} max={200} step={10} value={s.length} onChange={v => onUpdate('length', v)} />

@@ -27,7 +27,7 @@ from database.connection import get_db
 from planning.audit import acting_as
 from updater import audit, config as cfgmod, facts as facts_mod, official, review
 from updater.models import FuProposalEntity, FuRunEntity
-from updater.proposals import evaluate_all, groups_by_status, proposal_dict
+from updater.proposals import _evidence, evaluate_all, evidence_is_official, groups_by_status, proposal_dict
 
 router = APIRouter(prefix="/updater", tags=["updater"])
 
@@ -77,7 +77,10 @@ def status(db: Session = Depends(get_db)):
 
 
 @router.get("/proposals")
-def proposals(status: Optional[str] = None, project: Optional[str] = None, db: Session = Depends(get_db)):
+def proposals(status: Optional[str] = None, project: Optional[str] = None, include_unofficial: bool = False,
+              db: Session = Depends(get_db)):
+    """Proposals backed only by official pages. A proposal from before the official-only rule (news evidence) is left
+    out unless include_unofficial=true (audit use); it is rejected by the system and can never be approved."""
     cfg = _cfg()
     q = select(FuProposalEntity)
     if status and status != "all":   # "all" = no filter, as in `python -m updater proposals --status all`
@@ -85,6 +88,8 @@ def proposals(status: Optional[str] = None, project: Optional[str] = None, db: S
     if project:
         q = q.where(FuProposalEntity.project_id == project)
     rows = list(db.scalars(q))
+    if not include_unofficial:
+        rows = [p for p in rows if evidence_is_official(_evidence(db, p.id))]
     order = {"pending": 0, "approved": 1, "applied": 2, "rolled_back": 3, "superseded": 4, "rejected": 5}
     rows.sort(key=lambda p: (order.get(p.status, 9), p.project_id, p.attribute, p.id))
     return [proposal_dict(db, p, cfg) for p in rows]

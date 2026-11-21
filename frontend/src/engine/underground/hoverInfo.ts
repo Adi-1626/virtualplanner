@@ -21,6 +21,10 @@ export interface HoverTip {
 }
 
 export const DEPTH_NOT_MAPPED = 'Depth not mapped';
+/** An underground metro tunnel with no depth in OSM and no reviewed official figure (official sources only). */
+export const NO_OFFICIAL_TUNNEL_DEPTH = `${DEPTH_NOT_MAPPED} (no official figure)`;
+/** The same for a station: the dataset holds no official depth for it. */
+export const NO_OFFICIAL_STATION_DEPTH = `${DEPTH_NOT_MAPPED} (no official figure in the dataset)`;
 
 /** Object id behind a picked entity id: 'ug:<objectId>:<part>' → objectId; 'rec:<id>[:k]' → null (a record). */
 export function pickObjectId(raw: unknown): string | null {
@@ -108,16 +112,16 @@ export function alignmentTip(a: UndergroundAlignmentObject): HoverTip {
 /** Tooltip for an existing metro line or station. `unmapped` = underground with no depth in the source (metroLevel.ts). */
 export function metroTip(o: MetroLineObject | MetroStationObject, unmapped: boolean, inferred = false, reported?: string | null): HoverTip {
   const live = (o as MetroLineObject).status === 'under_construction' ? 'Under construction' : 'Existing';
-  // a reviewed published depth (data-freshness service) is added as text only; the drawing stays "not mapped"
-  const unmappedDepth = reported ? `${DEPTH_NOT_MAPPED} in OSM · ${reported}` : DEPTH_NOT_MAPPED;
+  // a reviewed OFFICIAL depth (data-freshness service) is added as text only; the drawing stays "not mapped"
+  const unmappedDepth = (none: string) => (reported ? `${DEPTH_NOT_MAPPED} in OSM · ${reported}` : none);
   if (o.type === 'metro_station') {
     const name = o.stationName || o.name || 'Metro station';
     return unmapped
-      ? { type: 'Underground metro station', name, depth: unmappedDepth, status: `${live} · plan position only (OpenStreetMap)${inferred ? ', on a tunnel section' : ''}` }
+      ? { type: 'Underground metro station', name, depth: unmappedDepth(NO_OFFICIAL_STATION_DEPTH), status: `${live} · plan position only (OpenStreetMap)${inferred ? ', on a tunnel section' : ''}` }
       : { type: 'Metro station (elevated)', name, depth: `Platform ~${m1(o.elevation)} m above ground (model)`, status: `${live} · OpenStreetMap / drawn` };
   }
   return unmapped
-    ? { type: 'Metro tunnel', name: o.name || 'Metro line', depth: unmappedDepth, status: `${live} · plan position only (OpenStreetMap)` }
+    ? { type: 'Metro tunnel', name: o.name || 'Metro line', depth: unmappedDepth(NO_OFFICIAL_TUNNEL_DEPTH), status: `${live} · plan position only (OpenStreetMap)` }
     : { type: 'Metro viaduct (elevated)', name: o.name || 'Metro line', depth: `Deck ~${m1(o.elevation)} m above ground (model)`, status: `${live} · OpenStreetMap / drawn` };
 }
 

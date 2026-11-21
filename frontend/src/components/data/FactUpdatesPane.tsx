@@ -5,8 +5,8 @@ import { EmptyState } from '../ui/EmptyState';
 import { inputCls } from '../projects/projectData';
 import { Disclosure } from '../ui/Disclosure';
 import {
-  CONFIDENCE_HELP, CONFIDENCE_LABEL, CONFIDENCE_TONE, FLAG_LABEL, STATUS_LABEL, TIER_LABEL, approvedNotApplied, changeLine,
-  conflictSummary, evidenceDate, groupProposals, needsNote, rollbackTargets, sourceCount, versionNote,
+  CONFIDENCE_HELP, CONFIDENCE_LABEL, CONFIDENCE_TONE, FLAG_LABEL, STATUS_LABEL, approvedNotApplied, changeLine,
+  conflictSummary, evidenceDate, evidenceSource, groupProposals, needsNote, proposalIsOfficial, rollbackTargets, sourceCount, versionNote,
 } from './factUpdatesModel';
 
 const TONE_COLOR = { good: 'var(--measured, #3FB950)', warn: 'var(--warn, #E8833A)', bad: 'var(--fail, #FF6B61)', unknown: 'var(--unknown, #9AA4B2)' };
@@ -29,7 +29,8 @@ export const ProposalCard: React.FC<{ p: Proposal; actions: ProposalActions }> =
   const tone = TONE_COLOR[CONFIDENCE_TONE[p.confidence]];
   const conflict = conflictSummary(p);
   const noteNeeded = needsNote(p);
-  const canDecide = p.status === 'pending' || p.status === 'approved' || p.status === 'rolled_back';
+  const official = proposalIsOfficial(p);
+  const canDecide = official && (p.status === 'pending' || p.status === 'approved' || p.status === 'rolled_back');
   const disabled = !!actions.busy || !actions.reviewer;
   return (
     <li className="uos-card space-y-1.5" data-testid={`proposal-${p.id}`} data-confidence={p.confidence} data-status={p.status}>
@@ -46,12 +47,14 @@ export const ProposalCard: React.FC<{ p: Proposal; actions: ProposalActions }> =
         <p className="text-meta flex items-start gap-1" style={{ color: TONE_COLOR.bad }} role="note" data-testid="proposal-conflict">
           <TriangleAlert size={12} aria-hidden className="mt-0.5 shrink-0" />{conflict}</p>
       )}
+      {!official && <p className="text-meta" style={{ color: TONE_COLOR.bad }} role="note" data-testid="proposal-not-official">
+        Not from an official source: it can never be approved or enter the dataset.</p>}
       <ul className="space-y-1" data-testid="proposal-evidence">
-        {(p.evidence ?? []).map(e => (
+        {(official ? p.evidence ?? [] : []).map(e => (
           <li key={e.claim_id} className="text-meta text-text-2">
             <blockquote className="border-l-2 pl-2 italic text-text-1" style={{ borderColor: 'var(--border-strong)' }}>“{e.quote}”</blockquote>
             <span className="text-text-3">
-              {e.publisher} · {TIER_LABEL[e.tier] ?? `tier ${e.tier}`} · {evidenceDate(e)}
+              {e.publisher} · {evidenceSource(e)} · {evidenceDate(e)}
               {e.attribution !== 'sentence' && e.attribution !== 'page_rule' ? ' · project named only in context' : ''}
               {e.note ? ` · ${e.note}` : ''}{' · '}
               <a className="uos-link inline-flex items-center gap-0.5" href={e.url} target="_blank" rel="noreferrer">source<ExternalLink size={10} aria-hidden /></a>
@@ -71,7 +74,7 @@ export const ProposalCard: React.FC<{ p: Proposal; actions: ProposalActions }> =
             placeholder={noteNeeded ? 'Note required: how was this checked?' : 'Note (optional)'} aria-label={`Review note for ${p.attribute_label} ${p.label}`} />
           {(p.status === 'pending' || p.status === 'rolled_back') && (
             <button type="button" className="uos-btn uos-btn-sm" data-testid="proposal-approve" disabled={disabled || (noteNeeded && !note.trim())}
-              title={!actions.reviewer ? 'Set your name (Traffic data / Projects) to review' : noteNeeded && !note.trim() ? 'This value is not official or corroborated: add a note' : 'Approve (does not change the dataset until applied)'}
+              title={!actions.reviewer ? 'Set your name (Traffic data / Projects) to review' : noteNeeded && !note.trim() ? 'Official sources disagree, the date slipped or the value was LLM-extracted: add a note' : 'Approve (does not change the dataset until applied)'}
               onClick={() => actions.onApprove(p, note)}>
               {actions.busy === `a${p.id}` ? <Loader2 size={13} className="animate-spin" aria-hidden /> : <Check size={13} aria-hidden />}Approve</button>
           )}
@@ -152,8 +155,9 @@ export const FactUpdatesPane: React.FC = () => {
   return (
     <div className="uos-data-features space-y-3" data-testid="fact-updates">
       <p className="text-label text-text-2">
-        New facts about watched Pune projects, found by the data-freshness service in official pages and newspaper feeds. Each one shows the
-        sentence it came from. Nothing changes the dataset until a named reviewer approves it and applies it as a new version; every version can be rolled back.
+        New facts about watched Pune projects, found by the data-freshness service on official sites only: government and agency pages
+        (gov.in, nic.in, Maha-Metro, Parliament, MSRDC). News reports are never used. Each fact shows the sentence it came from. Nothing changes the
+        dataset until a named reviewer approves it and applies it as a new version; every version can be rolled back.
       </p>
       {error && <p className="text-label text-warn" role="status">Could not load the review queue ({error}).</p>}
       <div className="flex items-center gap-2 text-meta text-text-3 flex-wrap">
@@ -162,6 +166,12 @@ export const FactUpdatesPane: React.FC = () => {
         <span className="flex-1" />
         <button type="button" className="uos-btn uos-btn-sm" onClick={load} aria-label="Reload review queue"><RefreshCw size={13} aria-hidden />Reload</button>
       </div>
+      {!error && !!status?.facts.withheld?.length && (
+        <p className="text-label flex items-start gap-1" style={{ color: TONE_COLOR.warn }} role="status" data-testid="facts-withheld">
+          <TriangleAlert size={13} aria-hidden className="mt-0.5 shrink-0" />
+          {status.facts.withheld.length} fact{status.facts.withheld.length === 1 ? '' : 's'} in the active version {status.facts.withheld.length === 1 ? 'is' : 'are'} not
+          from an official source and {status.facts.withheld.length === 1 ? 'is' : 'are'} hidden from the app. Run python -m updater migrate-official-only to replace that version.</p>
+      )}
       {!reviewer && <p className="text-label" style={{ color: TONE_COLOR.warn }}>Set your name (Traffic data or Projects) to approve, reject or apply.</p>}
       {!error && <ApplyBar approved={approved} versions={versions} reviewer={reviewer} busy={busy}
         onApply={() => void act('apply', () => freshnessApi.apply(reviewer), 'New facts version applied')}

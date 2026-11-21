@@ -734,6 +734,17 @@ def test_api_review_flow(env, client):
     assert ds["theme"] == "project_facts" and len(ds["versions"]) == 2
 
 
+def test_api_lists_only_official_proposals(env, client):
+    with SessionLocal() as db:
+        do_run(db)
+        d, c, p = legacy_news(db)
+        db.commit()
+        pid = p.id
+    ids = {x["id"] for x in client.get("/api/updater/proposals?status=all").json()}
+    assert ids and pid not in ids
+    assert pid in {x["id"] for x in client.get("/api/updater/proposals?status=all&include_unofficial=true").json()}
+
+
 def test_api_approve_news_proposal_is_400(env, client):
     with SessionLocal() as db:
         d, c, p = legacy_news(db)
