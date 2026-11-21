@@ -6,7 +6,7 @@ import { inputCls } from '../projects/projectData';
 import { Disclosure } from '../ui/Disclosure';
 import {
   CONFIDENCE_HELP, CONFIDENCE_LABEL, CONFIDENCE_TONE, FLAG_LABEL, STATUS_LABEL, TIER_LABEL, approvedNotApplied, changeLine,
-  conflictSummary, evidenceDate, groupProposals, needsNote, rollbackTargets, sourceCount,
+  conflictSummary, evidenceDate, groupProposals, needsNote, rollbackTargets, sourceCount, versionNote,
 } from './factUpdatesModel';
 
 const TONE_COLOR = { good: 'var(--measured, #3FB950)', warn: 'var(--warn, #E8833A)', bad: 'var(--fail, #FF6B61)', unknown: 'var(--unknown, #9AA4B2)' };
@@ -29,7 +29,7 @@ export const ProposalCard: React.FC<{ p: Proposal; actions: ProposalActions }> =
   const tone = TONE_COLOR[CONFIDENCE_TONE[p.confidence]];
   const conflict = conflictSummary(p);
   const noteNeeded = needsNote(p);
-  const canDecide = p.status === 'pending' || p.status === 'approved';
+  const canDecide = p.status === 'pending' || p.status === 'approved' || p.status === 'rolled_back';
   const disabled = !!actions.busy || !actions.reviewer;
   return (
     <li className="uos-card space-y-1.5" data-testid={`proposal-${p.id}`} data-confidence={p.confidence} data-status={p.status}>
@@ -69,7 +69,7 @@ export const ProposalCard: React.FC<{ p: Proposal; actions: ProposalActions }> =
         <div className="flex flex-wrap items-center gap-1.5">
           <input className={`${inputCls} flex-1 min-w-[12rem]`} style={{ width: 'auto' }} value={note} onChange={e => setNote(e.target.value)}
             placeholder={noteNeeded ? 'Note required: how was this checked?' : 'Note (optional)'} aria-label={`Review note for ${p.attribute_label} ${p.label}`} />
-          {p.status === 'pending' && (
+          {(p.status === 'pending' || p.status === 'rolled_back') && (
             <button type="button" className="uos-btn uos-btn-sm" data-testid="proposal-approve" disabled={disabled || (noteNeeded && !note.trim())}
               title={!actions.reviewer ? 'Set your name (Traffic data / Projects) to review' : noteNeeded && !note.trim() ? 'This value is not official or corroborated: add a note' : 'Approve (does not change the dataset until applied)'}
               onClick={() => actions.onApprove(p, note)}>
@@ -89,6 +89,7 @@ export const ApplyBar: React.FC<{ approved: Proposal[]; versions: FactsVersion[]
   onApply: () => void; onRollback: (v: FactsVersion) => void }> = ({ approved, versions, reviewer, busy, onApply, onRollback }) => {
   const active = versions.find(v => v.review_status === 'active');
   const targets = rollbackTargets(versions);
+  const note = (n: string) => versionNote(n, versions);
   return (
     <div className="uos-card space-y-1.5" data-testid="facts-apply-bar">
       <div className="flex items-center gap-2 flex-wrap">
@@ -106,7 +107,7 @@ export const ApplyBar: React.FC<{ approved: Proposal[]; versions: FactsVersion[]
             {versions.map(v => (
               <li key={v.id} className="flex items-center gap-2 flex-wrap">
                 <span className="text-text-1">{v.version_label}</span><span>{v.review_status}</span><span>{v.facts ?? 0} facts</span>
-                <span className="text-text-3">{v.reviewed_by ?? ''}{v.review_note ? ` — ${v.review_note}` : ''}</span>
+                <span className="text-text-3">{v.reviewed_by ?? ''}{v.review_note ? ` — ${note(v.review_note)}` : ''}</span>
                 {v.review_status === 'superseded' && (
                   <button type="button" className="uos-btn uos-btn-sm ml-auto" disabled={!!busy || !reviewer} data-testid={`facts-rollback-${v.version_label}`}
                     onClick={() => onRollback(v)}><Undo2 size={12} aria-hidden />Roll back to {v.version_label}</button>
@@ -156,16 +157,16 @@ export const FactUpdatesPane: React.FC = () => {
       </p>
       {error && <p className="text-label text-warn" role="status">Could not load the review queue ({error}).</p>}
       <div className="flex items-center gap-2 text-meta text-text-3 flex-wrap">
-        <span>{lastRun ? `Last run ${lastRun.started_at?.slice(0, 16).replace('T', ' ')} UTC · ${lastRun.errors.length} source error(s)` : 'The service has not run yet (python -m updater run).'}</span>
+        <span>{error ? 'Last run unknown (the server did not answer).' : lastRun ? `Last run ${lastRun.started_at?.slice(0, 16).replace('T', ' ')} UTC · ${lastRun.errors.length} source error(s)` : 'The service has not run yet (python -m updater run).'}</span>
         {status && !status.audit.ok && <span style={{ color: TONE_COLOR.bad }}>Audit log check failed: {status.audit.reason}</span>}
         <span className="flex-1" />
         <button type="button" className="uos-btn uos-btn-sm" onClick={load} aria-label="Reload review queue"><RefreshCw size={13} aria-hidden />Reload</button>
       </div>
       {!reviewer && <p className="text-label" style={{ color: TONE_COLOR.warn }}>Set your name (Traffic data or Projects) to approve, reject or apply.</p>}
-      <ApplyBar approved={approved} versions={versions} reviewer={reviewer} busy={busy}
+      {!error && <ApplyBar approved={approved} versions={versions} reviewer={reviewer} busy={busy}
         onApply={() => void act('apply', () => freshnessApi.apply(reviewer), 'New facts version applied')}
-        onRollback={v => void act(`rb${v.id}`, () => freshnessApi.rollback(v.id, reviewer), `Rolled back to ${v.version_label}`)} />
-      {groups.length === 0 && <EmptyState icon={Check} title="Nothing to review">The service has no pending proposals.</EmptyState>}
+        onRollback={v => void act(`rb${v.id}`, () => freshnessApi.rollback(v.id, reviewer), `Rolled back to ${v.version_label}`)} />}
+      {!error && groups.length === 0 && <EmptyState icon={Check} title="Nothing to review">The service has no pending proposals.</EmptyState>}
       {groups.map(g => (
         <section key={g.projectId} data-testid={`fact-project-${g.projectId}`}>
           <h3 className="text-label font-semibold text-text-1 mb-1">{g.projectName}</h3>

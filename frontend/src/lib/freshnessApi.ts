@@ -56,7 +56,7 @@ const post = <T>(path: string, body: unknown) => j<T>(path, { method: 'POST', bo
 
 export const freshnessApi = {
   status: () => j<UpdaterStatus>('/api/updater/status'),
-  proposals: (status = 'pending,approved') => j<Proposal[]>(`/api/updater/proposals?status=${encodeURIComponent(status)}`),
+  proposals: (status = 'pending,approved,rolled_back') => j<Proposal[]>(`/api/updater/proposals?status=${encodeURIComponent(status)}`),
   approve: (id: string, reviewer: string, note = '') => post<Proposal>(`/api/updater/proposals/${encodeURIComponent(id)}/approve`, { reviewer, note }),
   reject: (id: string, reviewer: string, note = '') => post<Proposal>(`/api/updater/proposals/${encodeURIComponent(id)}/reject`, { reviewer, note }),
   apply: (reviewer: string, note = '', activate = true) => post<{ version_id: string; version_label: string; review_status: string }>('/api/updater/apply', { reviewer, note, activate }),

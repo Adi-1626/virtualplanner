@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Fact, FactsVersion, Proposal } from '../../lib/freshnessApi';
 import { ApplyBar, ProposalCard, type ProposalActions } from '../../components/data/FactUpdatesPane';
-import { approvedNotApplied, changeLine, conflictSummary, groupProposals, needsNote, rollbackTargets } from '../../components/data/factUpdatesModel';
+import { approvedNotApplied, changeLine, conflictSummary, groupProposals, needsNote, rollbackTargets, versionNote } from '../../components/data/factUpdatesModel';
 import { loadReportedFacts, reportedDepthFor, reportedDepthText, reportedFacts, setReportedFacts } from '../underground/reportedFacts';
 import { DEPTH_NOT_MAPPED, objectTip } from '../underground/hoverInfo';
 import type { CityObject } from '../objects/types';
@@ -91,6 +91,27 @@ describe('Fact updates review card', () => {
     expect(bar).toContain('version v2 · 1 facts');
     expect(bar).toContain('Apply 1 approved fact as a new version');
     expect(bar).toContain('Roll back to v1');
+  });
+
+  it('a rolled-back proposal is listed after pending / approved and can be approved again (integration QA)', () => {
+    const rb = html(prop({ status: 'rolled_back', decided_by: 'Ravi', decision_note: 'not in the active facts after a rollback by Ravi' }));
+    expect(rb).toContain('Rolled back');
+    expect(rb).toContain('data-testid="proposal-approve"');
+    expect(rb).toContain('data-testid="proposal-reject"');
+    const g = groupProposals([prop({ id: 'r', status: 'rolled_back' }), prop({ id: 'a', status: 'approved' }), prop({ id: 'p' })]);
+    expect(g[0].items.map(x => x.id)).toEqual(['p', 'a', 'r']);
+  });
+
+  it('version notes name versions, not registry ids (integration QA)', () => {
+    const vs: FactsVersion[] = [
+      { id: 'dsv_ab12', version_label: 'v3', review_status: 'active', facts: 1, sha256: null, reviewed_by: 'Asha', reviewed_at: null, review_note: null, notes: '', created_at: null },
+      { id: 'dsv_0f9e', version_label: 'v2', review_status: 'superseded', facts: 1, sha256: null, reviewed_by: 'Asha', reviewed_at: null, review_note: 'superseded by dsv_ab12', notes: '', created_at: null },
+    ];
+    expect(versionNote('superseded by dsv_ab12', vs)).toBe('superseded by v3');
+    expect(versionNote('superseded by dsv_ffff', vs)).toBe('superseded by a later version');
+    const bar = renderToStaticMarkup(createElement(ApplyBar, { approved: [], versions: vs, reviewer: 'Asha', busy: null, onApply: vi.fn(), onRollback: vi.fn() }));
+    expect(bar).toContain('superseded by v3');
+    expect(bar).not.toContain('dsv_ab12');
   });
 });
 

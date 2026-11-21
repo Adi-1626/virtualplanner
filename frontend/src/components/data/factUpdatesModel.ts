@@ -65,7 +65,7 @@ export interface ProjectGroup { projectId: string; projectName: string; items: P
 
 /** Pending first (conflicts on top), then approved; grouped by project in name order. */
 export function groupProposals(list: Proposal[]): ProjectGroup[] {
-  const order: Record<string, number> = { pending: 0, approved: 1 };
+  const order: Record<string, number> = { pending: 0, approved: 1, rolled_back: 2 };
   const by = new Map<string, ProjectGroup>();
   for (const p of list) {
     const g = by.get(p.project_id) ?? { projectId: p.project_id, projectName: p.project_name, items: [] };
@@ -79,6 +79,11 @@ export function groupProposals(list: Proposal[]): ProjectGroup[] {
 
 export function approvedNotApplied(list: Proposal[]): Proposal[] {
   return list.filter(p => p.status === 'approved' && !p.applied_version_id);
+}
+
+/** A registry review note with version ids ("superseded by dsv_…") written as version labels ("superseded by v3"). */
+export function versionNote(note: string, vs: FactsVersion[]): string {
+  return note.replace(/\bdsv_[0-9a-f]+\b/g, id => vs.find(v => v.id === id)?.version_label ?? 'a later version');
 }
 
 /** Versions a reviewer can roll back to: superseded ones (the registry re-activates them). */

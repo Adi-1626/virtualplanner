@@ -331,6 +331,7 @@ def test_api_review_flow(env, client):
     with SessionLocal() as db:
         do_run(db)
     rows = client.get("/api/updater/proposals?status=pending").json()
+    assert len(client.get("/api/updater/proposals?status=all").json()) >= len(rows) > 0   # "all" = no filter, like the CLI
     depth = next(p for p in rows if p["attribute"] == "tunnel_depth_m" and p["label"] == "~28 m")
     assert depth["evidence"][0]["quote"] and depth["confidence"] == "corroborated"
     assert client.post(f"/api/updater/proposals/{depth['id']}/approve", json={"reviewer": ""}).status_code == 400

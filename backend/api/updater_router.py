@@ -79,7 +79,7 @@ def status(db: Session = Depends(get_db)):
 def proposals(status: Optional[str] = None, project: Optional[str] = None, db: Session = Depends(get_db)):
     cfg = _cfg()
     q = select(FuProposalEntity)
-    if status:
+    if status and status != "all":   # "all" = no filter, as in `python -m updater proposals --status all`
         q = q.where(FuProposalEntity.status.in_(status.split(",")))
     if project:
         q = q.where(FuProposalEntity.project_id == project)
