@@ -94,6 +94,12 @@ def ingest(db: Session, cfg: dict, cand: Candidate, body: bytes, final_url: str,
     if cand.official_page:
         name = next((s.get("publisher") for s in cfg.get("sources", []) if s["id"] == cand.source_id), name) or name
     published, how = page.published_at, page.published_from
+    stamp = next((s.get("date_stamp_pattern") for s in cfg.get("sources", []) if s["id"] == cand.source_id and s.get("date_stamp_pattern")), None)
+    if stamp:
+        import re as _re
+        m = _re.search(stamp, page.text)
+        if m and all(k in m.groupdict() for k in ("y", "m", "d")):
+            published, how = f"{m.group('y')}-{m.group('m')}-{m.group('d')}", "page_stamp"
     if not published and cand.feed_published:
         published, how = cand.feed_published, "feed"
     if not published and cand.official_page:

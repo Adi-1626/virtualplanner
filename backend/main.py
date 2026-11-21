@@ -23,6 +23,7 @@ from api.infra_router import router as infra_router  # municipal infrastructure 
 from datasets.seed import seed_registry
 from api.terrain_router import router as terrain_router  # DEM sampling + subsurface evidence (read-only, no tables)
 from api.envdata_router import router as envdata_router  # read-only Environment data (docs/urbanos/ENVIRONMENT_DATA.md)
+from api.updater_router import router as updater_router  # fu_* data-freshness review tables (additive; DATA_FRESHNESS_SERVICE.md)
 
 # Initialize database tables and the mandatory base scenario
 Base.metadata.create_all(bind=engine)
@@ -79,6 +80,7 @@ app.include_router(datasets_router, prefix="/api")
 app.include_router(terrain_router, prefix="/api")
 app.include_router(infra_router, prefix="/api")
 app.include_router(envdata_router, prefix="/api")
+app.include_router(updater_router, prefix="/api")
 
 @app.get("/")
 def read_root():

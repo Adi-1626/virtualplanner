@@ -26,11 +26,11 @@ EXTRACTOR_VERSION = "1"
 MAX_QUOTE = 400
 
 ATTRIBUTES: dict[str, dict] = {
-    "tunnel_depth_m": {"label": "Tunnel depth below ground", "unit": "m", "kind": "number"},
-    "length_km": {"label": "Length", "unit": "km", "kind": "number"},
-    "station_count": {"label": "Stations", "unit": "stations", "kind": "integer"},
-    "cost_inr_crore": {"label": "Project cost", "unit": "INR crore", "kind": "number"},
-    "tbm_count": {"label": "Tunnel boring machines", "unit": "TBMs", "kind": "integer"},
+    "tunnel_depth_m": {"label": "Tunnel depth below ground", "unit": "m", "kind": "number", "max_age_days": 1825},
+    "length_km": {"label": "Length", "unit": "km", "kind": "number", "max_age_days": 1825},
+    "station_count": {"label": "Stations", "unit": "stations", "kind": "integer", "max_age_days": 1825},
+    "cost_inr_crore": {"label": "Project cost", "unit": "INR crore", "kind": "number", "max_age_days": 1825},
+    "tbm_count": {"label": "Tunnel boring machines", "unit": "TBMs", "kind": "integer", "max_age_days": 1825},
     "tunnelling_start": {"label": "Tunnelling (boring) start", "unit": "month", "kind": "month"},
     "completion_target": {"label": "Completion target", "unit": "month", "kind": "month"},
     "status": {"label": "Status", "unit": None, "kind": "status"},
@@ -203,15 +203,28 @@ def x_station_count(ns: str, ctx: dict) -> list:
     return out
 
 
+COST_CONTEXT = re.compile(r"\b(?:cost|costing|costs|estimated|estimate|outlay|budget|worth|pegged|valued)\b")
+COST_EXCLUDE = re.compile(r"\b(?:loa|letter of acceptance|awarded|contract|tender|bid|work order|equity|loan|funding|fund|grant|"
+                          r"allocat\w*|released|disbursed|contribut\w*|add|share|compensation|land acquisition|fine|penalty|"
+                          r"revenue|toll|additional|extra|escalation|subordinate)\b")
+
+
 def x_cost(ns: str, ctx: dict) -> list:
-    if not re.search(r"\b(?:cost|costing|estimated|outlay|budget|project worth|project of|worth|pegged)\b|crore[- ](?:[\w-]+\s+){0,3}(?:project|flyover|bridge|road|corridor|line|extension)\b", ns):
-        return []
-    if re.search(r"\b(?:loa|letter of acceptance|awarded|contract|tender|bid|work order|equity|loan|funding|grant|allocat\w*|"
-                 r"released|disbursed|contribut\w*|will add|share of|compensation|for land acquisition|fine|penalty|revenue|toll)\b", ns):
-        return []
+    """A rupee amount in crore whose own clause says it is the project's cost: a cost word in the 60 characters before
+    it (same clause), or '<amount>-crore project/flyover/…' right after; no funding / contract / share word in that
+    clause."""
     out = []
     for m in re.finditer(r"(?:" + HEDGE + r"\s*)?(?:₹|rs\.?|inr)\s*(?P<num>\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)[\s-]*"
                          r"(?P<scale>lakh crore|crore|cr\b)", ns):
+        before = re.split(r",\s|;|:\s|\band\b|\bwhile\b|\bwith\b", ns[max(0, m.start() - 90):m.start()])[-1]
+        after = ns[m.end():m.end() + 40]
+        named = re.match(r"[- ](?:[\w-]+\s+){0,3}(?:project|flyover|bridge|road|corridor|line|extension|scheme)\b", after)
+        if not (COST_CONTEXT.search(before) or named):
+            continue
+        if re.search(r"\b(?:earlier|original|initial|old|previous|from)\s+(?:the\s+)?(?:earlier\s+|original\s+|initial\s+)?$", before):
+            continue      # "rose from the earlier Rs 2,954 crore to Rs 3,637 crore": the old figure is not the cost
+        if COST_EXCLUDE.search(before) or re.match(r"\s*(?:in|as|for|towards)\s+(?:equity|loan|funding|grant|compensation)", after):
+            continue
         v = parse_number(m.group("num"))
         if v is None:
             continue
@@ -384,12 +397,14 @@ def extract_page(paragraphs: list[str], title: str, projects: list[dict], publis
     seen: set[tuple] = set()
     window: list[set[str]] = []          # projects named in the previous sentences (document order, newest last)
     prev_text: list[str] = []
+    subj: list[str | None] = []
     for para in paragraphs:
         for s in sentences(para):
             ns = norm_for_match(s)
             spans = alias_spans(ns, projects)
             here = {x[2] for x in spans}
             recent = set().union(*window[-CONTEXT_SENTENCES:]) if window else set()
+            subjects = {x for x in subj[-CONTEXT_SENTENCES:] if x}
             ctx["prev"] = " ".join(prev_text[-2:])
             cites = bool(CITES.search(ns))
             temporal = _temporal(ns)
@@ -398,8 +413,10 @@ def extract_page(paragraphs: list[str], title: str, projects: list[dict], publis
                     if here:
                         pid = _nearest_project(spans, pos) if len(here) > 1 else next(iter(here))
                         how = "sentence"
-                    elif len(recent) == 1 and REFERS_BACK.search(ns):
-                        pid, how = next(iter(recent)), "previous_sentence"
+                    elif len(subjects) == 1 and REFERS_BACK.search(ns):
+                        # "the project / the line / the TBMs": the one project the previous sentences were about (a
+                        # sentence's subject = the first project it names)
+                        pid, how = next(iter(subjects)), "previous_sentence"
                     elif article_project and recent <= {article_project} and not OTHER_PHASE.search(ns):
                         pid, how = article_project, "article"
                     else:
@@ -408,7 +425,7 @@ def extract_page(paragraphs: list[str], title: str, projects: list[dict], publis
                         continue
                     if attr in SENTENCE_ONLY and how != "sentence":
                         continue
-                    key = (pid, attr, vnum, vtext, s)
+                    key = (pid, attr, vnum, vtext)
                     if key in seen:
                         continue
                     seen.add(key)
@@ -419,6 +436,7 @@ def extract_page(paragraphs: list[str], title: str, projects: list[dict], publis
                     out.append(Claim(pid, attr, vnum, vtext, unit, qual, t, s[:MAX_QUOTE], how,
                                      f"pattern:{attr}@{EXTRACTOR_VERSION}", cites, note))
             window.append(here)
+            subj.append(spans[0][2] if spans else None)
             prev_text.append(ns)
     return out
 

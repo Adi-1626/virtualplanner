@@ -56,8 +56,8 @@ def approve(db: Session, pid: str, reviewer: str, note: str = "", max_age_days: 
     if p.status not in ("pending", "rejected", "rolled_back", "superseded"):
         raise ReviewError(f"proposal is {p.status}; only pending, rejected, superseded or rolled-back proposals can be approved")
     evaluate_group(db, p.project_id, p.attribute, facts_mod.read_active(db), max_age_days)
-    if p.verdict != "corroborated" and not (note or "").strip():
-        raise ReviewError(f"this proposal is '{p.verdict.replace('_', ' ')}': approving it needs a note saying why "
+    if p.confidence not in ("official", "corroborated") and not (note or "").strip():
+        raise ReviewError(f"this proposal is '{p.confidence.replace('_', ' ')}': approving it needs a note saying why "
                           "(e.g. checked with the authority)")
     if not _evidence(db, p.id):
         raise ReviewError("a proposal without evidence cannot be approved")
@@ -97,7 +97,7 @@ def fact_entry(db: Session, p: FuProposalEntity, cfg: dict | None) -> dict:
             "attribute": p.attribute, "attribute_label": ATTRIBUTES[p.attribute]["label"],
             "value_num": p.value_num, "value_text": p.value_text, "unit": p.unit, "qualifier": p.qualifier,
             "temporal": p.temporal, "label": label(p.attribute, p.value_num, p.value_text, p.qualifier),
-            "verdict_at_approval": p.verdict, "independent_sources": p.independent_sources,
+            "verdict_at_approval": p.verdict, "confidence": p.confidence, "independent_sources": p.independent_sources,
             "official_sources": p.official_sources, "flags": json.loads(p.flags_json or "[]"),
             "proposal_id": p.id, "approved_by": p.decided_by,
             "approved_at": p.decided_at.isoformat() + "Z" if p.decided_at else None, "approval_note": p.decision_note,

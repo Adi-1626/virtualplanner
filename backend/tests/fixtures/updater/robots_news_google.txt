@@ -1,0 +1,15 @@
+User-agent: *
+Disallow: /
+Allow: /$
+Allow: /?
+Allow: /home$
+Allow: /home?
+Allow: /home/
+Allow: /nwshp$
+Allow: /topics/
+Allow: /publications/
+Allow: /stories/
+Allow: /swg/
+Allow: /about$
+Allow: /about?
+Allow: /about/

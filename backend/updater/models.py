@@ -96,6 +96,9 @@ class FuProposalEntity(Base):
     # pending | approved | rejected | applied | superseded (another value approved / applied for the same attribute)
     status = Column(String, nullable=False, default="pending", index=True)
     verdict = Column(String, nullable=False, default="needs_corroboration")  # corroborated | needs_corroboration | conflict
+    # same vocabulary as docs/urbanos/pune_project_facts.json: official | corroborated | single_source | conflicting |
+    # unverified, plus slipped (a planned date that passed and was replaced by a later reported date)
+    confidence = Column(String, nullable=False, default="unverified")
     independent_sources = Column(Integer, nullable=False, default=0)
     official_sources = Column(Integer, nullable=False, default=0)
     evidence_count = Column(Integer, nullable=False, default=0)

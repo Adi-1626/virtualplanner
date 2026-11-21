@@ -128,6 +128,8 @@ def corroboration(evidence: list[tuple[FuClaimEntity, FuDocumentEntity]], today:
 def evaluate_group(db: Session, project_id: str, attribute: str, active: dict, max_age_days: int,
                    today: dt.date | None = None, actor: str = "updater") -> None:
     today = today or dt.date.today()
+    # durable figures (length, cost, depth, counts) stay citable for 5 years; plans and status go stale sooner
+    max_age_days = int(ATTRIBUTES[attribute].get("max_age_days", max_age_days))
     props = list(db.scalars(select(FuProposalEntity).where(FuProposalEntity.project_id == project_id,
                                                             FuProposalEntity.attribute == attribute)))
     ev = {p.id: _evidence(db, p.id) for p in props}
@@ -136,6 +138,7 @@ def evaluate_group(db: Session, project_id: str, attribute: str, active: dict, m
     has_official = {p.id: any(d.tier == 1 for c, d in ev[p.id]) for p in props}
     cur = current_value(active, project_id, attribute)
     kind = ATTRIBUTES[attribute]["kind"]
+    slipped_by = slips(props, ev, newest, kind, today)
     for p in props:
         e = ev[p.id]
         i = info[p.id]
@@ -172,9 +175,15 @@ def evaluate_group(db: Session, project_id: str, attribute: str, active: dict, m
         if kind == "month" and p.value_text and len(p.value_text) == 7 and p.temporal == "planned" and p.value_text < today.strftime("%Y-%m"):
             flags.append({"code": "planned_date_passed", "detail": f"planned for {label(attribute, None, p.value_text)}, which has passed — verify what happened"})
         conflicts: list[dict] = []
+        if p.id in slipped_by:
+            o = next(x for x in props if x.id == slipped_by[p.id])
+            flags.append({"code": "slipped", "detail": f"planned for {label(attribute, p.value_num, p.value_text)}, which has passed; "
+                                                       f"newer reports ({(newest[o.id] or '')[:10]}) give {label(attribute, o.value_num, o.value_text)}"})
         for o in props:
             if o.id == p.id or o.status not in COMPETING or not ev[o.id]:
                 continue
+            if slipped_by.get(o.id) == p.id or slipped_by.get(p.id) == o.id:
+                continue          # a slipped earlier plan is history, not a disagreement
             conflicts.append({"kind": "source_disagreement", "proposal_id": o.id, "value": label(attribute, o.value_num, o.value_text, o.qualifier),
                               "status": o.status, "newest_evidence_at": newest[o.id],
                               "detail": f"{len(ev[o.id])} quote(s) say {label(attribute, o.value_num, o.value_text, o.qualifier)}"})
@@ -196,8 +205,21 @@ def evaluate_group(db: Session, project_id: str, attribute: str, active: dict, m
         for f in flags:
             uniq.setdefault(f["code"], f)
         flags = list(uniq.values())
-        verdict = "conflict" if any(x["kind"] == "source_disagreement" for x in conflicts) else ("corroborated" if i["corroborated"] else "needs_corroboration")
+        disagree = any(x["kind"] == "source_disagreement" for x in conflicts)
+        verdict = "conflict" if disagree else ("corroborated" if i["corroborated"] else "needs_corroboration")
         p.verdict = verdict
+        if p.id in slipped_by:
+            p.confidence = "slipped"
+        elif disagree:
+            p.confidence = "conflicting"
+        elif i["official"] >= 1 and not i["llm_only"]:
+            p.confidence = "official"
+        elif i["independent_press"] >= 2:
+            p.confidence = "corroborated"
+        elif i["counting"] >= 1:
+            p.confidence = "single_source"
+        else:
+            p.confidence = "unverified"
         p.official_sources = i["official"]
         p.independent_sources = i["independent_sources"]
         p.evidence_count = len(e)
@@ -206,6 +228,29 @@ def evaluate_group(db: Session, project_id: str, attribute: str, active: dict, m
         p.current_value_json = json.dumps(cur, ensure_ascii=False) if cur else None
         p.newest_evidence_at = newest[p.id]
     db.flush()
+
+
+def slips(props, ev, newest, kind: str, today: dt.date) -> dict[str, str]:
+    """{earlier proposal id: later proposal id} for planned dates that SLIPPED: the earlier value is a planned month that
+    has already passed, every one of its sources is older than the newest source of a later planned value. A planned
+    date that has not passed yet and disagrees is a conflict, not a slip (e.g. a completion target of Feb 2029 vs Dec
+    2030: both are still in the future, so the sources disagree)."""
+    out: dict[str, str] = {}
+    if kind != "month":
+        return out
+    now_m = today.strftime("%Y-%m")
+    for a in props:
+        if not (a.value_text and len(a.value_text) == 7 and a.value_text < now_m and ev[a.id]):
+            continue
+        for b in props:
+            if b.id == a.id or not (b.value_text and b.value_text > a.value_text and ev[b.id] and newest[b.id] and newest[a.id]):
+                continue
+            if b.status not in COMPETING:
+                continue
+            if newest[b.id] > newest[a.id] and b.temporal == "planned":
+                out[a.id] = b.id
+                break
+    return out
 
 
 def evaluate_all(db: Session, active: dict, max_age_days: int, today: dt.date | None = None) -> int:
@@ -226,7 +271,7 @@ def proposal_dict(db: Session, p: FuProposalEntity, cfg: dict | None = None, wit
            "attribute": p.attribute, "attribute_label": ATTRIBUTES.get(p.attribute, {}).get("label", p.attribute),
            "value_num": p.value_num, "value_text": p.value_text, "unit": p.unit, "qualifier": p.qualifier,
            "temporal": p.temporal, "label": label(p.attribute, p.value_num, p.value_text, p.qualifier),
-           "status": p.status, "verdict": p.verdict, "independent_sources": p.independent_sources,
+           "status": p.status, "verdict": p.verdict, "confidence": p.confidence, "independent_sources": p.independent_sources,
            "official_sources": p.official_sources, "evidence_count": p.evidence_count,
            "flags": json.loads(p.flags_json or "[]"), "conflicts": json.loads(p.conflicts_json or "[]"),
            "current_value": json.loads(p.current_value_json) if p.current_value_json else None,
