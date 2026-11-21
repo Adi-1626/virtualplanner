@@ -736,7 +736,7 @@ export class StudyAreaExplorer {
       kind: 'open_end',
       severity: 'warning',
       title: `"${roadName(road.id)}" leads nowhere at this end`,
-      detail: 'No mapped road continues from this end, so no traffic can use it to go anywhere. Extend it to the road it should meet in Build.',
+      detail: 'No mapped road continues from this end, so no traffic can use it to go anywhere. Extend it to the road it should meet in Design.',
       location: node.coordinates,
       roadIds,
     };
@@ -793,7 +793,7 @@ export class StudyAreaExplorer {
         kind: 'duplicate',
         severity: 'warning',
         title: `"${roadName(id)}" runs along "${roadName(along)}"`,
-        detail: `Most of it lies within ${DUPLICATE_M} m of roads already on the map, so it is probably a copy drawn before those roads were loaded. Traffic uses the mapped road; delete this one in Build if it is the same road.`,
+        detail: `Most of it lies within ${DUPLICATE_M} m of roads already on the map, so it is probably a copy drawn before those roads were loaded. Traffic uses the mapped road; delete this one in Design if it is the same road.`,
         location: c[Math.floor(c.length / 2)] as [number, number, number],
         roadIds: [id, along],
         distanceM: 0,

@@ -11,8 +11,16 @@ import type { Delta } from '../engine/simulation/ScenarioComparison';
 
 const fmt = (n: number) => Math.round(n).toLocaleString();
 
-const fmtDeltaValue = (d: Delta, v: number | null) =>
-  v === null ? '—' : `${d.unit === 's' || d.unit === 'km/h' ? Math.round(v) : fmt(v)}${d.unit === 's' ? ' s' : d.unit === 'km/h' ? ' km/h' : d.unit === '%' ? '%' : d.unit === 'veh·h' ? ' veh·h' : ''}`;
+/**
+ * A value with its unit. Every unit is printed: fuel, CO₂, NOx, PM, veh/h, trips and stretches showed bare numbers
+ * before (docs/urbanos/SIMULATE_AUDIT.md). Small values keep one decimal so a 0.4 → 0.5 is not shown as 0 → 0.
+ */
+export const fmtDeltaValue = (d: Delta, v: number | null) => {
+  if (v === null) return '—';
+  const n = Math.abs(v) < 10 && v !== 0 && d.unit !== 'veh' && d.unit !== 'trips' && d.unit !== 'stretches' ? v.toLocaleString(undefined, { maximumFractionDigits: 1 }) : fmt(v);
+  if (!d.unit) return n;
+  return d.unit === '%' ? `${n}%` : `${n} ${d.unit}`;
+};
 
 /**
  * Change as a percentage, or null when it is too small to show. Under 10% it keeps one decimal: the noise
@@ -99,9 +107,9 @@ export const DeltaKpi: React.FC<{ d: Delta; label?: string }> = ({ d, label }) =
   </div>
 );
 
-/** Marks figures that come from the network as edited in Build, not the existing city. */
+/** Marks figures that come from the network as edited in Design, not the existing city. */
 export const ProposalBadge: React.FC = () => (
-  <span data-testid="proposal-badge" title="These figures are for the network as edited in Build, not the existing city saved as the baseline."
+  <span data-testid="proposal-badge" title="These figures are for the network as edited in Design, not the existing city saved as the baseline."
     className="inline-flex items-center gap-1 rounded-full border border-indigo-400/40 bg-indigo-500/20 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-indigo-200">
     Proposal
   </span>

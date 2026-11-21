@@ -40,7 +40,7 @@ export function improvementsFor(r: RoadAnalysisResult, sectionRoadIds: string[],
         return { value: `${Math.round(100 * (dd && dd.total > 0 ? dd.blocked / dd.total : chain.blockedShare))}%`, label: `of the delay ${chain.direction} is queueing behind it` };
       })(),
       why: root.cause === 'signal' ? 'Try retiming its signal or giving the queued approach a longer green; compare the delay on this road and at the junction\'s other approaches.' : 'Try signal control, a turn ban or a separate turning lane there; compare the whole neighbourhood, not only this road.',
-      action: { label: 'Open the junction in Build', roadIds: sectionRoadIds, at: [root.coordinates[0], root.coordinates[1], 0], junction: true } });
+      action: { label: 'Open the junction in Design', roadIds: sectionRoadIds, at: [root.coordinates[0], root.coordinates[1], 0], junction: true } });
   }
   if (r.cause.kind === 'own-signal' && worst?.delay) {
     const j = r.junctions.find(x => x.atSection && x.signalised);
@@ -48,7 +48,7 @@ export function improvementsFor(r: RoadAnalysisResult, sectionRoadIds: string[],
       evidence: `${Math.round(worst.delay.signal)} s of the ${Math.round(worst.delay.total)} s delay per vehicle ${worst.label} is signal waiting; the stop line passes about ${worst.capacityPcu.toLocaleString()} PCU/h against ${worst.demandPcu.toLocaleString()} routed.`,
       figure: { value: `${Math.round(worst.delay.signal)} s`, label: `of ${Math.round(worst.delay.total)} s delay per vehicle is signal waiting` },
       why: 'A longer green for this approach shortens its wait but lengthens the others\': compare all approaches of the junction.',
-      action: j ? { label: 'Open the junction in Build', roadIds: sectionRoadIds, at: [j.coordinates[0], j.coordinates[1], 0], junction: true } : undefined });
+      action: j ? { label: 'Open the junction in Design', roadIds: sectionRoadIds, at: [j.coordinates[0], j.coordinates[1], 0], junction: true } : undefined });
   }
   const overCap = r.directions.find(d => d.vc > 0.85 && d.capacityBasis === 'midblock');
   if (overCap) {
@@ -56,7 +56,7 @@ export function improvementsFor(r: RoadAnalysisResult, sectionRoadIds: string[],
       evidence: `${capital(overCap.label)} the traffic routed along it is ${Math.round(100 * overCap.vc)}% of its mid-block capacity (${overCap.capacityPcu.toLocaleString()} PCU/h on ${overCap.lanes} lane${overCap.lanes === 1 ? '' : 's'}, IRC:106).`,
       figure: { value: `${Math.round(100 * overCap.vc)}%`, label: `of mid-block capacity, ${overCap.label}` },
       why: 'Widening only helps if the junctions at its ends can pass the extra traffic, and more capacity can draw more traffic onto it: compare the end junctions and the neighbourhood.',
-      action: { label: 'Select the road in Build', roadIds: sectionRoadIds, at } });
+      action: { label: 'Select the road in Design', roadIds: sectionRoadIds, at } });
   }
   const signalCap = r.directions.find(d => d.vc > 0.85 && d.capacityBasis === 'signal');
   if (signalCap && r.cause.kind !== 'own-signal') {
@@ -65,7 +65,7 @@ export function improvementsFor(r: RoadAnalysisResult, sectionRoadIds: string[],
       figure: { value: `${Math.round(100 * signalCap.vc)}%`, label: `of what the signal passes, ${signalCap.label}` },
       why: 'More green here means less for the crossing road: compare the junction as a whole.',
       // The signal at the direction's downstream end: its stop line is the last point of the direction's geometry
-      action: (() => { const end = signalCap.paths.at(-1)?.at(-1); return end ? { label: 'Open the junction in Build', roadIds: sectionRoadIds, at: [end[0], end[1], 0] as [number, number, number], junction: true } : undefined; })() });
+      action: (() => { const end = signalCap.paths.at(-1)?.at(-1); return end ? { label: 'Open the junction in Design', roadIds: sectionRoadIds, at: [end[0], end[1], 0] as [number, number, number], junction: true } : undefined; })() });
   }
   if (congested && r.composition.throughShare > 0.6) {
     const spare = r.nearby.filter(n => (n.vc ?? 1) < 0.6 && n.roadClass !== 'local' && n.vph > 0).sort((a, b) => (a.vc ?? 1) - (b.vc ?? 1))[0];

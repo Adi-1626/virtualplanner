@@ -75,7 +75,7 @@ export const ShortcutsOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
             ))}
           </div>
           <div className="space-y-2">
-            <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Tools <span className="normal-case text-slate-500">(in Build mode)</span></div>
+            <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Tools <span className="normal-case text-slate-500">(in Design)</span></div>
             {TOOLS.filter(t => t.hotkey).map(t => (
               <div key={t.mode} className="flex items-center justify-between gap-3">
                 <span className="text-slate-300">{t.label}</span>

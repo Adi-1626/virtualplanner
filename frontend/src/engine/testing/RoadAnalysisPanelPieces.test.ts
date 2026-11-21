@@ -124,7 +124,7 @@ describe('road analysis panel pieces', () => {
     expect(s).toContain('93%');
     expect(s).toContain('60%');
     const b = renderToStaticMarkup(createElement(BottlenecksCard, { r: result(), overlay: 'none', actions: actions() }));
-    expect(b).toContain('347 over capacity');
+    expect(b).toContain('347 stretches over capacity');
     expect(b).toContain('131%');
     expect(b).toContain('Show Airport Road on the map');
   });
@@ -148,16 +148,16 @@ describe('road analysis panel pieces', () => {
     expect(label.getAttribute('title')).toContain('network gap: Mokshagundam');
   });
   it('suggestion card shows the headline figure and the CTAs', () => {
-    const html = renderToStaticMarkup(createElement(SuggestionCard, { s: { kind: 'widen', title: 'Add a lane', evidence: 'e', why: 'w', figure: { value: '91%', label: 'of mid-block capacity' }, action: { label: 'Select the road in Build', roadIds: ['a'], at: null } }, onTest: () => {}, actions: actions() }));
+    const html = renderToStaticMarkup(createElement(SuggestionCard, { s: { kind: 'widen', title: 'Add a lane', evidence: 'e', why: 'w', figure: { value: '91%', label: 'of mid-block capacity' }, action: { label: 'Select the road in Design', roadIds: ['a'], at: null } }, onTest: () => {}, actions: actions() }));
     expect(html).toContain('91%');
     expect(html).toContain('Test it');
-    expect(html).toContain('Select the road in Build');
+    expect(html).toContain('Select the road in Design');
   });
   it('"Give its approach more green time" opens the junction at the end of the direction its signal limits (browser workflow 2026-11-09: it had no Build action)', () => {
     const limited = dir({ label: 'towards the south-west', vc: 1.7, capacityBasis: 'signal', stopLinePcu: 1500, capacityPcu: 1500, paths: [[[73.86, 18.53, 0], [73.861, 18.531, 0]], [[73.861, 18.531, 0], [73.862, 18.532, 0]]] });
     const r = result({ directions: [limited, dir({})], status: 'severe', cause: { kind: 'insufficient', text: 't', chain: null } });
     const s = improvementsFor(r, ['osm_1', 'osm_2'], null).find(x => x.title === 'Give its approach more green time');
-    expect(s?.action).toEqual({ label: 'Open the junction in Build', roadIds: ['osm_1', 'osm_2'], at: [73.862, 18.532, 0], junction: true });
+    expect(s?.action).toEqual({ label: 'Open the junction in Design', roadIds: ['osm_1', 'osm_2'], at: [73.862, 18.532, 0], junction: true });
     // Without geometry there is nowhere to open: no action rather than a wrong place
     const none = improvementsFor(result({ directions: [{ ...limited, paths: [] }, dir({})], status: 'severe', cause: { kind: 'insufficient', text: 't', chain: null } }), ['osm_1'], null).find(x => x.title === 'Give its approach more green time');
     expect(none).toBeDefined();

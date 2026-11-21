@@ -154,7 +154,7 @@ const ObjectDetails: React.FC<{ obj: CityObject; version: number }> = ({ obj, ve
           {drivable && <Button variant="primary" icon={Activity} className="w-full" onClick={() => engineInstance.simulateRoad(obj.id)}>Simulate traffic here</Button>}
           <div className="grid grid-cols-2 gap-2">
             <Button icon={Crosshair} onClick={() => engineInstance.flyToObject(obj.id)}>Show on map</Button>
-            <Button icon={Hammer} onClick={editInBuild}>Edit in Build</Button>
+            <Button icon={Hammer} onClick={editInBuild}>Edit in Design</Button>
           </div>
         </div>
 
