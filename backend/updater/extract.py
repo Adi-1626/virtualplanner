@@ -271,7 +271,7 @@ def _month_value(m: re.Match, published: dt.date | None, allow_no_year: bool = T
 def x_tunnelling_start(ns: str, ctx: dict) -> list:
     if not re.search(r"\b(?:tunnel\w*|boring|tbms?|tunnel boring)\b", ns):
         return []
-    if not re.search(r"\b(?:begin|begins|began|begun|start|starts|started|commence\w*|kick off|kicks off|kicked off|get under way)\b", ns):
+    if not re.search(r"\b(?:begin|begins|began|begun|beginning|start|starts|started|starting|commence\w*|kick off|kicks off|kicked off|get under way)\b", ns):
         return []
     if re.search(r"\bshafts?\b", ns) and not re.search(r"\b(?:tunnel\w*|boring|tbms?)\b.{0,120}\b(?:begin|start|commence)", ns):
         return []
