@@ -13,7 +13,7 @@ import { classifyOsmWay, findNonDrivableOsmRoads, type NonDrivableRoad } from '.
 import { STUDY_AREA_ROADS_PREFIX } from '../simulation/osmCoverage';
 import { BASE_SCENARIO_ID } from '../scenarios/ScenarioManager';
 import { filterObjectsForScenario } from '../scenarios/scenarioFilter';
-import { connectEnds, AUTO_CONNECT_M } from './autoConnect';
+import { connectEnds, withTouchingEndHeights, AUTO_CONNECT_M } from './autoConnect';
 import { classifyCrossing, findCrossings, planDistM, type LevelCrossing, type CrossingDecision } from './levelCrossings';
 import { applyFlyoverElevationProfile } from '../objects/flyoverHelper';
 import { junctionLayout } from '../objects/junctionLayout';
@@ -819,7 +819,16 @@ export class EditingEngine {
    * (within AUTO_CONNECT_M, at the same level), so a new road or flyover is
    * part of the network as soon as it is built.
    */
-  private joinedToNetwork(points: readonly [number, number, number][], scenarioId: string): [number, number, number][] {
+  private joinedToNetwork(points: readonly [number, number, number][], scenarioId: string, opts: { endHeights?: boolean } = {}): [number, number, number][] {
+    const roads = this.networkNearEnds(points, scenarioId);
+    const joined = connectEnds(points, roads) ?? [...points];
+    // An end the click left on the ground beside a road it already touches (a ramp vertex 2.5-3 m up: outside the
+    // level-aware snap, inside the network builder's join tolerance) takes that road's height there
+    return opts.endHeights ? withTouchingEndHeights(joined, roads) : joined;
+  }
+
+  /** Roads, flyovers and metro flyovers whose padded box holds either end of `points`. */
+  private networkNearEnds(points: readonly (readonly number[])[], scenarioId: string) {
     const pad = (AUTO_CONNECT_M + 5) / 111320;
     const ends = [points[0], points[points.length - 1]];
     // Road boxes, padded, that hold either end
@@ -834,10 +843,9 @@ export class EditingEngine {
       const padLng = pad / Math.cos((ends[0][1] * Math.PI) / 180);
       return ends.some(e => e[0] >= minX - padLng && e[0] <= maxX + padLng && e[1] >= minY - pad && e[1] <= maxY + pad);
     };
-    const roads = filterObjectsForScenario(this.objectManager.getAll(), scenarioId).filter(
+    return filterObjectsForScenario(this.objectManager.getAll(), scenarioId).filter(
       o => (o.type === 'road' || o.type === 'flyover' || o.type === 'metro_flyover') && nearEnd(o.coordinates)
     ) as { id: string; coordinates: [number, number, number][] }[];
-    return connectEnds(points, roads) ?? [...points];
   }
 
   public getJunctionLayout(point: [number, number, number], scenarioId: string) {
@@ -897,8 +905,11 @@ export class EditingEngine {
     let alignment: HorizontalAlignment | null = null;
     const settings = this.currentDrawSettings();
     if (settings && pis.length >= 2) {
-      const a = buildDrawAlignment(pis, this.drawingRadii, settings, this.drawCheckOptions());
-      const d = densifyWithZ(a, pis);
+      // A road's end PIs take the height of the road they touch before densifying, so the heights in between run
+      // smoothly up to it (joinedToNetwork does the same on the finished line; without this the last step jumps)
+      const zPis = this.activeMode === 'draw_road' ? withTouchingEndHeights(pis, this.networkNearEnds(pis, scenarioId)) : pis;
+      const a = buildDrawAlignment(zPis, this.drawingRadii, settings, this.drawCheckOptions());
+      const d = densifyWithZ(a, zPis);
       // An invalid geometry (a U-turn at one point) keeps the clicked polyline, as before, and no alignment
       if (d) { alignment = a; this.drawingPoints = d.coordinates; }
     }
@@ -929,7 +940,7 @@ export class EditingEngine {
 
     if (this.activeMode === 'draw_road') {
       minPoints(2, 'A road');
-      const coords = this.joinedToNetwork(this.drawingPoints, scenarioId);
+      const coords = this.joinedToNetwork(this.drawingPoints, scenarioId, { endHeights: true });
       newObj = {
         id,
         type: 'road',

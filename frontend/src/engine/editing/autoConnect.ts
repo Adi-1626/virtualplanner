@@ -97,3 +97,33 @@ export function connectEnds(coordinates: readonly Pt[], candidates: readonly Con
   join(0);
   return changed ? out : null;
 }
+
+/**
+ * The height an end takes from the road it already touches (within TOUCHING_M in plan and SAME_LEVEL_M in height):
+ * the network builder joins such an end to that road, so the end must sit at the road's height there, not where the
+ * click picked the ground. Of several touching roads the one closest in height wins (an end at a ground junction stays
+ * on the ground). Null when the end touches no road at its level.
+ */
+export function touchingRoadHeight(end: readonly number[], candidates: Iterable<ConnectTarget>, excludeId?: string): number | null {
+  const z = end[2] || 0;
+  let best: number | null = null;
+  for (const c of candidates) {
+    if (c.id === excludeId || c.coordinates.length < 2) continue;
+    const hit = nearestOnPolyline(end, c.coordinates);
+    const dz = Math.abs(hit.point[2] - z);
+    if (hit.distM >= TOUCHING_M || dz > SAME_LEVEL_M) continue;
+    if (best === null || dz < Math.abs(best - z)) best = hit.point[2];
+  }
+  return best;
+}
+
+/** `coordinates` with each end that touches a road at its level set to that road's height (unchanged otherwise). */
+export function withTouchingEndHeights(coordinates: readonly Pt[], candidates: readonly ConnectTarget[], excludeId?: string): Pt[] {
+  const out = [...coordinates];
+  if (out.length < 2) return out;
+  for (const i of [0, out.length - 1]) {
+    const h = touchingRoadHeight(out[i], candidates, excludeId);
+    if (h !== null && h !== (out[i][2] || 0)) out[i] = [out[i][0], out[i][1], h];
+  }
+  return out;
+}

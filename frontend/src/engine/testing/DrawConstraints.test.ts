@@ -8,6 +8,7 @@ import {
 import { ObjectManager } from '../objects/ObjectManager';
 import { HistoryManager } from '../history/HistoryManager';
 import { EditingEngine } from '../editing/EditingEngine';
+import { touchingRoadHeight } from '../editing/autoConnect';
 import type { RoadObject } from '../objects/types';
 
 const O: Pt3 = [73.85, 18.5, 0];
@@ -225,6 +226,44 @@ describe('EditingEngine line drawing', () => {
     editing.typeKey('R'); editing.typeKey('8'); editing.typeKey('0');
     editing.commitTypedInput();
     expect(editing.getDrawingRadii()[1]).toBe(80);
+  });
+
+  // Regression (merge of design-geometry, 2026-11-22): the click picks the ground (z 0) on a ramp vertex 2.9 m up. The
+  // level-aware snap (2.5 m) misses it and, with the pixel snap radii, so does the next ramp vertex; the network builder
+  // still joins the end (3 m). The end must take the ramp's height, and the line rise to it smoothly.
+  it('an end clicked on the ground on a ramp vertex 2.5-3 m up takes the ramp height', () => {
+    const { om, editing } = setup();
+    const R = (id: string, coords: Pt3[]): RoadObject => ({
+      id, type: 'road', name: id, layerId: 'roads', scenarioId: 'base', coordinates: coords, roadClass: 'local', width: 10,
+      laneCount: 2, laneWidth: 3.5, hasDivider: false, dividerWidth: 0, hasFootpath: false, footpathWidth: 0, speedLimit: 40,
+      isOneWay: false, trafficCapacity: 1000, connectedJunctions: [], createdAt: 't', updatedAt: 't',
+    });
+    const end = at(90, 200);
+    // A ramp through `end` at 2.9 m, rising north, its other vertices 40 m away (beyond any vertex snap)
+    om.add(R('ramp', [[...at(180, 40, end).slice(0, 2), 0] as Pt3, [end[0], end[1], 2.9], [...at(0, 40, end).slice(0, 2), 5.8] as Pt3]), true);
+    editing.setMode('draw_road');
+    editing.setMetresPerPixel(0.5);
+    editing.addDrawingPoint(O);
+    editing.addDrawingPoint(end);
+    expect(editing.getDrawingPoints()[1][2]).toBe(0); // no snap: the click is 2.9 m below the ramp
+    editing.finalizeDrawing('base');
+    const road = om.getAll().find(o => o.type === 'road' && o.id !== 'ramp') as RoadObject;
+    const c = road.coordinates;
+    expect(c[0][2]).toBe(0);
+    expect(distanceM(c[c.length - 1], end)).toBeLessThan(0.01);
+    expect(c[c.length - 1][2]).toBeCloseTo(2.9, 9);
+    // Heights rise steadily to the end (interpolated from the end PIs, no jump on the last step)
+    for (let i = 1; i < c.length; i++) expect(c[i][2]).toBeGreaterThanOrEqual(c[i - 1][2] - 1e-9);
+    if (c.length > 2) expect(c[c.length - 2][2]).toBeGreaterThan(0);
+  });
+
+  it('touchingRoadHeight: the touching road closest in height wins; a road more than 3 m away in height is not joined', () => {
+    const p: Pt3 = [O[0], O[1], 0];
+    const line = (z: number) => ({ id: `z${z}`, coordinates: [[...at(180, 20).slice(0, 2), z], [...at(0, 20).slice(0, 2), z]] });
+    expect(touchingRoadHeight(p, [line(2.9)])).toBeCloseTo(2.9, 9);
+    expect(touchingRoadHeight(p, [line(2.9), line(0.2)])).toBeCloseTo(0.2, 9);
+    expect(touchingRoadHeight(p, [line(3.5)])).toBeNull();
+    expect(touchingRoadHeight(at(90, 5), [line(2.9)])).toBeNull();
   });
 
   it('utility drawing stores an angled alignment and keeps the clicked points', () => {
