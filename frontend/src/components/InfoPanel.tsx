@@ -12,7 +12,8 @@ import type {
 } from '../engine/objects/types';
 import { isUserBuilt, TYPE_LABELS } from '../engine/objects/builtBy';
 import { filterObjectsForScenario } from '../engine/scenarios/scenarioFilter';
-import { isDrivable, polylineLengthM } from '../engine/simulation/StudyAreaExplorer';
+import { isDrivable } from '../engine/simulation/StudyAreaExplorer';
+import { lineLength } from './drawnWorks';
 import { formatDistanceM } from '../lib/format';
 import { plural } from '../lib/plural';
 import { useSelectedId } from '../hooks/useAppMode';
@@ -42,8 +43,6 @@ const GROUPS: { title: string; icon: LucideIcon; types: CityObject['type'][] }[]
   { title: 'Other', icon: Shapes, types: ['junction', 'utility', 'zone', 'gateway'] },
 ];
 
-const lineLength = (o: CityObject) =>
-  Array.isArray(o.coordinates[0]) && o.type !== 'building' && o.type !== 'zone' ? polylineLengthM(o.coordinates as number[][]) : null;
 
 /** Objects drawn in the active alternative (not planning projects: those are in the Projects workspace). */
 const DrawnWorksList: React.FC<{ version: number; onClose: () => void }> = ({ version, onClose }) => {
