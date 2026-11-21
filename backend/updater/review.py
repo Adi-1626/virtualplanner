@@ -68,6 +68,9 @@ def approve(db: Session, pid: str, reviewer: str, note: str = "", max_age_days: 
             o.status, o.decided_by, o.decided_at = "superseded", reviewer, _now()
             o.decision_note = f"another value was approved ({label(p.attribute, p.value_num, p.value_text, p.qualifier)}, {p.id})"
             others.append(o.id)
+    # a rolled-back / superseded proposal approved again goes back into the apply queue (apply_approved only takes
+    # approved proposals with no version); its earlier version stays in the registry and the audit log
+    p.applied_version_id = None
     p.status, p.decided_by, p.decided_at, p.decision_note = "approved", reviewer, _now(), note or None
     audit.log(db, reviewer, "approve", p.id, {"value": label(p.attribute, p.value_num, p.value_text, p.qualifier),
                                               "verdict": p.verdict, "note": note, "superseded": others})
@@ -128,7 +131,7 @@ def apply_approved(db: Session, reviewer: str, note: str = "", activate: bool = 
     replaced = []
     for f in active["facts"]:
         if (f["project_id"], f["attribute"]) in keys:
-            old = db.get(FuProposalEntity, f.get("proposal_id"))
+            old = db.get(FuProposalEntity, f["proposal_id"]) if f.get("proposal_id") else None   # seed facts have none
             if old is not None and old.status == "applied":
                 old.status, old.decision_note = "superseded", f"replaced in {v.version_label} by a newer approved value"
                 replaced.append(old.id)

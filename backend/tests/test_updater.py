@@ -281,6 +281,28 @@ def test_approve_apply_rollback(env):
         assert audit.verify_chain(db)["ok"]
 
 
+def test_rolled_back_proposal_can_be_approved_and_applied_again(env):
+    """Integration QA (next-phase): approve → apply → roll back → approve again → apply gives a new version (the
+    re-approved proposal kept its old applied_version_id, so apply said 'nothing to apply')."""
+    cfg = cfgmod.load()
+    with SessionLocal() as db:
+        do_run(db)
+        depth = props(db, "tunnel_depth_m")["~28 m"]
+        review.approve(db, depth.id, "Asha")
+        v2 = review.apply_approved(db, "Asha", cfg=cfg)
+        v1 = next(v for v in review.versions(db) if v["version_label"] == "v1")
+        review.rollback(db, v1["id"], "Ravi")
+        assert db.get(FuProposalEntity, depth.id).status == "rolled_back"
+        review.approve(db, depth.id, "Ravi")
+        v3 = review.apply_approved(db, "Ravi", cfg=cfg)
+        db.commit()
+        assert v3.version_label == "v3" and v3.id != v2.id
+        assert db.get(FuProposalEntity, depth.id).status == "applied"
+        assert db.get(FuProposalEntity, depth.id).applied_version_id == v3.id
+        assert facts_mod.read_active(db)["facts"][0]["value_num"] == 28.0
+        assert audit.verify_chain(db)["ok"]
+
+
 def test_conflicting_needs_a_note_and_supersedes_competitors(env):
     with SessionLocal() as db:
         do_run(db)
