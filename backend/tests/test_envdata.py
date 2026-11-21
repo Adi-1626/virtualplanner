@@ -91,6 +91,12 @@ def test_catalogue_statuses(client, derived):
     assert rows["landcover_worldcover2021"]["status"] == "available"
     assert rows["landcover_worldcover2021"]["processing"]["sha256"] == "f" * 64
     assert rows["s2_ndvi"]["status"] == "missing"            # not in the fixture tree: never claimed
+    # a missing file is named inside the data folder, never by the server's absolute path
+    from datasets.public_text import redact_paths
+    body = client.get("/api/env-data/catalogue").json()
+    assert "Expected file not found in the data folder" in rows["s2_ndvi"]["status_reason"]
+    assert all(redact_paths(r["status_reason"]) == r["status_reason"] for r in rows.values())
+    assert body["data_dir"] in ("configured", "not found (set URBANOS_DATA_DIR)")
     assert rows["flood_lines_pmc"]["status"] == "blocked" and "PMC permission" in rows["flood_lines_pmc"]["status_reason"]
     assert rows["s2_builtup_change"]["status"] == "rejected" and "F1 0.457" in rows["s2_builtup_change"]["status_reason"]
     for r in rows.values():

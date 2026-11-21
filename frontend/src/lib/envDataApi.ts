@@ -87,7 +87,7 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Pr
 const bb = (b: number[]) => b.map(v => v.toFixed(6)).join(',');
 
 export const envDataApi = {
-  catalogue: () => call<{ layers: EnvDataLayer[]; note: string; data_dir: string }>('GET', '/catalogue'),
+  catalogue: () => call<{ layers: EnvDataLayer[]; note: string; data_dir: string /* 'configured' or 'not found (…)', never a path */ }>('GET', '/catalogue'),
   renderUrl: (id: string, bbox: number[], width: number, variant?: string | null) =>
     `${BASE}/layers/${id}/render.png?bbox=${bb(bbox)}&width=${Math.round(width)}${variant ? `&variant=${encodeURIComponent(variant)}` : ''}`,
   landcoverAreasBbox: (bbox: number[]) => call<LandcoverAreas>('GET', `/layers/landcover_worldcover2021/areas?bbox=${bb(bbox)}`),
