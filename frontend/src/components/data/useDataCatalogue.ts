@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type DataView = 'datasets' | 'features';
+export type DataView = 'datasets' | 'features' | 'facts';
 
 /** Open state of the Data catalogue overlay (opened from Reports → Data catalogue). */
 export const useDataCatalogue = create<{

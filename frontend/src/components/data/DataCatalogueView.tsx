@@ -15,6 +15,7 @@ import {
 } from './dataCatalogueModel';
 import { useDataCatalogue, type DataView } from './useDataCatalogue';
 import { displayPath, redactPaths } from '../../lib/redactPaths';
+import { FactUpdatesPane } from './FactUpdatesPane';
 
 const TONE_COLOR = { good: 'var(--measured, #3FB950)', warn: 'var(--warn, #E8833A)', bad: 'var(--fail, #FF6B61)', unknown: 'var(--unknown, #9AA4B2)' };
 const FEATURE_COLOR = { ready: TONE_COLOR.good, partial: TONE_COLOR.warn, blocked: TONE_COLOR.bad };
@@ -55,6 +56,7 @@ const DataCatalogueView: React.FC = () => {
   const tabs: { id: DataView; label: string; 'data-testid': string }[] = [
     { id: 'datasets', label: `Datasets${list ? ` (${list.length})` : ''}`, 'data-testid': 'data-tab-datasets' },
     { id: 'features', label: `Features${features ? ` (${features.length})` : ''}`, 'data-testid': 'data-tab-features' },
+    { id: 'facts', label: 'Fact updates', 'data-testid': 'data-tab-facts' },
   ];
   return (
     <section className="uos-data-overlay" aria-label="Data catalogue" data-testid="data-catalogue">
@@ -70,7 +72,7 @@ const DataCatalogueView: React.FC = () => {
       <TabPanel idBase="uos-data" id={view} className="uos-data-body">
         {view === 'datasets'
           ? <DatasetsPane list={list} features={features} selected={selected} onSelect={id => select(id)} onChanged={load} />
-          : <FeaturesPane features={features} onDataset={id => select(id)} />}
+          : view === 'features' ? <FeaturesPane features={features} onDataset={id => select(id)} /> : <FactUpdatesPane />}
       </TabPanel>
     </section>
   );
