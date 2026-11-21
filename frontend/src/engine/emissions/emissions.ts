@@ -55,7 +55,7 @@ export interface EmissionsSummary {
   perHour: ClassTotals;
   byKind: { kind: VehicleKind; hbefaClass: string; note: string; totals: ClassTotals }[];
   /** Per seed (for spread and seed agreement in comparisons). */
-  perSeed: { seed: number; fuelL: number; co2G: number; noxG: number; pmG: number }[];
+  perSeed: { seed: number; fuelL: number; co2G: number; noxG: number; pmG: number; vkm?: number }[];
   units: Record<string, string>;
   label: string;
 }
@@ -73,7 +73,7 @@ export function summarizeEmissions(runs: { seed: number; acc: EmissionAccumulato
     const t = r.acc.totals();
     t.forEach((v, k) => addInto(kinds.get(k) ?? kinds.set(k, emptyTotals()).get(k)!, v, 1 / runs.length));
     const s = sumTotals(t.values());
-    perSeed.push({ seed: r.seed, fuelL: s.fuelL, co2G: s.co2G, noxG: s.noxG, pmG: s.pmG });
+    perSeed.push({ seed: r.seed, fuelL: s.fuelL, co2G: s.co2G, noxG: s.noxG, pmG: s.pmG, vkm: s.vkm });
   }
   const total = sumTotals(kinds.values());
   const perHour = emptyTotals();

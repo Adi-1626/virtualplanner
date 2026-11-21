@@ -22,7 +22,7 @@ export const SimulateContext: React.FC = () => {
       </div>
       <PanelSection title="Study">
         {sim.seedRoadIds.length === 0
-          ? <p className="text-label text-text-2 flex items-center gap-2"><MousePointerClick size={14} aria-hidden />Click a road, bridge or flyover on the map.</p>
+          ? <p className="text-label text-text-2 flex items-center gap-2"><MousePointerClick size={14} aria-hidden />Click a road, bridge or flyover on the map. The steps are in the panel on the right.</p>
           : inspectorOpen ? <p className="text-label text-text-2">The study is in the panel on the right.</p>
           : <button type="button" className="uos-btn uos-btn-sm" onClick={() => setInspectorOpen(true)}>Show the study panel</button>}
       </PanelSection>
@@ -35,10 +35,11 @@ export const SimulateContext: React.FC = () => {
         </ul>
       </PanelSection>
       <PanelSection title="Data">
-        <TrafficCountsNotice />
+        <TrafficCountsNotice compact />
+        <p className="text-meta text-text-3 mt-1.5">Pune has no openly published official traffic counts. The checks use research transcriptions (6 junctions, NICMAR 2025; 8 CCTV cameras, 2023; the 2008 river-bridge counts), so the model is compared with old or partial counts only.</p>
       </PanelSection>
       <Disclosure>
-        <p className="text-label text-text-2">Figures from docs/ENGINEERING_VALIDATION.md §5 (counts GEH &lt; 5 at 0/15 sites; screen line 54,493 vs 78,357 veh/h; section speeds within 15% at 4/21). Criteria: UK DfT TAG unit M3.1, May 2026. Emissions are computed from simulated traffic, so they carry the same limitation. Feasibility screening never declares a proposal feasible.</p>
+        <p className="text-label text-text-2">How the model was checked against Pune: traffic counts within GEH 5 at 0 of 15 sites (85% needed); the nine river crossings carry 54,493 veh/h in the model against 78,357 counted (−30.5%; within 5% needed); section speeds within 15% at 4 of 21 (85% needed). Criteria: UK DfT TAG unit M3.1 (May 2026). The counts are from 2008 and 2017, the speeds from 2025–2026. Emissions are computed from the simulated traffic, so they carry the same limitation. Feasibility screening never declares a proposal feasible.</p>
       </Disclosure>
     </div>
   );

@@ -5,10 +5,8 @@ import type { SimulationModeState } from '../engine/simulation/SimulationMode';
 import { trafficApi, type DatasetKind } from '../engine/data/trafficData';
 import type { OdmeFit } from '../engine/demand/odme';
 import type { RoadAnalysisResult } from '../engine/simulation/RoadAnalysis';
-import type { ComparisonResult } from '../engine/simulation/ScenarioComparison';
 import { GEH_PASS } from '../engine/calibration/geh';
 import { Button, Notice } from './ui/kit';
-import { DeltaRows } from './ScenarioDeltaTable';
 import { TrustBadge } from './ui/badges/TrustBadge';
 
 const fmt = (v: number, d = 0) => v.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d });
@@ -128,11 +126,5 @@ export const EmissionsCard: React.FC<{ result: RoadAnalysisResult | null | undef
   );
 };
 
-/** Compare: corridor fuel and emissions, same frozen demand and seeds; never part of the verdict. */
-export const EmissionsCompare: React.FC<{ c: ComparisonResult }> = ({ c }) => !c.emissions ? null : (
-  <div className="space-y-1" data-testid="emissions-compare">
-    <p className="flex items-center gap-2 text-[11px] font-semibold text-slate-300"><Fuel size={12} /> Fuel and emissions in the neighbourhood <span className="text-[11px] uppercase tracking-wide text-amber-300">estimated</span></p>
-    <DeltaRows rows={c.emissions.deltas} />
-    <p className="text-[11px] text-slate-500 leading-snug">{c.emissions.note} Model: <a className="underline" href={c.emissions.source} target="_blank" rel="noreferrer">{c.emissions.model}</a>.</p>
-  </div>
-);
+/** Compare: corridor fuel and emissions as relative change (engine-free piece, rendered in tests). */
+export { EmissionsCompare } from './simulate/SimulatePieces';

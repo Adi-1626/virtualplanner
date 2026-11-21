@@ -318,19 +318,32 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
     verdict: { section: sv, network: nv, area: av, overall, summary }, confidence, caveats, ...(inputCheck ? { inputs: inputCheck } : {}) };
 }
 
-/** Corridor fuel and emissions before and after (per hour of the measured window), with seed agreement. */
-function emissionDeltas(a: RoadAnalysisResult, b: RoadAnalysisResult, sameSeeds: boolean): ComparisonResult['emissions'] | undefined {
+/**
+ * Corridor fuel and emissions before and after (per hour of the measured window), with seed agreement. The distance
+ * driven and CO₂ per vehicle-km come first: a proposal that lets more traffic through burns more fuel in total, and
+ * without the distance a planner cannot tell more traffic from dirtier traffic (docs/urbanos/SIMULATE_AUDIT.md).
+ */
+export function emissionDeltas(a: RoadAnalysisResult, b: RoadAnalysisResult, sameSeeds: boolean): ComparisonResult['emissions'] | undefined {
   const x = a.emissions, y = b.emissions;
   if (!x || !y) return undefined;
   const hx = x.windowS > 0 ? 3600 / x.windowS : 0, hy = y.windowS > 0 ? 3600 / y.windowS : 0;
-  const seeds = (k: 'fuelL' | 'co2G' | 'noxG' | 'pmG') => sameSeeds && x.perSeed.length === y.perSeed.length ? { before: x.perSeed.map(s => s[k] * hx), after: y.perSeed.map(s => s[k] * hy) } : undefined;
+  const paired = sameSeeds && x.perSeed.length === y.perSeed.length;
+  const seeds = (k: 'fuelL' | 'co2G' | 'noxG' | 'pmG') => paired ? { before: x.perSeed.map(s => s[k] * hx), after: y.perSeed.map(s => s[k] * hy) } : undefined;
+  const hasVkm = paired && x.perSeed.every(s => s.vkm !== undefined) && y.perSeed.every(s => s.vkm !== undefined);
+  const vkmSeeds = hasVkm ? { before: x.perSeed.map(s => s.vkm! * hx), after: y.perSeed.map(s => s.vkm! * hy) } : undefined;
+  const perKm = (co2G: number, vkm: number) => (vkm > 0 ? co2G / vkm : null);
+  const perKmSeeds = hasVkm ? { before: x.perSeed.map(s => perKm(s.co2G, s.vkm!)), after: y.perSeed.map(s => perKm(s.co2G, s.vkm!)) } : undefined;
   const deltas = [
+    delta('Distance driven in the neighbourhood', x.perHour.vkm, y.perHour.vkm, 'veh·km/h', false, 0.03, vkmSeeds),
+    delta('CO₂ per vehicle-km', perKm(x.perHour.co2G, x.perHour.vkm), perKm(y.perHour.co2G, y.perHour.vkm), 'g/veh·km', true, 0.03, perKmSeeds),
     delta('Fuel burnt in the neighbourhood', x.perHour.fuelL, y.perHour.fuelL, 'L/h', true, 0.03, seeds('fuelL')),
     delta('CO₂', x.perHour.co2G / 1000, y.perHour.co2G / 1000, 'kg/h', true, 0.03, seeds('co2G')),
     delta('NOx', x.perHour.noxG, y.perHour.noxG, 'g/h', true, 0.03, seeds('noxG')),
     delta('PM (exhaust + non-exhaust)', x.perHour.pmG, y.perHour.pmG, 'g/h', true, 0.03, seeds('pmG')),
     delta('Time vehicles stood still (engine idling)', x.perHour.idleS / 3600, y.perHour.idleS / 3600, 'veh·h per h', true, 0.05),
   ];
+  // Distance driven is neither good nor bad: more of it is more traffic served
+  deltas[0].good = null;
   return { deltas, model: x.model.model, source: x.model.url,
-    note: 'ESTIMATED from simulated speed and acceleration of every vehicle in the neighbourhood (European HBEFA classes as stand-ins; two-wheelers and auto-rickshaws especially uncertain). Same frozen demand and seeds on both sides, so the difference is more reliable than either total. Not part of the verdict.' };
+    note: 'MODELLED from simulated speed and acceleration of every vehicle in the neighbourhood (European HBEFA classes as stand-ins; two-wheelers and auto-rickshaws especially uncertain). Same frozen demand and seeds on both sides, so the relative change is more reliable than either total; the totals are not for quoting. Not part of the verdict.' };
 }

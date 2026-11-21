@@ -148,7 +148,7 @@ const EmissionsChange: React.FC = () => {
           ))}
         </tbody>
       </table>
-      <p className="text-meta text-text-3">Proposal vs existing, same demand and seeds, neighbourhood of the studied road. Relative change only: absolute totals from this traffic model are not reliable enough to quote. Model: {c.emissions?.model ?? 'UNKNOWN'} (European vehicle classes as stand-ins).</p>
+      <p className="text-meta text-text-3">Proposal vs existing{sim.comparison.current ? ` at ${String(sim.comparison.current.hour).padStart(2, '0')}:00` : ''}, same demand and seeds, neighbourhood of the studied road. Read the distance driven first: a proposal that lets more traffic through burns more fuel in total. Relative change only: absolute totals from this traffic model are not reliable enough to quote. Model: {c.emissions?.model ?? 'UNKNOWN'} (European vehicle classes as stand-ins).</p>
     </div>
   );
 };

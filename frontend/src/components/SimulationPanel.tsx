@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  MousePointerClick, Pause, Play, RotateCcw, Square, Loader2, AlertTriangle, AlertOctagon, CheckCircle2, Maximize2, Eye, Hammer, ChevronDown, Crosshair, X, Info,
+  Pause, Play, RotateCcw, Square, Loader2, AlertTriangle, AlertOctagon, CheckCircle2, Maximize2, Eye, Hammer, ChevronDown, Crosshair, X, Info,
 } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import { useSimulationMode } from '../hooks/useSimulationMode';
@@ -19,6 +19,7 @@ import { Disclosure } from './ui/Disclosure';
 import { SidePanel, PanelHeader, PanelBody, Section, Figure, Button, Segmented, Notice } from './ui/kit';
 import { UnderstandView, ImproveView, DemandEvidence } from './RoadAnalysisPanel';
 import { openSimulateDrawer, type SimulateDrawerTabId } from '../shell/contexts/SimulateDrawerNav';
+import { GetStartedCard } from './simulate/SimulatePieces';
 
 const roadName = (id: string) => engineInstance.objects.getById(id)?.name || 'Unnamed road';
 
@@ -32,6 +33,11 @@ const SPEED_OPTIONS = TRAFFIC_SPEEDS.map(s => ({ value: s, label: `${s}×` }));
 const PERIOD_OPTIONS = DAY_PERIODS.map(p => ({ value: p.id as DayPeriodId, label: p.label }));
 
 type Tab = 'understand' | 'improve' | 'details';
+/**
+ * The open tab outlives the panel: going to Design to draw the proposal unmounts it, and it used to come back on
+ * "What's wrong" with Compare out of sight (docs/urbanos/SIMULATE_AUDIT.md). Exported for tests.
+ */
+export const simulateTabMemory: { tab: Tab; roads: string } = { tab: 'understand', roads: '' };
 const TABS: { id: Tab; label: string; hint: string }[] = [
   { id: 'understand', label: '1 · What\'s wrong', hint: 'Conditions, bottlenecks and their causes' },
   { id: 'improve', label: '2 · Improve & compare', hint: 'Options to test, before and after' },
@@ -47,14 +53,23 @@ export const SimulationPanel: React.FC = () => {
   const sim = useSimulationMode();
   const mode = engineInstance.simMode;
   const hasRoad = sim.seedRoadIds.length > 0;
-  const [tab, setTab] = useState<Tab>('understand');
+  const [tab, setTabState] = useState<Tab>(simulateTabMemory.tab);
+  const setTab = (t: Tab) => { simulateTabMemory.tab = t; setTabState(t); };
+  // A different road starts on "What's wrong"; the same road (coming back from Design) keeps the tab
+  const roadsKey = sim.seedRoadIds.join(',');
+  useEffect(() => {
+    if (simulateTabMemory.roads === roadsKey) return;
+    const previous = simulateTabMemory.roads;
+    simulateTabMemory.roads = roadsKey;
+    if (previous !== '') { simulateTabMemory.tab = 'understand'; setTabState('understand'); }
+  }, [roadsKey]);
 
   return (
     <SidePanel label="Simulate traffic" wide>
       <PanelHeader
         title={hasRoad ? (sim.section?.name ?? sim.seedRoadIds.map(roadName).join(' + ')) : 'Study a road'}
         subtitle={hasRoad ? `${sim.section ? `${formatDistanceM(sim.section.lengthM)}${sim.section.carriageways === 2 ? ', both carriageways' : ''} · ` : ''}area ${formatDistanceM(sim.rangeMeters)} around it` : 'Click a road, bridge or flyover on the map'}
-        onBack={hasRoad ? () => mode.clearSeeds() : undefined}
+        onBack={hasRoad ? () => { setTab('understand'); mode.clearSeeds(); } : undefined}
         backLabel="Choose another road"
         onClose={() => engineInstance.setAppMode('view')}
         closeLabel="Close Simulate (stops all simulation)"
@@ -82,14 +97,7 @@ const PickRoad: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   const mode = engineInstance.simMode;
   return (
     <>
-      <div className="rounded-2xl border border-dashed border-cyan-400/30 bg-cyan-500/5 px-4 py-5 text-center space-y-2">
-        <MousePointerClick size={28} className="mx-auto text-cyan-300" />
-        <p className="text-base font-semibold text-white">Click a road on the map</p>
-        <p className="text-sm text-slate-300 leading-relaxed">
-          Any road, bridge or flyover. You will see how well it works at different times of day, where its traffic comes from, what holds it up, and what a change would do.
-        </p>
-        <p className="text-xs text-slate-500">Shift+click adds more roads, for a corridor.</p>
-      </div>
+      <GetStartedCard />
       <Section title="How much of the city around it">
         <Segmented label="Distance around the road" options={DISTANCE_OPTIONS} value={sim.rangeMeters as (typeof STUDY_DISTANCES_M)[number]} onChange={m => mode.setRange(m)} />
         <Disclosure summary="What the distance means">
@@ -198,7 +206,7 @@ const DetailsView: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
       <Advanced title="Assumptions & data sources: the demand">
         <DemandEvidence sim={sim} />
       </Advanced>
-      <Advanced title="Live view figures">
+      <Advanced title="Live view figures (modelled)">
         <VehicleInspector sim={sim} />
         {traffic.metrics ? <LiveFigures traffic={traffic} seedRoadIds={sim.seedRoadIds} /> : <p className="text-xs text-slate-500">Start the live view to see its figures. The results in the other tabs come from the repeatable analysis, not from the animation.</p>}
       </Advanced>
@@ -312,7 +320,7 @@ const NetworkChecks: React.FC<{ problems: StudyProblem[]; provisional: boolean }
               <p className="text-xs text-slate-400 leading-snug">{p.detail}</p>
               <div className="flex gap-1">
                 <Button variant="ghost" icon={Eye} size="sm" onClick={() => engineInstance.simMode.flyTo(p.location)}>Show</Button>
-                {p.kind !== 'no_alternative' && <Button variant="ghost" icon={Hammer} size="sm" onClick={() => engineInstance.editProblemInPlanMode(p)}>Fix in Build</Button>}
+                {p.kind !== 'no_alternative' && <Button variant="ghost" icon={Hammer} size="sm" onClick={() => engineInstance.editProblemInPlanMode(p)}>Fix in Design</Button>}
               </div>
             </li>
           ))}
