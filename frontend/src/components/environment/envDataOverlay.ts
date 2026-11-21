@@ -3,22 +3,28 @@
  * - raster rows: the backend renders a PNG for the current camera view (clipped to the layer's bounds) and Cesium drapes
  *   it as a SingleTileImageryProvider over exactly that rectangle; re-rendered when the camera stops moving.
  * - vector rows (derived streams): bbox API with a cap; the response says how many were not shown.
- * - trees: bbox API returns points (≤ cap) or grid clusters with the total.
+ * - trees: tiled (treeLayer.ts): cached tiles of points (≤ cap per tile) or grid clusters, one GPU batch per tile.
+ * Performance (docs/urbanos/ENVIRONMENT_WORKSPACE.md § Performance): trees and flow paths are GPU batches, not one Entity
+ * each; a newer view cancels the older requests; responses are cached; everything is freed when a layer is hidden or
+ * the user leaves the Environment / Explore workspaces, and drawn again (from cache) on return.
  * - stations: CPCB/MPCB/IITM stations with known coordinates (stations without coordinates are listed, not drawn).
  * Entity ids are prefixed `env_overlay_` so the engine's pick handler never treats them as city objects; imagery layers
  * carry `__uosEnvOverlay` so the base-layer (Satellite) toggle leaves them alone.
  */
 import { create } from 'zustand';
 import {
-  Cartesian2, Cartesian3, Color, CustomDataSource, ImageryLayer, LabelStyle, Math as CesiumMath, NearFarScalar,
-  Rectangle, SingleTileImageryProvider, VerticalOrigin, type Viewer,
+  Cartesian2, Cartesian3, Color, CustomDataSource, ImageryLayer, LabelStyle, Material, Math as CesiumMath, NearFarScalar,
+  PolylineCollection, Rectangle, SingleTileImageryProvider, VerticalOrigin, type Viewer,
 } from 'cesium';
 import { engineInstance } from '../../engine/TwinCityEngine';
-import { envDataApi, type AqStation, type EnvDataLayer } from '../../lib/envDataApi';
+import { Cancelled, envDataApi, timeoutOr, type AqStation, type EnvDataLayer } from '../../lib/envDataApi';
 import { clipBbox, renderWidth, streamEntityId } from './envDataModel';
 import { redactPaths } from '../../lib/redactPaths';
-import { clearTips, setTip } from './envTips';
+import { clearTips, registerPickable, setTip, setTipResolver, type EnvTip } from './envTips';
 import { useShellStore } from '../../shell/useShellStore';
+import { dropTreeLayer, drawTreeTiles, setTreeLayerShown, treeLayerCounts } from './treeLayer';
+import { Lru } from './treeTiles';
+import { enableRenderOnDemand, ENV_WORKSPACES, HEARTBEAT_MS, sameBox, wantsOnDemand } from './envPerf';
 
 export interface EnvDataOverlayState {
   status: 'off' | 'loading' | 'shown' | 'error';
@@ -43,12 +49,18 @@ export const overlayState = (id: string): EnvDataOverlayState => useEnvDataOverl
 const imagery = new Map<string, ImageryLayer>();
 const blobUrls = new Map<string, string>();
 const sources = new Map<string, CustomDataSource>();
+const lines = new Map<string, PolylineCollection>();
 const active = new Map<string, EnvDataLayer>();
 const seq = new Map<string, number>();
+const ctrls = new Map<string, AbortController>();
+/** Rendered PNGs and vector answers by request URL: panning back or returning to the workspace needs no refetch. */
+const blobCache = new Lru<Blob>(10);
+const featureCache = new Lru<Awaited<ReturnType<typeof envDataApi.features>>>(10);
+/** Flow-path tooltips by polyline id (lazy, like the trees). */
+const streamTips = new Set<string>();
 let removeMoveListener: (() => void) | null = null;
 let moveTimer: ReturnType<typeof setTimeout> | null = null;
 const STREAM_COLOR = Color.fromCssColorString('#29b6f6');
-const TREE_COLOR = Color.fromCssColorString('#2e7d32');
 const STATION_COLOR = Color.fromCssColorString('#ffb300');
 export const RASTER_ALPHA = 0.85;
 const TIMEOUT_MS = 60000;
@@ -70,11 +82,27 @@ function ensureMoveListener(v: Viewer) {
   if (removeMoveListener) return;
   removeMoveListener = v.camera.moveEnd.addEventListener(() => {
     if (moveTimer) clearTimeout(moveTimer);
-    moveTimer = setTimeout(() => { for (const l of active.values()) if (l.kind !== 'stations') void draw(l); }, 400);
+    moveTimer = setTimeout(() => {
+      if (!shownHere()) return;
+      for (const l of active.values()) {
+        if (l.kind === 'stations') continue;
+        // the camera stopped where it was drawn (a click, a tiny nudge): nothing to fetch
+        const st = overlayState(l.id); const b = viewBox(v, l);
+        if (st.status === 'shown' && b && st.bbox && sameBox(st.bbox, b.bbox)) continue;
+        void draw(l);
+      }
+    }, 400);
   });
 }
 
 function dropMapObjects(id: string, v: Viewer | null) {
+  ctrls.get(id)?.abort();
+  ctrls.delete(id);
+  const pl = lines.get(id);
+  if (pl && v && !v.isDestroyed()) v.scene.primitives.remove(pl);   // destroys the GPU buffers
+  lines.delete(id);
+  for (const k of [...streamTips]) if (k.startsWith(`env_overlay_${id}_`)) streamTips.delete(k);
+  if (id === 'tree_census_2019') dropTreeLayer();
   const il = imagery.get(id);
   if (il && v) v.imageryLayers.remove(il, true);
   imagery.delete(id);
@@ -85,7 +113,6 @@ function dropMapObjects(id: string, v: Viewer | null) {
   if (ds && v) v.dataSources.remove(ds, true);
   sources.delete(id);
   clearTips(`env_overlay_${id}_`);
-  if (id === 'tree_census_2019') { clearTips('env_overlay_tree_'); clearTips('env_overlay_treecl_'); }
   if (id === 'air_cpcb_caaqms') clearTips('env_overlay_aq_');
 }
 
@@ -105,18 +132,23 @@ async function swapSource(v: Viewer, id: string, ds: CustomDataSource, alive: ()
   sources.set(id, ds);
 }
 
-async function drawRaster(v: Viewer, l: EnvDataLayer, st: EnvDataOverlayState, box: NonNullable<ReturnType<typeof viewBox>>, guard: () => boolean) {
+async function drawRaster(v: Viewer, l: EnvDataLayer, st: EnvDataOverlayState, box: NonNullable<ReturnType<typeof viewBox>>, guard: () => boolean, cancel: AbortSignal) {
   const width = renderWidth(box.view, box.bbox, v.canvas.clientWidth || 1440);
   const url = envDataApi.renderUrl(l.id, box.bbox, width, st.variant);
   const rect = Rectangle.fromDegrees(box.bbox[0], box.bbox[1], box.bbox[2], box.bbox[3]);
-  // Probe first so an error is reported instead of an empty map
-  const r = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
-  if (!r.ok) {
-    let detail = `${r.status}`;
-    try { const j = await r.json(); if (typeof j.detail === 'string') detail = `${r.status} ${j.detail}`; } catch { /* keep status */ }
-    throw new Error(`server could not render this view (${redactPaths(detail)})`);
+  let blob = blobCache.get(url);
+  if (!blob) {
+    // Probe first so an error is reported instead of an empty map
+    let r: Response;
+    try { r = await fetch(url, { signal: timeoutOr(cancel, TIMEOUT_MS) }); } catch (e) { if (cancel.aborted) throw new Superseded(); throw e; }
+    if (!r.ok) {
+      let detail = `${r.status}`;
+      try { const j = await r.json(); if (typeof j.detail === 'string') detail = `${r.status} ${j.detail}`; } catch { /* keep status */ }
+      throw new Error(`server could not render this view (${redactPaths(detail)})`);
+    }
+    blob = await r.blob();
+    blobCache.set(url, blob);
   }
-  const blob = await r.blob();
   if (!guard()) throw new Superseded();
   const blobUrl = URL.createObjectURL(blob);
   let provider: SingleTileImageryProvider;
@@ -138,66 +170,48 @@ async function drawRaster(v: Viewer, l: EnvDataLayer, st: EnvDataOverlayState, b
 
 const lift = (lon: number, lat: number) => Cartesian3.fromDegrees(lon, lat, 2);
 
-async function drawStreams(v: Viewer, l: EnvDataLayer, box: NonNullable<ReturnType<typeof viewBox>>, alive: () => boolean) {
-  const res = await envDataApi.features(l.id, box.bbox, 2000);
+const STREAM_TIP: EnvTip = { type: 'Flow path · computed', name: 'Where rain would run downhill',
+  detail: 'From a 30 m surface model (includes buildings and trees). Not a mapped drain or nalla.', evidence: 'Modelled — D8 routing on Copernicus GLO-30' };
+setTipResolver('env_overlay_', id => (streamTips.has(id) ? STREAM_TIP : null));
+registerPickable(() => streamTips.size > 0 || sources.size > 0);
+
+async function drawStreams(v: Viewer, l: EnvDataLayer, box: NonNullable<ReturnType<typeof viewBox>>, alive: () => boolean, cancel: AbortSignal) {
+  const key = `${l.id}|${box.bbox.map(x => x.toFixed(6)).join(',')}`;
+  let res = featureCache.get(key);
+  if (!res) {
+    try { res = await envDataApi.features(l.id, box.bbox, 2000, cancel); } catch (e) { if (e instanceof Cancelled) throw new Superseded(); throw e; }
+    featureCache.set(key, res);
+  }
   if (!alive()) throw new Superseded();
-  const ds = new CustomDataSource(`env-data-${l.id}`);
+  // one GPU batch for all lines (was one Entity per line)
+  const pl = new PolylineCollection();
+  const material = Material.fromType('Color', { color: STREAM_COLOR });
+  const ids: string[] = [];
   res.geojson.features.forEach((f, k) => {
-    const lines = f.geometry.type === 'MultiLineString' ? (f.geometry.coordinates as number[][][]) : [f.geometry.coordinates as number[][]];
-    lines.forEach((c, i) => {
+    const parts = f.geometry.type === 'MultiLineString' ? (f.geometry.coordinates as number[][][]) : [f.geometry.coordinates as number[][]];
+    parts.forEach((c, i) => {
       if (c.length < 2) return;
       const eid = streamEntityId(l.id, f, k, i);
-      ds.entities.add({ id: eid, polyline: { positions: c.map(p => lift(p[0], p[1])), width: 3, material: STREAM_COLOR } });
-      setTip(eid, { type: 'Flow path · computed', name: 'Where rain would run downhill', detail: 'From a 30 m surface model (includes buildings and trees). Not a mapped drain or nalla.',
-        evidence: 'Modelled — D8 routing on Copernicus GLO-30' });
+      pl.add({ id: eid, positions: c.map(p => lift(p[0], p[1])), width: 3, material });
+      ids.push(eid);
     });
   });
-  await swapSource(v, l.id, ds, alive);
+  const prev = lines.get(l.id);
+  v.scene.primitives.add(pl);
+  pl.show = shownHere();
+  if (prev) v.scene.primitives.remove(prev);
+  lines.set(l.id, pl);
+  for (const k of [...streamTips]) if (k.startsWith(`env_overlay_${l.id}_`)) streamTips.delete(k);
+  for (const id of ids) streamTips.add(id);
   return `${res.returned.toLocaleString()} of ${res.total.toLocaleString()} derived flow paths in the ${box.from}` +
     (res.not_shown ? ` (${res.not_shown.toLocaleString()} more not shown; zoom in).` : '.');
 }
 
-async function drawTrees(v: Viewer, l: EnvDataLayer, box: NonNullable<ReturnType<typeof viewBox>>, alive: () => boolean) {
-  const res = await envDataApi.trees(box.bbox, 3000);
+async function drawTrees(v: Viewer, box: NonNullable<ReturnType<typeof viewBox>>, alive: () => boolean) {
+  const msg = await drawTreeTiles(v, box.bbox, alive, () => v.scene.requestRender());
   if (!alive()) throw new Superseded();
-  const ds = new CustomDataSource(`env-data-${l.id}`);
-  if (res.mode === 'points') {
-    for (const p of res.points) {
-      ds.entities.add({
-        id: `env_overlay_tree_${p.id}`, name: p.common_name ?? p.botanical_name ?? 'Tree',
-        position: lift(p.lon, p.lat),
-        point: { pixelSize: 6, color: p.is_rare === 1 ? Color.fromCssColorString('#c0ca33') : TREE_COLOR, outlineColor: Color.BLACK, outlineWidth: 1,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY },
-        description: `${p.botanical_name ?? 'species UNKNOWN'} (${p.common_name ?? '—'}); girth ${p.girth_cm ?? '?'} cm, height ${p.height_m ?? '?'} m, ` +
-          `canopy ${p.canopy_dia_m ?? '?'} m; ${p.condition ?? 'condition UNKNOWN'}; ${p.ownership ?? ''}; ward ${p.ward ?? '?'}. PMC tree census 2019 (as published).`,
-      });
-      setTip(`env_overlay_tree_${p.id}`, { type: `Tree · PMC census 2019${p.is_rare === 1 ? ' · rare' : ''}`, name: p.common_name ?? p.botanical_name ?? 'Species UNKNOWN',
-        detail: `${p.botanical_name ?? 'botanical name UNKNOWN'} · girth ${p.girth_cm ?? 'UNKNOWN'} cm · height ${p.height_m ?? 'UNKNOWN'} m · ${p.condition ?? 'condition UNKNOWN'}`,
-        evidence: 'Measured — 2019 survey; may have changed since' });
-    }
-  } else {
-    // size by count relative to the 90th percentile, so one dense cell does not flatten the rest
-    const ns = res.clusters.map(c => c.n).sort((a, b) => a - b);
-    const maxN = Math.max(1, ns[Math.floor(ns.length * 0.9)] ?? 1);
-    for (const c of res.clusters) {
-      const cid = `env_overlay_treecl_${c.lon.toFixed(5)}_${c.lat.toFixed(5)}`;
-      setTip(cid, { type: 'Trees · PMC census 2019', name: `${c.n.toLocaleString()} trees in this ${res.cell_deg}° cell`, detail: 'Zoom in to see single trees with species and girth.',
-        evidence: 'Measured — 2019 survey; counts as published' });
-      ds.entities.add({
-        id: cid, position: lift(c.lon, c.lat),
-        // modest sizes and a dark outline: clusters must not hide the land cover or a proposal's outline
-        point: { pixelSize: 4 + 12 * Math.sqrt(Math.min(1, c.n / maxN)), color: Color.fromCssColorString('#7CFC9A').withAlpha(0.55), outlineColor: Color.BLACK.withAlpha(0.7), outlineWidth: 1,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY },
-        label: res.clusters.length <= 400 && c.n >= maxN * 0.5 ? { text: `${c.n >= 1000 ? `${(c.n / 1000).toFixed(c.n >= 10000 ? 0 : 1)}k` : c.n} trees`, font: '11px sans-serif',
-          fillColor: Color.WHITE, outlineColor: Color.BLACK, outlineWidth: 3, style: LabelStyle.FILL_AND_OUTLINE, verticalOrigin: VerticalOrigin.CENTER,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY } : undefined,
-      });
-    }
-  }
-  await swapSource(v, l.id, ds, alive);
-  return res.mode === 'points'
-    ? `${res.returned.toLocaleString()} trees in the ${box.from} (all of them; cap ${res.limit.toLocaleString()}).`
-    : res.message;
+  setTreeLayerShown(shownHere());
+  return msg;
 }
 
 let stationCache: AqStation[] | null = null;
@@ -238,9 +252,12 @@ async function draw(l: EnvDataLayer): Promise<void> {
   seq.set(l.id, my);
   const st = overlayState(l.id);
   store.set(l.id, { status: 'loading', error: null });
-  const alive = () => seq.get(l.id) === my && active.has(l.id);
+  const alive = () => seq.get(l.id) === my && active.has(l.id) && shownHere();
+  ctrls.get(l.id)?.abort();
+  const ctrl = new AbortController();
+  ctrls.set(l.id, ctrl);
   try {
-      let message: string;
+    let message: string;
     let box: ReturnType<typeof viewBox> = null;
     if (l.kind === 'stations') message = await drawStations(v, l, alive);
     else {
@@ -250,13 +267,14 @@ async function draw(l: EnvDataLayer): Promise<void> {
         store.set(l.id, { status: 'shown', bbox: null, bboxFrom: null, message: 'The camera view does not overlap this layer (Pune study area).' });
         return;
       }
-          message = l.kind === 'raster' ? await drawRaster(v, l, st, box, alive) : l.kind === 'points' ? await drawTrees(v, l, box, alive) : await drawStreams(v, l, box, alive);
+    message = l.kind === 'raster' ? await drawRaster(v, l, st, box, alive, ctrl.signal) : l.kind === 'points' ? await drawTrees(v, box, alive)
+      : await drawStreams(v, l, box, alive, ctrl.signal);
     }
     if (!alive()) return;
     v.scene.requestRender();
     store.set(l.id, { status: 'shown', bbox: box?.bbox ?? null, bboxFrom: box?.from ?? null, message });
   } catch (e) {
-    if (e instanceof Superseded || !alive()) return;
+    if (e instanceof Superseded || e instanceof Cancelled || !alive()) return;
     const msg = e instanceof Error
       ? (e.name === 'TimeoutError' ? `no answer from the data server within ${TIMEOUT_MS / 1000} s`
         : /failed to fetch|networkerror|load failed/i.test(e.message) ? 'the data server did not answer (check that it is running, then show the layer again)' : redactPaths(e.message))
@@ -298,22 +316,46 @@ export function cameraBox(): number[] | null {
 }
 
 /**
- * Environment layers belong to the Environment workspace: hidden (not removed) in Design, Underground, Simulate, Projects
- * and Reports so a drape or tree clusters never sit under another workspace's drawing; shown again on return.
+ * Environment layers belong to the Environment (and Explore) workspaces: freed in Design, Underground, Simulate, Projects
+ * and Reports so a drape or tree clusters never sit under another workspace's drawing; drawn again on return.
  */
-export const ENV_WORKSPACES = new Set(['environment', 'explore']);
+export { ENV_WORKSPACES };
 function shownHere(): boolean { return ENV_WORKSPACES.has(useShellStore.getState().workspace); }
+/**
+ * Leaving: every drawn layer is removed from the GPU (textures, point and line batches, entities) and its requests are
+ * cancelled; the layers stay "on" (`active`). Returning: they are drawn again, from the response caches when the view
+ * has not changed. Hiding instead of freeing kept tens of MB of textures and buffers alive under Design / Simulate.
+ */
 function applyWorkspaceVisibility() {
-  const on = shownHere();
-  for (const il of imagery.values()) il.show = on;
-  for (const ds of sources.values()) ds.show = on;
-  viewer()?.scene.requestRender();
+  const v = viewer();
+  if (!shownHere()) {
+    for (const id of new Set([...imagery.keys(), ...sources.keys(), ...lines.keys(), ...active.keys()])) {
+      seq.set(id, (seq.get(id) ?? 0) + 1);
+      dropMapObjects(id, v);
+    }
+  } else {
+    for (const l of active.values()) void draw(l);
+  }
+  v?.scene.requestRender();
 }
-useShellStore.subscribe((s, prev) => { if (s.workspace !== prev.workspace) applyWorkspaceVisibility(); });
+useShellStore.subscribe((s, prev) => { if (s.workspace !== prev.workspace) { applyWorkspaceVisibility(); syncRenderMode(); } });
+
+// ── render on demand (envPerf.ts) ──
+let onDemand: { v: Viewer; stop: () => void } | null = null;
+const simAnimating = () => { try { return engineInstance.simMode.resources().animationFrame; } catch { return false; } };
+function syncRenderMode() {
+  const v = viewer();
+  const want = !!v && wantsOnDemand(useShellStore.getState().workspace, simAnimating());
+  if (onDemand && (!want || onDemand.v !== v)) { onDemand.stop(); onDemand = null; }
+  if (want && v && !onDemand) onDemand = { v, stop: enableRenderOnDemand(v, fn => useShellStore.subscribe(fn)) };
+}
+if (typeof window !== 'undefined') window.setInterval(() => { syncRenderMode(); onDemand?.v.scene.requestRender(); }, HEARTBEAT_MS);
 
 /** For the headless QA: what is drawn now. */
-export function envOverlayCounts(): { imagery: number; sources: number; entities: number; shown: boolean } {
-  let entities = 0;
+export function envOverlayCounts(): { imagery: number; sources: number; entities: number; lines: number; trees: ReturnType<typeof treeLayerCounts>; shown: boolean } {
+  let entities = 0, nl = 0;
   for (const ds of sources.values()) entities += ds.entities.values.length;
-  return { imagery: imagery.size, sources: sources.size, entities, shown: shownHere() };
+  for (const pl of lines.values()) nl += pl.length;
+  return { imagery: imagery.size, sources: sources.size, entities, lines: nl, trees: treeLayerCounts(), shown: shownHere() };
 }
+(window as unknown as { __envOverlayCounts?: typeof envOverlayCounts }).__envOverlayCounts = envOverlayCounts;

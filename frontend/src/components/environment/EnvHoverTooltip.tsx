@@ -6,16 +6,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Cartesian2, ScreenSpaceEventHandler, ScreenSpaceEventType } from 'cesium';
 import { engineInstance } from '../../engine/TwinCityEngine';
-import { pickedId, tipFor, type EnvTip } from './envTips';
+import { anythingToPick, pickedId, tipFor, type EnvTip } from './envTips';
 import { useEnvFocus } from './envFocus';
 
 const THROTTLE_MS = 120;
+const DRILL = 4;
 
 function tipAt(v: { scene: { pick: (p: Cartesian2) => unknown; drillPick: (p: Cartesian2, n: number) => unknown[] } }, pos: Cartesian2): EnvTip | null {
   const one = (p: unknown) => { const id = pickedId(p); return id ? tipFor(id, (p as { id?: { name?: string } }).id?.name ?? null) : null; };
   const top = v.scene.pick(pos);
   let t = top ? one(top) : null;
-  if (!t && top) for (const p of v.scene.drillPick(pos, 6)) { t = one(p); if (t) break; }
+  // an overlay under a building or a road: look a few objects deeper (each extra level is another pick pass)
+  if (!t && top) for (const p of v.scene.drillPick(pos, DRILL)) { t = one(p); if (t) break; }
   return t;
 }
 
@@ -36,10 +38,15 @@ export const EnvHoverTooltip: React.FC = () => {
     canvas.addEventListener('pointerdown', down);
     window.addEventListener('pointerup', up);
     canvas.addEventListener('pointerleave', leave);
+    // no pick passes while the camera moves (a pick re-renders the scene): only once it has stopped
+    let moving = false;
     const offCam = v.camera.changed.addEventListener(() => setTip(null));
+    const offStart = v.camera.moveStart.addEventListener(() => { moving = true; setTip(null); });
+    const offEnd = v.camera.moveEnd.addEventListener(() => { moving = false; });
     const run = () => {
       pending = null;
-      if (!pos || dragging || v.isDestroyed()) return;
+      if (!pos || dragging || moving || v.isDestroyed()) return;
+      if (!anythingToPick()) { setTip(null); return; }
       if (engineInstance.editing.getMode() !== 'select') { setTip(null); return; }
       last.current = { x: pos.x, y: pos.y, at: performance.now() };
       const t0 = performance.now();
@@ -58,7 +65,7 @@ export const EnvHoverTooltip: React.FC = () => {
       pending = window.setTimeout(run, Math.max(0, THROTTLE_MS - (performance.now() - L.at)));
     }, ScreenSpaceEventType.MOUSE_MOVE);
     handler.setInputAction((c: { position: Cartesian2 }) => {
-      if (engineInstance.editing.getMode() !== 'select') return;
+      if (engineInstance.editing.getMode() !== 'select' || !anythingToPick()) return;
       let t: EnvTip | null = null;
       try { t = tipAt(v, c.position); } catch { t = null; }
       if (t?.stationId) useEnvFocus.getState().focusStation(t.stationId);
@@ -66,7 +73,7 @@ export const EnvHoverTooltip: React.FC = () => {
     return () => {
       if (pending !== null) window.clearTimeout(pending);
       handler.destroy();
-      offCam();
+      offCam(); offStart(); offEnd();
       canvas.removeEventListener('pointerdown', down);
       window.removeEventListener('pointerup', up);
       canvas.removeEventListener('pointerleave', leave);
