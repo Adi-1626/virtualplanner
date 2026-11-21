@@ -85,6 +85,8 @@ export interface RoadSectionProfile {
 
 export interface RoadObject extends BaseCityObject {
   type: 'road';
+  /** Editable PI + radius geometry (GEOMETRY_EDITOR_DESIGN.md §3.1). Absent = legacy polyline. When present, `coordinates` is derived from it. */
+  alignment?: import('../geometry/alignment/types').HorizontalAlignment;
   coordinates: [number, number, number][]; // Array of [longitude, latitude, elevation]
   sourceCoordinates?: [number, number, number][];
   sections?: RoadSectionProfile[];
@@ -222,6 +224,8 @@ export interface JunctionObject extends BaseCityObject {
 
 export interface FlyoverObject extends BaseCityObject {
   type: 'flyover';
+  /** Editable PI + radius geometry (GEOMETRY_EDITOR_DESIGN.md §3.1). Absent = legacy polyline. When present, `coordinates` is derived from it. */
+  alignment?: import('../geometry/alignment/types').HorizontalAlignment;
   levelCrossings?: import('../editing/levelCrossings').LevelCrossing[];
   coordinates: [number, number, number][]; // Path of flyover
   roadClass: RoadClassification;
@@ -246,6 +250,8 @@ export interface FlyoverObject extends BaseCityObject {
 
 export interface MetroLineObject extends BaseCityObject {
   type: 'metro_line';
+  /** Editable PI + radius geometry (GEOMETRY_EDITOR_DESIGN.md §3.1). Absent = legacy polyline. When present, `coordinates` is derived from it. */
+  alignment?: import('../geometry/alignment/types').HorizontalAlignment;
   coordinates: [number, number, number][]; // Path of elevated rail tracks
   trackCount: number; // e.g. 1 or 2
   trackGauge: number; // in meters (default 1.435)
@@ -273,6 +279,8 @@ export type UtilityType = 'water' | 'electricity' | 'sewage' | 'gas' | 'fiber';
 
 export interface UtilityObject extends BaseCityObject {
   type: 'utility';
+  /** Editable PI + radius geometry (GEOMETRY_EDITOR_DESIGN.md §3.1). Absent = legacy polyline. When present, `coordinates` is derived from it. */
+  alignment?: import('../geometry/alignment/types').HorizontalAlignment;
   coordinates: [number, number, number][]; // Path or line of utility piping/cables
   utilityType: UtilityType;
   /**
@@ -287,6 +295,8 @@ export interface UtilityObject extends BaseCityObject {
   diameterMm?: number | null;
   /** Per-vertex typed depth (to zRef), certainty, default flag, elevation + ground reference. Same order as coordinates. */
   depths?: import('../underground/utilityModel').UtilityVertexDepth[];
+  /** Typed depths at the alignment PIs (one per PI) when `alignment` is set; `depths` is then derived by chainage (§3.4). */
+  depthControls?: import('../underground/utilityModel').UtilityVertexDepth[];
   /** Which part of the pipe the typed depths are to (absent = top of pipe). */
   zRef?: import('../underground/utilityModel').UtilityZRef;
   /** Lifecycle status, separate from evidence. */
@@ -297,6 +307,8 @@ export interface UtilityObject extends BaseCityObject {
 
 export interface MetroFlyoverObject extends BaseCityObject {
   type: 'metro_flyover';
+  /** Editable PI + radius geometry (GEOMETRY_EDITOR_DESIGN.md §3.1). Absent = legacy polyline. When present, `coordinates` is derived from it. */
+  alignment?: import('../geometry/alignment/types').HorizontalAlignment;
   levelCrossings?: import('../editing/levelCrossings').LevelCrossing[];
   coordinates: [number, number, number][]; // Path of double-decker corridor
   roadClass: RoadClassification;
@@ -360,12 +372,16 @@ export type UndergroundLifecycle = 'proposed' | 'conceptual' | 'existing';
  */
 export interface UndergroundAlignmentObject extends BaseCityObject {
   type: 'underground_alignment';
+  /** Editable PI + radius geometry (GEOMETRY_EDITOR_DESIGN.md §3.1). Absent = legacy polyline. When present, `coordinates` is derived from it. */
+  alignment?: import('../geometry/alignment/types').HorizontalAlignment;
   coordinates: [number, number, number][]; // plan vertices on the ground (z ignored)
   alignmentKind: UndergroundAlignmentKind;
   section: UndergroundSection;
   sectionCertainty: import('./certainty').Certainty;
   /** One entry per coordinate (same order). */
   depths: UndergroundVertexDepth[];
+  /** Typed depths at the alignment PIs (one per PI) when `alignment` is set; `depths` is then derived by chainage (§3.4). */
+  depthControls?: UndergroundVertexDepth[];
   /** Proposed (default), conceptual / illustrative, or existing (entered from records). */
   lifecycle?: UndergroundLifecycle;
 }
