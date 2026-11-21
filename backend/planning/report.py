@@ -293,6 +293,7 @@ def _actor_cell(actor: str, source: str) -> str:
 _B_LABEL = {"building": "Building footprint", "baseline_road": "Existing road (base city)", "subsurface_utility": "Utility record",
             "osm_metro": "Existing metro (OpenStreetMap)", "design_object": "Drawn in Design", "project_element": "Project"}
 REPORT_FINDINGS_MAX = 40
+_CLASS_SHORT = {"conflict": "Conflict", "potential_conflict": "Potential conflict"}
 
 
 def _z(v) -> str:
@@ -333,7 +334,7 @@ def _coordination_section(db: Session, p: PlanningProjectEntity, unknowns: list[
         out.append(Block("para", text="This project has not run the check itself; the findings below were raised by other projects' checks."))
     cnt = Counter(i["class_label"] for i in issues)
     opened = Counter(i["class_label"] for i in issues if i["status"] == "open")
-    out.append(Block("table", header=["Class", "Findings", "Open"], rows=[[k, str(v), str(opened.get(k, 0))] for k, v in cnt.items()]
+    out.append(Block("table", header=["Class", "Count", "Open"], rows=[[k, str(v), str(opened.get(k, 0))] for k, v in cnt.items()]
                      or [["(no finding shown: 'no conflict within available data' is not proof of no conflict)", "0", "0"]]))
     act = [i for i in issues if i["class"] in ("conflict", "potential_conflict")]
 
@@ -353,8 +354,10 @@ def _coordination_section(db: Session, p: PlanningProjectEntity, unknowns: list[
         return names.get(i["b_ref"], i["b_ref"] or "-")
 
     if act:
-        out.append(Block("table", header=["This project", "Other side", "Class", "Horizontal (m)", "Vertical gap (m)", "Certainty", "Status", "Permission triggers"], rows=[[
-            ours(i), other(i), i["class_label"], _z(i["horizontal_distance_m"]), _z(i["vertical_gap_m"]), i["certainty"], i["status"],
+        out.append(Block("note", text="Potential conflict: a depth or footprint width is UNKNOWN, so the conflict cannot be excluded. "
+                                      "Horizontal = plan distance; gap = vertical gap; UNKNOWN = not known, never 0."))
+        out.append(Block("table", header=["This project", "Other side", "Class", "Horizontal (m)", "Gap (m)", "Certainty", "Status", "Permission triggers"], rows=[[
+            ours(i), other(i), _CLASS_SHORT.get(i["class"], i["class_label"]), _z(i["horizontal_distance_m"]), _z(i["vertical_gap_m"]), i["certainty"], i["status"],
             "; ".join(t.get("label", t.get("rule_id", "")) for t in i.get("permission_triggers") or []) or "-"] for i in act[:REPORT_FINDINGS_MAX]]))
         if len(act) > REPORT_FINDINGS_MAX:
             out.append(Block("note", text=f"{len(act) - REPORT_FINDINGS_MAX} more conflict / potential-conflict findings are in the Conflict summary CSV."))

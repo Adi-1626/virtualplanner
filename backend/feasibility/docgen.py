@@ -406,7 +406,7 @@ def render_pdf(m: DocModel) -> bytes:
                     continue
                 pdf.set_font(FAM, "", 8)
                 n = len(b.header)
-                widths = _col_widths(b, W)
+                widths = _col_widths(b, W, measure=lambda w: pdf.get_string_width(T(w)) * 1.08)  # bold header ≈ +8 %
                 with pdf.table(col_widths=widths, line_height=4.2, headings_style=FontFace(emphasis="BOLD", fill_color=(230, 238, 246)), text_align="LEFT") as t:
                     hr = t.row()
                     for h in b.header:
@@ -428,19 +428,21 @@ def render_pdf(m: DocModel) -> bytes:
     return bytes(pdf.output())
 
 
-def _col_widths(b: Block, W: float, min_mm: float = 14.0) -> tuple[float, ...]:
-    """Column widths proportional to content length, each at least `min_mm` (a too-narrow column cannot hold one glyph)."""
+def _col_widths(b: Block, W: float, min_mm: float = 14.0, measure=None, pad_mm: float = 4.0) -> tuple[float, ...]:
+    """Column widths: each column first gets room for its longest word (measured in the table font when `measure` is
+    given, else 2 mm per character), so no word such as 'UNKNOWN' or a name is broken mid-word; at least `min_mm`. The
+    rest of the page width is shared in proportion to content length. When the longest words cannot all fit, the floors
+    are scaled down together (a word may then break, as before)."""
     n = len(b.header)
-    lens = [max([len(b.header[i])] + [len(str(r[i])) if i < len(r) else 0 for r in b.rows]) for i in range(n)]
-    lens = [min(max(L, 4), 80) for L in lens]
+    cells = [[b.header[i]] + [str(r[i]) if i < len(r) else "" for r in b.rows] for i in range(n)]
+    lens = [min(max(max(len(c) for c in col), 4), 80) for col in cells]
+    width = measure or (lambda w: 2.0 * len(w))
+    floor = [max(min_mm, max((width(w[:30]) for c in col for w in c.split()), default=0.0) + pad_mm) for col in cells]
+    if sum(floor) >= W:
+        return tuple(f * W / sum(floor) for f in floor)
+    free = W - sum(floor)
     tot = sum(lens)
-    raw = [W * L / tot for L in lens]
-    small = [i for i, w in enumerate(raw) if w < min_mm]
-    if small and len(small) < n:
-        free = W - min_mm * len(small)
-        big_tot = sum(raw[i] for i in range(n) if i not in small)
-        raw = [min_mm if i in small else raw[i] * free / big_tot for i in range(n)]
-    return tuple(raw)
+    return tuple(floor[i] + free * lens[i] / tot for i in range(n))
 
 
 def render(m: DocModel, fmt: str) -> bytes:

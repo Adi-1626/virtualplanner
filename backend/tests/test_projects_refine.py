@@ -306,6 +306,11 @@ def test_project_report_lists_elements_and_conflict_findings(client):
     assert r.status_code == 201
     pdf = client.get(f"/api/planning/projects/{a['id']}/report?format=pdf")
     assert pdf.status_code == 200 and pdf.content[:5] == b"%PDF-"
+    from tests.test_planning import _pdf_text
+    import re
+    pt = _pdf_text(pdf.content)
+    assert "7. Proposal elements and conflict check" in pt
+    assert "UNKNOWN" in pt and not re.search(r"UNKNO\s+WN|SYNTHE\s+TIC|unknow\s+n\b", pt), "a word is broken mid-word in a table column"
     docx = client.get(f"/api/planning/projects/{a['id']}/report?format=docx")
     assert docx.status_code == 200
     import io, zipfile
