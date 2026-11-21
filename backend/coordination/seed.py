@@ -35,8 +35,8 @@ _RETIRED_CITATIONS = {"metro_noc_20m": (
     "UDCPR 2020 cl. 14.2.1.7 (Govt of Maharashtra, Urban Development Dept; consolidated text, Directorate of Town Planning",
 )}
 # Old news citation kept only so `python -m updater migrate-official-only` can replace it in an existing database; never shown.
-_S9_LEGACY = ("Indian Express, 'Pune Metro issues no-NOC, no-work warning after Shukrawar Peth tunnel breach', 17 Apr 2026 — "
-              "https://indianexpress.com/article/cities/pune/noc-mandatory-pune-metro-warns-of-action-over-borewell-drilling-near-tunnels-10641841/ "
+_S9_LEGACY = ("Indian Express, 'Pune Metro issues no-NOC, no-work warning after Shukrawar Peth tunnel breach', 17 Apr 2026 — "  # retired-news-marker
+              "https://indianexpress.com/article/cities/pune/noc-mandatory-pune-metro-warns-of-action-over-borewell-drilling-near-tunnels-10641841/ "  # retired-news-marker
               "(MahaMetro spokesperson: development within 20 m of either the elevated or underground metro route needs a metro NOC). "
               "MahaMetro notice https://www.punemetrorail.org/download/Notice-for-NOC.pdf not read (scanned). Repo: docs/RESEARCH_FEASIBILITY_AND_INVESTIGATION.md §1.7, S9.")
 _AMASR = ("AMASR Act 1958 as amended 2010, s.20A (prohibited area 100 m) and s.20B (regulated area, a further 200 m, i.e. 100–300 m) — "
