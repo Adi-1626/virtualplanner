@@ -24,7 +24,7 @@ import { TerrainHeightField, cellsFor, type GroundSampler } from './terrain/Terr
 import { setGroundField, getGroundField, scenePoint } from './terrain/groundHeight';
 import { undergroundView } from './underground/UndergroundView';
 import { cesiumIonToken } from '../lib/cesiumToken';
-import { ObjectManager } from './objects/ObjectManager';
+import { ObjectManager, classifyObjectChange } from './objects/ObjectManager';
 import type { CityObject, RoadObject, ZoneObject, GatewayObject, BuildingObject } from './objects/types';
 import { renderManagerInstance } from './rendering/RenderManager';
 import { TrafficNetworkVisualizer } from './rendering/renderers/TrafficNetworkVisualizer';
@@ -174,7 +174,15 @@ export class TwinCityEngine {
     this.startTrafficWorker();
 
     this.objects.onChange((changedTypes: Set<string>) => {
-      if (changedTypes.has('road') || changedTypes.has('junction') || changedTypes.has('flyover') || changedTypes.has('metro_flyover') || changedTypes.size === 0) {
+      const kind = classifyObjectChange(changedTypes);
+      if (kind === 'view') {
+        // Nothing changed (a workspace switch): redraw only. Treating it as "everything changed" rebuilt the city
+        // traffic graph and cleared Simulate's comparison on every workspace switch (docs/urbanos/SIMULATE_AUDIT.md)
+        renderManagerInstance.reconcile(this.getFilteredObjects());
+        this.syncZonesAndGatewaysWithCesium();
+        return;
+      }
+      if (kind === 'network') {
         this.queueTrafficRebuild();
         this.simMode.networkChanged();
       } else {
@@ -1556,7 +1564,7 @@ export class TwinCityEngine {
     this.editing.setMode('select');
     this.selection.clearSelection();
     this.syncZonesAndGatewaysWithCesium();
-    this.objects.notify();
+    this.objects.notifyViewOnly();
     this.emitMode();
   }
 
