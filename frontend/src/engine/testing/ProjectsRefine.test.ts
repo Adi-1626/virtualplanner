@@ -91,6 +91,10 @@ describe('shared findings name the other project and its element (A11, A12)', ()
     expect(gone).not.toContain('pB');
     expect(projectName('prj_x', {})).toBe('a deleted project');
   });
+  it('an OSM metro finding names the line and says when several OSM pieces were merged', () => {
+    expect(otherSideLabel(issue({ b_type: 'osm_metro', other_project: null, b_ref: 'osm_way_1', evidence: { b: { osm_tags: { name: 'Pune Metro Line 1: Purple Line' } }, osm_pieces: 2 } }), {}, 'pA'))
+      .toBe('Existing metro (OpenStreetMap): Pune Metro Line 1: Purple Line (2 OSM pieces, nearest shown)');
+  });
   it('explains the new stale reasons in plain words', () => {
     expect(staleReasonText('alternatives_attached_changed')).toBe('an alternative was attached');
     expect(staleReasonText('infra_index_changed')).toBe('the building / network index changed');

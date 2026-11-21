@@ -438,6 +438,35 @@ def run_detection(db: Session, project_id: str, run_by: str, screening_radius_m:
                     if cur is None or (G.SEVERITY[r["class"]], r["horizontal_distance_m"]) < (G.SEVERITY[cur["class"]], cur["horizontal_distance_m"]):
                         best[key] = {**r, "a": a, "b": b}
                     best[key]["permission_triggers"] = list({(t["rule_id"]): t for t in sorted(trig, key=lambda t: -t["distance_m"])}.values())
+        # OpenStreetMap splits one metro line into several ways (and maps twin bores / both tracks as parallel ways):
+        # one finding per (named line, kind) for this element, the most severe and nearest, saying how many pieces were
+        # within reach (the Underground screening does the same, screening._merge_same_line).
+        merged: dict[tuple, tuple] = {}
+        for key, r in list(best.items()):
+            if key[0] != "osm_metro":
+                continue
+            nm = (r["b"].meta.get("osm_tags") or {}).get("name")
+            if not nm:
+                continue
+            gk = (nm, r["b"].kind)
+            if gk not in merged:
+                merged[gk] = (key, 1, list(r["permission_triggers"]))
+                continue
+            k0, n, trig = merged[gk]
+            r0 = best[k0]
+            trig = trig + list(r["permission_triggers"])
+            if (G.SEVERITY[r["class"]], r["horizontal_distance_m"]) < (G.SEVERITY[r0["class"]], r0["horizontal_distance_m"]):
+                del best[k0]
+                k0 = key
+            else:
+                del best[key]
+            merged[gk] = (k0, n + 1, trig)
+        for (nm, _kind), (k0, n, trig) in merged.items():
+            if n > 1:
+                r0 = best[k0]
+                r0["permission_triggers"] = list({t["rule_id"]: t for t in sorted(trig, key=lambda t: -t["distance_m"])}.values())
+                r0["reasons"] = list(r0["reasons"]) + [f"{n} OpenStreetMap pieces of '{nm}' (separate ways, e.g. both tracks or line sections) are within reach; the most severe / nearest is shown."]
+                r0["osm_pieces"] = n
         for (layer, bref), r in best.items():
             a, b = r["a"], r["b"]
             rows.append(CoordinationConflictEntity(
@@ -448,7 +477,8 @@ def run_detection(db: Session, project_id: str, run_by: str, screening_radius_m:
                 reasons_json=_canon(r["reasons"]), permission_triggers_json=_canon(r["permission_triggers"]),
                 evidence_json=_canon({"a": {"kind": a.kind, "z_min_m": a.z_min, "z_max_m": a.z_max, "certainty": a.certainty, "width_known": a.width_known, **a.meta},
                                       "b": {"kind": b.kind, "z_min_m": b.z_min, "z_max_m": b.z_max, "certainty": b.certainty, "width_known": b.width_known, **b.meta},
-                                      "rule_ids": r["rule_ids"], "crs": f"EPSG:{G.UTM_EPSG}"})))
+                                      "rule_ids": r["rule_ids"], "crs": f"EPSG:{G.UTM_EPSG}",
+                                      **({"osm_pieces": r["osm_pieces"]} if r.get("osm_pieces") else {})})))
         # layer-level rows: what can (not) be said where no pair was found
         hit_layers = {k[0] for k in best}
         hit_projects = {r2.project_b_id for r2 in rows if r2.element_a_id == eid and r2.b_type == "project_element"}

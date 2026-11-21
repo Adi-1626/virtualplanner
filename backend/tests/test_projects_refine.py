@@ -240,3 +240,23 @@ def test_summary_is_one_call_for_many_projects(client, n):
     s = {x["id"]: x for x in client.get("/api/coordination/projects-summary").json()["projects"]}
     assert all(p in s for p in ids)
     assert all(s[p]["last_check"] and s[p]["last_check"]["stale"] in (True, False) for p in ids[:3])
+
+
+def test_twin_osm_ways_of_one_named_line_give_one_finding_per_element(client, monkeypatch):
+    """OSM maps the two bores / tracks of the Purple Line as two ways with the same name: one finding, '2 pieces'."""
+    x = X0 + 0.07
+    ways = {990011: [[x, LAT - 0.002], [x, LAT + 0.002]], 990012: [[x + 0.00013, LAT - 0.002], [x + 0.00013, LAT + 0.002]]}
+
+    def fake(boxes):
+        segs = []
+        for wid, c in ways.items():
+            segs += G.segments_for(f"osm_way_{wid}", "metro_tunnel", {"type": "LineString", "coordinates": c}, width_m=None, z_min=None, z_max=None,
+                                   certainty="estimated", meta={"layer": "osm_metro", "osm_tags": {"name": "SYNTHETIC Twin Line", "tunnel": "yes"}})
+        return segs, {"available": True, "bbox": [73.0, 18.0, 74.5, 19.0], "source": "SYNTHETIC", "dataTimestamp": "2026-11-21"}
+    monkeypatch.setattr(S, "osm_metro_segments", fake)
+    p = _project(client, "SYNTHETIC crossing twin bores")
+    e = _el(client, p, "pipeline", _line(x - 0.002, LAT, x + 0.002, LAT), width_m=1, z_min_m=-3, z_max_m=-2)
+    rows = [c for c in _detect(client, p)["conflicts"] if c["element_a_id"] == e["id"] and c["b_type"] == "osm_metro"]
+    assert len(rows) == 1 and rows[0]["evidence"]["osm_pieces"] == 2
+    assert any("2 OpenStreetMap pieces" in r for r in rows[0]["reasons"])
+    assert rows[0]["permission_triggers"] and rows[0]["permission_triggers"][0]["rule_id"] == "metro_noc_20m"

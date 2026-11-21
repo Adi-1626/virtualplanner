@@ -262,7 +262,12 @@ export function sideBLabel(i: Pick<ConflictFinding, 'b_type' | 'b_ref' | 'eviden
     case 'project_element': return 'Other project element';
     case 'project': return 'Other project';
     case 'baseline_road': return 'Existing road (base city)';
-    case 'osm_metro': return 'Existing metro (OpenStreetMap)';
+    case 'osm_metro': {
+      const b = (i.evidence?.b ?? {}) as { osm_tags?: Record<string, string> };
+      const ev = (i.evidence ?? {}) as { osm_pieces?: number };
+      const nm = b.osm_tags?.name;
+      return `Existing metro (OpenStreetMap)${nm ? `: ${nm}` : ''}${ev.osm_pieces && ev.osm_pieces > 1 ? ` (${ev.osm_pieces} OSM pieces, nearest shown)` : ''}`;
+    }
     case 'subsurface_utility': {
       const b = (i.evidence?.b ?? {}) as Record<string, unknown>;
       const t = b.utility_type === 'sewer' ? 'Sewer' : b.utility_type === 'storm_drain' ? 'Storm drain' : 'Utility';
