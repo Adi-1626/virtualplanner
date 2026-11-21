@@ -134,7 +134,7 @@ export function metaOfCoord(l: Pick<EnvironmentLayer, 'id' | 'source' | 'data_da
 }
 
 // ── what is not available ──────────────────────────────────────────────────────
-export interface Unavailable { id: string; title: string; why: string; needs: string; status: 'not imported' | 'blocked' | 'rejected' | 'not on disk' }
+export interface Unavailable { id: string; title: string; why: string; needs: string; status: 'not imported' | 'blocked' | 'rejected' | 'not on disk'; sources?: { name: string; url?: string | null; licence?: string | null }[] }
 /** Indicators the registry lists as not wired (wired=0) and no catalogue carries: listed so their absence is explicit. */
 export const NOT_WIRED: Unavailable[] = [
   { id: 'exposure', title: 'Population exposure', status: 'not imported', why: 'No ward-level population is loaded, and there is no noise or air-dispersion model to expose people to.',
@@ -151,16 +151,25 @@ const NEEDS: Record<string, string> = {
   flood_model: 'Statutory flood lines, a bare-earth terrain model, drain inverts and design rainfall (IDF).',
 };
 
+/** Planner wording for a catalogue reason: no internal document references or repository paths. */
+export function plainReason(t: string | null | undefined): string {
+  let s = redactPaths(t ?? '') ?? '';
+  s = s.replace(/^Not imported — UNKNOWN\.?\s*/, '').replace(/\s*\((?:EGR|ENGINEERING_GIS_RESEARCH)[^)]*\)/g, '')
+    .replace(/\s*Request route:[^.]*(?:\.md)?[^.]*\.?/g, '').replace(/\s*\(?docs\/urbanos\/[\w./-]+\)?/g, '').trim();
+  return s && !/^not imported;? unknown\.?$/i.test(s) ? s : 'No dataset has been imported yet.';
+}
+
 export function unavailableOf(coord: EnvironmentLayer[], env: EnvDataLayer[]): Unavailable[] {
   const covered = new Set(env.flatMap(l => l.covers));
   const out: Unavailable[] = [];
   for (const l of coord) {
     if (l.status === 'available' || covered.has(l.id)) continue;
-    out.push({ id: l.id, title: l.name, status: 'not imported', why: redactPaths(l.limitations?.replace(/^Not imported — UNKNOWN\.?\s*/, '') || 'Not imported; UNKNOWN.') ?? '', needs: NEEDS[l.id] ?? 'A source is listed under its details.' });
+    out.push({ id: l.id, title: l.name, status: 'not imported', why: plainReason(l.limitations), needs: NEEDS[l.id] ?? (l.recommended_sources?.length ? 'See the suggested source.' : 'No open source identified yet.'),
+      sources: (l.recommended_sources ?? []).map(r => ({ name: r.name, url: r.url, licence: r.licence })) });
   }
   for (const l of env) {
     if (l.status === 'available') continue;
-    out.push({ id: l.id, title: l.name, status: l.status === 'missing' ? 'not on disk' : l.status, why: redactPaths(l.status_reason) ?? '', needs: NEEDS[l.id] ?? (l.status === 'missing' ? 'Run its pipeline on this server.' : '') });
+    out.push({ id: l.id, title: l.name, status: l.status === 'missing' ? 'not on disk' : l.status, why: plainReason(l.status_reason), needs: NEEDS[l.id] ?? (l.status === 'missing' ? 'Run its pipeline on this server.' : '') });
   }
   for (const n of NOT_WIRED) if (!out.some(o => o.id === n.id)) out.push(n);
   return out;
@@ -194,6 +203,13 @@ export function greenOf(a: LandcoverAreas | null): { greenM2: number | null; tre
   return { greenM2: green * 1e6, treeCoverM2: km2(10) * 1e6, areaM2: a.classes.reduce((s, c) => s + c.km2, 0) * 1e6, outside: false };
 }
 
+/** Outer rings of a GeoJSON Polygon / MultiPolygon (for drawing the outline). */
+export function ringsOf(g: { type: string; coordinates: unknown }): number[][][] {
+  if (g.type === 'Polygon') return [(g.coordinates as number[][][])[0]];
+  if (g.type === 'MultiPolygon') return (g.coordinates as number[][][][]).map(p => p[0]);
+  return [];
+}
+
 /** Polyline length in metres (haversine). */
 export function lineLengthM(coords: number[][]): number {
   let s = 0;
@@ -218,14 +234,14 @@ export function impactCsv(r: ImpactResult, at: string): string {
     ['UrbanOS environmental screening indicators — screening only, not an environmental impact assessment'],
     ['proposal', r.name], ['type', r.type], ['length_m', Math.round(r.lengthM)], ['width_m', r.widthM], ['computed_at', at],
     [],
-    ['indicator', 'footprint (centreline ± width/2)', `footprint + ${IMPACT_BUFFER_M} m each side`, 'unit', 'source', 'evidence'],
+    ['indicator', 'footprint (centreline ± width/2)', `footprint with ${IMPACT_BUFFER_M} m margin each side`, 'unit', 'source', 'evidence'],
     ['census trees', v(r.footprint.trees), v(r.buffer.trees), 'trees', 'PMC Tree Census 2019 (via OpenCity)', 'Measured (2019; felled/planted since not reflected)'],
     ['rare census trees', v(r.footprint.rare), v(r.buffer.rare), 'trees', 'PMC Tree Census 2019 is_rare flag', 'Measured (2019)'],
     ['green area (tree, shrub, grass, crop, wetland)', v(r.footprint.greenM2), v(r.buffer.greenM2), 'm²', 'ESA WorldCover 2021, 10 m', 'Inferred (ML classification)'],
     ['tree cover', v(r.footprint.treeCoverM2), v(r.buffer.treeCoverM2), 'm²', 'ESA WorldCover 2021, 10 m', 'Inferred (ML classification)'],
     ['area counted', v(r.footprint.areaM2), v(r.buffer.areaM2), 'm²', 'pixel centres in the polygon × 100 m²', ''],
     [],
-    ['A Trees Act survey and a site visit are still required. Footprint is approximate (centreline ± width/2).'],
+    ['A Trees Act survey and a site visit are still required. Footprint = centreline ± width/2, flat ends, mitred corners (metric buffer, EPSG:32643); the margin column includes the footprint.'],
   ]);
 }
 
@@ -266,3 +282,31 @@ export function readoutIndex(n: number, x: number): number {
   if (n <= 0) return -1;
   return Math.max(0, Math.min(n - 1, Math.round(x * (n - 1))));
 }
+
+// ── OSM overlay request box ────────────────────────────────────────────────────
+/** Share of the view added on each side, so small pans do not refetch. */
+export const VIEW_PAD = 0.5;
+/** Views wider than this (degrees) request the whole coverage box: zoomed out, everything is in view anyway. */
+export const WIDE_VIEW_DEG = 0.35;
+
+/**
+ * Box to request: the camera view padded by VIEW_PAD on each side and clipped to the layers' coverage (the old code always
+ * asked for the whole coverage box: 3.7 MB and ~1,400 polygons for water, 9 s headless, whatever the view).
+ * Pure; unit-tested in EnvPlannerModel.test.ts.
+ */
+export function requestBox(view: number[] | null, cov: number[] | null): { bbox: number[]; from: 'layer coverage' | 'camera view' } | null {
+  if (!view) return cov ? { bbox: cov, from: 'layer coverage' } : null;
+  const w = view[2] - view[0], h = view[3] - view[1];
+  if (cov && w > WIDE_VIEW_DEG) return { bbox: cov, from: 'layer coverage' };
+  const p = [view[0] - w * VIEW_PAD, view[1] - h * VIEW_PAD, view[2] + w * VIEW_PAD, view[3] + h * VIEW_PAD];
+  if (!cov) return { bbox: p, from: 'camera view' };
+  const c = [Math.max(p[0], cov[0]), Math.max(p[1], cov[1]), Math.min(p[2], cov[2]), Math.min(p[3], cov[3])];
+  return c[0] < c[2] && c[1] < c[3] ? { bbox: c, from: 'camera view' } : null;
+}
+
+/** True when the drawn box still holds the whole view (no refetch needed). */
+export function boxHolds(drawn: number[] | null, view: number[] | null): boolean {
+  if (!drawn || !view) return false;
+  return view[0] >= drawn[0] && view[1] >= drawn[1] && view[2] <= drawn[2] && view[3] <= drawn[3];
+}
+

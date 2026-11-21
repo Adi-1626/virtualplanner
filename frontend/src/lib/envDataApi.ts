@@ -95,6 +95,9 @@ export const envDataApi = {
   features: (id: string, bbox: number[], limit = 2000) =>
     call<{ total: number; returned: number; not_shown: number; limit: number; geojson: { features: { id: number; properties: Record<string, unknown>; geometry: { type: string; coordinates: number[][] | number[][][] } }[] } }>('GET', `/layers/${id}/features?bbox=${bb(bbox)}&limit=${limit}`),
   trees: (bbox: number[], limit = 2000) => call<TreesResponse>('GET', `/trees?bbox=${bb(bbox)}&limit=${limit}`),
+  /** Footprint of a drawn line, buffered in metres on the server (flat ends, mitred corners). */
+  footprint: (coordinates: number[][], widthM: number) =>
+    call<{ type: 'Feature'; geometry: { type: 'Polygon' | 'MultiPolygon'; coordinates: number[][][] | number[][][][] }; properties: { length_m: number; width_m: number; area_m2: number; method: string } }>('POST', '/footprint', { coordinates, width_m: widthM }),
   treesInPolygon: (geometry: unknown) => call<{ count: number; rare: number; vintage: string; note: string }>('POST', '/trees/count', { geometry }),
   airStations: () => call<{ stations: AqStation[]; parameters: Record<string, AqParamInfo>; note: string }>('GET', '/air/stations'),
   airSeries: (station: string, param: string, agg: 'hour' | 'day' | 'month' = 'day') =>

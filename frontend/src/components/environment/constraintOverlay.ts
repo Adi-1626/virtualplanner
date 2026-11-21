@@ -14,6 +14,7 @@ import type { OsmElement } from '../../engine/feasibility/types';
 import { API_BASE } from '../../lib/api';
 import type { OverlayKey } from './envCatalogue';
 import { redactPaths } from '../../lib/redactPaths';
+import { boxHolds, requestBox, WIDE_VIEW_DEG } from './envPlanner';
 
 export interface OverlayState {
   status: 'off' | 'loading' | 'shown' | 'error';
@@ -62,32 +63,6 @@ async function coverageBbox(): Promise<number[] | null> {
     }
   } catch { /* unknown: the camera view is used */ }
   return null;
-}
-
-/** Share of the view added on each side, so small pans do not refetch. */
-export const VIEW_PAD = 0.5;
-/** Views wider than this (degrees) request the whole coverage box: zoomed out, everything is in view anyway. */
-const WIDE_VIEW_DEG = 0.35;
-
-/**
- * Box to request: the camera view padded by VIEW_PAD on each side and clipped to the layers' coverage (the old code always
- * asked for the whole coverage box: 3.7 MB and ~1,400 polygons for water, 9 s headless, whatever the view).
- * Pure; unit-tested in EnvPlannerModel.test.ts.
- */
-export function requestBox(view: number[] | null, cov: number[] | null): { bbox: number[]; from: OverlayState['bboxFrom'] } | null {
-  if (!view) return cov ? { bbox: cov, from: 'layer coverage' } : null;
-  const w = view[2] - view[0], h = view[3] - view[1];
-  if (cov && w > WIDE_VIEW_DEG) return { bbox: cov, from: 'layer coverage' };
-  const p = [view[0] - w * VIEW_PAD, view[1] - h * VIEW_PAD, view[2] + w * VIEW_PAD, view[3] + h * VIEW_PAD];
-  if (!cov) return { bbox: p, from: 'camera view' };
-  const c = [Math.max(p[0], cov[0]), Math.max(p[1], cov[1]), Math.min(p[2], cov[2]), Math.min(p[3], cov[3])];
-  return c[0] < c[2] && c[1] < c[3] ? { bbox: c, from: 'camera view' } : null;
-}
-
-/** True when the drawn box still holds the whole view (no refetch needed). */
-export function boxHolds(drawn: number[] | null, view: number[] | null): boolean {
-  if (!drawn || !view) return false;
-  return view[0] >= drawn[0] && view[1] >= drawn[1] && view[2] <= drawn[2] && view[3] <= drawn[3];
 }
 
 function cameraView(): number[] | null {

@@ -303,6 +303,7 @@ export const EnvironmentContext: React.FC = () => {
                 <p className="text-text-1"><Leaf size={11} aria-hidden className="inline mr-1 text-unknown" />{plainTitle(u.id, u.title)} <span className="text-text-3">· {u.status}</span></p>
                 {u.why && <p className="text-text-2">{u.why}</p>}
                 {u.needs && <p className="text-text-3">Needs: {u.needs}</p>}
+                {u.sources && u.sources.length > 0 && <p className="text-text-3">Suggested source: {u.sources.map((r, i) => <React.Fragment key={r.name}>{i ? '; ' : ''}{r.url ? <a className="uos-link" href={r.url} target="_blank" rel="noreferrer">{r.name}</a> : r.name}{r.licence ? ` (${r.licence})` : ''}</React.Fragment>)}</p>}
               </li>
             ))}
           </ul>

@@ -209,7 +209,7 @@ export const AirQualityPanel: React.FC = () => {
           {series && series.points.length === 0 && <p className="text-meta text-text-2" data-testid="env-air-empty">No values for this parameter at this station — UNKNOWN, not zero.</p>}
           {series && series.points.length > 0 && (
             <>
-              <LineChart values={series.points.map(p => p.v)} times={series.points.map(p => istDate(p.t).replace(/T.*$/, ''))} labels={[istDate(series.first), istDate(series.last)]} unit={series.unit} testId="env-air-chart"
+              <LineChart values={series.points.map(p => p.v)} times={series.points.map(p => `${p.t.slice(0, agg === 'month' ? 7 : 10)} IST`)} labels={[istDate(series.first), istDate(series.last)]} unit={series.unit} testId="env-air-chart"
                 refLine={agg === 'day' && NAAQS_24H[param] ? { value: NAAQS_24H[param], label: `India NAAQS 24-hour limit ${NAAQS_24H[param]} ${series.unit}, for reading the chart only (a compliance check needs the full NAAQS method).` } : undefined} />
               <button type="button" className="uos-btn uos-btn-sm" data-testid="env-air-csv" onClick={() => downloadText(`air-${series.station_id}-${series.parameter}-${agg}.csv`, airCsv(series, st?.name ?? series.station_id), 'text/csv')}>
                 <Download size={13} aria-hidden />Download CSV
