@@ -9,7 +9,7 @@ import { coordinationApi, type SubsurfaceDataset } from '../../lib/coordinationA
 import { listDocuments, listReviews, documentUrl, REVIEW_STATUS_LABEL, type DocumentRecord, type ReviewRecord } from '../../engine/feasibility/feasibilityApi';
 import { planningClient, type TrafficDatasetInfo } from '../../lib/planningClient';
 import { StaleBadge } from './common';
-import { activityText } from '../../lib/planningProjects';
+import { activityText, actorText } from '../../lib/planningProjects';
 import { inputCls, when, type Act, type ProjectBundle } from './projectData';
 
 const RUN_KIND: Record<string, string> = { simulation: 'Simulation run', odme: 'ODME run', emissions: 'Emissions run' };
@@ -222,7 +222,7 @@ export const ActivityTab: React.FC<{ events: AuditEvent[]; hiddenFindings?: numb
               <History size={12} className="mt-0.5 text-slate-500 shrink-0" />
               <div className="min-w-0">
                 <div className="text-slate-200 break-words">{activityText(e)}</div>
-                <div className="text-slate-500">{when(e.at)} · {e.actor}{e.actor_source === 'none' ? '' : ` [${e.actor_source.replace('_', ' ')}]`}</div>
+                <div className="text-slate-500" title={actorText(e).how} data-testid="activity-who">{when(e.at)} · {actorText(e).who}</div>
               </div>
             </li>
           ))}

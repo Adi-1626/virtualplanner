@@ -464,7 +464,36 @@ export function startSteps(s: { user: string; project?: { alternatives: number; 
   ];
 }
 
+/** Same self-declared name (trimmed, case and spacing ignored). */
+export const sameName = (a: string, b: string) => a.trim().replace(/\s+/g, ' ').toLowerCase() === b.trim().replace(/\s+/g, ' ').toLowerCase();
+
+/**
+ * Show the Get started card to this planner? It follows the planner's own projects (created under their name) and their own
+ * "Hide" choice, not the whole list: another agency's project does not mean this planner has started (A16). Without a name
+ * we cannot tell whose projects are whose, so it stays (its first step is to enter the name).
+ */
+export function showGetStarted(s: { user: string; projects: { created_by: string }[] | null; hidden: boolean }): boolean {
+  if (!s.projects || s.hidden) return false;
+  if (!s.user.trim()) return true;
+  return !s.projects.some(p => sameName(p.created_by, s.user));
+}
+
 // ── Activity timeline ───────────────────────────────────────────────────────────────────────────────────────────────
+
+/** How the audit log got the name, in plain words (shown as a tooltip; the log's `actor_source` code never reaches the screen). */
+const ACTOR_HOW: Record<string, string> = {
+  header: 'Name typed in “Your name” (not verified)',
+  request_field: 'Name typed in “Your name” (not verified)',
+  record_field: 'Name written on the record itself (not verified)',
+  td_audit: 'Name from the traffic-data change log (not verified)',
+  none: 'No name was given for this change',
+};
+
+/** Who did it, for an Activity row: the self-declared name, or "No name recorded"; `how` says where the name came from. */
+export function actorText(e: { actor: string; actor_source: string }): { who: string; how: string } {
+  const none = e.actor_source === 'none' || !e.actor.trim() || e.actor === 'unattributed';
+  return { who: none ? 'No name recorded' : e.actor, how: ACTOR_HOW[none ? 'none' : e.actor_source] ?? 'Name not verified' };
+}
 
 /** Plain words for one audit event of the project timeline. */
 export function activityText(e: { entity_type: string; action: string; label: string; changed_fields: string[] | null }): string {
@@ -490,5 +519,5 @@ export function activityText(e: { entity_type: string; action: string; label: st
   const ACTION: Record<string, string> = { create: 'added', update: 'changed', delete: 'removed', export: 'exported' };
   const ent = ENTITY[e.entity_type] ?? e.entity_type.replace(/_/g, ' ');
   const act = e.entity_type === 'project' && e.action === 'create' ? 'created' : (ACTION[e.action] ?? e.action);
-  return `${ent} ${act}${e.label ? ` — ${e.label}` : ''}${f.length && e.action === 'update' ? ` (${f.join(', ')})` : ''}`;
+  return `${ent} ${act}${e.label ? ` — ${e.label}` : ''}${f.length && e.action === 'update' ? ` (${f.map(x => x.replace(/_/g, ' ')).join(', ')})` : ''}`;
 }

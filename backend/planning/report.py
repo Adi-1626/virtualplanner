@@ -270,13 +270,24 @@ def build_model(db: Session, p: PlanningProjectEntity, now: datetime.datetime | 
     S.append([Block("note", text="From the append-only audit log (entries cannot be updated or deleted; before/after are sha256 of the row's values)."),
               Block("table", header=["Entity", "Action", "Events"], rows=[[t, a, str(n)] for (t, a), n in sorted(cnt.items())]),
               Block("para", text="Latest 25 events (finding rows written by conflict checks are counted above, not listed):"),
-              Block("table", header=["When (UTC)", "Actor", "Action", "Entity", "Label"], rows=[[_iso(e.at), f"{e.actor} [{e.actor_source}]", e.action, f"{e.entity_type} {e.entity_id}", e.label]
+              Block("table", header=["When (UTC)", "Actor", "Action", "Entity", "Label"], rows=[[_iso(e.at), _actor_cell(e.actor, e.actor_source), e.action, f"{e.entity_type} {e.entity_id}", e.label]
                                                                                        for e in [x for x in ev if not (x.entity_type == "coordination_conflict" and x.action == "create")][:25]])])
 
     assert len(S) == len(SECTION_TITLES)
     return DocModel(title=f"Planning project report - {p.name}", subtitle=f"Project {p.id} | status {PROJECT_STATUS_LABEL.get(p.status, p.status)} | generated {generated}",
                     generated_at=generated, sections=[Section(i + 1, SECTION_TITLES[i], b) for i, b in enumerate(S)],
                     header_text=HEADER_TEXT, disclaimer=DISCLAIMER, template_version=TEMPLATE_VERSION)
+
+
+ACTOR_HOW = {"header": "name typed in the tool", "request_field": "name typed in the tool", "record_field": "name on the record",
+             "td_audit": "name from the traffic-data change log"}
+
+
+def _actor_cell(actor: str, source: str) -> str:
+    """Who did it in plain words (A18): the self-declared name and where it came from; never the log's source code."""
+    if source == "none" or not actor or actor == "unattributed":
+        return "No name recorded"
+    return f"{actor} ({ACTOR_HOW.get(source, 'name not verified')})"
 
 
 _B_LABEL = {"building": "Building footprint", "baseline_road": "Existing road (base city)", "subsurface_utility": "Utility record",

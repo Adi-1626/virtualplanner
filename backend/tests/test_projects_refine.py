@@ -317,3 +317,14 @@ def test_project_report_lists_elements_and_conflict_findings(client):
     # the other project sees the shared finding in its own report, raised by A's check
     xb = zipfile.ZipFile(io.BytesIO(client.get(f"/api/planning/projects/{b['id']}/report?format=docx").content)).read("word/document.xml").decode("utf8")
     assert "raised by other projects" in xb and "SYNTHETIC gas main" in xb
+
+
+def test_report_audit_table_names_the_actor_in_plain_words(client):
+    """A18: the report's audit table says where a name came from in words, not '[request_field]' / '[none]'."""
+    p = client.post("/api/planning/projects", json={"name": "SYNTHETIC actor words", "description": "", "created_by": "Planner Q"}).json()
+    assert client.patch(f"/api/planning/projects/{p['id']}", json={"status": "under_study", "edited_by": "Planner Q"}).status_code == 200
+    import io, zipfile
+    xml = zipfile.ZipFile(io.BytesIO(client.get(f"/api/planning/projects/{p['id']}/report?format=docx").content)).read("word/document.xml").decode("utf8")
+    assert "Planner Q (name typed in the tool)" in xml          # the status change (request field)
+    for code in ("[request_field]", "[record_field]", "[header]", "[none]", "[td_audit]"):
+        assert code not in xml, code
