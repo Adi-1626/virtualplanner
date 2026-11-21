@@ -427,6 +427,28 @@ def test_slipped_needs_a_later_official_date(env):
             review.approve(db, p["2026-09"].id, "Asha")
 
 
+def test_later_official_date_after_a_passed_dataset_date_is_not_a_conflict(env):
+    """Seed: Katraj flyover target June 2026 (MoRTH), which has passed. A later official date is the update, not a
+    conflict; an official value that just disagrees with a still-valid dataset value is official_conflicting."""
+    cfg = cfgmod.load()
+    facts, _ = seed.baseline_facts(seed.load_seed(), cfg)
+    with SessionLocal() as db:
+        facts_mod.register_version(db, facts, reviewer="coordinator", note="seed", proposal_ids=[], evidence=[], activate=True)
+        d = FuDocumentEntity(id="fud_k1", url="https://nhai.gov.in/x.pdf", final_url="https://nhai.gov.in/x.pdf", domain="nhai.gov.in",
+                             publisher="NHAI", tier=1, title="t", published_at="2026-11-10", published_from="meta", sha256="k1")
+        q = "The Katraj Junction flyover will be completed by March 2027."
+        c = FuClaimEntity(id="fuc_k1", document_id=d.id, project_id="flyover_katraj_junction_nh548dd", attribute="completion_target",
+                          value_text="2027-03", qualifier="exact", temporal="planned", quote=q, quote_sha256=quote_hash(q), extractor="pattern:test@1")
+        db.add_all([d, c])
+        db.flush()
+        assign(db)
+        evaluate_all(db, facts_mod.read_active(db), 400, TODAY)
+        p = db.query(FuProposalEntity).filter_by(project_id="flyover_katraj_junction_nh548dd").one()
+        assert p.confidence == "official"
+        assert any(f["code"] == "dataset_date_passed" for f in json.loads(p.flags_json))
+        assert any(x["kind"] == "dataset_value" and x["value"] == "June 2026" for x in json.loads(p.conflicts_json))
+
+
 # ── review: approve → version → rollback; nothing applied without approval ────────────────────────────────────────────
 def test_approve_apply_rollback(env):
     cfg = cfgmod.load()
@@ -698,6 +720,11 @@ def test_seed_baseline_is_official_and_compared(env):
         add_pib(db)
         comp = props(db, "completion_target")["February 2029"]
         assert any(c["kind"] == "dataset_value" and c["value"] == "September 2028" for c in json.loads(comp.conflicts_json))
+        # the dataset's value is official too: replacing it is a conflict between official sources, so it needs a note
+        assert comp.confidence == "official_conflicting"
+        with pytest.raises(review.ReviewError, match="needs a note"):
+            review.approve(db, comp.id, "Asha")
+        assert props(db, "length_km")["5.46 km"].confidence == "official"          # agrees with the dataset
         assert not any(c["kind"] == "dataset_value" for c in json.loads(props(db, "length_km")["5.46 km"].conflicts_json))
 
 

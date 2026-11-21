@@ -12,7 +12,8 @@ ranges must be identical.
 
 Confidence (the only three levels):
   official              stated by the responsible agency or Parliament, and no other official value competes
-  official_conflicting  two official sources disagree; both values are shown, a reviewer decides with a note
+  official_conflicting  two official sources disagree (another proposal, or the official value already in the dataset);
+                        both values are shown, a reviewer decides with a note
   slipped               an official planned date that has passed and was replaced by a later official date
 News, however many outlets repeat it, never counts.
 """
@@ -202,18 +203,26 @@ def evaluate_group(db: Session, project_id: str, attribute: str, active: dict, m
             if newest[o.id] and newest[p.id] and newest[o.id] > newest[p.id]:
                 if not any(f["code"] == "newer_competitor" for f in flags):
                     flags.append({"code": "newer_competitor", "detail": f"a competing official value has newer evidence ({newest[o.id][:10]})"})
+        dataset_disagrees = False
         if cur and cur.get("proposal_id") != p.id:
             same = agree(attribute, cur.get("value_num"), cur.get("value_text"), cur.get("qualifier", "exact"), p.value_num, p.value_text, p.qualifier)
             if not same:
                 conflicts.append({"kind": "dataset_value", "value": cur.get("label"), "proposal_id": cur.get("proposal_id"),
                                   "detail": f"the dataset currently says {cur.get('label')}"})
+                cv = cur.get("value_text") or ""
+                passed = (kind == "month" and len(cv) == 7 and cv < today.strftime("%Y-%m") and p.value_text and p.value_text > cv)
+                if passed:
+                    flags.append({"code": "dataset_date_passed", "detail": f"the dataset's planned {cur.get('label')} has passed; this is a later official date"})
+                else:
+                    # the dataset value is official too (only official facts are read): two official sources disagree
+                    dataset_disagrees = True
         if p.decided_at and any(c.created_at and c.created_at > p.decided_at for c, d in e):
             flags.append({"code": "new_evidence_since_decision", "detail": "new quotes arrived after the decision"})
         uniq: dict[str, dict] = {}
         for f in flags:
             uniq.setdefault(f["code"], f)
         flags = list(uniq.values())
-        disagree = any(x["kind"] == "source_disagreement" for x in conflicts)
+        disagree = any(x["kind"] == "source_disagreement" for x in conflicts) or dataset_disagrees
         p.verdict = "conflict" if disagree else "official"
         if p.id in slipped_by:
             p.confidence = "slipped"

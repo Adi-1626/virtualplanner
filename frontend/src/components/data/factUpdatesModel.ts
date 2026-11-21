@@ -10,7 +10,7 @@ export const CONFIDENCE_LABEL: Record<Confidence, string> = {
 };
 export const CONFIDENCE_HELP: Record<Confidence, string> = {
   official: 'Stated by the responsible agency or Parliament on its own site. Official pages can still be out of date: check the date.',
-  official_conflicting: 'Two official sources give different values; both are shown. Approving one marks the others superseded; a note is required.',
+  official_conflicting: 'Two official sources give different values (another proposal, or the official value already in the dataset); both are shown. A note is required.',
   slipped: 'An official planned date that has passed and was replaced by a later official date. Kept as history; a note is required to approve it.',
   not_official: 'Not from a government or agency site. It can never be approved or enter the dataset.',
 };
@@ -25,7 +25,7 @@ export const FLAG_LABEL: Record<string, string> = {
   stale_source: 'Old official source', llm_only: 'LLM-extracted only', attribution_by_context: 'Project named only in context',
   year_resolved: 'Year inferred', official_page_undated: 'Undated official page', planned_date_passed: 'Planned date has passed',
   newer_competitor: 'Newer official value exists', new_evidence_since_decision: 'New evidence since decision', slipped: 'Slipped',
-  not_official: 'Not an official source',
+  not_official: 'Not an official source', dataset_date_passed: 'Dataset date has passed',
 };
 
 /** Every piece of evidence is from an official site (government / agency; lib/officialSources.ts mirrors the backend). */
