@@ -5,7 +5,7 @@ import { planningApi, STATUS_LABEL, type Project } from '../../engine/planning/p
 import { documentUrl, generateDocument, listDocuments, type DocumentRecord, type StoredAssessment } from '../../engine/feasibility/feasibilityApi';
 import { coordinationApi, type StaleVerdict } from '../../lib/coordinationApi';
 import { planningClient } from '../../lib/planningClient';
-import { lastExport, type ReportScopeInfo } from '../../lib/planningReports';
+import { type ReportScopeInfo } from '../../lib/planningReports';
 import { PanelSection } from '../../components/ui/Panel';
 import { Disclosure } from '../../components/ui/Disclosure';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -37,30 +37,21 @@ export const ReportsContext: React.FC = () => {
   const setWorkspace = useShellStore(s => s.setWorkspace);
   const openProject = useShellStore(s => s.openProject);
 
-  const loadScope = useCallback((ps: Project[]) => {
-    ps.forEach(p => {
-      Promise.all([
-        planningApi.project(p.id),
-        planningApi.audit(p.id).catch(() => []),
-        coordinationApi.projectStale(p.id).catch(() => null),
-        coordinationApi.projectIssues(p.id).then(r => r.issues.length).catch(() => null),
-      ]).then(([full, events, stale, issues]) => {
-        const links = full.links ?? [];
-        setScope(m => ({ ...m, [p.id]: {
-          alternatives: links.filter(l => l.entity_type === 'scenario').length,
-          datasets: links.filter(l => l.entity_type === 'dataset').length,
-          assessments: links.filter(l => l.entity_type === 'assessment').length,
-          runs: stale?.runs.length ?? 0, decisions: full.decisions?.length ?? 0, issues,
-          lastDetection: stale?.coordination_runs[0] ?? null,
-          lastPdf: lastExport(events, 'PDF report'), lastDocx: lastExport(events, 'DOCX report'), lastCsv: lastExport(events, 'CSV conflict summary'),
-        } }));
-      }).catch(() => { /* card shows without scope */ });
-    });
+  // one call for every project (GET /api/coordination/projects-summary), not four per project
+  const loadScope = useCallback(() => {
+    coordinationApi.projectsSummary().then(rows => {
+      setScope(Object.fromEntries(rows.map(r => [r.id, {
+        alternatives: r.alternatives, datasets: r.link_counts.dataset ?? 0, assessments: r.link_counts.assessment ?? 0,
+        runs: r.traffic_runs, decisions: r.decisions, issues: r.findings,
+        lastDetection: r.last_check,
+        lastPdf: r.last_exports['PDF report'] ?? null, lastDocx: r.last_exports['DOCX report'] ?? null, lastCsv: r.last_exports['CSV conflict summary'] ?? null,
+      } satisfies ReportScopeInfo])));
+    }).catch(() => { /* cards show without scope */ });
   }, []);
 
   const load = useCallback(() => {
     setError(null);
-    planningApi.projects().then(ps => { setProjects(ps); loadScope(ps); }).catch((e: Error) => { setProjects([]); setError(e.message); });
+    planningApi.projects().then(ps => { setProjects(ps); loadScope(); }).catch((e: Error) => { setProjects([]); setError(e.message); });
     fetch(`${API_BASE}/api/feasibility/assessments`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(`${r.status} ${r.statusText}`))))
       .then((a: StoredAssessment[]) => {
@@ -73,7 +64,7 @@ export const ReportsContext: React.FC = () => {
       .catch((e: Error) => { setAssessments([]); setError(e.message); });
   }, [loadScope]);
   useEffect(load, [load]);
-  const refreshSoon = (ps: Project[] | null) => setTimeout(() => ps && loadScope(ps), 1500);
+  const refreshSoon = (_ps?: Project[] | null) => setTimeout(() => loadScope(), 1500);
 
   const generate = async (id: string, format: 'pdf' | 'docx') => {
     setBusy(`${id}:${format}`);

@@ -570,16 +570,33 @@ def projects_summary(db: Session = Depends(get_db)):
     n_el = dict(db.query(ProposalElementEntity.project_id, func.count(ProposalElementEntity.id)).group_by(ProposalElementEntity.project_id).all())
     areas = {a.id: a.name for a in db.query(AreaEntity)}
     latest = _latest_runs(db)
-    rows = db.query(CoordinationConflictEntity).filter(CoordinationConflictEntity.run_id.in_([r.id for r in latest.values()]),
-                                                       CoordinationConflictEntity.conflict_class.in_(ACTIONABLE_CLASSES)).all() if latest else []
+    rows = db.query(CoordinationConflictEntity).filter(CoordinationConflictEntity.run_id.in_([r.id for r in latest.values()])).all() if latest else []
     rows, overlay, _ = _dedupe_findings(rows, latest)
     involved: set[str] = set(latest)
     open_n: dict[str, int] = {}
+    shown_n: dict[str, int] = {}
     for c in rows:
+        visible = c.conflict_class != "no_conflict_within_available_data" or bool(_load(c.permission_triggers_json, []))
         for side in {c.project_a_id, c.project_b_id} - {None}:
             involved.add(side)
-            if _status_of(c, overlay) == "open":
+            if visible:
+                shown_n[side] = shown_n.get(side, 0) + 1
+            if c.conflict_class in ACTIONABLE_CLASSES and _status_of(c, overlay) == "open":
                 open_n[side] = open_n.get(side, 0) + 1
+    from planning.models import AuditLogEntity, PlanningDecisionEntity
+    n_dec = dict(db.query(PlanningDecisionEntity.project_id, func.count(PlanningDecisionEntity.id)).group_by(PlanningDecisionEntity.project_id).all())
+    exports: dict[str, dict[str, str]] = {}
+    for eid, label, at in db.query(AuditLogEntity.entity_id, AuditLogEntity.label, func.max(AuditLogEntity.at)).filter(
+            AuditLogEntity.action == "export", AuditLogEntity.entity_type == "project_report").group_by(AuditLogEntity.entity_id, AuditLogEntity.label):
+        exports.setdefault(eid, {})[label] = _iso(at)
+    run_links = db.query(PlanningProjectLinkEntity.project_id, PlanningProjectLinkEntity.entity_type, PlanningProjectLinkEntity.entity_id) \
+        .filter(PlanningProjectLinkEntity.entity_type.in_(("run", "scenario"))).all()
+    runs_by_scn: dict[str, set] = {}
+    for rid, sid in db.query(ScenarioRunEntity.id, ScenarioRunEntity.scenario_id):
+        runs_by_scn.setdefault(sid, set()).add(rid)
+    traffic_runs: dict[str, set] = {}
+    for pid_, t, eid in run_links:
+        traffic_runs.setdefault(pid_, set()).update({eid} if t == "run" else runs_by_scn.get(eid, set()))
     for (pa, pb) in db.query(CoordinationConflictEntity.project_a_id, CoordinationConflictEntity.project_b_id) \
             .filter(CoordinationConflictEntity.run_id.in_([r.id for r in latest.values()]), CoordinationConflictEntity.project_b_id.isnot(None)).distinct():
         involved.update({pa, pb})
@@ -590,6 +607,8 @@ def projects_summary(db: Session = Depends(get_db)):
         out.append({"id": p.id, "name": p.name, "status": p.status, "created_by": p.created_by, "created_at": _iso(p.created_at),
                     "area": areas.get(p.area_id) if p.area_id else None, "has_bbox": p.min_lon is not None,
                     "alternatives": n_links.get(p.id, {}).get("scenario", 0), "links": sum(n_links.get(p.id, {}).values()),
+                    "link_counts": n_links.get(p.id, {}), "decisions": n_dec.get(p.id, 0), "traffic_runs": len(traffic_runs.get(p.id, ())),
+                    "last_exports": exports.get(p.id, {}), "findings": shown_n.get(p.id, 0) if p.id in involved else None,
                     "elements": n_el.get(p.id, 0), "checked": p.id in involved, "open_conflicts": open_n.get(p.id, 0) if p.id in involved else None,
                     "last_check": None if r is None else {"id": r.id, "created_at": _iso(r.created_at), **S.stale_coordination_run(db, r, cache)}})
     return {"projects": out, "note": "open_conflicts is null when no conflict check involves the project (not checked, not 0)."}

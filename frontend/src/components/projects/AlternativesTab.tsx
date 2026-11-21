@@ -18,18 +18,21 @@ export const AlternativesTab: React.FC<{ b: ProjectBundle; who: string; act: Act
   const versions = (p.links ?? []).filter(l => l.entity_type === 'scenario_version');
   const [pick, setPick] = useState('');
   const attached = new Set(scenarios.map(s => s.entity_id));
-  const options = (b.linkable?.scenario ?? []).filter(s => !attached.has(s.id));
+  // the base city is what every alternative is compared with, not an alternative itself
+  const options = (b.linkable?.scenario ?? []).filter(s => !attached.has(s.id) && s.kind !== 'baseline' && s.id !== 'base');
   return (
     <>
       <Section title="Alternatives" aside={`${scenarios.length}`}>
         {scenarios.length === 0
-          ? <EmptyState icon={Layers} title="No alternative attached">Attach a proposal scenario below. Create proposals in Design.</EmptyState>
+          ? <EmptyState icon={Layers} title="No alternative attached">
+              {options.length ? 'Choose the alternative (proposal) you drew in Design and attach it.' : 'There is no alternative yet. In Design, create an alternative from the alternative menu in the top bar, draw the proposal, then attach it here.'}
+            </EmptyState>
           : <ul className="space-y-2" data-testid="alternatives-list">
               {scenarios.map(s => <AlternativeCard key={s.id} link={s} b={b} who={who} act={act} />)}
             </ul>}
         <div className="flex gap-2">
           <select aria-label="Alternative to attach" data-testid="alt-attach-select" className={inputCls} value={pick} onChange={e => setPick(e.target.value)}>
-            <option value="">{options.length ? '— choose a proposal —' : '— no other proposal —'}</option>
+            <option value="">{options.length ? '— choose an alternative —' : '— no alternative to attach —'}</option>
             {options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
           </select>
           <Button size="sm" icon={Link2} data-testid="alt-attach" disabled={!pick || !who}
@@ -103,7 +106,7 @@ const RegisterElements: React.FC<{ sid: string; b: ProjectBundle; who: string; a
         catch (e) { fails.push(`${d.name}: ${(e as Error).message}`); }
       }
       if (fails.length) throw new Error(`${drafts.length - fails.length} registered, ${fails.length} failed — ${fails.join('; ')}`);
-      (window as any).showToast?.(`${drafts.length} proposal element${drafts.length === 1 ? '' : 's'} registered`, 'success');
+      (window as any).showToast?.(`${drafts.length} proposal element${drafts.length === 1 ? '' : 's'} added to the project`, 'success');
       onDone();
     });
     setBusy(false);
@@ -118,7 +121,7 @@ const RegisterElements: React.FC<{ sid: string; b: ProjectBundle; who: string; a
           {versions.map(v => <option key={v.id} value={v.id}>v{v.number} {v.label}</option>)}
         </select>
       )}
-      {drafts.length === 0 ? <p className="text-sm text-slate-400">Nothing new to register.</p> : (
+      {drafts.length === 0 ? <p className="text-sm text-slate-400" data-testid="register-nothing">{plan.skipped.some(x => x.reason.startsWith('already')) ? 'Everything in this alternative is already in the project.' : 'This alternative has no drawn works to add yet (draw them in Design).'}</p> : (
         <ul className="space-y-1">
           {drafts.map(d => (
             <li key={d.objectId} className="text-sm flex items-center gap-2" data-testid="register-draft">
@@ -137,7 +140,7 @@ const RegisterElements: React.FC<{ sid: string; b: ProjectBundle; who: string; a
       </Disclosure>
       <div className="flex gap-2">
         <Button size="sm" variant="primary" icon={busy ? Loader2 : Plus} spin={busy} data-testid="register-confirm" disabled={busy || drafts.length === 0 || !who} onClick={() => void register()}>
-          Register {drafts.length}
+          Add {drafts.length} element{drafts.length === 1 ? "" : "s"} to the project
         </Button>
         <Button size="sm" variant="ghost" onClick={onDone}>Cancel</Button>
       </div>

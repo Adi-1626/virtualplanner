@@ -30,6 +30,8 @@ export interface ProjectBundle {
   issues: ProjectIssue[];
   stale: ProjectStale | null;
   projectNames: Record<string, string>;
+  /** Finding rows written by conflict checks that the timeline leaves out (the runs themselves are listed). */
+  findingInsertsHidden: number;
   /** A part that failed to load (shown, never silently treated as empty). */
   partialErrors: string[];
 }
@@ -42,15 +44,15 @@ export function useProjectBundle(id: string) {
       const project = await planningApi.project(id);
       const partialErrors: string[] = [];
       const soft = <T,>(label: string, p: Promise<T>, fallback: T) => p.catch((e: Error) => { partialErrors.push(`${label}: ${e.message}`); return fallback; });
-      const [events, linkable, elements, issues, stale, all] = await Promise.all([
-        soft('audit', planningApi.audit(id), [] as AuditEvent[]),
+      const [timeline, linkable, elements, issues, stale, all] = await Promise.all([
+        soft('activity', planningApi.timeline(id), { events: [] as AuditEvent[], findingInsertsHidden: 0 }),
         soft('linkable records', planningApi.linkable(), null),
         soft('proposal elements', coordinationApi.listElements(id), [] as ProposalElement[]),
         soft('conflicts', coordinationApi.projectIssues(id).then(r => r.issues), [] as ProjectIssue[]),
         soft('stale indicators', coordinationApi.projectStale(id), null),
         soft('projects', planningApi.projects(), [] as Project[]),
       ]);
-      setBundle({ project, events, linkable, elements, issues, stale, partialErrors,
+      setBundle({ project, events: timeline.events, findingInsertsHidden: timeline.findingInsertsHidden, linkable, elements, issues, stale, partialErrors,
         projectNames: Object.fromEntries(all.map(p => [p.id, p.name])) });
       setError(null);
     } catch (e) { setError((e as Error).message); }
