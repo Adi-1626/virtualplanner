@@ -35,9 +35,9 @@ const PERIOD_OPTIONS = DAY_PERIODS.map(p => ({ value: p.id as DayPeriodId, label
 type Tab = 'understand' | 'improve' | 'details';
 /**
  * The open tab outlives the panel: going to Design to draw the proposal unmounts it, and it used to come back on
- * "What's wrong" with Compare out of sight (docs/urbanos/SIMULATE_AUDIT.md). Exported for tests.
+ * "What's wrong" with Compare out of sight (docs/urbanos/SIMULATE_AUDIT.md).
  */
-export const simulateTabMemory: { tab: Tab; roads: string } = { tab: 'understand', roads: '' };
+const simulateTabMemory: { tab: Tab; roads: string } = { tab: 'understand', roads: '' };
 const TABS: { id: Tab; label: string; hint: string }[] = [
   { id: 'understand', label: '1 · What\'s wrong', hint: 'Conditions, bottlenecks and their causes' },
   { id: 'improve', label: '2 · Improve & compare', hint: 'Options to test, before and after' },
@@ -147,6 +147,7 @@ const RunBar: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
           <Segmented label="Playback speed" options={SPEED_OPTIONS} value={t.speed as (typeof TRAFFIC_SPEEDS)[number]} onChange={s => mode.setTrafficSpeed(s)} />
         </div>
       )}
+      {t.status === 'running' && t.behind && <p className="text-[11px] text-amber-300/90" role="status" data-testid="live-behind">This computer cannot step the traffic at {t.speed}×, so the live view runs slower than that. The figures are not affected; a lower speed plays smoothly.</p>}
       {t.error && <p className="text-xs text-amber-300">{t.error}</p>}
       {a.status === 'running' && <p className="text-xs text-cyan-200 flex items-center gap-1.5" role="status"><Loader2 size={12} className="animate-spin" />Analysing {hourLabel(sim.timeOfDay.hour)}: {Math.round(a.progress * 100)}% ({mode.analysisSeeds.length} runs)</p>}
     </div>

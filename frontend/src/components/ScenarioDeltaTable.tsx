@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowDown, ArrowUp, Minus } from 'lucide-react';
 import type { Delta } from '../engine/simulation/ScenarioComparison';
+import { fmtDeltaValue } from './simulate/format';
 
 /**
  * Pieces of the road analysis panel that show the existing city against a
@@ -8,19 +9,6 @@ import type { Delta } from '../engine/simulation/ScenarioComparison';
  * Every value is the comparison's own (Delta.before / after / change / good);
  * nothing here recomputes or rounds differently from the old table.
  */
-
-const fmt = (n: number) => Math.round(n).toLocaleString();
-
-/**
- * A value with its unit. Every unit is printed: fuel, CO₂, NOx, PM, veh/h, trips and stretches showed bare numbers
- * before (docs/urbanos/SIMULATE_AUDIT.md). Small values keep one decimal so a 0.4 → 0.5 is not shown as 0 → 0.
- */
-export const fmtDeltaValue = (d: Delta, v: number | null) => {
-  if (v === null) return '—';
-  const n = Math.abs(v) < 10 && v !== 0 && d.unit !== 'veh' && d.unit !== 'trips' && d.unit !== 'stretches' ? v.toLocaleString(undefined, { maximumFractionDigits: 1 }) : fmt(v);
-  if (!d.unit) return n;
-  return d.unit === '%' ? `${n}%` : `${n} ${d.unit}`;
-};
 
 /**
  * Change as a percentage, or null when it is too small to show. Under 10% it keeps one decimal: the noise

@@ -6,7 +6,8 @@ import type { DrivableObject } from '../simulation/StudyAreaExplorer';
 import { SimulationMode } from '../simulation/SimulationMode';
 import { ObjectManager, classifyObjectChange, VIEW_ONLY_CHANGE } from '../objects/ObjectManager';
 import { emissionDeltas, type Delta } from '../simulation/ScenarioComparison';
-import { DeltaRows, fmtDeltaValue } from '../../components/ScenarioDeltaTable';
+import { DeltaRows } from '../../components/ScenarioDeltaTable';
+import { fmtDeltaValue } from '../../components/simulate/format';
 import { EmissionsCompare, GetStartedCard, ComparisonHourNote, EvidenceTag } from '../../components/simulate/SimulatePieces';
 
 /**
