@@ -63,15 +63,14 @@ describe('backend down: the header and the message say so', () => {
 });
 
 describe('renderer: records, labels from below, drawn-utility toggle', () => {
-  const fakeViewer = () => ({
-    dataSources: { add: () => Promise.resolve() }, isDestroyed: () => false,
-    camera: { changed: { addEventListener: () => {} }, moveEnd: { addEventListener: () => {} } }, scene: { requestRender: () => {} },
-  });
   it('existing records are shown only in Underground (they stayed drawn in Design after a visit)', async () => {
     const { UndergroundRenderer } = await import('../underground/UndergroundRenderer');
     const r = new UndergroundRenderer();
-    r.attach(fakeViewer() as never);
+    (r as unknown as { recordsDs: { show: boolean } }).recordsDs = { show: true };   // the data source attach() creates
+    r.setGroupVisible('records', true);
     const recs = () => (r as unknown as { recordsDs: { show: boolean } }).recordsDs.show;
+    r.setInUnderground(true);
+    r.setInUnderground(false);
     expect(recs()).toBe(false);
     r.setInUnderground(true);
     expect(recs()).toBe(true);
@@ -96,7 +95,7 @@ describe('renderer: records, labels from below, drawn-utility toggle', () => {
     expect(renderManagerInstance.getTypeOpacityCap('utility')).toBe(0);
     renderManagerInstance.setTypeOpacityCap('utility', null);
     expect(renderManagerInstance.getTypeOpacityCap('utility')).toBeNull();
-    const src = (await import('node:fs')).readFileSync(new URL('../rendering/renderers/TileBatchRenderer.ts', import.meta.url), 'utf8');
+    const src = (await import('node:fs')).readFileSync((await import('node:path')).resolve(__dirname, '../rendering/renderers/TileBatchRenderer.ts'), 'utf8');
     expect(src).toMatch(/if \(opacity <= 0\) continue;/);
   });
 });
@@ -113,5 +112,15 @@ describe('OSM metro import: no invented -6 m', () => {
     expect(isUnmappedMetroTunnel(line as never)).toBe(true);
     // older saved imports at -6 m are still recognised
     expect(isUnmappedMetroTunnel({ ...line, elevation: -6, tags: { railway: 'subway' } } as never)).toBe(true);
+  });
+});
+
+describe('error sentences', () => {
+  it('one full stop, never "try again.."', async () => {
+    const { sentence } = await import('../../lib/format');
+    expect(sentence(SERVER_UNREACHABLE)).toBe(SERVER_UNREACHABLE);
+    expect(sentence('500: boom')).toBe('500: boom.');
+    expect(sentence('x.. ')).toBe('x.');
+    expect(sentence(null)).toBe('');
   });
 });

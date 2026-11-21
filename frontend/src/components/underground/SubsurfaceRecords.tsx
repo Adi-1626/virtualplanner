@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { sentence } from '../../lib/format';
 import { RefreshCw, Upload } from 'lucide-react';
 import { coordinationApi, type SubsurfaceDataset, type SubsurfaceRecord } from '../../lib/coordinationApi';
 import { engineInstance } from '../../engine/TwinCityEngine';
@@ -127,7 +128,7 @@ export const SubsurfaceRecords: React.FC = () => {
         </button>
       </div>
       {recordsState === 'loading' && <p className="text-label text-text-2" data-testid="ug-records-loading">Loading records for this area…</p>}
-      {recordsState === 'error' && <p className="text-label text-fail" role="alert">Could not load records: {recordsError}. Existing utilities here are UNKNOWN until this loads. <button type="button" className="uos-link" onClick={() => void reload()}>Retry</button></p>}
+      {recordsState === 'error' && <p className="text-label text-fail" role="alert">Could not load records: {sentence(recordsError)} Existing utilities here are UNKNOWN until this loads. <button type="button" className="uos-link" onClick={() => void reload()}>Retry</button></p>}
       {recordsState === 'loaded' && (
         <ul data-testid="ug-layer-summary">
           {layers.map(l => <LayerRow key={l.key} l={l} />)}
