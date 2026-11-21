@@ -23,9 +23,13 @@ import { roadKeys } from './roadSection';
  * Sources:
  *  - MoRTH S.O. 1522(E), 6 April 2018: roads within municipal limits, M1 cars
  *    70 km/h, motorcycles 60 km/h (PIB release PRID=1539335).
- *  - Government of Maharashtra notification, October 2019, as reported by The
- *    Hindu (17 June 2021): municipal areas at most 60 km/h for cars, 50 km/h
- *    for motorcycles, 40 km/h for three-wheelers. Two-wheelers are about half
+ *  - Addl. Director General of Police (Traffic), Maharashtra, speed-limit
+ *    notification dated 25.10.2019, table "Maximum speed per hour in kilometers
+ *    on roads in Maharashtra", column "Municipal Limits / Other Road", plain
+ *    terrain: M1 cars 60 km/h, motorcycles 50 km/h, three-wheelers 40 km/h
+ *    (official PDF p. 5, Highway Traffic Police > Notifications > "Speed Limit
+ *    2019 - Maharashtra": https://cdnbbsr.s3waas.gov.in/s35dec707028b05bcbd3a1db5640f842c5/uploads/2025/08/20250821255715865.pdf,
+ *    read 2026-11-21). Two-wheelers are about half
  *    of Pune's traffic (Gunjan Chowk counts; 64% on Shivaji Bridge in the PMC
  *    CMP 2008 screen-line count), so 50 km/h is used as the ceiling for the
  *    mixed stream.

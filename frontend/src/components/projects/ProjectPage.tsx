@@ -13,11 +13,17 @@ import { AssessmentsTab, DatasetsTab, DecisionsTab, ActivityTab } from './Record
 export type ProjectTab = 'overview' | 'alternatives' | 'assessments' | 'datasets' | 'conflicts' | 'decisions' | 'activity';
 
 /** One planning project: Overview · Alternatives · Assessments · Datasets · Conflicts · Reviews & decisions · Activity. */
-export const ProjectPage: React.FC<{ id: string; user: string; onBack: () => void; onClose: () => void; initialTab?: ProjectTab }> = ({ id, user, onBack, onClose, initialTab }) => {
+export const ProjectPage: React.FC<{ id: string; user: string; onBack: () => void; onClose: () => void; onDeleted?: () => void; initialTab?: ProjectTab }> = ({ id, user, onBack, onClose, onDeleted, initialTab }) => {
   const { bundle: b, error, reload, setError } = useProjectBundle(id);
   const [tab, setTab] = useState<ProjectTab>(initialTab ?? 'overview');
   const act = async (f: () => Promise<unknown>) => { setError(null); try { await f(); } catch (e) { setError((e as Error).message); } await reload(); };
-  if (!b) return (<><PanelHeader title="Planning project" onBack={onBack} backLabel="All projects" onClose={onClose} /><PanelBody>{error ? <Notice tone="bad">{error}</Notice> : <Notice icon={Loader2} spin>Loading…</Notice>}</PanelBody></>);
+  if (!b) return (
+    <><PanelHeader title="Planning project" onBack={onBack} backLabel="All projects" onClose={onClose} />
+      <PanelBody>{error
+        ? (/^404\b/.test(error)
+          ? <span data-testid="project-gone"><Notice tone="warn">This project no longer exists (it was deleted). Go back to all projects.</Notice></span>
+          : <Notice tone="bad" action={<button type="button" className="uos-link" onClick={() => void reload()}>Try again</button>}>The project could not be loaded ({error}).</Notice>)
+        : <Notice icon={Loader2} spin>Loading…</Notice>}</PanelBody></>);
   const who = user.trim();
   const p = b.project;
   const open = openActionableCount(b.issues);
@@ -41,14 +47,14 @@ export const ProjectPage: React.FC<{ id: string; user: string; onBack: () => voi
         <PanelBody>
           {error && <Notice tone="bad">{error}</Notice>}
           {b.partialErrors.length > 0 && <Notice tone="warn">Some parts could not be loaded: {b.partialErrors.join(' · ')}</Notice>}
-          {!who && <Notice tone="warn">Enter your name on the project list; it is recorded with every change.</Notice>}
-          {tab === 'overview' && <OverviewTab b={b} who={who} act={act} reload={() => void reload()} goTab={t => setTab(t as ProjectTab)} />}
+          {!who && <Notice tone="warn">Read-only until you enter your name on the project list (“All projects”); it is recorded with every change.</Notice>}
+          {tab === 'overview' && <OverviewTab b={b} who={who} act={act} reload={() => void reload()} goTab={t => setTab(t as ProjectTab)} onDeleted={onDeleted ?? onBack} />}
           {tab === 'alternatives' && <AlternativesTab b={b} who={who} act={act} />}
           {tab === 'assessments' && <AssessmentsTab b={b} />}
           {tab === 'datasets' && <DatasetsTab b={b} />}
           {tab === 'conflicts' && <ConflictsTab b={b} who={who} act={act} />}
           {tab === 'decisions' && <DecisionsTab b={b} who={who} act={act} />}
-          {tab === 'activity' && <ActivityTab events={b.events} />}
+          {tab === 'activity' && <ActivityTab events={b.events} hiddenFindings={b.findingInsertsHidden} />}
         </PanelBody>
       </TabPanel>
     </>

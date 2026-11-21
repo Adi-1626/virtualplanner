@@ -5,7 +5,10 @@
  * Honesty rules: a depth / height we do not have is `null` (= UNKNOWN), never 0; a proposal's design values are
  * `hypothetical` (design inputs), never `measured`; "no conflict within available data" is not proof of no conflict.
  */
-import type { Certainty, ConflictClass, ConflictFinding, ElementInput, ElementKind, ProjectIssue, StaleVerdict } from './coordinationApi';
+import type { Certainty, ConflictClass, ConflictFinding, ElementInput, ElementKind, ProfilePoint, ProjectIssue, StaleVerdict } from './coordinationApi';
+import type { UndergroundAlignmentObject, UtilityObject } from '../engine/objects/types';
+import { ALIGNMENT_ELEMENT_KIND, ALIGNMENT_KIND_LABEL, alignmentProfile, chainages, sectionWidthM, worstCertainty } from '../engine/underground/alignmentGeometry';
+import { bottomDepthFrom, utilityZ } from '../engine/underground/utilityModel';
 
 // ── Proposal elements from an alternative's change set ───────────────────────────────────────────────────────────
 
@@ -58,6 +61,7 @@ export function draftFromObject(
   let zMin: number | null = null;
   let zMax: number | null = null;
   let certainty: Certainty = 'hypothetical';
+  let profile: ProfilePoint[] | null = null;
 
   switch (objectType) {
     case 'road': {
@@ -94,19 +98,15 @@ export function draftFromObject(
     }
     case 'utility': {
       kind = 'utility';
-      const depth = num(p.depth);
-      const dc = typeof p.depthCertainty === 'string' ? (p.depthCertainty as Certainty) : null;
-      const diaM = pos(p.diameterMm) != null ? (pos(p.diameterMm) as number) / 1000 : null;
-      width = diaM;
-      if (depth == null || dc === 'unknown') {
-        basis.push(depth == null ? 'Depth not recorded: UNKNOWN.' : `Stored depth ${depth} m is only a drawing placeholder: UNKNOWN.`);
-        certainty = 'unknown';
-      } else {
-        zMax = -depth;
-        zMin = diaM != null ? -(depth + diaM) : null;
-        basis.push(`Cover to crown ${depth} m → top ${zMax} m.` + (diaM != null ? ` Diameter ${diaM} m → bottom ${zMin} m.` : ' Diameter UNKNOWN → bottom UNKNOWN.'));
-        certainty = dc ?? 'hypothetical';
-      }
+      const u = utilityDraft(o, scenarioId);
+      width = u.width; zMin = u.zMin; zMax = u.zMax; certainty = u.certainty; profile = u.profile;
+      basis.push(...u.basis);
+      break;
+    }
+    case 'underground_alignment': {
+      const a = alignmentDraft(o, scenarioId);
+      kind = a.kind; width = a.width; zMin = a.zMin; zMax = a.zMax; certainty = a.certainty; profile = a.profile;
+      basis.push(...a.basis);
       break;
     }
     case 'building': {
@@ -123,7 +123,7 @@ export function draftFromObject(
 
   const input: Omit<ElementInput, 'created_by'> = {
     kind, name, scenario_id: scenarioId, scenario_version_id: versionId, element_ref: entry.objectId,
-    width_m: width, z_min_m: zMin, z_max_m: zMax, z_ref: 'ground',
+    width_m: width, z_min_m: zMin, z_max_m: zMax, z_ref: 'ground', ...(profile ? { profile } : {}),
     provenance: `Registered from alternative ${scenarioId}${versionId ? ` version ${versionId}` : ' (current head)'}; design values from the proposal object`,
     certainty: zMin == null && zMax == null ? 'unknown' : certainty,
   };
@@ -131,6 +131,75 @@ export function draftFromObject(
 }
 
 export function isDraft(x: ElementDraft | SkippedObject): x is ElementDraft { return 'input' in x; }
+
+interface ZDraft { kind: ElementKind; width: number | null; zMin: number | null; zMax: number | null; certainty: Certainty; profile: ProfilePoint[] | null; basis: string[] }
+const r2 = (v: number) => Math.round(v * 100) / 100;
+const coordsOf = (c: unknown): [number, number, number][] =>
+  (Array.isArray(c) ? c : []).filter((x): x is number[] => Array.isArray(x) && typeof x[0] === 'number' && typeof x[1] === 'number')
+    .map(x => [x[0], x[1], typeof x[2] === 'number' ? x[2] : 0]);
+
+/**
+ * A drawn tunnel / underground alignment as the Underground workspace models it (crown depth per vertex + section): the
+ * per-vertex profile (chainage, top = −crown, bottom = −(crown + section height)) and its envelope. A vertex without a crown
+ * depth, or an unknown section height, leaves that bound UNKNOWN (null) — never 0.
+ */
+export function alignmentDraft(o: NonNullable<ChangeSetEntry['object']>, scenarioId: string): ZDraft {
+  const a = { ...(o.properties ?? {}), id: o.id, type: 'underground_alignment', name: o.name, scenarioId, coordinates: coordsOf(o.coordinates) } as unknown as UndergroundAlignmentObject;
+  if (!a.section) a.section = { shape: 'circular', diameterM: null } as unknown as UndergroundAlignmentObject['section'];
+  const kindKey = (a.alignmentKind && a.alignmentKind in ALIGNMENT_ELEMENT_KIND) ? a.alignmentKind : 'bored_tunnel';
+  const prof = alignmentProfile({ ...a, alignmentKind: kindKey });
+  const profile: ProfilePoint[] = prof.vertices.map(v => ({
+    chainage_m: r2(v.chainageM), z_max_m: v.crownDepthM === null ? null : -v.crownDepthM, z_min_m: v.invertDepthM === null ? null : -v.invertDepthM,
+  }));
+  const allTop = profile.length > 0 && profile.every(q => q.z_max_m !== null);
+  const allBot = profile.length > 0 && profile.every(q => q.z_min_m !== null);
+  const zMax = allTop ? Math.max(...profile.map(q => q.z_max_m as number)) : null;
+  const zMin = allBot ? Math.min(...profile.map(q => q.z_min_m as number)) : null;
+  const width = sectionWidthM(a.section);
+  const unknown = prof.unknownDepthCount;
+  const basis = [
+    `${ALIGNMENT_KIND_LABEL[kindKey]} drawn in Underground: crown depth at ${profile.length - unknown} of ${profile.length} points` +
+      (unknown ? ` (${unknown} UNKNOWN → top of the element UNKNOWN).` : '.'),
+    prof.sectionHeightM === null ? 'Section height UNKNOWN → bottom UNKNOWN.' : `Section height ${prof.sectionHeightM} m → bottom = crown + ${prof.sectionHeightM} m at each point.`,
+    'The per-point profile is registered with the element, so the conflict check uses the depth at each segment, not only the envelope.',
+  ];
+  const certainty = zMin === null && zMax === null ? 'unknown' : worstCertainty([...prof.vertices.map(v => v.certainty), a.sectionCertainty ?? 'unknown']);
+  return { kind: ALIGNMENT_ELEMENT_KIND[kindKey] as ElementKind, width, zMin, zMax, certainty, profile: profile.length > 1 ? profile : null, basis };
+}
+
+/**
+ * A drawn utility with its per-point depths (engine/underground/utilityModel: depth to zRef per vertex, diameter): top of
+ * pipe and bottom of pipe at every vertex, so a line that gets deeper is registered with its full depth range — not only the
+ * shallowest top (the legacy `depth` summary). A typical-cover default is a hypothetical value and is named as such.
+ */
+export function utilityDraft(o: NonNullable<ChangeSetEntry['object']>, scenarioId: string): ZDraft {
+  const u = { ...(o.properties ?? {}), id: o.id, type: 'utility', name: o.name, scenarioId, coordinates: coordsOf(o.coordinates) } as unknown as UtilityObject;
+  const z = utilityZ(u);
+  const ch = u.coordinates.length > 1 ? chainages(u.coordinates) : u.coordinates.map(() => 0);
+  const profile: ProfilePoint[] = z.depths.map((d, i) => {
+    const top = d.topDepthM ?? null;
+    const bot = bottomDepthFrom(d.depthM, z.zRef, z.diameterM);
+    return { chainage_m: r2(ch[i] ?? 0), z_max_m: top === null ? null : -top, z_min_m: bot === null ? null : -bot };
+  });
+  const allTop = profile.length > 0 && profile.every(q => q.z_max_m !== null);
+  const allBot = profile.length > 0 && profile.every(q => q.z_min_m !== null);
+  const zMax = allTop ? Math.max(...profile.map(q => q.z_max_m as number)) : null;
+  const zMin = allBot ? Math.min(...profile.map(q => q.z_min_m as number)) : null;
+  const known = z.depths.filter(d => d.depthM !== null);
+  const defaults = z.depths.filter(d => d.isDefault && d.depthM !== null).length;
+  const basis: string[] = [];
+  if (!known.length) basis.push(z.migrated && typeof u.depth === 'number' ? `Stored depth ${u.depth} m is only a drawing placeholder: UNKNOWN.` : 'Depth not recorded: UNKNOWN.');
+  else {
+    basis.push(`Depth to the ${z.zRef === 'top' ? 'top of pipe' : z.zRef === 'centre' ? 'pipe centre' : 'invert'} at ${known.length} of ${z.depths.length} points` +
+      (known.length < z.depths.length ? ' (the others UNKNOWN → that bound UNKNOWN).' : '.'));
+    basis.push(z.diameterM === null ? 'Diameter UNKNOWN → bottom of pipe UNKNOWN.' : `Diameter ${z.diameterM} m.`);
+    if (defaults) basis.push(`${defaults} point(s) use the typical-cover default for the type (hypothetical), not an entered depth.`);
+    if (zMax !== null) basis.push(`Envelope: top ${zMax} m` + (zMin !== null ? `, bottom ${zMin} m.` : ', bottom UNKNOWN.'));
+  }
+  const certs = z.depths.filter(d => d.depthM !== null).map(d => (d.isDefault ? 'hypothetical' : d.certainty === 'unknown' ? 'hypothetical' : d.certainty) as Certainty);
+  const certainty: Certainty = zMin === null && zMax === null ? 'unknown' : worstCertainty(certs.length ? certs : ['unknown']);
+  return { kind: 'utility', width: z.diameterM, zMin, zMax, certainty, profile: profile.length > 1 && known.length ? profile : null, basis };
+}
 
 /** Splits a change set into registrable drafts and skipped objects; objects already registered are skipped. */
 export function draftsFromChangeSet(
@@ -147,6 +216,15 @@ export function draftsFromChangeSet(
     else skipped.push(d);
   }
   return { drafts, skipped };
+}
+
+/**
+ * The drafts the planner left ticked in "Add proposal elements". Every draft starts ticked; an unticked work is not added to
+ * the project and stays a drawing of the alternative (the conflict check still compares it as a drawn object of an attached
+ * alternative, not as one of this project's elements).
+ */
+export function chosenDrafts<T extends Pick<ElementDraft, 'objectId'>>(drafts: readonly T[], unticked: ReadonlySet<string>): T[] {
+  return drafts.filter(d => !unticked.has(d.objectId));
 }
 
 // ── Conflicts ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -193,7 +271,12 @@ export function sideBLabel(i: Pick<ConflictFinding, 'b_type' | 'b_ref' | 'eviden
     case 'project_element': return 'Other project element';
     case 'project': return 'Other project';
     case 'baseline_road': return 'Existing road (base city)';
-    case 'osm_metro': return 'Existing metro (OpenStreetMap)';
+    case 'osm_metro': {
+      const b = (i.evidence?.b ?? {}) as { osm_tags?: Record<string, string> };
+      const ev = (i.evidence ?? {}) as { osm_pieces?: number };
+      const nm = b.osm_tags?.name;
+      return `Existing metro (OpenStreetMap)${nm ? `: ${nm}` : ''}${ev.osm_pieces && ev.osm_pieces > 1 ? ` (${ev.osm_pieces} OSM pieces, nearest shown)` : ''}`;
+    }
     case 'subsurface_utility': {
       const b = (i.evidence?.b ?? {}) as Record<string, unknown>;
       const t = b.utility_type === 'sewer' ? 'Sewer' : b.utility_type === 'storm_drain' ? 'Storm drain' : 'Utility';
@@ -218,11 +301,28 @@ export function sideBRefShown(i: Pick<ConflictFinding, 'b_type'>): boolean {
   return i.b_type !== 'layer' && i.b_type !== 'project';
 }
 
+/** A project's name, or a plain statement that it no longer exists (never a bare id). */
+export function projectName(id: string, projectNames: Readonly<Record<string, string>>): string {
+  return projectNames[id] ?? 'a deleted project';
+}
+
+/** The other project's element of a shared finding, by name when the finding recorded it. */
+function otherElementName(i: ProjectIssue, thisProject: string): string | null {
+  const ev = (i.evidence ?? {}) as { a?: Record<string, unknown>; b?: Record<string, unknown> };
+  const side = i.raised_by_project === thisProject ? ev.b : ev.a;
+  const nm = side?.name;
+  return typeof nm === 'string' && nm.trim() ? nm.trim() : null;
+}
+
 /** What the other side of a finding is, in words. */
 export function otherSideLabel(i: ProjectIssue, projectNames: Readonly<Record<string, string>>, thisProject: string): string {
   if (i.other_project) {
-    const nm = projectNames[i.other_project] ?? i.other_project;
-    return i.raised_by_project === thisProject ? `Project “${nm}”` : `Project “${nm}” (raised by them)`;
+    const known = i.other_project in projectNames;
+    const nm = projectName(i.other_project, projectNames);
+    const el = otherElementName(i, thisProject);
+    const who = known ? `Project “${nm}”` : 'A deleted project';
+    const what = el ? `${who}: ${el}` : who;
+    return i.raised_by_project === thisProject ? what : `${what} (raised by them)`;
   }
   return sideBLabel(i);
 }
@@ -266,6 +366,8 @@ const REASON_TEXT: [RegExp, string][] = [
   [/^subsurface_data_changed/, 'subsurface records changed'],
   [/^osm_index_changed/, 'the OSM index changed'],
   [/^engine_version_changed/, 'the detection engine changed'],
+  [/^alternatives_attached_changed/, 'an alternative was attached'],
+  [/^infra_index_changed/, 'the building / network index changed'],
   [/^newer_scenario_version/, 'a newer alternative version exists'],
   [/^scenario_changed_since/, 'the alternative was edited'],
 ];
@@ -318,4 +420,104 @@ export function zRangeText(zMin: number | null, zMax: number | null): string {
   if (zMin == null && zMax == null) return 'Depth UNKNOWN';
   if (zMin != null && zMax != null) return `${f(zMin)} to ${f(zMax)} m`;
   return zMin != null ? `bottom ${f(zMin)} m · top UNKNOWN` : `top ${f(zMax as number)} m · bottom UNKNOWN`;
+}
+
+// ── Project list (many projects) ────────────────────────────────────────────────────────────────────────────────────
+
+export type ProjectSort = 'newest' | 'name' | 'open_conflicts';
+export interface ListableProject { id: string; name: string; status: string; created_by: string; area: string | null; open_conflicts: number | null; created_at: string }
+
+/** Filter by a free-text query (name, study area, creator; case-insensitive) and a status, then sort. Pure. */
+export function filterProjects<T extends ListableProject>(ps: readonly T[], query: string, status: string, sort: ProjectSort): T[] {
+  const q = query.trim().toLowerCase();
+  const out = ps.filter(p => (!status || p.status === status)
+    && (!q || p.name.toLowerCase().includes(q) || (p.area ?? '').toLowerCase().includes(q) || p.created_by.toLowerCase().includes(q)));
+  const cmp: Record<ProjectSort, (a: T, b: T) => number> = {
+    newest: (a, b) => b.created_at.localeCompare(a.created_at),
+    name: (a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }),
+    // not checked (null) sorts after any checked count; ties newest first
+    open_conflicts: (a, b) => ((b.open_conflicts ?? -1) - (a.open_conflicts ?? -1)) || b.created_at.localeCompare(a.created_at),
+  };
+  return [...out].sort(cmp[sort]);
+}
+
+/** Open-conflict text for a card: a number only when a check involves the project; never "0" for "not checked". */
+export function openConflictText(checked: boolean, open: number | null): string {
+  if (!checked || open === null) return 'conflicts: not checked';
+  return `${open} open conflict${open === 1 ? '' : 's'}`;
+}
+
+// ── Get started ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+export interface StartStep { id: 'name' | 'create' | 'attach' | 'elements' | 'check' | 'export'; label: string; done: boolean }
+
+/** The first-use path, ticked from what the project already has (no project = only the first two steps can be done). */
+export function startSteps(s: { user: string; project?: { alternatives: number; elements: number; checked: boolean; exported: boolean } | null }): StartStep[] {
+  const p = s.project ?? null;
+  return [
+    { id: 'name', label: 'Enter your name (it is recorded with every change)', done: !!s.user.trim() },
+    { id: 'create', label: 'Create a project for one planning activity', done: !!p },
+    { id: 'attach', label: 'Attach the alternative you drew in Design', done: !!p && p.alternatives > 0 },
+    { id: 'elements', label: 'Add its proposal elements (roads, tunnels, utilities …) to the project', done: !!p && p.elements > 0 },
+    { id: 'check', label: 'Run the conflict check against other agencies\u2019 projects and the city data', done: !!p && p.checked },
+    { id: 'export', label: 'Export the report or the conflict summary (Reports)', done: !!p && p.exported },
+  ];
+}
+
+/** Same self-declared name (trimmed, case and spacing ignored). */
+export const sameName = (a: string, b: string) => a.trim().replace(/\s+/g, ' ').toLowerCase() === b.trim().replace(/\s+/g, ' ').toLowerCase();
+
+/**
+ * Show the Get started card to this planner? It follows the planner's own projects (created under their name) and their own
+ * "Hide" choice, not the whole list: another agency's project does not mean this planner has started (A16). Without a name
+ * we cannot tell whose projects are whose, so it stays (its first step is to enter the name).
+ */
+export function showGetStarted(s: { user: string; projects: { created_by: string }[] | null; hidden: boolean }): boolean {
+  if (!s.projects || s.hidden) return false;
+  if (!s.user.trim()) return true;
+  return !s.projects.some(p => sameName(p.created_by, s.user));
+}
+
+// ── Activity timeline ───────────────────────────────────────────────────────────────────────────────────────────────
+
+/** How the audit log got the name, in plain words (shown as a tooltip; the log's `actor_source` code never reaches the screen). */
+const ACTOR_HOW: Record<string, string> = {
+  header: 'Name typed in “Your name” (not verified)',
+  request_field: 'Name typed in “Your name” (not verified)',
+  record_field: 'Name written on the record itself (not verified)',
+  td_audit: 'Name from the traffic-data change log (not verified)',
+  none: 'No name was given for this change',
+};
+
+/** Who did it, for an Activity row: the self-declared name, or "No name recorded"; `how` says where the name came from. */
+export function actorText(e: { actor: string; actor_source: string }): { who: string; how: string } {
+  const none = e.actor_source === 'none' || !e.actor.trim() || e.actor === 'unattributed';
+  return { who: none ? 'No name recorded' : e.actor, how: ACTOR_HOW[none ? 'none' : e.actor_source] ?? 'Name not verified' };
+}
+
+/** Plain words for one audit event of the project timeline. */
+export function activityText(e: { entity_type: string; action: string; label: string; changed_fields: string[] | null }): string {
+  const f = e.changed_fields ?? [];
+  if (e.entity_type === 'coordination_conflict' && e.action === 'update') {
+    return `Finding response recorded${f.length ? ` (${f.filter(x => x.startsWith('status')).map(x => x.replace('status_', '')).join(', ') || f.join(', ')})` : ''}`;
+  }
+  if (e.entity_type === 'coordination_conflict' && e.action === 'create') return `Finding recorded by a conflict check — ${e.label.replace(/_/g, ' ')}`;
+  if (e.entity_type === 'coordination_run' && e.action === 'create') return 'Conflict check run';
+  if (e.entity_type === 'coordination_run' && e.action === 'delete') return `Conflict-check results deleted — ${e.label}`;
+  if (e.entity_type === 'project' && e.action === 'update') {
+    const parts = [f.includes('status') && 'status', f.includes('preferred_scenario_id') && 'preferred alternative',
+      f.includes('name') && 'name', f.includes('description') && 'purpose', f.some(x => x === 'area_id' || x.endsWith('_lon') || x.endsWith('_lat')) && 'study area']
+      .filter(Boolean) as string[];
+    return `Project ${parts.length ? parts.join(', ') : 'details'} changed`;
+  }
+  if (e.entity_type === 'project' && e.action === 'delete') return `Project deleted${e.label ? ` — ${e.label}` : ''}`;
+  const ENTITY: Record<string, string> = {
+    project: 'Project', project_link: 'Attachment', decision: 'Decision', project_report: 'Report', scenario: 'Alternative', scenario_change: 'Alternative edit',
+    scenario_version: 'Alternative version', run: 'Simulation run', dataset: 'Traffic dataset', assessment: 'Feasibility screening', review: 'Review',
+    document: 'Investigation document', proposal_element: 'Proposal element', subsurface_dataset: 'Subsurface dataset', clearance_rule: 'Clearance rule',
+  };
+  const ACTION: Record<string, string> = { create: 'added', update: 'changed', delete: 'removed', export: 'exported' };
+  const ent = ENTITY[e.entity_type] ?? e.entity_type.replace(/_/g, ' ');
+  const act = e.entity_type === 'project' && e.action === 'create' ? 'created' : (ACTION[e.action] ?? e.action);
+  return `${ent} ${act}${e.label ? ` — ${e.label}` : ''}${f.length && e.action === 'update' ? ` (${f.map(x => x.replace(/_/g, ' ')).join(', ')})` : ''}`;
 }

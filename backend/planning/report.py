@@ -34,7 +34,8 @@ DISCLAIMER = (
 )
 SECTION_TITLES = [
     "Project summary", "Baseline network", "Traffic datasets and provenance", "Scenarios, versions and run inputs",
-    "Comparison results (from run records)", "Feasibility findings", "Investigation documents and evidence", "Reviews",
+    "Comparison results (from run records)", "Feasibility findings", "Proposal elements and conflict check",
+    "Investigation documents and evidence", "Reviews",
     "Decision record", "Assumptions and unknowns", "Audit trail summary",
 ]
 KIND_LABEL = {"measured": "Measured", "estimated": "Estimated", "manual": "Manual"}
@@ -221,7 +222,10 @@ def build_model(db: Session, p: PlanningProjectEntity, now: datetime.datetime | 
         unknowns.append("No feasibility screening is attached.")
     S.append(b6)
 
-    # 7 Documents and evidence
+    # 7 Proposal elements and conflict check
+    S.append(_coordination_section(db, p, unknowns))
+
+    # 8 Documents and evidence
     aids = [a.id for a in ass]
     docs = db.query(InvestigationDocumentEntity).filter(InvestigationDocumentEntity.assessment_id.in_(aids)).order_by(InvestigationDocumentEntity.generated_at).all() if aids else []
     evs = db.query(EvidenceEntity).filter(EvidenceEntity.assessment_id.in_(aids)).order_by(EvidenceEntity.uploaded_at).all() if aids else []
@@ -232,7 +236,7 @@ def build_model(db: Session, p: PlanningProjectEntity, now: datetime.datetime | 
         Block("table", header=["File", "Description", "Provenance", "Investigation", "Uploaded by / at", "sha256"], rows=[[e.file_name, e.description, e.provenance, e.investigation_id or "-", f"{e.uploaded_by} / {_iso(e.uploaded_at)}", e.file_sha256[:16] + "..."] for e in evs]),
     ])
 
-    # 8 Reviews
+    # 9 Reviews
     revs = db.query(ReviewRecordEntity).filter(ReviewRecordEntity.assessment_id.in_(aids)).order_by(ReviewRecordEntity.assessment_id, ReviewRecordEntity.seq).all() if aids else []
     S.append([Block("note", text="Review records are append-only. A review status records who looked at what with which evidence. NO review status means engineering, statutory or any other approval; 'External approval recorded' is unverified by this tool."),
               Block("table", header=["Assessment", "#", "Date", "Reviewer", "Item", "Status", "Evidence", "Notes"], rows=[[
@@ -240,7 +244,7 @@ def build_model(db: Session, p: PlanningProjectEntity, now: datetime.datetime | 
                   r.item_type + (f": {r.item_id}" if r.item_id else ""), REVIEW_STATUS_LABEL.get(r.status, r.status) + (f" - ref {r.external_reference} (unverified)" if r.external_reference else ""),
                   str(len(_j(r.evidence_ids_json, []))) + " file(s)", r.notes] for r in revs])])
 
-    # 9 Decision record
+    # 10 Decision record
     decs = db.query(PlanningDecisionEntity).filter(PlanningDecisionEntity.project_id == p.id).order_by(PlanningDecisionEntity.seq).all()
     b9: list[Block] = [Block("note", text=DECISION_KIND_LABEL + ".")]
     for d in decs:
@@ -255,23 +259,112 @@ def build_model(db: Session, p: PlanningProjectEntity, now: datetime.datetime | 
         b9.append(Block("para", text="No decision has been recorded."))
     S.append(b9)
 
-    # 10 Assumptions and unknowns
+    # 11 Assumptions and unknowns
     unknowns.append("Actor names in this report are self-declared; the tool has no authentication.")
     S.append([Block("para", text="Assumptions stated in the records:"), Block("bullets", items=assumptions or ["None stated in the attached records."]),
               Block("para", text="Unknowns and open points:"), Block("bullets", items=unknowns)])
 
-    # 11 Audit summary
+    # 12 Audit summary
     ev = project_events(db, p.id, None)
     cnt = Counter((e.entity_type, e.action) for e in ev)
     S.append([Block("note", text="From the append-only audit log (entries cannot be updated or deleted; before/after are sha256 of the row's values)."),
               Block("table", header=["Entity", "Action", "Events"], rows=[[t, a, str(n)] for (t, a), n in sorted(cnt.items())]),
-              Block("para", text="Latest 25 events:"),
-              Block("table", header=["When (UTC)", "Actor", "Action", "Entity", "Label"], rows=[[_iso(e.at), f"{e.actor} [{e.actor_source}]", e.action, f"{e.entity_type} {e.entity_id}", e.label] for e in ev[:25]])])
+              Block("para", text="Latest 25 events (finding rows written by conflict checks are counted above, not listed):"),
+              Block("table", header=["When (UTC)", "Actor", "Action", "Entity", "Label"], rows=[[_iso(e.at), _actor_cell(e.actor, e.actor_source), e.action, f"{e.entity_type} {e.entity_id}", e.label]
+                                                                                       for e in [x for x in ev if not (x.entity_type == "coordination_conflict" and x.action == "create")][:25]])])
 
     assert len(S) == len(SECTION_TITLES)
     return DocModel(title=f"Planning project report - {p.name}", subtitle=f"Project {p.id} | status {PROJECT_STATUS_LABEL.get(p.status, p.status)} | generated {generated}",
                     generated_at=generated, sections=[Section(i + 1, SECTION_TITLES[i], b) for i, b in enumerate(S)],
                     header_text=HEADER_TEXT, disclaimer=DISCLAIMER, template_version=TEMPLATE_VERSION)
+
+
+ACTOR_HOW = {"header": "name typed in the tool", "request_field": "name typed in the tool", "record_field": "name on the record",
+             "td_audit": "name from the traffic-data change log"}
+
+
+def _actor_cell(actor: str, source: str) -> str:
+    """Who did it in plain words (A18): the self-declared name and where it came from; never the log's source code."""
+    if source == "none" or not actor or actor == "unattributed":
+        return "No name recorded"
+    return f"{actor} ({ACTOR_HOW.get(source, 'name not verified')})"
+
+
+_B_LABEL = {"building": "Building footprint", "baseline_road": "Existing road (base city)", "subsurface_utility": "Utility record",
+            "osm_metro": "Existing metro (OpenStreetMap)", "design_object": "Drawn in Design", "project_element": "Project"}
+REPORT_FINDINGS_MAX = 40
+_CLASS_SHORT = {"conflict": "Conflict", "potential_conflict": "Potential conflict"}
+
+
+def _z(v) -> str:
+    return "UNKNOWN" if v is None else _num(v)
+
+
+def _coordination_section(db: Session, p: PlanningProjectEntity, unknowns: list[str]) -> list[Block]:
+    """The project's proposal elements and the findings visible to it (as GET /coordination/projects/{id}/conflicts:
+    one row per pair, every project's latest check), class counts and the newest actionable findings."""
+    from api.coordination_router import project_conflicts   # lazy: the router imports planning modules
+    from coordination.models import CoordinationRunEntity, ProposalElementEntity
+    out: list[Block] = [Block("note", text="Screening of the data in this tool, NOT an engineering clearance, a safety finding or a permission. "
+                                           "Depths are metres relative to ground (up positive); UNKNOWN is never treated as clear. The complete list "
+                                           "of findings is the Conflict summary CSV (Conflicts tab).")]
+    els = db.query(ProposalElementEntity).filter(ProposalElementEntity.project_id == p.id).order_by(ProposalElementEntity.created_at).all()
+    names = {e.id: (e.name or e.kind) for e in els}
+    if els:
+        out.append(Block("table", header=["Element", "Kind", "Top (m)", "Bottom (m)", "Width (m)", "Certainty", "From"], rows=[[
+            e.name or "-", e.kind.replace("_", " "), _z(e.z_max_m), _z(e.z_min_m), _z(e.width_m), e.certainty,
+            (e.scenario_id or "entered directly") + (f" v {e.scenario_version_id}" if e.scenario_version_id else "")] for e in els]))
+    else:
+        out.append(Block("para", text="No proposal element: the conflict check compares elements, so nothing of this project has been checked."))
+        unknowns.append("No proposal element is registered: conflicts with other projects and city data are not screened.")
+    run = db.query(CoordinationRunEntity).filter(CoordinationRunEntity.project_id == p.id).order_by(CoordinationRunEntity.created_at.desc()).first()
+    res = project_conflicts(p.id, False, db)
+    issues = res["issues"]
+    if run is None and not issues:
+        out.append(Block("para", text="No conflict check has been run for this project, and no other project's check involves it."))
+        if els:
+            unknowns.append("Conflict check not run: conflicts are not known (not 'none').")
+        return out
+    if run is not None:
+        from coordination import service as CS
+        st = CS.stale_coordination_run(db, run)
+        verdict = "UNKNOWN (inputs not recorded)" if st.get("stale") is None else ("STALE: " + "; ".join(st.get("reasons", [])[:4]) if st.get("stale") else "current")
+        out.append(Block("para", text=f"Latest check of this project: {run.id}, {_iso(run.created_at)} by {run.created_by} (engine {run.engine_version}); stale: {verdict}."))
+    else:
+        out.append(Block("para", text="This project has not run the check itself; the findings below were raised by other projects' checks."))
+    cnt = Counter(i["class_label"] for i in issues)
+    opened = Counter(i["class_label"] for i in issues if i["status"] == "open")
+    out.append(Block("table", header=["Class", "Count", "Open"], rows=[[k, str(v), str(opened.get(k, 0))] for k, v in cnt.items()]
+                     or [["(no finding shown: 'no conflict within available data' is not proof of no conflict)", "0", "0"]]))
+    act = [i for i in issues if i["class"] in ("conflict", "potential_conflict")]
+
+    def other(i: dict) -> str:
+        b = i["evidence"].get("b", {}) if isinstance(i.get("evidence"), dict) else {}
+        lab = _B_LABEL.get(i["b_type"], i["b_type"])
+        nm = (b.get("osm_tags") or {}).get("name") if i["b_type"] == "osm_metro" else b.get("name")
+        if i["b_type"] == "project_element":
+            pid_other = i["other_project"]
+            po = db.get(PlanningProjectEntity, pid_other) if pid_other else None
+            lab = f"Project '{po.name}'" if po else "a deleted project"
+        return f"{lab}: {nm}" if nm else lab
+
+    def ours(i: dict) -> str:
+        if i["project_a_id"] == p.id:
+            return names.get(i["element_a_id"], i["element_a_id"] or "-")
+        return names.get(i["b_ref"], i["b_ref"] or "-")
+
+    if act:
+        out.append(Block("note", text="Potential conflict: a depth or footprint width is UNKNOWN, so the conflict cannot be excluded. "
+                                      "Horizontal = plan distance; gap = vertical gap; UNKNOWN = not known, never 0."))
+        out.append(Block("table", header=["This project", "Other side", "Class", "Horizontal (m)", "Gap (m)", "Certainty", "Status", "Permission triggers"], rows=[[
+            ours(i), other(i), _CLASS_SHORT.get(i["class"], i["class_label"]), _z(i["horizontal_distance_m"]), _z(i["vertical_gap_m"]), i["certainty"], i["status"],
+            "; ".join(t.get("label", t.get("rule_id", "")) for t in i.get("permission_triggers") or []) or "-"] for i in act[:REPORT_FINDINGS_MAX]]))
+        if len(act) > REPORT_FINDINGS_MAX:
+            out.append(Block("note", text=f"{len(act) - REPORT_FINDINGS_MAX} more conflict / potential-conflict findings are in the Conflict summary CSV."))
+        unk = sum(1 for i in act if i["vertical_gap_m"] is None)
+        if unk:
+            unknowns.append(f"{unk} conflict-check finding(s) have an UNKNOWN vertical gap (depth or width not known): they cannot be excluded.")
+    return out
 
 
 def render(m: DocModel, fmt: str) -> bytes:

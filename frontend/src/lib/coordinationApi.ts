@@ -69,7 +69,25 @@ export interface ConflictFinding {
   evidence: Record<string, unknown>; status: ConflictStatus; status_by: string | null; status_note: string | null;
   status_at: string | null; status_carried_from: string | null; created_at: string;
 }
-export interface ProjectIssue extends ConflictFinding { raised_by_project: string; other_project: string | null; run_stale: StaleVerdict | null }
+export interface ProjectIssue extends ConflictFinding {
+  raised_by_project: string; other_project: string | null; run_stale: StaleVerdict | null;
+  /** Set when the status shown was recorded on the other project's copy of the same pair (both projects ran the check). */
+  status_from_finding?: string;
+}
+/** GET /projects-summary: one row per project for the project list and Reports. */
+export interface ProjectSummary {
+  id: string; name: string; status: 'draft' | 'under_study' | 'under_review' | 'decision_recorded'; created_by: string; created_at: string;
+  area: string | null; has_bbox: boolean; alternatives: number; links: number; elements: number;
+  /** false = no conflict check involves the project (then open_conflicts is null = not checked, never 0). */
+  checked: boolean; open_conflicts: number | null;
+  last_check: ({ id: string; created_at: string } & StaleVerdict) | null;
+  /** Attachments per type (scenario, scenario_version, run, dataset, assessment). */
+  link_counts: Partial<Record<string, number>>; decisions: number; traffic_runs: number;
+  /** Newest export per label ("PDF report", "DOCX report", "CSV conflict summary"), ISO time. */
+  last_exports: Partial<Record<string, string>>;
+  /** Findings visible to the project (as in Conflicts); null when no check involves it. */
+  findings: number | null;
+}
 export interface CoordinationRun {
   id: string; project_id: string; engine_version: string; created_by: string; created_at: string;
   summary: { counts: Partial<Record<ConflictClass, number>>; elements: number; skipped_elements: { element_id: string; reason: string }[];
@@ -194,6 +212,8 @@ export const coordinationApi = {
   // staleness
   stale: (kind: 'run' | 'assessment' | 'coordination_run', id: string) => call<StaleVerdict & { kind: string; id: string }>('GET', `/stale/${kind}/${q(id)}`),
   projectStale: (projectId: string) => call<ProjectStale>('GET', `/projects/${q(projectId)}/stale`),
+  /** Every project's counts in one call (alternatives, elements, open conflicts, latest check + stale verdict). */
+  projectsSummary: () => call<{ projects: ProjectSummary[] }>('GET', '/projects-summary').then(r => r.projects),
   // subsurface
   importSubsurface: (body: ImportInput) => call<SubsurfaceDataset & { meta: Record<string, unknown>; records: SubsurfaceRecord[] }>('POST', '/subsurface/import', body),
   listDatasets: (projectId?: string) => call<SubsurfaceDataset[]>('GET', `/subsurface/datasets${projectId ? `?project_id=${q(projectId)}` : ''}`),

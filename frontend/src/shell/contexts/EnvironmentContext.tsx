@@ -238,7 +238,7 @@ export const EnvironmentContext: React.FC = () => {
             </div>
           </div>
         ) : (
-          <p className="text-label text-text-2" data-testid="env-screen-hint">Select a proposed road, flyover or double-deck on the map (or in “Your projects”) to count the census trees and green area inside its footprint and check it against water, heritage and rail.</p>
+          <p className="text-label text-text-2" data-testid="env-screen-hint">Select a proposed road, flyover or double-deck on the map (or in “Your drawn works”) to count the census trees and green area inside its footprint and check it against water, heritage and rail.</p>
         )}
       </PanelSection>
 

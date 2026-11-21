@@ -255,7 +255,8 @@ def test_report_pdf_and_docx_carry_labels_and_disclaimer(client):
     p = client.get(f"/api/planning/projects/{pid}/report", params={"format": "pdf"})
     assert p.status_code == 200 and p.content[:5] == b"%PDF-"
     pt = re.sub(r"\s+", " ", _pdf_text(p.content))
-    for s in ("Not an engineering assessment, statutory approval", "Measured + SYNTHETIC", "model output", "Planning decision recorded in", "11. Audit trail summary"):
+    # table cells wrap inside their column ("Measured +" / "SYNTHETIC" on two lines); the DOCX check above holds the full label
+    for s in ("Not an engineering assessment, statutory approval", "Measured +", "model output", "Planning decision recorded in", "12. Audit trail summary"):
         assert s in pt, s
     assert not re.search(r"\bapproved\b", pt, re.I)
 

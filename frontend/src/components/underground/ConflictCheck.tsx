@@ -18,6 +18,7 @@ import {
 } from './conflictClasses';
 import { clearConflictHighlight, showConflictHighlight } from './conflictHighlight';
 import { gapCountText, groupGaps, type GapGroup } from './screeningGroups';
+import { plural } from '../../lib/plural';
 
 const SCREENED_TYPES = new Set(['underground_alignment', 'utility', 'metro_line', 'metro_station']);
 const isScreened = (o: CityObject) => SCREENED_TYPES.has(o.type);
@@ -399,7 +400,7 @@ const ProjectRegistration: React.FC<{ a: UndergroundAlignmentObject }> = ({ a })
         : await coordinationApi.createElement(pid, { ...payload, created_by: user.trim() });
       const result = await coordinationApi.detect(pid, user.trim());
       setCheck(a.id, { projectId: pid, element, run: result, at: new Date().toISOString() });
-      setMsg(`Shared with the project. Its coordination run has ${result.conflicts?.length ?? 0} findings — see Projects → Conflicts.`);
+      setMsg(`Shared with the project. Its coordination run has ${plural(result.conflicts?.length ?? 0, 'finding')} — see Projects → Conflicts.`);
     } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
   };
   return (

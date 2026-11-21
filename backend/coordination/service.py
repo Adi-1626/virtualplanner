@@ -17,9 +17,9 @@ from sqlalchemy.orm import Session
 
 from api.scenario_router import baseline_fingerprint, change_set_hash, head_change_set
 from feasibility.models import FeasibilityAssessmentEntity
-from models.models import (AreaEntity, CityObjectEntity, ScenarioObjectChangeEntity, ScenarioRunEntity,
+from models.models import (AreaEntity, CityObjectEntity, ScenarioEntity, ScenarioObjectChangeEntity, ScenarioRunEntity,
                            ScenarioVersionChangeEntity, ScenarioVersionEntity)
-from planning.models import PlanningProjectEntity
+from planning.models import PlanningProjectEntity, PlanningProjectLinkEntity
 from datasets.public_text import redact_paths
 
 from . import geometry as G
@@ -291,12 +291,16 @@ DESIGN_KIND = {"tunnel": "tunnel", "metro_tunnel": "metro_tunnel", "storm": "dra
                "metro_station": "metro_station"}
 
 
-def design_object_segments(db: Session, scenario_ids: set, exclude_ids: set, exclude_markers: list[str]) -> list[G.Segment]:
+def design_object_segments(db: Session, scenario_ids: set, exclude_ids: set, exclude_markers: list[str],
+                           osm_metro_ids: Optional[set] = None, dropped: Optional[list] = None) -> list[G.Segment]:
     """Objects drawn in Design (underground alignments, utilities, elevated metro lines / stations) in the baseline and
     in the scenarios the project's elements belong to, as side-B segments (layer `design_object`). Objects registered
     as one of the project's own elements (element_ref or the Underground conflict-check provenance marker) are skipped.
     Depths: crown/invert from the drawn profile and section (screening.design_asset); a utility whose depth certainty is
-    'unknown' (drawing placeholder) has depth UNKNOWN."""
+    'unknown' (drawing placeholder) has depth UNKNOWN.
+    A metro line / station that a study-area import copied from OpenStreetMap is skipped when the same OSM element is in
+    `osm_metro_ids` (read from the OSM index as layer `osm_metro`): one physical metro element gives one finding. Skipped
+    ids are appended to `dropped`."""
     from . import screening as SCR
     out: list[G.Segment] = []
     for sid in sorted(scenario_ids | {"base"}):
@@ -307,6 +311,10 @@ def design_object_segments(db: Session, scenario_ids: set, exclude_ids: set, exc
                 continue   # baseline objects are read once, under 'base'
             a = SCR.design_asset(o, "existing" if o.get("scenarioId") == "base" else "proposed")
             if a is None:
+                continue
+            if osm_metro_ids and a.meta.get("osm_ref") and a.meta["osm_ref"] in osm_metro_ids:
+                if dropped is not None and o["id"] not in dropped:
+                    dropped.append(o["id"])
                 continue
             prof = [{"chainage_m": ch, "z_max_m": None if c is None else -c, "z_min_m": None if i is None else -i} for ch, c, i in a.profile]
             g = SCR._lonlat(a.geom)
@@ -378,8 +386,15 @@ def run_detection(db: Session, project_id: str, run_by: str, screening_radius_m:
     util_segs, util_ds = utility_segments(db, qbox) if qbox else ([], [])
     metro_segs, metro_meta = osm_metro_segments(boxes) if boxes else ([], None)
     bld_segs, bld_meta = building_segments(boxes)
-    design_segs = design_object_segments(db, {e.scenario_id for e in own if e.scenario_id}, {e.element_ref for e in own if e.element_ref},
-                                         [e.provenance or "" for e in own])
+    # Drawn objects of the base city, of the alternatives the project's elements come from AND of every alternative
+    # attached to the project (a utility drawn in an attached alternative is checked even when nothing of that alternative
+    # was registered as an element).
+    attached = {l.entity_id for l in db.query(PlanningProjectLinkEntity).filter(PlanningProjectLinkEntity.project_id == project_id,
+                                                                                 PlanningProjectLinkEntity.entity_type == "scenario")}
+    design_scenarios = {e.scenario_id for e in own if e.scenario_id} | attached
+    osm_dups: list[str] = []
+    design_segs = design_object_segments(db, design_scenarios, {e.element_ref for e in own if e.element_ref},
+                                         [e.provenance or "" for e in own], {s.owner for s in metro_segs}, osm_dups)
 
     layers = {
         "project_element": other_segs,
@@ -397,8 +412,16 @@ def run_detection(db: Session, project_id: str, run_by: str, screening_radius_m:
     inputs = {
         "project_elements_hash": _sha(own_hashes), "project_elements": own_hashes,
         "scenario_versions": {e.scenario_id: e.scenario_version_id for e in own + others if e.scenario_id and e.scenario_version_id},
+        # the newest version of each of those alternatives when the run was made: a version that was already superseded
+        # then is not a change since the run (stale = a newer version appeared after it)
+        "scenario_latest_versions": {sid: (lv.id if lv is not None else None) for sid in sorted({e.scenario_id for e in own + others if e.scenario_id and e.scenario_version_id})
+                                     for lv in [_latest_version(db, sid)]},
         "scenario_heads": {sid: change_set_hash(head_change_set(db, sid)) for sid in sorted({e.scenario_id for e in own + others if e.scenario_id and not e.scenario_version_id})},
         "other_projects": other_projects, "baseline_fingerprint": base_fp, "rule_set_hash": rules_hash, "rules": rules,
+        "design_scenarios": sorted(design_scenarios),
+        # heads of attached alternatives whose drawn objects were read as side B (an edit there makes this run stale)
+        "design_heads": {sid: change_set_hash(head_change_set(db, sid)) for sid in sorted(design_scenarios)
+                         if db.get(ScenarioEntity, sid) is not None},
         "subsurface_hash": subsurface_hash(db), "osm_index": osm_state(), "infra_index": infra_state(), "screening_radius_m": screening_radius_m,
         "engine_version": ENGINE_VERSION,
     }
@@ -419,6 +442,35 @@ def run_detection(db: Session, project_id: str, run_by: str, screening_radius_m:
                     if cur is None or (G.SEVERITY[r["class"]], r["horizontal_distance_m"]) < (G.SEVERITY[cur["class"]], cur["horizontal_distance_m"]):
                         best[key] = {**r, "a": a, "b": b}
                     best[key]["permission_triggers"] = list({(t["rule_id"]): t for t in sorted(trig, key=lambda t: -t["distance_m"])}.values())
+        # OpenStreetMap splits one metro line into several ways (and maps twin bores / both tracks as parallel ways):
+        # one finding per (named line, kind) for this element, the most severe and nearest, saying how many pieces were
+        # within reach (the Underground screening does the same, screening._merge_same_line).
+        merged: dict[tuple, tuple] = {}
+        for key, r in list(best.items()):
+            if key[0] != "osm_metro":
+                continue
+            nm = (r["b"].meta.get("osm_tags") or {}).get("name")
+            if not nm:
+                continue
+            gk = (nm, r["b"].kind)
+            if gk not in merged:
+                merged[gk] = (key, 1, list(r["permission_triggers"]))
+                continue
+            k0, n, trig = merged[gk]
+            r0 = best[k0]
+            trig = trig + list(r["permission_triggers"])
+            if (G.SEVERITY[r["class"]], r["horizontal_distance_m"]) < (G.SEVERITY[r0["class"]], r0["horizontal_distance_m"]):
+                del best[k0]
+                k0 = key
+            else:
+                del best[key]
+            merged[gk] = (k0, n + 1, trig)
+        for (nm, _kind), (k0, n, trig) in merged.items():
+            if n > 1:
+                r0 = best[k0]
+                r0["permission_triggers"] = list({t["rule_id"]: t for t in sorted(trig, key=lambda t: -t["distance_m"])}.values())
+                r0["reasons"] = list(r0["reasons"]) + [f"{n} OpenStreetMap pieces of '{nm}' (separate ways, e.g. both tracks or line sections) are within reach; the most severe / nearest is shown."]
+                r0["osm_pieces"] = n
         for (layer, bref), r in best.items():
             a, b = r["a"], r["b"]
             rows.append(CoordinationConflictEntity(
@@ -429,7 +481,8 @@ def run_detection(db: Session, project_id: str, run_by: str, screening_radius_m:
                 reasons_json=_canon(r["reasons"]), permission_triggers_json=_canon(r["permission_triggers"]),
                 evidence_json=_canon({"a": {"kind": a.kind, "z_min_m": a.z_min, "z_max_m": a.z_max, "certainty": a.certainty, "width_known": a.width_known, **a.meta},
                                       "b": {"kind": b.kind, "z_min_m": b.z_min, "z_max_m": b.z_max, "certainty": b.certainty, "width_known": b.width_known, **b.meta},
-                                      "rule_ids": r["rule_ids"], "crs": f"EPSG:{G.UTM_EPSG}"})))
+                                      "rule_ids": r["rule_ids"], "crs": f"EPSG:{G.UTM_EPSG}",
+                                      **({"osm_pieces": r["osm_pieces"]} if r.get("osm_pieces") else {})})))
         # layer-level rows: what can (not) be said where no pair was found
         hit_layers = {k[0] for k in best}
         hit_projects = {r2.project_b_id for r2 in rows if r2.element_a_id == eid and r2.b_type == "project_element"}
@@ -440,7 +493,8 @@ def run_detection(db: Session, project_id: str, run_by: str, screening_radius_m:
             lo1, la1 = G.from_utm(max(xs[2::4]), max(xs[3::4]))
             e_box = (lo0, la0, lo1, la1)
         cov = {
-            "design_object": (True, "objects drawn in Design (baseline + this project's alternatives); none within the screening radius"),
+            "design_object": (True, "objects drawn in Design (base city + this project's attached alternatives); none within the screening radius"
+                              + (f"; {len(osm_dups)} metro object(s) imported from OSM by a study area are checked once, as OpenStreetMap metro" if osm_dups else "")),
             "baseline_road": (bool(base_segs) and G.box_inside(e_box, base_cov), f"baseline roads; coverage: {base_cov_src}"),
             "osm_metro": (bool(metro_meta and metro_meta.get("available")) and G.box_inside(e_box, metro_meta.get("bbox")),
                           "OSM metro (local index; depth UNKNOWN)" if metro_meta and metro_meta.get("available") else "OSM metro index not available"),
@@ -479,7 +533,8 @@ def run_detection(db: Session, project_id: str, run_by: str, screening_radius_m:
     run.inputs_json = _canon(inputs)
     run.summary_json = _canon({"counts": counts, "elements": len(own), "skipped_elements": skipped,
                                "other_projects": sorted(other_projects), "layers": {k: len(v) for k, v in layers.items()},
-                               "osm_metro": metro_meta, "buildings": bld_meta, "baseline_coverage": {"bbox": base_cov, "source": base_cov_src},
+                               "osm_metro": metro_meta, "buildings": bld_meta, "design_scenarios": sorted(design_scenarios),
+                               "osm_import_duplicates_skipped": osm_dups, "baseline_coverage": {"bbox": base_cov, "source": base_cov_src},
                                "permission_triggers": sum(len(_load(r.permission_triggers_json, [])) for r in rows)})
     db.add(run)
     db.add_all(rows)
@@ -505,34 +560,62 @@ def _verdict(reasons: list[str], not_checked: list[str]) -> dict:
             "computed_at": datetime.datetime.utcnow().isoformat() + "Z"}
 
 
-def stale_coordination_run(db: Session, run: CoordinationRunEntity) -> dict:
+def stale_coordination_run(db: Session, run: CoordinationRunEntity, cache: Optional[dict] = None) -> dict:
+    """Stale verdict of one run. `cache` (one dict per request) shares the per-project element hashes, head hashes and the
+    global fingerprints between the runs checked in that request (a list of N projects would otherwise hash N×N)."""
+    c = cache if cache is not None else {}
+
+    def memo(key, f):
+        if key not in c:
+            c[key] = f()
+        return c[key]
+
+    def el_hash(pid):
+        return memo(("el", pid), lambda: project_elements_hash(db, pid)[0])
+
+    def head(sid):
+        return memo(("head", sid), lambda: change_set_hash(head_change_set(db, sid)))
+
     inp = _load(run.inputs_json, {})
     reasons: list[str] = []
-    if project_elements_hash(db, run.project_id)[0] != inp.get("project_elements_hash"):
+    if el_hash(run.project_id) != inp.get("project_elements_hash"):
         reasons.append("project_elements_changed")
+    latest_then = inp.get("scenario_latest_versions")
     for sid, vid in (inp.get("scenario_versions") or {}).items():
         lv = _latest_version(db, sid)
-        if lv is not None and lv.id != vid:
+        ref = latest_then.get(sid, vid) if isinstance(latest_then, dict) else vid
+        if lv is not None and lv.id != ref:
             reasons.append(f"scenario_version_superseded:{sid}")
     for sid, h in (inp.get("scenario_heads") or {}).items():
-        if change_set_hash(head_change_set(db, sid)) != h:
+        if head(sid) != h:
             reasons.append(f"scenario_head_changed:{sid}")
-    now_projects = {pid for (pid,) in db.query(ProposalElementEntity.project_id).filter(ProposalElementEntity.project_id != run.project_id).distinct()}
+    if "design_scenarios" in inp:
+        now_att = {l.entity_id for l in db.query(PlanningProjectLinkEntity).filter(PlanningProjectLinkEntity.project_id == run.project_id,
+                                                                                   PlanningProjectLinkEntity.entity_type == "scenario")}
+        if not now_att <= set(inp.get("design_scenarios") or []):
+            reasons.append("alternatives_attached_changed")
+    for sid, h in (inp.get("design_heads") or {}).items():
+        if f"scenario_head_changed:{sid}" in reasons:
+            continue
+        if db.get(ScenarioEntity, sid) is None or head(sid) != h:
+            reasons.append(f"scenario_head_changed:{sid}")
+    all_projects = memo("projects", lambda: {pid for (pid,) in db.query(ProposalElementEntity.project_id).distinct()})
+    now_projects = all_projects - {run.project_id}
     old = inp.get("other_projects") or {}
     for pid in sorted(now_projects | set(old)):
         if pid not in old:
             reasons.append(f"other_project_added:{pid}")
-        elif project_elements_hash(db, pid)[0] != old[pid]:
+        elif el_hash(pid) != old[pid]:
             reasons.append(f"other_project_changed:{pid}")
-    if baseline_fingerprint(db) != inp.get("baseline_fingerprint"):
+    if memo("base", lambda: baseline_fingerprint(db)) != inp.get("baseline_fingerprint"):
         reasons.append("baseline_changed")
-    if rules_snapshot(db)[1] != inp.get("rule_set_hash"):
+    if memo("rules", lambda: rules_snapshot(db)[1]) != inp.get("rule_set_hash"):
         reasons.append("clearance_rules_changed")
-    if subsurface_hash(db) != inp.get("subsurface_hash"):
+    if memo("sub", lambda: subsurface_hash(db)) != inp.get("subsurface_hash"):
         reasons.append("subsurface_data_changed")
-    if osm_state() != inp.get("osm_index"):
+    if memo("osm", osm_state) != inp.get("osm_index"):
         reasons.append("osm_index_changed")
-    if "infra_index" in inp and infra_state() != inp.get("infra_index"):
+    if "infra_index" in inp and memo("infra", infra_state) != inp.get("infra_index"):
         reasons.append("infra_index_changed")
     if run.engine_version != ENGINE_VERSION:
         reasons.append("engine_version_changed")

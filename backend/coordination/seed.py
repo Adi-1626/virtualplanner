@@ -16,16 +16,25 @@ from .models import ClearanceRuleEntity, EnvironmentLayerEntity
 SEED_ACTOR = "system (seed)"
 
 METRO_KINDS = "metro,metro_tunnel,metro_viaduct,metro_station"
-# Official source (official-only rule, 2026-11-21). The earlier citation was a news report; it is kept only as
-# _S9_LEGACY so `python -m updater migrate-official-only` can replace it in an existing database.
-_S9 = ("Maha-Metro (Pune Metro Rail Project) Public Notice No. Maha Metro/Pune/Plng/NOC/959/2026 dated 15/04/2026 — "
-       "https://www.punemetrorail.org/download/Notice-for-NOC.pdf (scanned PDF, read by visual check 2026-11-21): 'as per Clause "
-       "14.2.1.7 of the Unified Development Control and Promotion Regulations (UDCPR), it is mandatory that for any development "
-       "or redevelopment proposed within a distance of 20 meters on either side from the edge of Metro Railway structures, "
-       "including viaducts, piers, stations, entry-exits, depots, ancillary structures, tunnels (UP & DN lines), subways, or any "
-       "other Metro structures, the concerned Planning Authority shall seek and obtain prior No Objection Certificate (NOC) from "
-       "the Metro Railway Authority'. Also Maha-Metro circular NMRCL/Plg/NOC/Metro-Corridor/2017/257 (28.03.2018), "
-       "https://www.punemetrorail.org/download/Guidelines%20for%20NOC.pdf. Repo: docs/RESEARCH_FEASIBILITY_AND_INVESTIGATION.md §1.7, S9.")
+# Official sources only (user rule 2026-11-21: no news-based facts). Both documents were opened and read on 2026-11-21:
+# - UDCPR 2020 cl. 14.2.1.7, Govt of Maharashtra Urban Development Dept, consolidated text "updated up to 30.01.2024", printed
+#   p. 268 (PDF p. 284), linked from urban.maharashtra.gov.in (dtp.maharashtra.gov.in did not respond that day);
+# - Maha-Metro (Pune Metro Rail Project) Public Notice No. Maha Metro/Pune/Plng/NOC/9549/2026 dated 15.04.2026.
+_S9 = ("UDCPR 2020 cl. 14.2.1.7 (Govt of Maharashtra, Urban Development Dept; consolidated text updated to 30.01.2024, printed "
+       "p. 268): \"In case of development or redevelopment … from the edge of the Metro Rail, within 20 mt. distance on its either "
+       "side, the concerned Planning Authority before granting such permission … shall seek prior NOC from the concerned Metro "
+       "Railway Authority as required under the Metro Railways (Construction of Works) Act, 1978\". "
+       "https://cdnbbsr.s3waas.gov.in/s3524e7ce0a1c6e07eab12cfa2ff7d8865/uploads/2025/09/20250929387489217.pdf (READ 2026-11-21). "
+       "Applied by Maha-Metro Public Notice No. Maha Metro/Pune/Plng/NOC/9549/2026 (15.04.2026) to construction, excavation, "
+       "geotechnical investigations, borewells and utility laying within 20 m of viaducts, piers, stations and tunnels: "
+       "https://punemetrorail.org/download/PUBLIC-NOTICE-ENGLISH.pdf (READ 2026-11-21).")
+# Citations seeded earlier that are not official sources, or whose official text had not been opened; replaced on start-up
+# when the row still carries them unchanged.
+_RETIRED_CITATIONS = {"metro_noc_20m": (
+    "Indian Express",  # retired-news-marker: an old seeded citation to replace, never shown
+    "UDCPR 2020 cl. 14.2.1.7 (Govt of Maharashtra, Urban Development Dept; consolidated text, Directorate of Town Planning",
+)}
+# Old news citation kept only so `python -m updater migrate-official-only` can replace it in an existing database; never shown.
 _S9_LEGACY = ("Indian Express, 'Pune Metro issues no-NOC, no-work warning after Shukrawar Peth tunnel breach', 17 Apr 2026 — "
               "https://indianexpress.com/article/cities/pune/noc-mandatory-pune-metro-warns-of-action-over-borewell-drilling-near-tunnels-10641841/ "
               "(MahaMetro spokesperson: development within 20 m of either the elevated or underground metro route needs a metro NOC). "
@@ -36,7 +45,7 @@ _AMASR = ("AMASR Act 1958 as amended 2010, s.20A (prohibited area 100 m) and s.2
           "(Gazette of India 29 Mar 2010, EXCERPT). Repo: docs/RESEARCH_FEASIBILITY_AND_INVESTIGATION.md §1.4, S1/S2.")
 
 RULE_SEEDS = [
-    dict(id="metro_noc_20m", label="Metro NOC trigger: within 20 m of an elevated or underground metro route",
+    dict(id="metro_noc_20m", label="Metro NOC trigger: within 20 m of the edge of a metro route (UDCPR 14.2.1.7)",
          rule_type="permission_distance", subject_kind="*", other_kind=METRO_KINDS, horizontal_m=20.0, vertical_m=None,
          basis="cited_permission_distance", citation=_S9,
          note="PERMISSION DISTANCE, NOT AN ENGINEERING CLEARANCE. Says when a metro NOC is needed; says nothing about whether "
@@ -123,8 +132,13 @@ def seed_coordination(session_factory) -> None:
 
 def _seed(db: Session) -> None:
     for r in RULE_SEEDS:
-        if db.get(ClearanceRuleEntity, r["id"]) is None:
+        row = db.get(ClearanceRuleEntity, r["id"])
+        if row is None:
             db.add(ClearanceRuleEntity(created_by=SEED_ACTOR, active=True, **r))
+        elif (row.basis == "cited_permission_distance" and row.citation
+              and any(row.citation.startswith(p) for p in _RETIRED_CITATIONS.get(r["id"], ()))):
+            # the seeded value itself (20 m) is unchanged; only its source is replaced (audited as the seed actor)
+            row.citation, row.label = r["citation"], r["label"]
     for l in LAYER_SEEDS:
         if db.get(EnvironmentLayerEntity, l["id"]) is None:
             src = l.get("osm")

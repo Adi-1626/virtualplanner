@@ -52,6 +52,7 @@ class ProjectPatch(BaseModel):
     description: Optional[str] = None
     status: Optional[Literal["draft", "under_study", "under_review"]] = None  # 'decision_recorded' only by recording a decision
     preferred_scenario_id: Optional[str] = Field(default=None, description="an attached scenario; '' clears. A working flag, not a decision")
+    area_id: Optional[str] = Field(default=None, description="study area id; '' clears the study area (and its bounding box)")
 
 
 class LinkIn(BaseModel):
@@ -163,12 +164,25 @@ def _audit_out(a: AuditLogEntity) -> dict:
             "before_hash": a.before_hash, "after_hash": a.after_hash}
 
 
-def project_events(db: Session, pid: str, limit: int | None = 500) -> list[AuditLogEntity]:
+# A conflict check inserts one row per finding; the audit hooks record each insert. Those are system rows, not a person's
+# action: the project timeline hides them by default (the run itself is listed) so they cannot push people's actions
+# (created, attached, responded, decided) out of the newest-N window.
+FINDING_INSERT = and_(AuditLogEntity.entity_type == "coordination_conflict", AuditLogEntity.action == "create")
+
+
+def _scope_filter(db: Session, pid: str):
     conds = []
     for t, i in linked_scope(db, pid):
         conds.append(and_(AuditLogEntity.entity_type == t, AuditLogEntity.entity_id == i))
         conds.append(and_(AuditLogEntity.parent_type == t, AuditLogEntity.parent_id == i))
-    q = db.query(AuditLogEntity).filter(or_(*conds)).order_by(AuditLogEntity.id.desc())
+    return or_(*conds)
+
+
+def project_events(db: Session, pid: str, limit: int | None = 500, include_finding_inserts: bool = True) -> list[AuditLogEntity]:
+    q = db.query(AuditLogEntity).filter(_scope_filter(db, pid))
+    if not include_finding_inserts:
+        q = q.filter(~FINDING_INSERT)
+    q = q.order_by(AuditLogEntity.id.desc())
     return q.limit(limit).all() if limit else q.all()
 
 
@@ -223,8 +237,57 @@ def patch_project(pid: str, body: ProjectPatch, db: Session = Depends(get_db)):
             if sid and not db.query(PlanningProjectLinkEntity).filter_by(project_id=pid, entity_type="scenario", entity_id=sid).first():
                 raise HTTPException(422, "preferred_scenario_id must be a scenario attached to the project")
             p.preferred_scenario_id = sid
+        if body.area_id is not None:
+            if body.area_id:
+                a = db.get(AreaEntity, body.area_id)
+                if a is None:
+                    raise HTTPException(422, "Study area not found")
+                p.area_id, p.min_lon, p.min_lat, p.max_lon, p.max_lat = a.id, a.min_lon, a.min_lat, a.max_lon, a.max_lat
+            else:
+                p.area_id = p.min_lon = p.min_lat = p.max_lon = p.max_lat = None
+        if body.name is not None:
+            p.name = body.name.strip()
+            if not p.name:
+                raise HTTPException(422, "name must not be blank")
         db.commit()
     return _project_out(db, p, full=True)
+
+
+@router.delete("/projects/{pid}")
+def delete_project(pid: str, removed_by: str = Query(min_length=1), confirm_name: str = Query(default=""), db: Session = Depends(get_db)):
+    """Deletes a project that has no recorded decision: its links (the linked records are kept), its proposal elements and
+    its own conflict-check runs and findings. Decisions are append-only, so a project with a decision is kept (409).
+    Other projects' runs keep their findings against this project's elements and show as stale. Subsurface datasets
+    imported for the project are kept (city data) and detached. Audited: one entry per deleted link / element, one
+    summary entry for the runs and findings, and the project delete."""
+    from coordination.models import CoordinationConflictEntity, CoordinationRunEntity, ProposalElementEntity, SubsurfaceDatasetEntity
+    p = _get_project(db, pid)
+    if confirm_name.strip() != p.name.strip():
+        raise HTTPException(422, "confirm_name must repeat the project's name exactly")
+    if db.query(PlanningDecisionEntity).filter(PlanningDecisionEntity.project_id == pid).first() is not None:
+        raise HTTPException(409, "This project has a recorded decision. Decisions are append-only, so the project cannot be deleted.")
+    who = removed_by.strip()
+    with audit.acting_as(who):
+        run_ids = [r for (r,) in db.query(CoordinationRunEntity.id).filter(CoordinationRunEntity.project_id == pid)]
+        n_findings = (db.query(CoordinationConflictEntity).filter(CoordinationConflictEntity.run_id.in_(run_ids))
+                      .delete(synchronize_session=False)) if run_ids else 0
+        n_runs = db.query(CoordinationRunEntity).filter(CoordinationRunEntity.project_id == pid).delete(synchronize_session=False)
+        if n_runs:
+            audit.record(db, action="delete", entity_type="coordination_run", entity_id=pid, actor=who,
+                         label=f"{n_runs} conflict-check run(s) and {n_findings} finding(s) of the deleted project",
+                         parent_type="project", parent_id=pid)
+        n_el = 0
+        for e in db.query(ProposalElementEntity).filter(ProposalElementEntity.project_id == pid).all():
+            db.delete(e)
+            n_el += 1
+        for l in _links(db, pid):
+            db.delete(l)
+        for d in db.query(SubsurfaceDatasetEntity).filter(SubsurfaceDatasetEntity.project_id == pid).all():
+            d.project_id = None
+        db.delete(p)
+        db.commit()
+    return {"status": "deleted", "id": pid, "elements": n_el, "runs": n_runs, "findings": n_findings,
+            "note": "Linked records (alternatives, runs, datasets, assessments) are unchanged. The audit log keeps the history."}
 
 
 @router.post("/projects/{pid}/links", status_code=201)
@@ -306,10 +369,14 @@ def list_decisions(pid: str, db: Session = Depends(get_db)):
 # ── audit ─────────────────────────────────────────────────────────────────────
 
 @router.get("/projects/{pid}/audit")
-def project_audit(pid: str, limit: int = Query(default=300, le=5000), db: Session = Depends(get_db)):
+def project_audit(pid: str, limit: int = Query(default=300, le=5000), include_finding_inserts: bool = False, db: Session = Depends(get_db)):
+    """The project's timeline (newest first). Finding inserts written by conflict checks are left out unless asked for;
+    `finding_inserts_hidden` says how many."""
     _get_project(db, pid)
-    ev = project_events(db, pid, limit)
-    return {"scope": [{"entity_type": t, "entity_id": i} for t, i in linked_scope(db, pid)], "events": [_audit_out(a) for a in ev]}
+    ev = project_events(db, pid, limit, include_finding_inserts)
+    hidden = 0 if include_finding_inserts else db.query(func.count(AuditLogEntity.id)).filter(_scope_filter(db, pid), FINDING_INSERT).scalar()
+    return {"scope": [{"entity_type": t, "entity_id": i} for t, i in linked_scope(db, pid)], "events": [_audit_out(a) for a in ev],
+            "finding_inserts_hidden": hidden}
 
 
 @router.get("/audit")

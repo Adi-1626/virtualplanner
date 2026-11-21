@@ -52,8 +52,8 @@ UI rule: a finding may only be labelled `verified_from_available_data` when it *
 |---|---|---|---|---|
 | `asiProhibitedM` | 100 m | statutory | AMASR s.20A minimum, measured from protected limit; extendable by notification | S1, S2 |
 | `asiRegulatedM` | 300 m | statutory | 100 m prohibited + 200 m regulated (s.20B minimum); extendable | S1, S2 |
-| `metroNocM` | 20 m | authority_statement | Pune Metro public statement (Apr 2026) as reported; confirm with MahaMetro | S9 |
-| `metroPlanningAuthorityM` | 500 m | authority_statement | Reported metro planning-authority extent either side of route; confirm | S9 |
+| `metroNocM` | 20 m | statutory | UDCPR 2020 cl. 14.2.1.7 (NOC within 20 m of the edge of the Metro Rail); Maha-Metro public notice 15.04.2026. Measured from the mapped centreline | S9, S28 |
+| ~~`metroPlanningAuthorityM`~~ | — | retired 2026-11-21 | **No official figure.** The 500 m came from a press report; UDCPR has a 500 m TOD zone around proposed metro *stations* (cl. 14.2.1.1(i)), not a metro planning area either side of a Pune route | — |
 | `waterProximityM` | 50 m | hypothetical | Screening only; no statutory basis found. Flood-line layer supersedes it. | — |
 | `influenceZoneM` | 30 m | hypothetical | Screening default for building-impact buffer; actual zone to be set by geotechnical engineer (depends on depth, ground, method). | — |
 | `heritageProximityM` | 50 m | hypothetical | Screening buffer for PMC-listed heritage; no statutory buffer found for listed (non-ASI) properties. | — |
@@ -71,8 +71,8 @@ Generated from the JSON (keep them in sync — the JSON is canonical). "—" in 
 | R03 Underground works: geology, groundwater, tunnel engineering | tunnel, underground_road, underpass | `isUnderground eq True` | geological_mapping, geotechnical_investigation, groundwater_investigation, seismic_assessment, tunnel_engineering_studies | critical: Underground conditions are unknown until investigated. The tool cannot state that a tunnel… | S16, S18, S19, S20 |
 | R04 Underground/deep works near buildings | all physical | `isUnderground eq True AND buildingsInInfluenceZone gt 0` | building_condition_survey, construction_impact | high: Buildings within the (hypothetical) influence zone; settlement/vibration risk requires pro… | — (engineering practice) |
 | R05 Foundations or excavation near buildings (surface/grade-separated) | junction_redesign, road_widening, additional_lane, new_road, bridge, flyover, underpass, elevated_corridor, interchange, ramp_link | `hasConstructionFootprint eq True AND buildingsInInfluenceZone gt 0` | building_condition_survey, construction_impact | — | — (engineering practice) |
-| R06 Within 20 m of metro viaduct or tunnel | all physical | `distanceToMetroM lte metroNocM` | metro_interface | critical: MahaMetro NOC needed before any works, including boreholes/geotechnical study and utility … | S9 |
-| R07 Within metro planning-authority area | all physical | `distanceToMetroM lte metroPlanningAuthorityM` | metro_planning_check | — | S9 |
+| R06 Within 20 m of metro viaduct or tunnel | all physical | `distanceToMetroM lte metroNocM` | metro_interface | critical: Maha-Metro NOC needed before any works within 20 m, including geotechnical investigations/boreholes, excavation and utility … | S9, S28 |
+| ~~R07 Within metro planning-authority area~~ | — | retired 2026-11-21: no official figure for the 500 m (see `retired` in the JSON) | — | — | — |
 | R08 Near or crossing a water body | all physical | `crossesWaterway eq True OR distanceToWaterwayM lte waterProximityM` | flood_line_verification, hydrology_hydraulics | high: River corridor: blue/red flood-line status must be obtained from the Water Resources Depar… | S6 |
 | R09 Inside blue flood line (prohibitive zone) | all physical | `withinBlueLine eq True` | flood_line_verification, hydrology_hydraulics, environmental_screening | critical: UDCPR reg. 3.1.3 (as quoted by NGT, Feb 2026) prohibits construction between river bank an… | S6 |
 | R10 Between blue and red flood lines (restrictive zone) | all physical | `withinRedLine eq True AND withinBlueLine eq False` | flood_line_verification, hydrology_hydraulics | high: Restrictive zone: UDCPR 3.1.3 permits construction at 0.45 m above red flood line level (b… | S6 |

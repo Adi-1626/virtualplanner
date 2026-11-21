@@ -39,7 +39,7 @@ Small edits to existing components (no engine logic touched; tools.ts and Proper
   button, Esc in Simulate, "Edit in Build" from a Simulate problem) are mirrored back with `syncWorkspace`
   (`workspaceForMode`): build → Design, simulate → Simulate, view → Explore. Simulate still locks editing (engine).
 - **Inspector precedence** is the old right panel's: Simulate → `SimulationPanel`; Build + `ljunction:` →
-  `JunctionPanel`; Build or debug selection → `PropertiesPanel key={id}`; otherwise `InfoPanel` ("Your projects" list, or
+  `JunctionPanel`; Build or debug selection → `PropertiesPanel key={id}`; otherwise `InfoPanel` ("Your drawn works" list, or
   the selected object's details). A new selection opens the inspector.
 - **Workspace content** (AUD §4.2, existing components mounted unchanged):
   | Workspace | Context panel | Inspector | Drawer |

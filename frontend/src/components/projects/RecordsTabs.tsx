@@ -9,7 +9,8 @@ import { coordinationApi, type SubsurfaceDataset } from '../../lib/coordinationA
 import { listDocuments, listReviews, documentUrl, REVIEW_STATUS_LABEL, type DocumentRecord, type ReviewRecord } from '../../engine/feasibility/feasibilityApi';
 import { planningClient, type TrafficDatasetInfo } from '../../lib/planningClient';
 import { StaleBadge } from './common';
-import { inputCls, when, ACTION_LABEL, ENTITY_LABEL, type Act, type ProjectBundle } from './projectData';
+import { activityText, actorText } from '../../lib/planningProjects';
+import { inputCls, when, type Act, type ProjectBundle } from './projectData';
 
 const RUN_KIND: Record<string, string> = { simulation: 'Simulation run', odme: 'ODME run', emissions: 'Emissions run' };
 
@@ -208,19 +209,26 @@ const DecisionForm: React.FC<{ p: Project; linkable: Linkable | null; who: strin
 };
 
 // ── Activity ────────────────────────────────────────────────────────────────────────────────────────────────────
-export const ActivityTab: React.FC<{ events: AuditEvent[] }> = ({ events }) => (
-  <Section title="Audit timeline" aside={`${events.length} event${events.length === 1 ? '' : 's'}`}>
-    <p className="text-xs text-slate-500">Append-only. Names are self-declared.</p>
-    <ol className="space-y-1" data-testid="audit-timeline">
-      {events.slice(0, 150).map(e => (
-        <li key={e.id} data-entity={e.entity_type} data-action={e.action} className="flex gap-2 text-xs border-l-2 border-white/10 pl-2 py-0.5">
-          <History size={12} className="mt-0.5 text-slate-500 shrink-0" />
-          <div className="min-w-0">
-            <div className="text-slate-200"><b>{ENTITY_LABEL[e.entity_type] ?? e.entity_type}</b> {ACTION_LABEL[e.action] ?? e.action}{e.label ? ` — ${e.label}` : ''}{e.changed_fields ? ` (${e.changed_fields.join(', ')})` : ''}</div>
-            <div className="text-slate-500">{when(e.at)} · {e.actor}{e.actor_source === 'none' ? '' : ` [${e.actor_source.replace('_', ' ')}]`}</div>
-          </div>
-        </li>
-      ))}
-    </ol>
-  </Section>
-);
+export const ActivityTab: React.FC<{ events: AuditEvent[]; hiddenFindings?: number }> = ({ events, hiddenFindings = 0 }) => {
+  const [n, setN] = useState(60);
+  return (
+    <Section title="Activity" aside={`${events.length} event${events.length === 1 ? '' : 's'}`}>
+      <p className="text-xs text-slate-500">Append-only record of who did what, newest first. Names are self-declared.
+        {hiddenFindings > 0 ? ` ${hiddenFindings.toLocaleString('en-IN')} finding row${hiddenFindings === 1 ? '' : 's'} written by conflict checks are not listed one by one; each check is (see Conflicts for the findings).` : ''}</p>
+      {events.length === 0 ? <EmptyState icon={History} title="Nothing recorded yet" /> : (
+        <ol className="space-y-1" data-testid="audit-timeline">
+          {events.slice(0, n).map(e => (
+            <li key={e.id} data-entity={e.entity_type} data-action={e.action} className="flex gap-2 text-xs border-l-2 border-white/10 pl-2 py-0.5">
+              <History size={12} className="mt-0.5 text-slate-500 shrink-0" />
+              <div className="min-w-0">
+                <div className="text-slate-200 break-words">{activityText(e)}</div>
+                <div className="text-slate-500" title={actorText(e).how} data-testid="activity-who">{when(e.at)} · {actorText(e).who}</div>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+      {events.length > n && <Button size="sm" variant="ghost" onClick={() => setN(x => x + 100)} data-testid="activity-more">Show older ({events.length - n} more)</Button>}
+    </Section>
+  );
+};

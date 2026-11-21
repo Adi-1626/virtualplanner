@@ -30,6 +30,7 @@ import datetime
 import hashlib
 import json
 import math
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -194,6 +195,25 @@ class Asset:
         if with_geometry:
             d["geometry"] = _lonlat(self.geom)
         return d
+
+
+_OSM_ID_RE = re.compile(r"^osm_m_(way|node|relation)_(\d+)(?:_|$)")
+
+
+def osm_ref(obj_id: Any, props: Optional[dict] = None) -> Optional[str]:
+    """The OpenStreetMap element a Design object was imported from, as the OSM index names it ("osm_way_123"), or None.
+    Study-area imports store `osmSourceId` ("way/123") / `osmElementType` + `osmId`; their object ids are
+    "osm_m_<type>_<id>[_in_area_<area>_<n>]" (a way clipped by two study areas gives two objects with one OSM id)."""
+    p = props or {}
+    src = p.get("osmSourceId")
+    if isinstance(src, str) and "/" in src:
+        t, i = src.split("/", 1)
+        if t in ("way", "node", "relation") and i.isdigit():
+            return f"osm_{t}_{i}"
+    if p.get("osmElementType") in ("way", "node", "relation") and str(p.get("osmId", "")).isdigit():
+        return f"osm_{p['osmElementType']}_{p['osmId']}"
+    m = _OSM_ID_RE.match(str(obj_id or ""))
+    return f"osm_{m.group(1)}_{m.group(2)}" if m else None
 
 
 def _lonlat(g: BaseGeometry, max_pts: int = 400) -> dict:
@@ -411,14 +431,14 @@ def design_asset(obj: dict, status: str) -> Optional[Asset]:
         w = _num(p.get("deckWidth"))
         return Asset(str(obj.get("id")), obj.get("name") or "", layer, status, "metro_viaduct", line, (w / 2) if w else None,
                      [(0.0, None, None)], "UNKNOWN", "unknown", ds, kind_label="Elevated metro (drawn; pier foundations UNKNOWN)",
-                     meta={"design_type": t})
+                     meta={"design_type": t, "osm_ref": osm_ref(obj.get("id"), p)})
     if t == "metro_station" and pts and status == "existing":
         pt = G.project_geojson({"type": "Point", "coordinates": pts[0]})
         ln, wd = _num(p.get("length")) or 0.0, _num(p.get("width")) or 0.0
         geom = pt.buffer(max(ln, wd) / 2) if (ln or wd) else pt
         return Asset(str(obj.get("id")), obj.get("name") or p.get("stationName") or "", layer, status, "metro_station", geom,
                      0.0 if (ln or wd) else None, [(0.0, None, None)], "UNKNOWN", "unknown", ds, kind_label="Metro station (drawn)",
-                     meta={"design_type": t})
+                     meta={"design_type": t, "osm_ref": osm_ref(obj.get("id"), p)})
     return None
 
 
@@ -1232,6 +1252,13 @@ def screen(db, scenario_id: str, objects: Optional[list[dict]] = None, focus_ids
     wc_tree = STRtree([w.geom for w in wcs]) if wcs else None
     lap("watercourses")
 
+    # A study-area import copies OSM metro ways / stations into the base city; the same element is also read from the OSM
+    # index. Keep the OSM copy (one finding per physical metro element), drop the imported duplicate(s).
+    metro_ids = {m.id for m in metro}
+    dup_ids = {a.id for a in existing_design if a.meta.get("osm_ref") and a.meta["osm_ref"] in metro_ids}
+    if dup_ids:
+        existing_design = [a for a in existing_design if a.id not in dup_ids]
+        metro_meta = {**metro_meta, "import_duplicates": len(dup_ids)}
     others: list[Asset] = existing_design + metro + proposed
     other_tree = STRtree([o.geom for o in others]) if others else None
     findings: list[dict] = []
@@ -1404,7 +1431,9 @@ def _layers_report(rec, metro_meta, bld_meta, wc_meta, existing_design, cfg) -> 
     for net in ("water supply", "electricity", "gas (CGD)", "telecom"):
         out.append({"id": f"missing:{net}", "name": f"{net[0].upper() + net[1:]} network", "used": False, "coverage": "no dataset loaded"})
     out.append({"id": "osm_metro", "name": "OpenStreetMap metro (tunnels, stations, lines)", "used": bool(metro_meta.get("available")),
-                "quality_level": "plan only, no levels", "coverage": metro_meta.get("reason") or f"index {metro_meta.get('source')} ({metro_meta.get('data_timestamp')})"})
+                "quality_level": "plan only, no levels", "coverage": metro_meta.get("reason") or f"index {metro_meta.get('source')} ({metro_meta.get('data_timestamp')})"
+                + (f"; {metro_meta['import_duplicates']} study-area import cop{'y' if metro_meta['import_duplicates'] == 1 else 'ies'} of the same OSM elements listed once"
+                   if metro_meta.get("import_duplicates") else "")})
     out.append({"id": "buildings", "name": "Building footprints (foundation proxy)", "used": bool(bld_meta.get("available")),
                 "quality_level": "footprint only, depth unknown", "coverage": bld_meta.get("reason") or ("capped read" if bld_meta.get("capped") else "index extent")})
     out.append({"id": "watercourses", "name": "PMC nallas and rivers", "used": bool(wc_meta.get("available")), "quality_level": "QL-D (plan only)"})

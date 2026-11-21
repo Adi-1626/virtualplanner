@@ -6,7 +6,7 @@ import { EmptyState } from '../ui/EmptyState';
 import { CertaintyBadge } from '../ui/badges';
 import { coordinationApi, type ConflictStatus, type ProjectIssue } from '../../lib/coordinationApi';
 import { planningClient } from '../../lib/planningClient';
-import { groupIssuesByClass, otherSideEvidence, otherSideLabel, sideBLabel, ACTIONABLE } from '../../lib/planningProjects';
+import { groupIssuesByClass, otherSideEvidence, otherSideLabel, projectName, sideBLabel, ACTIONABLE } from '../../lib/planningProjects';
 import { StaleBadge } from './common';
 import { inputCls, when, flyToGeometry, type Act, type ProjectBundle } from './projectData';
 
@@ -32,23 +32,47 @@ export const ConflictsTab: React.FC<{ b: ProjectBundle; who: string; act: Act }>
           {lastRun && <span className="text-xs text-slate-400">Last run {when(lastRun.created_at)}</span>}
           {lastRun && <StaleBadge verdict={lastRun} />}
         </div>
-        {b.elements.length === 0 && <p className="text-xs text-slate-400">Register proposal elements from an alternative first.</p>}
-        <Disclosure>
-          <p className="text-xs text-slate-400">Checks this project's elements against other projects, base-city roads, OpenStreetMap metro, building footprints (OSM observed; Microsoft / Google ML inferred) and utility records incl. PMC sewer / storm-drain records (ASCE 38 QL-D; sewer depths from DESIGN levels, unverified) (UTM 43N). Depth or width UNKNOWN gives “potential conflict”, never “clear”. “No conflict within available data” is not proof of no conflict. Permission distances (e.g. metro NOC 20 m) are triggers for a permission, not engineering clearances. Findings never edit either project.</p>
+        {b.elements.length === 0 && <p className="text-xs text-slate-400">Add proposal elements first (Alternatives → Add proposal elements). The check compares elements, not drawings.</p>}
+        {busy && <p className="text-xs text-slate-400" role="status">Checking against other projects and the city data — this can take 10–20 s for a long alignment.</p>}
+        <Disclosure summary="What is checked">
+          <ul className="text-xs text-slate-400 space-y-0.5 list-disc pl-4">
+            <li>This project’s elements against: other projects’ elements; objects drawn in Design in the base city and in the alternatives attached to this project (tunnels, utilities, metro); existing roads; OpenStreetMap metro (a metro line imported by a study area is the same OSM line and is listed once); building footprints (OSM observed; Microsoft / Google ML inferred); utility records incl. PMC sewer / storm-drain records (ASCE 38 QL-D; sewer levels are design levels, unverified).</li>
+            <li>Plan distances in UTM 43N; depths compared separately. A depth or width that is UNKNOWN gives “potential conflict”, never “clear”. “No conflict within available data” is not proof of no conflict.</li>
+            <li>Other agencies’ proposals are seen only through their projects’ elements: a drawing that nobody added to a project is not checked.</li>
+            <li>Permission distances (metro NOC 20 m, UDCPR 14.2.1.7) say when a permission is needed; they are not engineering clearances. Findings never edit either project.</li>
+          </ul>
         </Disclosure>
       </Section>
-      {lastRun && groups.length === 0 && <EmptyState icon={ShieldCheck} title="No findings to show">Nothing within the screening radius in the available data.</EmptyState>}
-      {groups.map(g => (
-        <Section key={g.cls} title={g.label} aside={`${g.items.length} finding${g.items.length === 1 ? '' : 's'}`}>
-          <ul className="space-y-1.5" data-testid={`conflicts-${g.cls}`}>
-            {g.items.map(i => <IssueRow key={i.id} i={i} b={b} who={who} act={act} />)}
-          </ul>
-        </Section>
-      ))}
+      {!lastRun && b.issues.length === 0 && b.elements.length > 0 && (
+        <EmptyState icon={Radar} title="Not checked yet">Run the check to see where this project meets other agencies’ projects and the city data.</EmptyState>
+      )}
+      {lastRun && groups.length === 0 && <EmptyState icon={ShieldCheck} title="No findings to show">Nothing within the screening radius in the available data. That is not proof of no conflict: see what was checked above.</EmptyState>}
+      {groups.map(g => <ClassGroup key={g.cls} g={g} b={b} who={who} act={act} />)}
       {b.issues.length > 0 && (
         <a className="inline-block" href={planningClient.conflictCsvUrl(b.project.id, who)} data-testid="export-conflicts-csv"><Button size="sm" icon={FileDown}>Conflict summary CSV</Button></a>
       )}
     </>
+  );
+};
+
+/** Rows shown per class before "Show all" (a long list of footprints or records stays usable). */
+const PAGE = 15;
+
+const ClassGroup: React.FC<{ g: ReturnType<typeof groupIssuesByClass>[number]; b: ProjectBundle; who: string; act: Act }> = ({ g, b, who, act }) => {
+  const [all, setAll] = useState(false);
+  const items = all ? g.items : g.items.slice(0, PAGE);
+  const open = g.items.filter(i => i.status === 'open').length;
+  return (
+    <Section title={g.label} aside={`${g.items.length} finding${g.items.length === 1 ? '' : 's'}${ACTIONABLE.has(g.cls) ? ` · ${open} open` : ''}`}>
+      <ul className="space-y-1.5" data-testid={`conflicts-${g.cls}`}>
+        {items.map(i => <IssueRow key={i.id} i={i} b={b} who={who} act={act} />)}
+      </ul>
+      {g.items.length > PAGE && (
+        <Button size="sm" variant="ghost" onClick={() => setAll(a => !a)} data-testid={`conflicts-more-${g.cls}`}>
+          {all ? 'Show fewer' : `Show all ${g.items.length}`}
+        </Button>
+      )}
+    </Section>
   );
 };
 
@@ -58,7 +82,7 @@ const IssueRow: React.FC<{ i: ProjectIssue; b: ProjectBundle; who: string; act: 
   const pid = b.project.id;
   const ours = i.raised_by_project === pid ? i.element_a_id : i.b_type === 'project_element' ? i.b_ref : null;
   const ourEl = b.elements.find(e => e.id === ours);
-  const shared = i.other_project ? (b.projectNames[i.other_project] ?? i.other_project) : null;
+  const shared = i.other_project ? projectName(i.other_project, b.projectNames) : null;
   const fly = async () => {
     if (ourEl && flyToGeometry(ourEl.geometry)) return;
     try { const e = await coordinationApi.getElement(i.element_a_id); flyToGeometry(e.geometry); } catch { /* geometry unavailable */ }
@@ -75,11 +99,13 @@ const IssueRow: React.FC<{ i: ProjectIssue; b: ProjectBundle; who: string; act: 
         <button aria-label="Fly to location" title="Fly to location" className="p-1 rounded text-slate-400 hover:text-white cursor-pointer" onClick={() => void fly()}><Crosshair size={14} /></button>
       </div>
       {otherSideEvidence(i) && <div className="text-xs text-slate-400" data-testid="conflict-evidence">{otherSideEvidence(i)}</div>}
-      {shared && <div className="text-xs text-violet-200 flex items-start gap-1" data-testid="conflict-shared"><Share2 size={11} aria-hidden className="mt-0.5 shrink-0" />Shared with project “{shared}” — they see the same finding; nothing in their project is changed.</div>}
+      {shared && (i.other_project && i.other_project in b.projectNames
+        ? <div className="text-xs text-violet-200 flex items-start gap-1" data-testid="conflict-shared"><Share2 size={11} aria-hidden className="mt-0.5 shrink-0" />Shared with project “{shared}” — they see the same finding; nothing in their project is changed.</div>
+        : <div className="text-xs text-slate-400" data-testid="conflict-shared">The other project was deleted. Run the check again to refresh this list.</div>)}
       {i.permission_triggers.length > 0 && <div className="text-xs text-amber-200">{i.permission_triggers.map(t => `${t.label}: ${t.distance_m.toFixed(1)} m ≤ ${t.threshold_m} m (permission trigger, not an engineering clearance)`).join(' · ')}</div>}
       <div className="flex items-center gap-2 text-xs">
         <span className={i.status === 'open' ? 'text-amber-200' : 'text-slate-300'} data-testid="conflict-status">{STATUS_TEXT[i.status]}</span>
-        {i.status_by && <span className="text-slate-500 truncate">by {i.status_by}{i.status_note ? ` — “${i.status_note}”` : ''}</span>}
+        {i.status_by && <span className="text-slate-500 truncate" title={i.status_from_finding ? 'Recorded on the other project’s copy of this finding' : undefined}>by {i.status_by}{i.status_note ? ` — “${i.status_note}”` : ''}</span>}
         {i.run_stale?.stale && <StaleBadge verdict={i.run_stale} />}
         {ACTIONABLE.has(i.class) && <button type="button" className="ml-auto uos-link" data-testid="conflict-respond" disabled={!who} onClick={() => setOpen(o => !o)}>{open ? 'Cancel' : 'Respond'}</button>}
       </div>

@@ -198,8 +198,8 @@ export function assessFeasibility(p: ProposalInput, site: SiteData, city: CityCo
   const mSrc = layerSource(site, 'metro', 'OSM railway=subway (+ construction) and city-model metro lines');
   if (metroLines.length && metroLines[0].d <= SEARCH_RADIUS_M) {
     A.distanceToMetroM = attr(Math.round(metroLines[0].d * 10) / 10, 'verified_from_available_data', mSrc, 'Distance to mapped alignment centreline, not to the structure edge; MahaMetro records are authoritative.');
-    add({ topic: 'metro', kind: metroLines[0].d <= th.metroPlanningAuthorityM.value ? 'constraint' : 'context', certainty: 'verified_from_available_data', source: mSrc, attr: 'distanceToMetroM',
-      statement: `Mapped metro alignment "${metroLines[0].label}" ${metroLines[0].d === 0 ? 'crosses or touches the proposal centreline' : `is ${fmtM(metroLines[0].d)} from the proposal centreline`} (MahaMetro NOC threshold ${th.metroNocM.value} m and planning area ${th.metroPlanningAuthorityM.value} m are ${th.metroNocM.basis.replace('_', ' ')}s to confirm).` });
+    add({ topic: 'metro', kind: metroLines[0].d <= th.metroNocM.value ? 'constraint' : 'context', certainty: 'verified_from_available_data', source: mSrc, attr: 'distanceToMetroM',
+      statement: `Mapped metro alignment "${metroLines[0].label}" ${metroLines[0].d === 0 ? 'crosses or touches the proposal centreline' : `is ${fmtM(metroLines[0].d)} from the proposal centreline`} (a Maha-Metro NOC is needed within ${th.metroNocM.value} m of the edge of a metro structure, UDCPR 2020 cl. 14.2.1.7; this distance is to the mapped centreline, so confirm with Maha-Metro).` });
   } else {
     A.distanceToMetroM = attr('unknown', 'unknown', mSrc, `No mapped metro within ${SEARCH_RADIUS_M} m; underground metro alignments may be incompletely mapped.`);
     add({ topic: 'metro', kind: 'gap', certainty: 'unknown', source: mSrc, attr: 'distanceToMetroM',

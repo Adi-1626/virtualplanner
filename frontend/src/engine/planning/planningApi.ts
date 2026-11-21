@@ -46,10 +46,18 @@ export const planningApi = {
   setStatus: (id: string, status: Exclude<ProjectStatus, 'decision_recorded'>, edited_by: string) => call<Project>('PATCH', `/projects/${id}`, { status, edited_by }),
   /** Marks an attached scenario as the preferred alternative ('' clears). A working flag, not a decision (audited). */
   setPreferred: (id: string, scenarioId: string, edited_by: string) => call<Project>('PATCH', `/projects/${id}`, { preferred_scenario_id: scenarioId, edited_by }),
+  /** Name, purpose and study area ('' clears the area). Audited as a project update. */
+  update: (id: string, b: { name?: string; description?: string; area_id?: string }, edited_by: string) => call<Project>('PATCH', `/projects/${id}`, { ...b, edited_by }),
+  /** Deletes a project without a recorded decision (409 otherwise); confirmName must repeat its name. Linked records are kept. */
+  remove: (id: string, removedBy: string, confirmName: string) =>
+    call<{ status: 'deleted'; elements: number; runs: number; findings: number }>('DELETE', `/projects/${id}?removed_by=${encodeURIComponent(removedBy)}&confirm_name=${encodeURIComponent(confirmName)}`),
   linkable: () => call<Linkable>('GET', '/linkable'),
   link: (id: string, entity_type: LinkType, entity_id: string, added_by: string) => call<ProjectLink>('POST', `/projects/${id}/links`, { entity_type, entity_id, added_by }),
   unlink: (id: string, linkId: number, by: string) => call<unknown>('DELETE', `/projects/${id}/links/${linkId}?removed_by=${encodeURIComponent(by)}`),
-  audit: (id: string) => call<{ events: AuditEvent[] }>('GET', `/projects/${id}/audit`).then(r => r.events),
+  audit: (id: string) => call<{ events: AuditEvent[]; finding_inserts_hidden?: number }>('GET', `/projects/${id}/audit`).then(r => r.events),
+  /** The timeline plus how many finding rows written by conflict checks were left out of it. */
+  timeline: (id: string) => call<{ events: AuditEvent[]; finding_inserts_hidden?: number }>('GET', `/projects/${id}/audit`)
+    .then(r => ({ events: r.events, findingInsertsHidden: r.finding_inserts_hidden ?? 0 })),
   decide: (id: string, b: { decision_text: string; decided_by: string; role?: string; organisation?: string; scenario_version_id?: string | null; evidence_refs?: { type: string; id: string }[] }) =>
     call<Decision>('POST', `/projects/${id}/decisions`, b),
   reportUrl: (id: string, format: 'pdf' | 'docx', by: string) => `${API_BASE}/api/planning/projects/${id}/report?format=${format}&requested_by=${encodeURIComponent(by)}`,
