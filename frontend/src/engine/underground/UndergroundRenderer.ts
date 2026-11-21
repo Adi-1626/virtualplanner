@@ -83,6 +83,17 @@ export function depthRuns(a: UndergroundAlignmentObject): { known: number[][]; u
   return { known, unknown };
 }
 
+/** Metro label range near or under the ground (m): "Look from below" put every station label of the city on the horizon line. */
+export const LOW_VIEW_LABEL_RANGE_M = 1200;
+/**
+ * Range cap for metro labels from the camera's height above (−: below) the scene ground and its pitch (radians). From
+ * below ground, close to the ground (< 60 m) or looking nearly level (pitch above −12°) the far labels all project onto
+ * the horizon and pile up, so only labels within LOW_VIEW_LABEL_RANGE_M are shown; otherwise no cap.
+ */
+export function labelRangeCap(heightAboveGroundM: number, pitchRad: number): number {
+  return heightAboveGroundM < 60 || pitchRad > -(12 * Math.PI) / 180 ? LOW_VIEW_LABEL_RANGE_M : Number.POSITIVE_INFINITY;
+}
+
 export class UndergroundRenderer {
   private ds: CustomDataSource | null = null;
   private viewer: Viewer | null = null;
@@ -95,6 +106,9 @@ export class UndergroundRenderer {
   attach(viewer: Viewer | null) {
     if (!viewer || this.viewer === viewer) return;
     this.viewer = viewer;
+    // Labels follow the camera: near or below the ground every far label projects onto the horizon line
+    viewer.camera.changed.addEventListener(() => this.updateLabelRange());
+    viewer.camera.moveEnd.addEventListener(() => this.updateLabelRange());
     this.ds = new CustomDataSource('underground-alignments');
     this.recordsDs = new CustomDataSource('subsurface-records');
     this.utilDs = new CustomDataSource('underground-utilities');
@@ -121,8 +135,16 @@ export class UndergroundRenderer {
     this.applyVisibility();
     this.visListeners.forEach(cb => cb());
   }
+  /** Existing records belong to Underground: hidden in the other workspaces (they stayed drawn in Design after a visit). */
+  private inUnderground = false;
+  setInUnderground(on: boolean) {
+    if (on === this.inUnderground) return;
+    this.inUnderground = on;
+    this.applyVisibility();
+  }
+  isInUnderground() { return this.inUnderground; }
   private applyVisibility() {
-    if (this.recordsDs) this.recordsDs.show = this.isGroupVisible('records');
+    if (this.recordsDs) this.recordsDs.show = this.inUnderground && this.isGroupVisible('records');
     if (this.utilDs) this.utilDs.show = this.isGroupVisible('utilities');
     if (this.ds) this.ds.show = this.isGroupVisible('alignments');
     this.viewer?.scene.requestRender();
@@ -303,6 +325,7 @@ export class UndergroundRenderer {
     ents.removeAll();
     ents.suspendEvents();
     const purple = Color.fromCssColorString(METRO_PLAN_COLOR);
+    this.labelMax.clear();
     const label = (text: string, offsetY = -14, maxM = 6000) => ({
       text, font: '12px sans-serif', fillColor: Color.WHITE, showBackground: true, backgroundColor: Color.fromCssColorString('#3b0764').withAlpha(0.8),
       // Not ground-clamped (scenePoint is already on the ground): a clamped label keeps whatever height a coarse
@@ -310,7 +333,7 @@ export class UndergroundRenderer {
       pixelOffset: new Cartesian2(0, offsetY), disableDepthTestDistance: Number.POSITIVE_INFINITY,
       // smaller and fainter with distance, so a district view does not become a wall of labels
       scaleByDistance: new NearFarScalar(800, 1, 6000, 0.75), translucencyByDistance: new NearFarScalar(Math.max(1000, maxM * 0.6), 1, maxM, 0.25),
-      distanceDisplayCondition: new DistanceDisplayCondition(0, maxM),
+      distanceDisplayCondition: new DistanceDisplayCondition(0, Math.min(maxM, this.labelCap)),
     });
     // OSM splits one tunnel into many short ways: one label per ~400 m of tunnel (longest ways first), not one per
     // way, which stacked several identical labels on top of each other
@@ -329,6 +352,7 @@ export class UndergroundRenderer {
       placed.push(mid);
       // the long tunnel label only from close up (3 km); the station names carry the district view
       ents.add({ id: `ug:${m.id}:label`, name: METRO_TUNNEL_LABEL, position: scenePoint(mid[0], mid[1], 0), label: label(METRO_TUNNEL_LABEL, -14, 3000) } as Entity.ConstructorOptions);
+      this.labelMax.set(`ug:${m.id}:label`, 3000);
     }
     for (const { s: st, heading, inferred } of stations) {
       const [lon, lat] = st.coordinates;
@@ -344,9 +368,28 @@ export class UndergroundRenderer {
     // label); an interchange's platforms share one label and close neighbours alternate above / below
     for (const l of declutterStationLabels(stations.map(({ s: st }) => ({ id: st.id, name: st.stationName || st.name, lon: st.coordinates[0], lat: st.coordinates[1] })))) {
       ents.add({ id: `ug:${l.ids[0]}:label`, name: `${l.text} — ${METRO_STATION_LABEL}`, position: scenePoint(l.lon, l.lat, 0), label: label(l.text, l.offsetY, 9000) } as Entity.ConstructorOptions);
+      this.labelMax.set(`ug:${l.ids[0]}:label`, 9000);
     }
     ents.resumeEvents();
     this.viewer?.scene.requestRender();
+  }
+
+  /** Each metro label's normal display range (m) and the cap applied now (labelRangeCap). */
+  private labelMax = new Map<string, number>();
+  private labelCap = Number.POSITIVE_INFINITY;
+  getLabelCap() { return this.labelCap; }
+  private updateLabelRange() {
+    const v = this.viewer;
+    if (!v || v.isDestroyed() || !this.metroDs) return;
+    const c = v.camera.positionCartographic;
+    const cap = labelRangeCap(c.height - groundAt((c.longitude * 180) / Math.PI, (c.latitude * 180) / Math.PI), v.camera.pitch);
+    if (cap === this.labelCap) return;
+    this.labelCap = cap;
+    for (const [id, max] of this.labelMax) {
+      const e = this.metroDs.entities.getById(id);
+      if (e?.label) e.label.distanceDisplayCondition = new DistanceDisplayCondition(0, Math.min(max, cap)) as never;
+    }
+    v.scene.requestRender();
   }
 
   private records = new Map<string, SubsurfaceRecord>();

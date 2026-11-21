@@ -201,6 +201,8 @@ export abstract class TileBatchRenderer implements SubRenderer {
         if (!meshes || meshes.length === 0) continue;
         const isSelected = this.selections.has(id);
         const opacity = this.getOpacity(id);
+        // fully transparent = hidden: not built at all, so it can't be picked either (Underground "Show drawn utilities" off)
+        if (opacity <= 0) continue;
 
         meshes.forEach((mesh, index) => {
           const layer = this.layerOf(mesh, index, meshes);

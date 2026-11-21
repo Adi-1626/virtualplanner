@@ -287,7 +287,7 @@ export const ConflictCheck: React.FC<{ a?: UndergroundAlignmentObject | null }> 
               <span className="font-semibold">Stale</span> — {origin?.staleReasons.length ? origin.staleReasons.join(' ') : 'Objects were edited after this check.'} Check again for current results.
             </div>
           )}
-          <p className="text-label text-text-1" data-testid="ug-check-summary">{plainSummary(run)}</p>
+          <p className="text-label text-text-1" data-testid="ug-check-summary">{plainSummary(run, scoped, scope ? run.summary.proposed_checked.find(p => p.id === scope)?.name ?? 'This object' : null)}</p>
           {run.summary.proposed_checked.length > 1 && (
             <div className={field}>
               <label className={lbl} style={labelStyle} htmlFor="ug-cc-scope">Show findings for</label>
@@ -337,11 +337,13 @@ export const ConflictCheck: React.FC<{ a?: UndergroundAlignmentObject | null }> 
   );
 };
 
-/** Screening report: the backend re-runs the check on the objects as they are now and returns PDF or CSV. */
+type ReportFormat = 'pdf' | 'docx' | 'csv';
+
+/** Screening report: the backend re-runs the check on the objects as they are now and returns PDF, DOCX (Word) or CSV. */
 const ReportExport: React.FC<{ sid: string; objects: () => ScreeningObject[]; stale: boolean }> = ({ sid, objects, stale }) => {
-  const [busy, setBusy] = useState<null | 'pdf' | 'csv'>(null);
+  const [busy, setBusy] = useState<null | ReportFormat>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const get = async (format: 'pdf' | 'csv') => {
+  const get = async (format: ReportFormat) => {
     setBusy(format); setMsg(null);
     try {
       const { blob, filename, findings } = await coordinationApi.screeningReport({ scenario_id: sid, objects: objects() }, format);
@@ -359,9 +361,13 @@ const ReportExport: React.FC<{ sid: string; objects: () => ScreeningObject[]; st
         For sharing with utility owners and engineers: summary, every finding in its five parts, rules and sources, what wasn&rsquo;t checked and the
         next-investigation plan. The check is run again on the objects as they are now{stale ? ' (they changed since the result above)' : ''}.
       </p>
-      <div className="flex gap-1.5">
+      <div className="flex flex-wrap gap-1.5">
         <button type="button" className="uos-btn uos-btn-sm" disabled={busy !== null} onClick={() => void get('pdf')} data-testid="ug-report-pdf">
           <FileDown size={14} aria-hidden /> {busy === 'pdf' ? 'Preparing PDF…' : 'PDF report'}
+        </button>
+        <button type="button" className="uos-btn uos-btn-sm" disabled={busy !== null} onClick={() => void get('docx')} data-testid="ug-report-docx"
+          title="The same report as the PDF, as an editable Word document">
+          <FileDown size={14} aria-hidden /> {busy === 'docx' ? 'Preparing Word…' : 'Word (DOCX)'}
         </button>
         <button type="button" className="uos-btn uos-btn-sm" disabled={busy !== null} onClick={() => void get('csv')} data-testid="ug-report-csv">
           <FileDown size={14} aria-hidden /> {busy === 'csv' ? 'Preparing CSV…' : 'Findings CSV'}

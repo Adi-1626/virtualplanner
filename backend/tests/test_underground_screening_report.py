@@ -71,3 +71,18 @@ def test_report_endpoint_pdf_docx_csv(client):
         assert w not in _clean(text), w
     bad = client.post("/api/coordination/underground/screen/report?format=xls", json=body)
     assert bad.status_code == 422
+
+
+def test_report_file_name_in_ist():
+    """File names carry the planners' clock (IST), not the server's UTC: 14:25 UTC is 19:55 IST (same day), and a late
+    UTC evening rolls over to the next IST date."""
+    from api.coordination_router import report_stamp
+    assert report_stamp("2026-11-21T14:25:00Z") == "2026-11-21-1955IST"
+    assert report_stamp("2026-11-21T20:00:00Z") == "2026-11-22-0130IST"
+
+
+def test_report_endpoint_file_name_is_ist(client):
+    import re
+    r = client.post("/api/coordination/underground/screen/report?format=docx", json={"scenario_id": "alt", "objects": _objs()})
+    assert r.status_code == 200 and r.content[:2] == b"PK"
+    assert re.search(r'filename="underground-screening-[^"]+-\d{4}-\d{2}-\d{2}-\d{4}IST\.docx"', r.headers["content-disposition"])

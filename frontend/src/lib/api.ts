@@ -118,6 +118,31 @@ class ConnectionStateStore {
 
 export const connectionState = new ConnectionStateStore();
 
+/** What a planner reads when the browser could not reach the UrbanOS server (instead of the browser's "Failed to fetch"). */
+export const SERVER_UNREACHABLE = 'The UrbanOS server could not be reached. Check that it is running, then try again.';
+
+/** The browser's own network-failure messages (fetch threw before any HTTP response). */
+export const isNetworkFailure = (e: unknown) =>
+  e instanceof TypeError || /failed to fetch|networkerror|network request failed|load failed|err_connection/i.test(String((e as Error)?.message ?? e));
+
+/**
+ * fetch() for the feature API clients (coordination, terrain, …) that do not go through request(): a network failure marks
+ * the header "Offline" and throws SERVER_UNREACHABLE; any HTTP response (even an error status) proves the server is
+ * reachable and clears "Offline". Before this, Underground calls failed with "Failed to fetch" while the header said Online.
+ */
+export async function trackedFetch(url: string, init?: RequestInit): Promise<Response> {
+  let res: Response;
+  try {
+    res = await fetch(url, init);
+  } catch (e) {
+    if ((e as Error)?.name === 'AbortError') throw e;
+    connectionState.set('offline');
+    throw new Error(SERVER_UNREACHABLE);
+  }
+  if (connectionState.isCurrentlyOffline) connectionState.set('online');
+  return res;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Internal helper
 // ──────────────────────────────────────────────────────────────────────────────

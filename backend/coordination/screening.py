@@ -429,9 +429,17 @@ def design_asset(obj: dict, status: str) -> Optional[Asset]:
     if t == "metro_line" and len(pts) >= 2 and status == "existing":
         line = G.project_geojson({"type": "LineString", "coordinates": pts})
         w = _num(p.get("deckWidth"))
+        osm = osm_ref(obj.get("id"), p)
+        if metro_line_is_tunnel(p):
+            # An OSM tunnel imported into Design: plan position only, depth not mapped (it used to be screened as an
+            # "Elevated metro (drawn)", with the import's invented -6 m)
+            return Asset(str(obj.get("id")), obj.get("name") or "", layer, status, "metro_tunnel", line, None, [(0.0, None, None)],
+                         "UNKNOWN", "unknown", ds, kind_label="Metro tunnel (imported from OpenStreetMap; depth not mapped)" if osm else "Metro tunnel (drawn; depth not mapped)",
+                         meta={"design_type": t, "osm_ref": osm})
         return Asset(str(obj.get("id")), obj.get("name") or "", layer, status, "metro_viaduct", line, (w / 2) if w else None,
-                     [(0.0, None, None)], "UNKNOWN", "unknown", ds, kind_label="Elevated metro (drawn; pier foundations UNKNOWN)",
-                     meta={"design_type": t, "osm_ref": osm_ref(obj.get("id"), p)})
+                     [(0.0, None, None)], "UNKNOWN", "unknown", ds,
+                     kind_label="Elevated metro (imported from OpenStreetMap; pier foundations UNKNOWN)" if osm else "Elevated metro (drawn; pier foundations UNKNOWN)",
+                     meta={"design_type": t, "osm_ref": osm})
     if t == "metro_station" and pts and status == "existing":
         pt = G.project_geojson({"type": "Point", "coordinates": pts[0]})
         ln, wd = _num(p.get("length")) or 0.0, _num(p.get("width")) or 0.0
@@ -440,6 +448,28 @@ def design_asset(obj: dict, status: str) -> Optional[Asset]:
                      0.0 if (ln or wd) else None, [(0.0, None, None)], "UNKNOWN", "unknown", ds, kind_label="Metro station (drawn)",
                      meta={"design_type": t, "osm_ref": osm_ref(obj.get("id"), p)})
     return None
+
+
+def depth_range_text(top: Optional[float], bottom: Optional[float]) -> str:
+    """'16.0 m to 22.3 m', 'top 1.0 m, bottom unknown', or 'depth unknown' (never 'unknown to unknown')."""
+    if top is None and bottom is None:
+        return "depth unknown"
+    if top is None or bottom is None:
+        return f"top {_fmt(top)}, bottom {_fmt(bottom)}"
+    return f"{_fmt(top)} to {_fmt(bottom)}"
+
+
+
+def metro_line_is_tunnel(p: dict) -> bool:
+    """A metro line stored by Design is a tunnel when its OSM tags say so (tunnel / negative layer) or its level is below
+    ground (older imports stored an invented -6 m)."""
+    tags = {**(p.get("originalOsmTags") or {}), **(p.get("tags") or {})}
+    try:
+        layer = int(str(tags.get("layer", "0")).split(";")[0])
+    except ValueError:
+        layer = 0
+    elev = _num(p.get("elevation"))
+    return (bool(tags.get("tunnel")) and tags.get("tunnel") != "no") or layer < 0 or (elev is not None and elev < 0)
 
 
 def _drawn_quality(cert: str) -> str:
@@ -686,10 +716,10 @@ def evaluate_pair(p: Asset, o: Asset, cfg: dict) -> Optional[dict]:
     if width_unknown:
         plan += f"; a footprint width is unknown, so {cfg['unknown_width_allowance_m']:.1f} m half-width was assumed per unknown side"
     found.append(f"{p.label()} {plan}.")
-    o_depth = f"{_fmt(o_crown)} to {_fmt(o_inv)}"
+    o_depth = depth_range_text(o_crown, o_inv)
     if o.meta.get("depth_note") and (o_crown is not None or o_inv is not None):
         o_depth += f" ({o.meta['depth_note']})"
-    found.append(f"Depth where they meet: proposed {_fmt(p_crown)} to {_fmt(p_inv)}; {o.label()} {o_depth}.")
+    found.append(f"Depth where they meet: proposed {depth_range_text(p_crown, p_inv)}; {o.label()} {o_depth}.")
     for a, c0, c1 in ((p, pc0, pc1), (o, oc0, oc1)):
         if defaults_used(a, c0, c1):
             found.append(f"The depth of {a.label()} there is the typical-cover default for its type, not an entered or measured "

@@ -68,7 +68,7 @@ const CATEGORY_ORDER: ScreeningCategory[] = ['metro', 'clearance', 'cover', 'bui
 const categoryRank = (c: ScreeningCategory) => { const i = CATEGORY_ORDER.indexOf(c); return i < 0 ? 99 : i; };
 
 /** One plain sentence for the top of the result, for someone who is not an engineer. */
-export function plainSummary(run: Pick<ScreeningRun, 'summary'>, findings?: readonly ScreeningFinding[]): string {
+export function plainSummary(run: Pick<ScreeningRun, 'summary'>, findings?: readonly ScreeningFinding[], scopeName?: string | null): string {
   const c = findings ? countsByStatus(findings) : run.summary.counts;
   const n = run.summary.proposed_checked.length;
   if (n === 0) return 'Nothing to check yet: draw an underground alignment or a utility in this alternative.';
@@ -77,8 +77,9 @@ export function plainSummary(run: Pick<ScreeningRun, 'summary'>, findings?: read
   if (c.requires_investigation) parts.push(`${c.requires_investigation} need${c.requires_investigation === 1 ? 's' : ''} investigation or a permission`);
   if (c.insufficient_data) parts.push(`${c.insufficient_data} can\u2019t be judged because data is missing`);
   if (c.verified) parts.push(`${c.verified} verified on site`);
-  const objs = `${n} proposed object${n === 1 ? '' : 's'} checked`;
-  return parts.length ? `${objs}: ${parts.join(', ')}.` : `${objs}: nothing was flagged in the available data (which is incomplete — see what wasn\u2019t checked).`;
+  // Scoped to one object ("Show findings for"): say so, so the sentence and the status badges below count the same findings
+  const objs = scopeName ? `${scopeName} (1 of the ${n} proposed object${n === 1 ? '' : 's'} checked)` : `${n} proposed object${n === 1 ? '' : 's'} checked`;
+  return parts.length ? `${objs}: ${parts.join(', ')}.` : `${objs}: nothing was flagged in the available data (which is incomplete \u2014 see what wasn\u2019t checked).`;
 }
 
 const m = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? `${v.toFixed(1)}\u00a0m` : null);

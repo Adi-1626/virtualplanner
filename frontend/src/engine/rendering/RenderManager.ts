@@ -58,11 +58,13 @@ export class RenderManager {
   /** Temporary opacity cap per object type (Underground X-ray fades buildings); null removes it. Rebuilds the
    * buildings' loaded tiles only when the cap changes. Does not touch the layer opacities the user set. */
   private typeOpacityCap = new Map<string, number>();
-  public setTypeOpacityCap(type: 'building', cap: number | null): void {
+  public setTypeOpacityCap(type: 'building' | 'utility', cap: number | null): void {
     if ((this.typeOpacityCap.get(type) ?? null) === cap) return;
     if (cap === null) this.typeOpacityCap.delete(type); else this.typeOpacityCap.set(type, cap);
-    this.buildingRenderer?.refreshAll();
+    if (type === 'building') this.buildingRenderer?.refreshAll(); else this.transitRenderer?.refreshAll();
   }
+  /** The cap set for a type (null = none); a cap of 0 hides that type's meshes (Underground legend toggle). */
+  public getTypeOpacityCap(type: string): number | null { return this.typeOpacityCap.get(type) ?? null; }
 
   /**
    * Applies layer opacities. Changed values rebuild the loaded tiles, debounced

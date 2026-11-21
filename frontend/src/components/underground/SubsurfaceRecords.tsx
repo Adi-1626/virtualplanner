@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { sentence } from '../../lib/format';
 import { RefreshCw, Upload } from 'lucide-react';
 import { coordinationApi, type SubsurfaceDataset, type SubsurfaceRecord } from '../../lib/coordinationApi';
 import { engineInstance } from '../../engine/TwinCityEngine';
@@ -6,7 +7,7 @@ import { Disclosure } from '../ui/Disclosure';
 import { LAYER_HOLDER, licenceShort, sourceLine, summariseRecords, type LayerSummary } from '../../engine/underground/recordsSummary';
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
 import { field, fmtM, input, inputStyle, lbl, labelStyle, note } from './common';
-import { MAX_DRAWN, USER_KEY, useSubsurfaceRecords } from './useSubsurfaceRecords';
+import { MAX_DRAWN, USER_KEY, WORK_MARGIN_M, useSubsurfaceRecords } from './useSubsurfaceRecords';
 import { showConflictHighlight } from './conflictHighlight';
 import { focusBounds } from './conflictClasses';
 import { redactPaths } from '../../lib/redactPaths';
@@ -119,7 +120,7 @@ export const SubsurfaceRecords: React.FC = () => {
       <div className="flex items-center gap-2 text-meta text-text-2" data-testid="ug-records-area">
         <span className="flex-1">
           {recordsArea
-            ? <>Within {recordsAreaSource === 'alignments' ? '250 m of your alignments' : 'the map view'}{recordsState === 'loaded' && records.length > 0 ? ` · ${shownOnMap.toLocaleString('en-IN')} drawn on the map${shownOnMap < records.length ? ` (first ${MAX_DRAWN})` : ''}` : ''}</>
+            ? <>Within {recordsAreaSource === 'alignments' ? `${WORK_MARGIN_M} m (in plan) of what you drew` : 'the map view'}{recordsState === 'loaded' && records.length > 0 ? ` · ${shownOnMap.toLocaleString('en-IN')} drawn on the map${shownOnMap < records.length ? ` (first ${MAX_DRAWN})` : ''}` : ''}</>
             : recordsAreaNote ?? 'No area yet'}
         </span>
         <button type="button" className="uos-btn uos-btn-sm" onClick={() => void reload()} data-testid="ug-records-refresh" title="List the records for the area now on the map">
@@ -127,7 +128,7 @@ export const SubsurfaceRecords: React.FC = () => {
         </button>
       </div>
       {recordsState === 'loading' && <p className="text-label text-text-2" data-testid="ug-records-loading">Loading records for this area…</p>}
-      {recordsState === 'error' && <p className="text-label text-fail" role="alert">Could not load records: {recordsError}. Existing utilities here are UNKNOWN until this loads. <button type="button" className="uos-link" onClick={() => void reload()}>Retry</button></p>}
+      {recordsState === 'error' && <p className="text-label text-fail" role="alert">Could not load records: {sentence(recordsError)} Existing utilities here are UNKNOWN until this loads. <button type="button" className="uos-link" onClick={() => void reload()}>Retry</button></p>}
       {recordsState === 'loaded' && (
         <ul data-testid="ug-layer-summary">
           {layers.map(l => <LayerRow key={l.key} l={l} />)}

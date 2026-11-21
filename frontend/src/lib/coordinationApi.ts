@@ -7,7 +7,7 @@
  * unknown; `no_conflict_within_available_data` is not proof of no conflict; seeded clearance rules are cited PERMISSION
  * distances, not engineering clearances. No UI here.
  */
-import { API_BASE } from './api';
+import { API_BASE, trackedFetch } from './api';
 import { redactPaths } from './redactPaths';
 
 export type Certainty = 'measured' | 'estimated' | 'hypothetical' | 'unknown';
@@ -176,7 +176,7 @@ export interface VerificationInput {
 }
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${API_BASE}/api/coordination${path}`, {
+  const res = await trackedFetch(`${API_BASE}/api/coordination${path}`, {
     method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -233,7 +233,7 @@ export const coordinationApi = {
     call<{ run: ScreeningRun | null; stale?: boolean; stale_reasons?: string[] }>('POST', '/underground/runs/latest', body),
   /** Screening report (re-runs the check on these objects): PDF / DOCX / CSV as a Blob plus the server's file name. */
   screeningReport: async (body: { scenario_id: string; objects?: ScreeningObject[] }, format: 'pdf' | 'docx' | 'csv'): Promise<{ blob: Blob; filename: string; findings: number }> => {
-    const res = await fetch(`${API_BASE}/api/coordination/underground/screen/report?format=${format}`, {
+    const res = await trackedFetch(`${API_BASE}/api/coordination/underground/screen/report?format=${format}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);

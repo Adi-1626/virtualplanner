@@ -63,7 +63,7 @@ All depths in Underground are **metres below ground, positive downwards**.
 
 ## 4. Reading "Already recorded here"
 
-The records listed are for the **work area**: within 250 m of everything you have drawn, or, if you have drawn nothing,
+The records listed are for the **work area**: records within 250 m (plan distance) of a line you have drawn, or, if you have drawn nothing,
 the area on the map. Click **Look here** (or *See existing records in this view* on the Get started card) to list the
 area currently on the map. A very wide or oblique view is narrowed to the point the camera looks at; if that is still too
 wide you are asked to zoom in.
@@ -289,13 +289,15 @@ levels have no stated datum"*, *"No water supply, electricity, gas (CGD) or tele
 proposed object without depth*. Each line gives the count (e.g. "501 crossings or near passes · 21 proposed objects").
 Open a line to see each place.
 
-### 8.6 Report (PDF / CSV)
+### 8.6 Report (PDF / Word / CSV)
 
-**PDF report** and **Findings CSV** re-run the check on the objects as they are now and download:
+**PDF report**, **Word (DOCX)** and **Findings CSV** re-run the check on the objects as they are now and download
+(file names carry the time in IST):
 
 - **PDF**: header (alternative, date in IST, engine and rules versions, the banner on every page), counts with what each
   status means, the full findings, Insufficient data as one table per reason, rules applied with sources, data used,
   what was not checked, and the next-investigation plan in the Indian order.
+- **Word (DOCX)**: the same content as the PDF, editable.
 - **CSV** (opens in Excel): one row per finding with all five parts, the numbers and the location.
 
 ### 8.7 Saved runs and "Stale"
