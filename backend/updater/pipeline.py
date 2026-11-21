@@ -116,7 +116,7 @@ def ingest(db: Session, cfg: dict, cand: Candidate, body: bytes, final_url: str,
         projects = [p for p in projects if p["id"] in force_projects] or projects
     claims = extract_page(page.paragraphs, page.title or cand.title, projects, _pub_date(published)) if cand.extract_sentences else []
     if cand.page_rules:
-        claims += apply_page_rules(page.text, cand.page_rules, projects)
+        claims += apply_page_rules(page.full_text, cand.page_rules, projects)
     if llm.enabled() and cand.extract_sentences:
         claims += llm.extract(page.text, page.title or cand.title, projects, _pub_date(published))
     rows = []

@@ -26,7 +26,11 @@
         "Line-1B",
         "Line-l B",
         "Line 1 B Extension",
-        "Swargate and Katraj"
+        "Swargate and Katraj",
+        "corridor to Katraj",
+        "metro to Katraj",
+        "line to Katraj",
+        "extension to Katraj"
       ],
       "attributes": [
         "tunnel_depth_m",
@@ -531,13 +535,13 @@
         {
           "id": "line1b_row",
           "project": "pune_metro_line_1b_swargate_katraj",
-          "pattern": "Line 1 ?B Extension\\s+Swargate\\s*-\\s*Katraj\\s+(?P<length_km>\\d+(?:\\.\\d+)?)\\s*KM\\s+(?P<station_count>\\d+)",
+          "pattern": "Line 1 ?B Extension\\s+Swargate\\s*-\\s*Katraj\\s+(?P<length_km>\\d+(?:\\.\\d+)?)\\s*KM(?:\\s+(?P<station_count>\\d+)\\b)?",
           "note": "project-profile table row: corridor, length, underground stations"
         },
         {
           "id": "line1a_row",
           "project": "pune_metro_line_1a_pcmc_nigdi",
-          "pattern": "Line 1 ?A Extension\\s+PCMC\\s*-\\s*Nigdi\\s+(?P<length_km>\\d+(?:\\.\\d+)?)\\s*KM\\s+-\\s+(?P<station_count>\\d+)",
+          "pattern": "Line 1 ?A Extension\\s+PCMC\\s*-\\s*Nigdi\\s+(?P<length_km>\\d+(?:\\.\\d+)?)\\s*KM\\s+-(?:\\s+(?P<station_count>\\d+)\\b)?",
           "note": "project-profile table row: corridor, length, -, elevated stations"
         }
       ]
@@ -554,7 +558,7 @@
         {
           "id": "line1b_table",
           "project": "pune_metro_line_1b_swargate_katraj",
-          "pattern": "Line 1 ?B Extension\\s+Swargate\\s*-\\s*Katraj\\s+(?P<length_km>\\d+(?:\\.\\d+)?)\\s*KM\\s+(?P<station_count>\\d+)",
+          "pattern": "Line 1 ?B Extension\\s+Swargate\\s*-\\s*Katraj\\s+(?P<length_km>\\d+(?:\\.\\d+)?)\\s*KM(?:\\s+(?P<station_count>\\d+)\\b)?",
           "note": "Line 1B page corridor table: length, underground stations"
         }
       ],

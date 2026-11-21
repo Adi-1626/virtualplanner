@@ -96,15 +96,22 @@ class _Extractor(HTMLParser):
 class Page:
     """Parsed page: title, paragraphs (list of str), publish date and where it was read from."""
 
-    def __init__(self, title: str, paragraphs: list[str], published_at: str | None, published_from: str):
+    def __init__(self, title: str, paragraphs: list[str], published_at: str | None, published_from: str,
+                 full_paragraphs: list[str] | None = None):
         self.title = title
         self.paragraphs = paragraphs
+        self.full_paragraphs = full_paragraphs if full_paragraphs is not None else paragraphs
         self.published_at = published_at
         self.published_from = published_from
 
     @property
     def text(self) -> str:
         return "\n".join(self.paragraphs)
+
+    @property
+    def full_text(self) -> str:
+        """Whole page text (sidebars included): what watch-list page_rules are written against."""
+        return "\n".join(self.full_paragraphs)
 
 
 def _clean(s: str) -> str:
@@ -119,15 +126,16 @@ def parse_html(body: bytes | str, url: str = "") -> Page:
         p.close()
     except Exception:  # noqa: BLE001 — malformed HTML: keep what was parsed
         pass
-    def split(t: str) -> list[str]:
-        return [x for x in (_clean(y) for y in re.split(r"\n\s*\n|\n", t)) if len(x) >= 2]
+    def split(t: str, minlen: int = 2) -> list[str]:
+        return [x for x in (_clean(y) for y in re.split(r"\n\s*\n|\n", t)) if len(x) >= minlen]
     paras = split("".join(p.parts))
+    full = split("".join(p.parts), 1)       # table cells such as "5" kept for page_rules
     art = split("".join(p.article_parts))
     if sum(len(x) for x in art) >= 300:     # an <article> element with real text: read only it (no sidebars / related links)
         paras = art
     title = _clean(html.unescape(p.meta.get("og:title") or p.title or ""))
     pub, how = publish_date(p, url)
-    return Page(title, paras, pub, how)
+    return Page(title, paras, pub, how, full)
 
 
 def _jsonld_dates(blobs: list[str]) -> list[str]:
