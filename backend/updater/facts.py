@@ -50,14 +50,40 @@ def git_commit() -> str | None:
         return None
 
 
+SOURCE_TEXT = dict(name="Official infrastructure facts (data-freshness service)",
+                   publisher="Government and agency sites — see each fact's evidence",
+                   notes="Facts proposed by `python -m updater` from official pages and official feeds only "
+                         "(government and agency sites); each one approved by a reviewer.")
+DATASET_TEXT = dict(title="Pune infrastructure project facts (official sources, reviewed)", limitations=LIMITATIONS)
+
+
+def refresh_registry_texts(db: Session) -> list[str]:
+    """A database registered before the official-only rule keeps the old source / dataset wording ("publisher feeds and
+    GDELT"), because ensure_source / ensure_dataset never update. Bring the descriptive texts up to date; returns the
+    fields changed."""
+    from datasets.models import DsDatasetEntity, DsSourceEntity
+    changed = []
+    src = db.get(DsSourceEntity, SOURCE_ID)
+    if src is not None:
+        for k, v in {**SOURCE_TEXT, "licence_text": LICENCE}.items():
+            if hasattr(src, k) and getattr(src, k) != v:
+                setattr(src, k, v)
+                changed.append(f"source.{k}")
+    ds = db.get(DsDatasetEntity, DATASET_ID)
+    if ds is not None:
+        for k, v in DATASET_TEXT.items():
+            if hasattr(ds, k) and getattr(ds, k) != v:
+                setattr(ds, k, v)
+                changed.append(f"dataset.{k}")
+    db.flush()
+    return changed
+
+
 def ensure_registered(db: Session) -> None:
-    registry.ensure_source(db, SOURCE_ID, name="Official infrastructure facts (data-freshness service)",
-                           publisher="Government and agency sites — see each fact's evidence", url="", access_method="api",
+    registry.ensure_source(db, SOURCE_ID, **SOURCE_TEXT, url="", access_method="api",
                            licence_text=LICENCE, official=False, origin="api",
-                           notes="Facts proposed by `python -m updater` from official pages and official feeds only "
-                                 "(government and agency sites); each one approved by a reviewer.",
                            robots_notes="robots.txt honoured for every host (RFC 9309); see DATA_FRESHNESS_SERVICE.md")
-    registry.ensure_dataset(db, DATASET_ID, title="Pune infrastructure project facts (official sources, reviewed)",
+    registry.ensure_dataset(db, DATASET_ID, title=DATASET_TEXT["title"],
                             description="Tunnel depths, lengths, station counts, costs, TBM counts, tunnelling start and "
                                         "completion targets and status of watched Pune projects, each with its quoted "
                                         "source sentences. Written only by the data-freshness review flow.",

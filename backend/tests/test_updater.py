@@ -613,6 +613,9 @@ def test_migrate_official_only_cleans_an_old_database(env):
         expected, _ = seed.baseline_facts(seed.load_seed(), cfg)
         assert len(act["facts"]) == len(expected)
         assert any(e["action"] == "purge_unofficial" for e in audit.entries(db))
+        from datasets.models import DsDatasetEntity, DsSourceEntity
+        assert "official" in db.get(DsDatasetEntity, facts_mod.DATASET_ID).title
+        assert "GDELT" not in (db.get(DsSourceEntity, facts_mod.SOURCE_ID).notes or "")
         assert audit.verify_chain(db)["ok"]
         # idempotent
         again = migrate.migrate(db, cfg, "Asha")

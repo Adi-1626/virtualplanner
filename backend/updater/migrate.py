@@ -11,7 +11,8 @@ official-only rule (2026-11-21). Safe to run on a fresh database and safe to run
      from an official proposal (those win over the seed, being later reviewed decisions). Older versions stay in the
      registry; a version holding non-official facts can no longer be activated (review._refuse_unofficial_version).
   4. The coordination rule `metro_noc_20m` gets the official Maha-Metro public notice as its citation, if it still has
-     the original news citation (a citation edited by a user is left alone).
+     the original news citation (a citation edited by a user is left alone). The facts dataset's registry description
+     ("from official pages, publisher feeds and GDELT") is updated to the official-only wording.
 
 Nothing is fetched from the web.
 """
@@ -105,8 +106,9 @@ def migrate(db: Session, cfg: dict, reviewer: str, dry_run: bool = False, max_ag
         sync_statuses(db, reviewer)
         evaluate_all(db, facts_mod.read_active(db), max_age_days)
         report["facts_version"] = {"action": "registered", "version_label": v.version_label, "version_id": v.id, "facts": len(want)}
-    # 4. coordination rule citation (news -> official notice), only when untouched by a user
+    # 4. coordination rule citation (news -> official notice), only when untouched by a user; registry wording
     report["noc_rule_citation"] = _fix_noc_citation(db, reviewer)
+    report["registry_texts_updated"] = facts_mod.refresh_registry_texts(db)
     audit.log(db, reviewer, "migrate_official_only", None, {k: v for k, v in report.items() if k != "proposals_rejected"}
               | {"proposals_rejected": len(report["proposals_rejected"])})
     if dry_run:
@@ -142,4 +144,5 @@ def summary(report: dict) -> str:
             f"deleted {report['unofficial_pages_deleted']} non-official page(s) and {report['unofficial_claims_deleted']} claim(s); "
             f"rejected {len(report['proposals_rejected'])} proposal(s); facts: {fv['action']}"
             f"{' ' + fv.get('version_label', '') if fv.get('version_label') else ''} ({fv['facts']} official facts); "
-            f"NOC rule citation: {report['noc_rule_citation']}\n{json.dumps(report['facts'], ensure_ascii=False)}")
+            f"NOC rule citation: {report['noc_rule_citation']}; registry texts updated: "
+            f"{', '.join(report.get('registry_texts_updated') or []) or 'none'}\n{json.dumps(report['facts'], ensure_ascii=False)}")
