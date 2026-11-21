@@ -6,6 +6,7 @@ import { TOOLS, TOOL_CATEGORIES, OPEN_TOOLBAR_EVENT, toolsInCategory, type ToolC
 import { AnchoredPopover } from '../ui/AnchoredPopover';
 import { ToolSettings } from './ToolSettings';
 import { ImportProgressOverlay } from './ImportAreaPanel';
+import { DrawReadout } from './DrawReadout';
 
 const C = {
   text1: 'var(--text-1, #E6EAF0)', text2: 'var(--text-2, #A9B3C1)', text3: 'var(--text-3, #8B95A3)',
@@ -133,6 +134,7 @@ const ToolPalette: React.FC<{ className?: string }> = ({ className = '' }) => {
         )}
       </AnchoredPopover>
       <ImportProgressOverlay />
+      <DrawReadout />
     </div>
   );
 };

@@ -18,8 +18,10 @@ import {
   createWorldTerrainAsync,
   sampleTerrainMostDetailed,
   type TerrainProvider,
-  type Cartesian3
+  Cartesian3,
+  PerspectiveFrustum
 } from 'cesium';
+import { pxToMetres } from './editing/drawConstraints';
 import { TerrainHeightField, cellsFor, type GroundSampler } from './terrain/TerrainHeightField';
 import { setGroundField, getGroundField, scenePoint } from './terrain/groundHeight';
 import { undergroundView } from './underground/UndergroundView';
@@ -93,6 +95,11 @@ export class TwinCityEngine {
   private readonly junctionListeners = new Set<() => void>();
   private signalSource: TrafficSignalSource | null = null;
   private rubberbandEntity: Entity | null = null;
+  /** Tangent-continuation guide while the first segment of a line is drawn from a road end. */
+  private guideEntity: Entity | null = null;
+  /** Modifier keys held (Cesium routes events by modifier and does not pass them on): Shift/Alt angle snap, Ctrl sharp corner. */
+  private mods = { shift: false, alt: false, ctrl: false };
+  private modsCleanup: (() => void) | null = null;
   private snapFrameHandle: number | null = null;
   private pendingSnapPoint: [number, number, number] | null = null;
   private areaEntities: Entity[] = [];
@@ -228,6 +235,10 @@ export class TwinCityEngine {
     });
     this.editing.onChange(() => {
       this.updateDrawPreview();
+      // Typed length / radius, a removed point: the tentative curve follows without waiting for the mouse to move
+      if (this.editing.isAlignableDrawing() && this.editing.getDrawingPoints().length > 0 && this.pendingSnapPoint) {
+        this.updateSnapPreview(...this.pendingSnapPoint);
+      }
       this.syncSavedAreasWithCesium();
       this.syncZonesAndGatewaysWithCesium();
       if (this.editing.getMode() === 'select') {
@@ -343,10 +354,12 @@ export class TwinCityEngine {
     this.simMode.dispose();
     renderManagerInstance.clear();
 
+    this.modsCleanup?.();
+    this.modsCleanup = null;
     if (this.viewer && !this.viewer.isDestroyed()) {
       [...this.drawMarkers, ...this.areaEntities, ...this.zoneEntities, ...this.gatewayEntities, ...this.editZoneMarkers]
         .forEach(e => this.viewer!.entities.remove(e));
-      [this.drawPreviewEntity, this.snapReticleEntity, this.rubberbandEntity, this.gapPreviewEntity].forEach(e => e && this.viewer!.entities.remove(e));
+      [this.drawPreviewEntity, this.snapReticleEntity, this.rubberbandEntity, this.gapPreviewEntity, this.guideEntity].forEach(e => e && this.viewer!.entities.remove(e));
     }
     this.gapPreviewEntity = null;
     this.drawMarkers = [];
@@ -354,7 +367,7 @@ export class TwinCityEngine {
     this.zoneEntities = [];
     this.gatewayEntities = [];
     this.editZoneMarkers = [];
-    this.drawPreviewEntity = this.snapReticleEntity = this.rubberbandEntity = null;
+    this.drawPreviewEntity = this.snapReticleEntity = this.rubberbandEntity = this.guideEntity = null;
     this.draggingPointIdx = this.draggingZonePointIdx = null;
     this.zoneDragBefore = this.zoneDragCoords = null;
     this.viewer = null;
@@ -527,6 +540,17 @@ export class TwinCityEngine {
    * at all while the base imagery fails to load (every click then did nothing). With terrain on, the terrain mesh is
    * picked, falling back to the ellipsoid.
    */
+  /** Camera metres per screen pixel at a ground point (for pixel snap tolerances). */
+  private metresPerPixelAt(p: readonly number[]): number {
+    if (!this.viewer) return 1;
+    const cam = this.viewer.camera;
+    const dist = Cartesian3.distance(cam.positionWC, scenePoint(p[0], p[1], p[2] || 0));
+    const fovy = (cam.frustum as PerspectiveFrustum).fovy ?? 0;
+    const h = this.viewer.scene.canvas.clientHeight || 800;
+    if (!(fovy > 0) || !(dist > 0)) return Math.max(0.01, cam.positionCartographic.height / 1000);
+    return (2 * dist * Math.tan(fovy / 2)) / h;
+  }
+
   public pickGround(position: Cartesian2): [number, number, number] | null {
     if (!this.viewer) return null;
     const scene = this.viewer.scene;
@@ -546,14 +570,37 @@ export class TwinCityEngine {
 
     const handler = new ScreenSpaceEventHandler(this.viewer.scene.canvas);
     this.interactionHandler = handler;
+    // Cesium calls the action registered for the modifier held (one of none / Shift / Ctrl / Alt) and does not pass the
+    // keys on: each action below is registered for every modifier, and the keys are read from the DOM here.
+    const MODS = [undefined, KeyboardEventModifier.SHIFT, KeyboardEventModifier.CTRL, KeyboardEventModifier.ALT];
+    const on = (fn: (e: any) => void, type: ScreenSpaceEventType) => MODS.forEach(m => handler.setInputAction(fn, type, m));
+    const readMods = (e: { shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean }) => {
+      const next = { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey || e.metaKey };
+      if (next.shift === this.mods.shift && next.alt === this.mods.alt && next.ctrl === this.mods.ctrl) return;
+      this.mods = next;
+      this.editing.setAngleSnap(next.shift ? (next.alt ? 'relative' : 'absolute') : 'none');
+      if (this.editing.isAlignableDrawing() && this.pendingSnapPoint) this.updateSnapPreview(...this.pendingSnapPoint);
+    };
+    const canvas = this.viewer.scene.canvas;
+    canvas.addEventListener('pointermove', readMods, { capture: true });
+    canvas.addEventListener('pointerdown', readMods, { capture: true });
+    const onBlur = () => readMods({ shiftKey: false, altKey: false, ctrlKey: false, metaKey: false });
+    window.addEventListener('keydown', readMods, { capture: true });
+    window.addEventListener('keyup', readMods, { capture: true });
+    window.addEventListener('blur', onBlur);
+    this.modsCleanup = () => {
+      window.removeEventListener('keydown', readMods, { capture: true });
+      window.removeEventListener('keyup', readMods, { capture: true });
+      window.removeEventListener('blur', onBlur);
+    };
 
     // 1. LEFT_DOWN: Click vertex marker to start drag shift
-    handler.setInputAction((click: { position: Cartesian2 }) => {
+    const onLeftDown = (click: { position: Cartesian2 }) => {
       if (!this.viewer) return;
       const pickedObject = this.viewer.scene.pick(click.position);
       if (defined(pickedObject) && pickedObject.id && typeof pickedObject.id.id === 'string') {
         const idStr = pickedObject.id.id;
-        if (idStr.startsWith('draw_point_')) {
+        if (idStr.startsWith('draw_point_') || idStr.startsWith('draw_pi_')) {
           this.draggingPointIdx = parseInt(idStr.split('_')[2]);
           this.viewer.scene.screenSpaceCameraController.enableRotate = false;
           return;
@@ -577,15 +624,18 @@ export class TwinCityEngine {
           return;
         }
       }
-    }, ScreenSpaceEventType.LEFT_DOWN);
+    };
+    on(onLeftDown, ScreenSpaceEventType.LEFT_DOWN);
 
     // 2. MOUSE_MOVE: Shifting the coordinates of the dragged marker OR updating magnetic snap & rubberband
-    handler.setInputAction((movement: { endPosition: Cartesian2 }) => {
+    const onMouseMove = (movement: { endPosition: Cartesian2 }) => {
       if (!this.viewer) return;
 
       const ground = this.pickGround(movement.endPosition);
       if (!ground) return;
       const [lng, lat, alt] = ground;
+      // Snap tolerances are in screen pixels: metres per pixel at the cursor, from the camera distance and field of view
+      if (this.editing.getMode() !== 'select') this.editing.setMetresPerPixel(this.metresPerPixelAt(ground));
 
       if (this.draggingPointIdx !== null || this.draggingZonePointIdx !== null) {
         if (this.draggingPointIdx !== null) {
@@ -638,10 +688,11 @@ export class TwinCityEngine {
       } else {
         this.clearSnapPreview();
       }
-    }, ScreenSpaceEventType.MOUSE_MOVE);
+    };
+    on(onMouseMove, ScreenSpaceEventType.MOUSE_MOVE);
 
     // 3. LEFT_UP: Release drag action
-    handler.setInputAction(() => {
+    on(() => {
       if (this.draggingPointIdx !== null || this.draggingZonePointIdx !== null) {
         this.draggingPointIdx = null;
         this.draggingZonePointIdx = null;
@@ -653,11 +704,12 @@ export class TwinCityEngine {
     }, ScreenSpaceEventType.LEFT_UP);
 
     // 4. LEFT_CLICK: Place point, select area/object, click vertex to delete
-    handler.setInputAction((click: { position: Cartesian2 }) => {
+    const onLeftClick = (click: { position: Cartesian2 }) => {
       if (!this.viewer) return;
 
       if (this.simMode.isActive()) {
-        this.handleSimulationClick(click.position, false);
+        // Shift+click: add or remove a road from the study area in Simulation mode
+        this.handleSimulationClick(click.position, this.mods.shift);
         return;
       }
 
@@ -673,8 +725,11 @@ export class TwinCityEngine {
         const pickedId = defined(pickedObject) && typeof pickedObject.id?.id === 'string' ? pickedObject.id.id as string : '';
         // Clicking a boundary handle (to drag it) does not add a point on top of it
         if (editMode === 'import_osm' && (pickedId.startsWith('draw_point_') || pickedId.startsWith('draw_mid_'))) return;
+        // A placed PI's handle (drag it to move, right-click to remove) does not add a point on top of it
+        if (pickedId.startsWith('draw_pi_')) return;
         if (editMode !== 'select') {
-          this.editing.addDrawingPoint([lng, lat, alt]);
+          // Ctrl+click: a sharp corner (no curve) at this point
+          this.editing.addDrawingPoint([lng, lat, alt], { sharp: this.mods.ctrl });
           if (this.editing.isSingleClickMode(editMode)) {
             try {
               this.editing.finalizeDrawing(this.scenarios.getActiveScenarioId());
@@ -758,15 +813,11 @@ export class TwinCityEngine {
 
       // Clicked void - clear selection
       this.selection.selectSingle(null);
-    }, ScreenSpaceEventType.LEFT_CLICK);
-
-    // Shift+click: add or remove a road from the study area in Simulation mode
-    handler.setInputAction((click: { position: Cartesian2 }) => {
-      if (this.simMode.isActive()) this.handleSimulationClick(click.position, true);
-    }, ScreenSpaceEventType.LEFT_CLICK, KeyboardEventModifier.SHIFT);
+    };
+    on(onLeftClick, ScreenSpaceEventType.LEFT_CLICK);
 
     // Double click to finalize drawing
-    handler.setInputAction(() => {
+    on(() => {
       const editMode = this.editing.getMode();
       // A study-area outline finishes on double-click too (the Study area panel then loads its data)
       if (editMode === 'import_osm') { this.editing.completeAreaDrawing(); return; }
@@ -782,12 +833,12 @@ export class TwinCityEngine {
     }, ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
 
     // Right-click a placed vertex marker to remove it
-    handler.setInputAction((click: { position: Cartesian2 }) => {
+    on((click: { position: Cartesian2 }) => {
       if (!this.viewer) return;
       const pickedObject = this.viewer.scene.pick(click.position);
       if (defined(pickedObject) && pickedObject.id && typeof pickedObject.id.id === 'string') {
         const idStr: string = pickedObject.id.id;
-        if (idStr.startsWith('draw_point_')) {
+        if (idStr.startsWith('draw_point_') || idStr.startsWith('draw_pi_')) {
           this.editing.removeDrawingPoint(parseInt(idStr.split('_')[2]));
         }
       }
@@ -1284,6 +1335,10 @@ export class TwinCityEngine {
       this.viewer.entities.remove(this.rubberbandEntity);
       this.rubberbandEntity = null;
     }
+    if (this.guideEntity) {
+      this.viewer.entities.remove(this.guideEntity);
+      this.guideEntity = null;
+    }
   }
 
   private updateSnapPreview(mouseLng: number, mouseLat: number, mouseAlt: number) {
@@ -1297,7 +1352,11 @@ export class TwinCityEngine {
     const snap = this.editing.findSnap([mouseLng, mouseLat, mouseAlt]);
     this.editing.setActiveSnap(snap.type !== 'none' ? snap : null);
 
-    const activePoint: [number, number, number] = snap.type !== 'none' ? snap.point : [mouseLng, mouseLat, mouseAlt];
+    let activePoint: [number, number, number] = snap.type !== 'none' ? snap.point : [mouseLng, mouseLat, mouseAlt];
+    // Line tools: the point as it would be placed (angle snap, typed length / bearing, continuation guide)
+    const lineTool = this.editing.isAlignableDrawing(mode);
+    if (lineTool) activePoint = this.editing.resolveDrawCursor([mouseLng, mouseLat, mouseAlt], snap.type !== 'none' ? snap : null).point;
+    this.updateGuidePreview(lineTool);
 
     if (mode === 'draw_junction') {
       this.junctionOverlay.preview(activePoint);
@@ -1359,11 +1418,14 @@ export class TwinCityEngine {
       const lastPt = drawingPts[drawingPts.length - 1];
       const p1 = scenePoint(lastPt[0], lastPt[1], lastPt[2] || 0);
       const p2 = scenePoint(activePoint[0], activePoint[1], activePoint[2] || 0);
+      // Line tools: the tentative line with the cursor as the next PI, curves filleted (live curved preview)
+      const tentative = lineTool ? this.editing.getDrawPreviewCoordinates(true) : null;
+      const rubber = tentative && tentative.length >= 2 ? tentative.map(c => scenePoint(c[0], c[1], c[2] || 0)) : [p1, p2];
 
       if (!this.rubberbandEntity) {
         this.rubberbandEntity = this.viewer.entities.add({
           polyline: {
-            positions: [p1, p2],
+            positions: rubber,
             width: 3,
             material: new PolylineDashMaterialProperty({
               color: Color.YELLOW.withAlpha(0.9),
@@ -1374,7 +1436,7 @@ export class TwinCityEngine {
         });
       } else {
         if (this.rubberbandEntity.polyline) {
-          this.rubberbandEntity.polyline.positions = [p1, p2] as any;
+          this.rubberbandEntity.polyline.positions = rubber as any;
         }
       }
     } else {
@@ -1382,6 +1444,29 @@ export class TwinCityEngine {
         this.viewer.entities.remove(this.rubberbandEntity);
         this.rubberbandEntity = null;
       }
+    }
+  }
+
+  /** The continuation guide (a dashed ray along the road end's bearing) while the first segment is drawn. */
+  private updateGuidePreview(active: boolean) {
+    if (!this.viewer) return;
+    const guide = active && this.editing.getDrawingPoints().length === 1 ? this.editing.getGuide() : null;
+    if (!guide) {
+      if (this.guideEntity) { this.viewer.entities.remove(this.guideEntity); this.guideEntity = null; }
+      return;
+    }
+    const lenM = pxToMetres(400, this.editing.getMetresPerPixel()) * 5;
+    const r = (guide.bearingDeg * Math.PI) / 180;
+    const o = guide.origin;
+    const kx = 111320 * Math.cos((o[1] * Math.PI) / 180);
+    const end: [number, number, number] = [o[0] + (Math.sin(r) * lenM) / kx, o[1] + (Math.cos(r) * lenM) / 110574, o[2] || 0];
+    const positions = [scenePoint(o[0], o[1], o[2] || 0), scenePoint(end[0], end[1], end[2])];
+    if (!this.guideEntity) {
+      this.guideEntity = this.viewer.entities.add({
+        polyline: { positions, width: 2, material: new PolylineDashMaterialProperty({ color: Color.CYAN.withAlpha(0.8), dashLength: 8 }), clampToGround: true },
+      });
+    } else if (this.guideEntity.polyline) {
+      this.guideEntity.polyline.positions = positions as any;
     }
   }
 
@@ -1439,7 +1524,23 @@ export class TwinCityEngine {
       }
     }
 
-    if (mode === 'draw_road' || mode === 'draw_utility' || mode === 'draw_underground') {
+    if (this.editing.isAlignableDrawing(mode)) {
+      // PIs as small squares-ish handles (drag to move, right-click to remove); the line is the filleted, densified curve
+      points.forEach((pt, idx) => {
+        this.drawMarkers.push(this.viewer!.entities.add({
+          id: `draw_pi_${idx}`,
+          position: scenePoint(pt[0], pt[1], pt[2]),
+          point: { pixelSize: 8, color: Color.YELLOW, outlineWidth: 1, outlineColor: Color.BLACK, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+        }));
+      });
+      const curved = this.editing.getDrawPreviewCoordinates(false);
+      const line = curved && curved.length >= 2 ? curved.map(c => scenePoint(c[0], c[1], c[2] || 0)) : cartesians;
+      if (line.length >= 2) {
+        this.drawPreviewEntity = this.viewer.entities.add({
+          polyline: { positions: line, width: 5, material: Color.YELLOW.withAlpha(0.7), clampToGround: true },
+        });
+      }
+    } else if (mode === 'draw_road' || mode === 'draw_utility' || mode === 'draw_underground') {
       this.drawPreviewEntity = this.viewer.entities.add({
         polyline: {
           positions: cartesians,

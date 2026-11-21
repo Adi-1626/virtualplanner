@@ -26,6 +26,12 @@ import type { UndergroundAlignmentKind, UndergroundSection } from '../objects/ty
 import { buildAlignment, DRAWING_DEFAULTS } from '../underground/alignmentFactory';
 import { initialUtilityDepths, withUtilityZ } from '../underground/utilityModel';
 import type { UtilityObject } from '../objects/types';
+import {
+  alignableTypeForMode, applyTypedKey, buildDrawAlignment, densifyWithZ, drawAlignmentSettings, drawReadout, emptyTypedInput,
+  guideFromRoadEnd, hasTypedInput, isNearDuplicate, resolveCursor, snapRadiiDeg, typedValues, distanceM,
+  type AngleSnapMode, type DrawRadius, type DrawReadoutData, type ResolvedCursor, type TangentGuide, type TypedInput,
+} from './drawConstraints';
+import type { HorizontalAlignment } from '../geometry/alignment/index';
 
 /** Tool defaults (HYPOTHETICAL, editable in the tool settings): not data. */
 export const DEFAULT_BUILDING_FLOORS = 4;
@@ -87,6 +93,20 @@ export class EditingEngine {
   private savedAreasFetched = false;
   private snapManager: SnapManager;
   private activeSnap: SnapResult | null = null;
+
+  // ── Line drawing with curves (docs/urbanos/GEOMETRY_EDITOR_DESIGN.md §4.1) ──────────────────────────────
+  /** Radius request per drawn point (PI), parallel to drawingPoints: null = auto, 0 = sharp corner, n = typed. */
+  private drawingRadii: DrawRadius[] = [];
+  /** Camera metres per screen pixel at the cursor (TwinCityEngine sets it on mouse move): snap tolerances in pixels. */
+  private metresPerPixel = 1;
+  private angleSnap: AngleSnapMode = 'none';
+  private typed: TypedInput = emptyTypedInput();
+  /** Smooth-continuation guide when the line starts on a road end. */
+  private guide: TangentGuide | null = null;
+  /** The cursor as the next point would be placed (after network snap, angle snap, typed values, guide). */
+  private lastRawCursor: [number, number, number] | null = null;
+  private lastCursor: ResolvedCursor | null = null;
+  private readoutListeners: (() => void)[] = [];
 
   // Selected creation types
   public roadClass: RoadClassification = 'local';
@@ -217,24 +237,46 @@ export class EditingEngine {
    */
   public findSnap(point: [number, number, number]): SnapResult {
     const grounded = this.activeMode === 'draw_road' || this.activeMode === 'draw_junction';
-    return this.snapManager.findSnap(point, undefined, grounded ? { sameLevelM: SAME_LEVEL_SNAP_M } : {});
+    const { vertexDeg, edgeDeg } = snapRadiiDeg(this.metresPerPixel);
+    const radii = { vertexRadiusDeg: vertexDeg, edgeRadiusDeg: edgeDeg };
+    return this.snapManager.findSnap(point, undefined, grounded ? { sameLevelM: SAME_LEVEL_SNAP_M, ...radii } : radii);
   }
 
-  public addDrawingPoint(point: [number, number, number]) {
+  /**
+   * Adds a clicked point. Line tools resolve it like the preview (network snap, Shift / Alt+Shift angle snap, typed
+   * length / bearing, the continuation guide) so the point lands where the preview showed it. `sharp` (Ctrl+click)
+   * makes this PI a sharp corner (radius 0).
+   */
+  public addDrawingPoint(point: [number, number, number], opts: { sharp?: boolean } = {}) {
     // A throttled hover preview may still describe an older pointer location.
     // A study-area boundary is not a road: it does not snap to road points.
     // An underground alignment is not joined to the surface network: no snapping either.
     const snap = this.activeMode === 'import_osm' || this.activeMode === 'draw_underground' ? null : this.findSnap(point);
-    const resolvedPoint = (snap && snap.type !== 'none') ? snap.point : point;
+    let resolvedPoint = (snap && snap.type !== 'none') ? snap.point : point;
+    const lineTool = this.isAlignableDrawing();
+    if (lineTool) resolvedPoint = this.resolveWith(point, snap).point;
 
-    // A double-click also fires two single clicks at the same spot; ignore
-    // repeats so finishing a line doesn't create zero-length segments.
+    // A double-click also fires two single clicks at (nearly) the same spot; ignore
+    // repeats within a few screen pixels so finishing a line doesn't create zero-length segments.
     const last = this.drawingPoints[this.drawingPoints.length - 1];
     if (last && Math.abs(last[0] - resolvedPoint[0]) < 1e-7 && Math.abs(last[1] - resolvedPoint[1]) < 1e-7) {
       return;
     }
+    if (lineTool && isNearDuplicate(last, resolvedPoint, this.metresPerPixel)) return;
+
+    // The first point on a road end: offer the road's end bearing as a guide for a smooth continuation
+    if (lineTool && this.drawingPoints.length === 0) {
+      this.guide = null;
+      if (snap && snap.type === 'endpoint' && snap.targetObjId && (snap.isStart || snap.isEnd)) {
+        const road = this.objectManager.getById(snap.targetObjId) as { coordinates?: [number, number, number][] } | undefined;
+        if (road?.coordinates) this.guide = guideFromRoadEnd(road.coordinates, !!snap.isStart, snap.targetObjId);
+      }
+    }
 
     this.drawingPoints.push(resolvedPoint);
+    this.drawingRadii.length = this.drawingPoints.length - 1;
+    this.drawingRadii.push(opts.sharp ? 0 : null);
+    this.typed = emptyTypedInput();
     // Study area, rectangle shape: the second click is the opposite corner, and the area is complete
     if (this.activeMode === 'import_osm' && this.areaShape === 'rectangle' && this.drawingPoints.length === 2 && !this.redrawingAreaId) {
       const [a, b] = this.drawingPoints;
@@ -276,6 +318,7 @@ export class EditingEngine {
   public insertDrawingPoint(index: number, point: [number, number, number]) {
     if (index < 0 || index > this.drawingPoints.length) return;
     this.drawingPoints.splice(index, 0, point);
+    this.drawingRadii.splice(index, 0, null);
     this.notify();
   }
 
@@ -302,6 +345,8 @@ export class EditingEngine {
   public removeDrawingPoint(index: number) {
     if (index < 0 || index >= this.drawingPoints.length) return;
     this.drawingPoints.splice(index, 1);
+    this.drawingRadii.splice(index, 1);
+    if (this.drawingPoints.length === 0) this.guide = null;
     this.notify();
   }
 
@@ -312,9 +357,173 @@ export class EditingEngine {
 
   public clearDrawing() {
     this.drawingPoints = [];
+    this.drawingRadii = [];
+    this.typed = emptyTypedInput();
+    this.guide = null;
+    this.lastCursor = null;
+    this.lastRawCursor = null;
     this.redrawingAreaId = null;
     this.activeSnap = null;
     this.notify();
+  }
+
+  // ── Line drawing with curves: constraints, typed input, readout ─────────────────────────────────────
+
+  /** A line tool that builds a curved/angled alignment (road, flyover, metro, tunnel, utility). */
+  public isAlignableDrawing(mode: EditingMode = this.activeMode): boolean {
+    return alignableTypeForMode(mode) !== null;
+  }
+
+  public setMetresPerPixel(mpp: number) {
+    if (Number.isFinite(mpp) && mpp > 0) this.metresPerPixel = mpp;
+  }
+
+  public getMetresPerPixel(): number { return this.metresPerPixel; }
+
+  /** Shift → absolute 15° steps; Alt+Shift → 15° steps relative to the previous segment. */
+  public setAngleSnap(mode: AngleSnapMode) {
+    if (mode === this.angleSnap) return;
+    this.angleSnap = mode;
+    if (this.lastRawCursor) this.resolveDrawCursor(this.lastRawCursor);
+  }
+
+  public getAngleSnap(): AngleSnapMode { return this.angleSnap; }
+
+  public getGuide(): TangentGuide | null { return this.guide; }
+
+  private resolveWith(raw: [number, number, number], snap: SnapResult | null): ResolvedCursor {
+    const networkSnapped = !!snap && snap.type !== 'none';
+    return resolveCursor({
+      points: this.drawingPoints, cursor: networkSnapped ? snap!.point : raw, networkSnapped,
+      angleSnap: this.angleSnap, typed: this.typed, guide: this.guide, metresPerPixel: this.metresPerPixel,
+    });
+  }
+
+  /** Where the next point would go for this cursor position (used by the preview); updates the readout. */
+  public resolveDrawCursor(raw: [number, number, number], snap: SnapResult | null = this.activeSnap): ResolvedCursor {
+    this.lastRawCursor = raw;
+    const snapHere = this.activeMode === 'draw_underground' ? null : snap;
+    this.lastCursor = this.resolveWith(raw, snapHere);
+    this.emitReadout();
+    return this.lastCursor;
+  }
+
+  public getResolvedCursor(): ResolvedCursor | null { return this.lastCursor; }
+
+  public onReadoutChange(cb: () => void) {
+    this.readoutListeners.push(cb);
+    return () => { this.readoutListeners = this.readoutListeners.filter(c => c !== cb); };
+  }
+
+  private emitReadout() {
+    this.readoutListeners.forEach(cb => cb());
+  }
+
+  public getTypedInput(): TypedInput { return this.typed; }
+
+  public hasTypedInput(): boolean { return hasTypedInput(this.typed); }
+
+  /** One key of typed input (digits, '.', Tab, R, Backspace in the text). False when the key is not typed input. */
+  public typeKey(key: string): boolean {
+    if (!this.isAlignableDrawing() || this.drawingPoints.length === 0) return false;
+    const next = applyTypedKey(this.typed, key);
+    if (!next) return false;
+    this.typed = next;
+    if (this.lastRawCursor) this.resolveDrawCursor(this.lastRawCursor);
+    else this.emitReadout();
+    this.notify();
+    return true;
+  }
+
+  public clearTypedInput(): boolean {
+    if (!hasTypedInput(this.typed)) return false;
+    this.typed = emptyTypedInput();
+    if (this.lastRawCursor) this.resolveDrawCursor(this.lastRawCursor);
+    this.notify();
+    return true;
+  }
+
+  /**
+   * Enter with typed input: a radius applies to the last placed point (the corner being formed); a length or bearing
+   * places the next point. True when something was applied.
+   */
+  public commitTypedInput(): boolean {
+    if (!hasTypedInput(this.typed) || this.drawingPoints.length === 0) return false;
+    const v = typedValues(this.typed);
+    if (this.typed.field === 'radius') {
+      if (v.radiusM === null) { this.clearTypedInput(); return true; }
+      this.drawingRadii[this.drawingPoints.length - 1] = v.radiusM;
+      this.typed = emptyTypedInput();
+      if (this.lastRawCursor) this.resolveDrawCursor(this.lastRawCursor);
+      this.notify();
+      return true;
+    }
+    if (v.lengthM === null && v.bearingDeg === null) { this.clearTypedInput(); return true; }
+    const last = this.drawingPoints[this.drawingPoints.length - 1];
+    const raw = this.lastRawCursor ?? last;
+    const res = resolveCursor({
+      points: this.drawingPoints, cursor: raw, networkSnapped: false, angleSnap: this.angleSnap, typed: this.typed,
+      guide: this.guide, metresPerPixel: this.metresPerPixel,
+    });
+    if (distanceM(last, res.point) < 0.01) { this.clearTypedInput(); return true; }
+    this.drawingPoints.push(res.point);
+    this.drawingRadii.length = this.drawingPoints.length - 1;
+    this.drawingRadii.push(null);
+    this.typed = emptyTypedInput();
+    if (this.lastRawCursor) this.resolveDrawCursor(this.lastRawCursor);
+    this.notify();
+    return true;
+  }
+
+  /** Backspace / Ctrl+Z while drawing: remove the last point (drawing-local; the global undo stack is untouched). */
+  public removeLastDrawingPoint(): boolean {
+    if (this.drawingPoints.length === 0 || this.activeMode === 'select') return false;
+    this.drawingPoints.pop();
+    this.drawingRadii.length = this.drawingPoints.length;
+    this.typed = emptyTypedInput();
+    if (this.drawingPoints.length === 0) this.guide = null;
+    if (this.lastRawCursor) this.resolveDrawCursor(this.lastRawCursor);
+    this.notify();
+    return true;
+  }
+
+  public getDrawingRadii(): DrawRadius[] { return this.drawingRadii; }
+
+  private drawCheckOptions() {
+    return { tbm: this.activeMode === 'draw_underground' && this.undergroundKind === 'bored_tunnel' };
+  }
+
+  private currentDrawSettings() {
+    return drawAlignmentSettings({ mode: this.activeMode, roadClass: this.roadClass, undergroundKind: this.undergroundKind });
+  }
+
+  /** The alignment being drawn (PIs + radii), optionally with the cursor as a tentative last PI. */
+  public getDrawAlignment(withCursor = false): HorizontalAlignment | null {
+    const s = this.currentDrawSettings();
+    if (!s) return null;
+    const pts: [number, number, number][] = [...this.drawingPoints];
+    const radii = [...this.drawingRadii];
+    if (withCursor && this.lastCursor && pts.length > 0 && distanceM(pts[pts.length - 1], this.lastCursor.point) > 0.01) {
+      pts.push(this.lastCursor.point);
+      radii.push(null);
+    }
+    if (pts.length < 2) return null;
+    return buildDrawAlignment(pts, radii, s, this.drawCheckOptions());
+  }
+
+  /** Densified preview line of the drawing (curves filleted); with the cursor as a tentative point. Null when none. */
+  public getDrawPreviewCoordinates(withCursor = false): [number, number, number][] | null {
+    const a = this.getDrawAlignment(withCursor);
+    if (!a) return null;
+    const pts = a.pis.map((p, i) => [p.lon, p.lat, (i < this.drawingPoints.length ? this.drawingPoints[i][2] : this.lastCursor?.point[2]) ?? 0]);
+    const d = densifyWithZ(a, pts);
+    return d ? d.coordinates : null;
+  }
+
+  public getDrawReadout(): DrawReadoutData | null {
+    const s = this.currentDrawSettings();
+    if (!s || this.drawingPoints.length === 0) return null;
+    return drawReadout(this.drawingPoints, this.drawingRadii, s, this.lastCursor, this.typed, this.drawCheckOptions());
   }
 
   public cancelDrawing() {
@@ -647,6 +856,28 @@ export class EditingEngine {
 
   public finalizeDrawing(scenarioId: string) {
     if (this.drawingPoints.length === 0) return;
+    // Typed input not yet applied (a length typed, then Enter pressed twice) is dropped, not guessed.
+    this.typed = emptyTypedInput();
+    // Line tools: the clicked points are PIs with radii; the object keeps them as `alignment` and its `coordinates` are
+    // the densified line, so every existing consumer still reads a polyline. The PIs are put back if finishing fails.
+    const pis = this.drawingPoints;
+    let alignment: HorizontalAlignment | null = null;
+    const settings = this.currentDrawSettings();
+    if (settings && pis.length >= 2) {
+      const a = buildDrawAlignment(pis, this.drawingRadii, settings, this.drawCheckOptions());
+      const d = densifyWithZ(a, pis);
+      // An invalid geometry (a U-turn at one point) keeps the clicked polyline, as before, and no alignment
+      if (d) { alignment = a; this.drawingPoints = d.coordinates; }
+    }
+    try {
+      this.finalizeDrawingPoints(scenarioId, alignment);
+    } catch (err) {
+      this.drawingPoints = pis;
+      throw err;
+    }
+  }
+
+  private finalizeDrawingPoints(scenarioId: string, alignment: HorizontalAlignment | null) {
     this.lastUncertainCrossings = 0;
 
     const id = Math.random().toString(36).substr(2, 9);
@@ -976,6 +1207,17 @@ export class EditingEngine {
         createdAt,
         updatedAt: createdAt
       } as any;
+    }
+
+    if (newObj && alignment && 'coordinates' in newObj && Array.isArray(newObj.coordinates) && Array.isArray(newObj.coordinates[0])) {
+      // The ends may have been carried onto a nearby road (joinedToNetwork): the end PIs follow them
+      const c = newObj.coordinates as [number, number, number][];
+      const pis = alignment.pis.map(p => ({ ...p }));
+      const first = c[0], last = c[c.length - 1];
+      if (distanceM([pis[0].lon, pis[0].lat], first) < AUTO_CONNECT_M + 5) { pis[0].lon = first[0]; pis[0].lat = first[1]; }
+      const n = pis.length - 1;
+      if (distanceM([pis[n].lon, pis[n].lat], last) < AUTO_CONNECT_M + 5) { pis[n].lon = last[0]; pis[n].lat = last[1]; }
+      newObj = { ...newObj, alignment: { ...alignment, pis } } as CityObject;
     }
 
     if (newObj && (newObj.type === 'flyover' || newObj.type === 'metro_flyover')) {

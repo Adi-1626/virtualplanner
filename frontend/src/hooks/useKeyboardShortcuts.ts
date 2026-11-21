@@ -48,8 +48,15 @@ function handleSimulationKey(e: KeyboardEvent): boolean {
  * All global keyboard shortcuts, registered in one place so cleanup is
  * centralised. Mounted once from App.
  *
- *   Esc            cancel drawing / clear selection
- *   Enter          finish the current line or polygon
+ *   Esc            clear typed input, else cancel drawing / clear selection
+ *   Enter          apply typed input, else finish the current line or polygon
+ *
+ * While drawing a line (road, flyover, metro, tunnel, utility) with at least one point:
+ *   0-9 .          type the length of the current segment (Tab → bearing, Tab again → length)
+ *   R              then a number: radius at the last point (Enter applies)
+ *   Backspace      edit the typed number, else remove the last point
+ *   Ctrl+Z         remove the last point (the global undo stack is untouched until finish)
+ *   Shift / Alt+Shift (held)   snap direction to 15° / to 15° relative to the previous segment
  *   Ctrl+Z         undo
  *   Ctrl+Y         redo (also Ctrl+Shift+Z)
  *   Delete         delete selected object (with confirmation)
@@ -76,6 +83,32 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
       const key = e.key;
 
       if (engineInstance.isSimulationModeActive() && handleSimulationKey(e)) return;
+
+      // Line drawing in progress: typed length / bearing / radius and drawing-local undo come first
+      const lineDrawing = editing.isAlignableDrawing() && editing.getDrawingPoints().length > 0;
+      if (lineDrawing) {
+        if (key === 'Escape' && editing.clearTypedInput()) { e.preventDefault(); return; }
+        if (ctrl && !e.altKey && !e.shiftKey && key.toLowerCase() === 'z') {
+          editing.removeLastDrawingPoint();
+          e.preventDefault();
+          return;
+        }
+        if (!ctrl && !e.altKey) {
+          if (key === 'Enter') {
+            if (!editing.commitTypedInput()) engineInstance.finishDrawing();
+            e.preventDefault();
+            return;
+          }
+          if (key === 'Backspace' || key === 'Delete') {
+            if (!(key === 'Backspace' && editing.typeKey('Backspace'))) editing.removeLastDrawingPoint();
+            e.preventDefault();
+            return;
+          }
+          if (key === 'Tab' || key === 'r' || key === 'R' || /^[0-9.]$/.test(key) || (key === '-' && editing.getTypedInput().field === 'bearing')) {
+            if (editing.typeKey(key)) { e.preventDefault(); return; }
+          }
+        }
+      }
 
       if (key === 'Escape') {
         if (editing.getMode() !== 'select') {
