@@ -146,3 +146,10 @@ footprint (pixel-centre-on-edge rule differs between shapely and GDAL rasterisat
 | Exports | works — proposal CSV, air CSV, rainfall CSV |
 | Time controls | decision: no slider (two scenes, fixed summaries); scene-date and daily/monthly selectors kept |
 | Performance | improved — water 9.3 → 1.6 s; tree index cold start unchanged |
+
+## Performance follow-up (2026-11-21, branch `env-perf`)
+
+Headless audit with every layer on, zoomed out over the city, CPU throttled ×4: per-object Cesium entities (3,401), view
+refetches without cache or cancellation, the same OSM answer downloaded three times, layers only hidden (not freed) in
+other workspaces, continuous rendering over a still map and hover picks during camera moves. Root causes, fixes and the
+before / after table: [ENVIRONMENT_WORKSPACE.md § Performance](ENVIRONMENT_WORKSPACE.md#performance-2026-11-21).
