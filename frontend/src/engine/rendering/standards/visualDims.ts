@@ -85,6 +85,13 @@ export const VISUAL_DIMS = {
   // ── Tunnels ───────────────────────────────────────────────────────────────────
   boredTunnelDiameter: d(5.8, 'm', 'Bored tunnel internal diameter (Swargate–Katraj)', 'Pune Metro Swargate–Katraj revised DPR 2022', 'official'),
   portalHeadwallThickness: d(0.5, 'm', 'Portal headwall thickness', 'none found', 'assumed'),
+  portalHeadwallWing: d(1.0, 'm', 'Portal headwall extent beyond the boat walls, each side', 'none found', 'assumed'),
+  portalCopingDepth: d(0.3, 'm', 'Portal headwall coping depth', 'none found', 'assumed'),
+  portalCover: d(1.0, 'm', 'Crown cover where the boat section ends at the headwall', 'none found (plan §A3.7: ~1 m)', 'assumed'),
+  boatWallThickness: d(0.6, 'm', 'Boat-section retaining wall thickness', 'none found', 'assumed'),
+  boatBaseThickness: d(0.6, 'm', 'Boat-section base slab thickness', 'none found', 'assumed'),
+  boatParapetHeight: d(1.0, 'm', 'Boat-section / headwall parapet above ground', 'none found', 'assumed'),
+  roadTunnelClearance: d(5.0, 'm', 'Road tunnel opening clear height', 'IRC:54 vertical clearance at underpasses (as used in plan §B5); no road-tunnel code (IRC:SP:91) read', 'irc-copy'),
 } as const satisfies Record<string, Dim>;
 
 export type VisualDimKey = keyof typeof VISUAL_DIMS;
@@ -97,6 +104,7 @@ export function dim(key: VisualDimKey): number {
 /** Which drawn details of each object type use assumed (or unknown) values, for the inspector list. */
 export const ASSUMED_BY_TYPE: Readonly<Record<string, readonly VisualDimKey[]>> = {
   road: ['cycleTrackHeight', 'streetlightKerbOffset', 'treeSpacing'],
+  underground_alignment: ['portalHeadwallThickness', 'portalHeadwallWing', 'portalCopingDepth', 'portalCover', 'boatWallThickness', 'boatBaseThickness', 'boatParapetHeight'],
   flyover: ['flyoverSpan', 'flyoverGirderDepth', 'flyoverSoffitRatio', 'crashBarrierHeight', 'pierCapDepth', 'pierCapLength', 'retainingWallMaxHeight'],
   metro_flyover: ['flyoverGirderDepth', 'flyoverSoffitRatio', 'crashBarrierHeight', 'pierCapDepth', 'pierCapLength', 'metroGirderDepth', 'metroGirderSoffit', 'metroParapetHeight'],
   metro_line: ['metroGirderDepth', 'metroGirderSoffit', 'metroParapetHeight', 'pierCapDepth', 'pierCapLength'],
@@ -104,9 +112,11 @@ export const ASSUMED_BY_TYPE: Readonly<Record<string, readonly VisualDimKey[]>> 
 };
 
 /** The dimensions drawn for an object type that are not from a source: `[{label, value, source}]`. */
-export function assumedDimsFor(type: string, opts?: { metroSuperstructure?: 'box' | 'u' }): { key: VisualDimKey; label: string; value: string; status: DimStatus; source: string }[] {
+export function assumedDimsFor(type: string, opts?: { metroSuperstructure?: 'box' | 'u'; portal?: boolean }): { key: VisualDimKey; label: string; value: string; status: DimStatus; source: string }[] {
   const keys: VisualDimKey[] = [...(ASSUMED_BY_TYPE[type] ?? [])];
   if (opts?.metroSuperstructure === 'u' && (type === 'metro_line' || type === 'metro_flyover')) keys.push('uGirderSection');
+  // roads that go below ground (tunnel or ramped approach) are drawn with a portal / boat section
+  if (opts?.portal && type === 'road') keys.push(...ASSUMED_BY_TYPE.underground_alignment);
   return keys.map(key => {
     const v = VISUAL_DIMS[key] as Dim;
     return { key, label: v.label, value: Number.isFinite(v.value) ? `${v.value} ${v.unit}` : 'not known', status: v.status, source: v.source };

@@ -10,7 +10,8 @@ import { assumedDimsFor } from '../../engine/rendering/standards/visualDims';
 export const DrawnDimensionsSection: React.FC<{ obj: CityObject; onUpdate: (field: string, value: unknown) => void }> = ({ obj, onUpdate }) => {
   const isMetro = obj.type === 'metro_line' || obj.type === 'metro_flyover';
   const sup: MetroSuperstructure = isMetro ? ((obj as { superstructure?: MetroSuperstructure }).superstructure ?? 'box_girder') : 'box_girder';
-  const rows = assumedDimsFor(obj.type, { metroSuperstructure: sup === 'u_girder' ? 'u' : 'box' });
+  const belowGround = obj.type === 'road' && (obj.coordinates as number[][]).some(c => (c[2] || 0) < -0.3);
+  const rows = assumedDimsFor(obj.type, { metroSuperstructure: sup === 'u_girder' ? 'u' : 'box', portal: belowGround });
   if (!rows.length && !isMetro) return null;
   return (
     <section aria-label="Drawn dimensions" data-testid="drawn-dimensions" className="space-y-1.5">

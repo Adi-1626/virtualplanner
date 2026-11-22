@@ -1,6 +1,8 @@
 import { utilityZ } from '../../underground/utilityModel';
 import { isUnmappedMetroTunnel, unmappedUndergroundStation } from '../../underground/metroLevel';
-import type { CityObject, RoadObject, BuildingObject, FlyoverObject, MetroLineObject, MetroStationObject, UtilityObject, JunctionObject, MetroFlyoverObject } from '../../objects/types';
+import type { CityObject, RoadObject, BuildingObject, FlyoverObject, MetroLineObject, MetroStationObject, UtilityObject, JunctionObject, MetroFlyoverObject, UndergroundAlignmentObject } from '../../objects/types';
+import { depthsOf, sectionHeightM, sectionWidthM } from '../../underground/alignmentGeometry';
+import { planPortalsOnPath, levelAt, type PortalPlan, type BoatRun } from './tunnelPortal';
 import { groundAt, getGroundField, withFlatGround } from '../../terrain/groundHeight';
 import { depressedLevel, elevatedLayer, isOsmBridge } from '../../objects/bridgeElevation';
 import { junctionLayout } from '../../objects/junctionLayout';
@@ -9,7 +11,7 @@ import { crossingGaps, piecesBetween, type Gap } from './junctionGaps';
 import { resolveStationHeading } from '../../objects/stationAlignment';
 import { GeometryContext } from './GeometryContext';
 import type { MeshData, MaterialConfig } from '../types';
-import { cumulativeLengths, dashAll, fitToTerrain, pierStations, pointAt, type PathPt } from './markingPattern';
+import { cumulativeLengths, dashAll, densify, fitToTerrain, pierStations, pointAt, subPath, type PathPt } from './markingPattern';
 import { dim } from '../standards/visualDims';
 import { extrudeProfile } from './extrudeProfile';
 import { boxGirderProfile, jerseyMedianProfile, jerseyParapetProfile, rectProfile, uGirderParts } from '../standards/profiles';
@@ -125,6 +127,10 @@ export class ProceduralGeometryGenerator {
       }
       if (obj.type === 'junction') {
         return this.generateJunctionMeshes(obj as JunctionObject, allObjects);
+      }
+      if (obj.type === 'underground_alignment') {
+        // The tube itself is drawn by the Underground workspace; Design draws what shows above ground: the portals
+        return this.generateAlignmentPortalMeshes(obj as UndergroundAlignmentObject);
       }
     } catch (err) {
       console.error(`Failed to generate procedural geometry for object ${obj.id}:`, err);
@@ -769,7 +775,108 @@ export class ProceduralGeometryGenerator {
       meshes.push(...pillars);
     }
 
+    // 7. Tunnel portals: where the road drops below an opening's height plus cover, a headwall; above that, the open
+    // boat section with retaining walls. Road tunnels and their ramped approaches share one profile, so the portal
+    // lands on whichever road carries that stretch.
+    if (!isBridge && roadCoords.some(c => (c[2] || 0) < -0.3)) {
+      const halfOpening = (road.width || (road.laneCount || 2) * (road.laneWidth || 3.5)) / 2;
+      const plan = planPortalsOnPath(roadCoords as PathPt[], dim('roadTunnelClearance'), dim('portalCover'));
+      meshes.push(...this.generatePortalMeshes(plan.path, plan.cum, plan.path.map(p => p[2] || 0), halfOpening,
+        dim('roadTunnelClearance'), plan.portals, plan.boats, false));
+    }
+
     return meshes;
+  }
+
+  /** Portals of an underground alignment (bored / cut-and-cover / metro), from its crown depths and section. */
+  private generateAlignmentPortalMeshes(a: UndergroundAlignmentObject): MeshData[] {
+    if (a.alignmentKind === 'utility_trunk' || a.alignmentKind === 'storm_drain') return [];
+    const h = sectionHeightM(a.section), w = sectionWidthM(a.section);
+    const ds = depthsOf(a);
+    if (h === null || w === null || a.coordinates.length < 2 || ds.some(d => d.crownDepthM === null)) return [];
+    const path: PathPt[] = a.coordinates.map((c, i) => [c[0], c[1], -((ds[i].crownDepthM as number) + h)]);
+    const plan = planPortalsOnPath(path, h, dim('portalCover'));
+    return this.generatePortalMeshes(plan.path, plan.cum, plan.path.map(p => p[2]), w / 2, h, plan.portals, plan.boats, true);
+  }
+
+  /**
+   * Portal headwalls and boat-section walls along a floor-level path (z = floor level, 0 = ground). Headwall: a slab
+   * across the path with the opening left clear (two jambs and a lintel), from the base slab to a parapet above ground.
+   * Boat section: a retaining wall each side from the base slab to the parapet, plus a base slab when `withBase`.
+   * Dimensions: visualDims portal* / boat* (assumed unless stated).
+   */
+  public generatePortalMeshes(path: PathPt[], cum: number[], levels: number[], halfOpening: number, openingHeight: number,
+    portals: readonly PortalPlan[], boats: readonly BoatRun[], withBase: boolean): MeshData[] {
+    if (path.length < 2) return [];
+    const t = dim('boatWallThickness'), slab = dim('boatBaseThickness'), parapet = dim('boatParapetHeight');
+    const hwT = dim('portalHeadwallThickness'), wing = dim('portalHeadwallWing');
+    const top = parapet; // ground (0) + parapet
+    const parts: MeshData[] = [];
+    const frameAt = (s: number, z: number) => {
+      const { pt, seg } = pointAt(path, cum, s);
+      const c = wgs84ToCartesian(pt[0], pt[1], z);
+      const up = normalize(c);
+      const tg = ecefTangent(path[seg], path[seg + 1] ?? path[seg]);
+      const right = normalize(cross(normalize(tg), up));
+      const fwd = normalize(cross(up, right));
+      return { c, up, right, fwd };
+    };
+    const at = (f: ReturnType<typeof frameAt>, across: number, alongM: number, upM: number): [number, number, number] =>
+      [0, 1, 2].map(i => f.c[i] + f.right[i] * across + f.fwd[i] * alongM + f.up[i] * upM) as [number, number, number];
+
+    // Boat walls (and base): one box strip per side, stations every ≤ 5 m
+    for (const run of boats) {
+      const sub = densify(subPath(path, cum, run.s0, run.s1), 5);
+      const subCum = cumulativeLengths(sub).map(x => x + run.s0);
+      const strips: [number, number, number, boolean][] = [[-halfOpening - t, -halfOpening, 0, false], [halfOpening, halfOpening + t, 0, false]];
+      if (withBase) strips.push([-halfOpening - t, halfOpening + t, 0, true]);
+      for (const [o0, o1, , isBase] of strips) {
+        const positions: number[] = [];
+        const indices: number[] = [];
+        sub.forEach((_, k) => {
+          const s = subCum[k];
+          const floor = levelAt(cum, levels, s);
+          const f = frameAt(s, 0);
+          const lo = floor - slab, hi = isBase ? floor : top;
+          // ring: inner-bottom, outer-bottom, outer-top, inner-top
+          positions.push(...at(f, o0, 0, lo), ...at(f, o1, 0, lo), ...at(f, o1, 0, hi), ...at(f, o0, 0, hi));
+          if (k > 0) {
+            const a = (k - 1) * 4, b = k * 4;
+            for (let e = 0; e < 4; e++) {
+              const e1 = (e + 1) % 4;
+              indices.push(a + e, b + e, b + e1, a + e, b + e1, a + e1);
+            }
+          }
+        });
+        const last = (sub.length - 1) * 4;
+        indices.push(0, 2, 1, 0, 3, 2, last, last + 1, last + 2, last, last + 2, last + 3);
+        parts.push({ positions: new Float64Array(positions), indices: new Uint32Array(indices), material: { type: 'solid', color: '#9ca3af', materialId: 'concrete_pier' }, layerId: 'portal' });
+      }
+    }
+
+    // Headwalls
+    for (const p of portals) {
+      const floor = levelAt(cum, levels, p.headwallS);
+      const f = frameAt(p.headwallS, 0);
+      const back = -p.facing * hwT / 2; // the slab sits on the tunnel side of the headwall station
+      const half = halfOpening + t + wing;
+      const lo = floor - slab;
+      const box = (acrossC: number, width: number, z0: number, z1: number) => {
+        const centre = at(f, acrossC, back, (z0 + z1) / 2);
+        parts.push(this.generateLocalBox(centre, f.up, f.right, f.fwd, hwT, width, z1 - z0, '#9ca3af', 'portal'));
+      };
+      const jamb = half - halfOpening;
+      box(-(halfOpening + jamb / 2), jamb, lo, top);
+      box(halfOpening + jamb / 2, jamb, lo, top);
+      if (floor + openingHeight < top) box(0, 2 * halfOpening, floor + openingHeight, top);
+      // coping: 0.15 m proud of both faces, along the top
+      const copingC = at(f, 0, back, top + dim('portalCopingDepth') / 2);
+      parts.push(this.generateLocalBox(copingC, f.up, f.right, f.fwd, hwT + 0.3, 2 * half + 0.3, dim('portalCopingDepth'), '#9ca3af', 'portal'));
+    }
+    const merged = this.mergeMeshes(parts, '#9ca3af', 'concrete_pier');
+    if (!merged) return [];
+    merged.layerId = 'portal';
+    return [merged];
   }
 
   /** Frames (ECEF origin, up, right, forward) at `spacing` along each piece, `offset` metres to the right. */

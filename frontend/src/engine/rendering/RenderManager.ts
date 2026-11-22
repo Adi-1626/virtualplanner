@@ -420,7 +420,8 @@ export class RenderManager {
       obj.type === 'metro_line' ||
       obj.type === 'metro_station' ||
       obj.type === 'utility' ||
-      obj.type === 'junction'
+      obj.type === 'junction' ||
+      obj.type === 'underground_alignment' // portals only (the tube is the Underground workspace's)
     ) {
       this.transitRenderer.render(objId);
     }
