@@ -67,6 +67,14 @@ export interface JunctionEditSpec {
   bannedMovements?: string[];
   /** Per movement "approachArmId>exitArmId": [entry lane, exit lane] pairs, lane 0 on the median side. Absent: the engine's default (lanes in order). */
   laneConnections?: Record<string, [number, number][]>;
+  /**
+   * Priority control: the sign and marking on the minor approaches (IRC:35-2015 §6.1–6.3): 'give_way' (default) or
+   * 'stop'. Both are priority control in the network model (the minor approaches yield); they differ in the markings
+   * generated (streetDesign/junctionTool.ts) and the report.
+   */
+  minorSign?: 'stop' | 'give_way';
+  /** Zebra crossings on the approaches (markings data; default: on for a signal, off otherwise). */
+  pedestrianCrossings?: boolean;
 }
 
 /** Signal defaults: the micro-simulator's (TrafficMicroSim SIGNAL_GREEN_S, SIGNAL_AMBER_S, SIGNAL_ALL_RED_S). */
