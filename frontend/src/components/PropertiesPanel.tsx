@@ -6,6 +6,7 @@ import { ConfirmDialog } from './ui/ConfirmDialog';
 import { RoadGapPanel } from './RoadGapPanel';
 import { LevelCrossingPanel } from './LevelCrossingPanel';
 import { AlignmentPanel } from './design/AlignmentPanel';
+import { CrossSectionPanel } from './design/CrossSectionPanel';
 import { FeasibilityPanel } from './FeasibilityPanel';
 import { isProposalObject } from '../engine/feasibility/proposal';
 import { TYPE_LABELS } from '../engine/objects/builtBy';
@@ -388,6 +389,7 @@ export const PropertiesPanel: React.FC = () => {
             {(selectedObj.type === 'road' || selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover') && (
               <RoadEditor r={selectedObj as any} onUpdate={handleUpdateField} isFlyover={selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover'} />
             )}
+            {selectedObj.type === 'road' && <CrossSectionPanel road={selectedObj as RoadObject} />}
             {selectedObj.type === 'road' && <RoadGapPanel road={selectedObj as RoadObject} />}
             {(selectedObj.type === 'road' || selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover') && <LevelCrossingPanel roadId={selectedObj.id} />}
             {/* Shape (PIs + radii) of line objects: roads, flyovers, metro, tunnels, utilities — renders nothing for other types */}

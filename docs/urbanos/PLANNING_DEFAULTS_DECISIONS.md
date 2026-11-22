@@ -44,6 +44,7 @@ Local copies (scratch, not committed): `work/cs2-refs/irc86_2018.{pdf,txt}`, `wo
 | D8 | Deleting a project | Its conflict-check findings are **archived with it**: rows kept (machine output is immutable), `archive` audit entries, removed from every active view; other projects' findings against its elements are archived too; readable at `GET /api/coordination/archived-findings?project_id=` | Product rule (decision-support audit trail) | — |
 | D9 | OSM reference overlays in Design | **Hidden by default** (already so in code: shown only in Environment and Explore) | Product goal: Design shows the proposal on the baseline; constraint overlays are evidence views (Environment/Explore) and the coordination screen still uses them | — |
 | D10 | CS2-inspired tools | keep standards-backed planning tools; drop game mechanics; costs later from SSR | see §D10 | — |
+| D11 | Street cross-section templates, checks, upgrade (D10 items 1–3) | 5 Pune USDG templates (12/18/24/30/36 m, "A" variants) + screening checks against IRC86 / USDG; built in `p5-xsection` | see [CROSS_SECTIONS.md](CROSS_SECTIONS.md) | USDG official (PMC); IRC unconfirmed copy |
 
 ## D1 Design speeds
 - `GEOMETRY_DEFAULTS.roadDesignSpeedKmh` = `{ highway: 80, arterial: 60, collector: 40, local: 30 }` (was 80/80/50/30 from

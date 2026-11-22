@@ -1,4 +1,6 @@
 import { osmRoadClass } from '../simulation/networkCorrections';
+import { templateById } from '../crossSection/templates';
+import { templateRoadUpdates } from '../crossSection/apply';
 import type { CityObject, RoadClassification, BuildingUsage, UtilityType, Area, BuildingCategory, RoadObject } from '../objects/types';
 import { ObjectManager } from '../objects/ObjectManager';
 import { HistoryManager, type HistoryDiff } from '../history/HistoryManager';
@@ -138,6 +140,8 @@ export class EditingEngine {
 
   // Selected creation types
   public roadClass: RoadClassification = 'local';
+  /** Street cross-section template for the next drawn road (engine/crossSection/templates.ts); null = the class defaults. */
+  public roadTemplateId: string | null = null;
   public buildingUsage: BuildingUsage = 'residential';
   public utilityType: UtilityType = 'water';
   /**
@@ -975,6 +979,9 @@ export class EditingEngine {
       const rec = this.reconstructCrossings(newObj as RoadObject, scenarioId);
       splitDiffs.push(...rec.diffs);
       newObj = { ...newObj, coordinates: rec.coordinates, ...(rec.flags.length ? { levelCrossings: rec.flags } : {}) } as CityObject;
+      // A cross-section template chosen in the Road tool replaces the class lane / footpath defaults (one section over the line)
+      const template = templateById(this.roadTemplateId);
+      if (template) newObj = { ...newObj, ...templateRoadUpdates(newObj as RoadObject, template, { syncedSections: [] }) } as CityObject;
       this.lastUncertainCrossings = rec.flags.length;
     } else if (this.activeMode === 'draw_building') {
       minPoints(3, 'A building footprint');

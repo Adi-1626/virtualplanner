@@ -81,6 +81,8 @@ export interface RoadSectionProfile {
   carriagewayB?: CarriagewayProfile;
   reservedSpaces: ReservedSpace[];
   provenance: ProvenanceMetadata;
+  /** The street cross-section template this profile came from, with its source (engine/crossSection, docs/urbanos/CROSS_SECTIONS.md). */
+  crossSection?: import('../crossSection/apply').AppliedCrossSection;
 }
 
 export interface RoadObject extends BaseCityObject {
@@ -90,6 +92,10 @@ export interface RoadObject extends BaseCityObject {
   coordinates: [number, number, number][]; // Array of [longitude, latitude, elevation]
   sourceCoordinates?: [number, number, number][];
   sections?: RoadSectionProfile[];
+  /** Right-of-way available on the ground (m), entered by the planner from a DP / survey; absent = unknown (never guessed). */
+  availableRowM?: number | null;
+  /** Where availableRowM came from (e.g. "DP 2017 sheet 12"), shown with the RoW check. */
+  availableRowSource?: string;
   
   // Legacy fallback fields for compatibility
   roadClass: RoadClassification;

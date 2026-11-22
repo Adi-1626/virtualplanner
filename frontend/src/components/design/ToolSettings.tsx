@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import type { EditingMode } from '../../engine/editing/EditingEngine';
 import { TYPICAL_COVER } from '../../engine/underground/utilityModel';
-import { DEFAULT_BUILDING_FLOORS, DEFAULT_ZONE_POPULATION, DEFAULT_ZONE_EMPLOYMENT, GATEWAY_SNAP_M, clampFloors } from '../../engine/editing/EditingEngine';
+import { ROAD_CLASS_DEFAULTS, DEFAULT_BUILDING_FLOORS, DEFAULT_ZONE_POPULATION, DEFAULT_ZONE_EMPLOYMENT, GATEWAY_SNAP_M, clampFloors } from '../../engine/editing/EditingEngine';
 import type { RoadClassification, BuildingUsage, UtilityType } from '../../engine/objects/types';
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
 import type { Certainty } from '../ui/badges/honesty';
 import { ImportAreaPanel } from './ImportAreaPanel';
+import { CROSS_SECTION_TEMPLATES, sourceLabel, templateById } from '../../engine/crossSection/templates';
+import { CrossSectionDiagram } from './CrossSectionDiagram';
 import { UndergroundToolSettings } from '../underground/AlignmentForms';
 
 const field = 'flex flex-col gap-0.5';
@@ -43,7 +45,35 @@ export const ToolSettings: React.FC<{ mode: EditingMode }> = ({ mode }) => {
 
   if (mode === 'draw_junction') return <p className="text-[12px] leading-relaxed" style={labelStyle}>Move onto a road connection. The cyan footprint shows the roads that will join; red means placement is unavailable. Click to place, then use Select to edit signals and crossings.</p>;
 
-  if (mode === 'draw_road' || mode === 'draw_flyover' || mode === 'draw_metro_flyover') return (
+  if (mode === 'draw_road') {
+    const t = templateById(e.roadTemplateId);
+    return (
+      <div className="flex flex-col gap-2">
+        <div className={field} data-testid="tool-setting-road-class">
+          <label className={lbl} style={labelStyle} htmlFor="ts-road-class">Road class</label>
+          <select id="ts-road-class" value={e.roadClass} onChange={ev => set(() => { e.roadClass = ev.target.value as RoadClassification; })} className={input} style={inputStyle}>
+            <option value="highway">Highway</option><option value="arterial">Arterial</option><option value="collector">Collector</option><option value="local">Local</option>
+          </select>
+          <p className="text-[11px]" style={note}>Sets the speed limit and, with no template, the lanes and footpaths.</p>
+        </div>
+        <div className={field} data-testid="tool-setting-road-template">
+          <label className={lbl} style={labelStyle} htmlFor="ts-road-template">Cross-section</label>
+          <select id="ts-road-template" value={e.roadTemplateId ?? ''} onChange={ev => set(() => { e.roadTemplateId = ev.target.value || null; })} className={input} style={inputStyle}>
+            <option value="">Class default (no template)</option>
+            {CROSS_SECTION_TEMPLATES.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </select>
+          {t ? (
+            <>
+              <CrossSectionDiagram elements={t.elements} title={`${t.code} · RoW ${t.rowM} m`} testId="tool-setting-template-diagram" compact />
+              <p className="text-[11px]" style={note} data-testid="tool-setting-template-source">{t.use} Source: {sourceLabel(t.source)}. {t.widthsRead} Suggested class (UrbanOS mapping, not from the source): {t.suggestedClass}. Screening template — not a design or approval.</p>
+            </>
+          ) : <p className="text-[11px]" style={note}>Lanes 3.5 m and footpath {ROAD_CLASS_DEFAULTS[e.roadClass].footpathWidth} m from the class defaults; edit them on the object after drawing.</p>}
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'draw_flyover' || mode === 'draw_metro_flyover') return (
     <div className={field} data-testid="tool-setting-road-class">
       <label className={lbl} style={labelStyle} htmlFor="ts-road-class">Road class</label>
       <select id="ts-road-class" value={e.roadClass} onChange={ev => set(() => { e.roadClass = ev.target.value as RoadClassification; })} className={input} style={inputStyle}>
