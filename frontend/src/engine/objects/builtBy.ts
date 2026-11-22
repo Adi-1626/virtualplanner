@@ -26,4 +26,5 @@ export const TYPE_LABELS: Record<CityObject['type'], string> = {
   underground_alignment: 'Underground alignment',
   zone: 'Demand zone',
   gateway: 'Traffic gateway',
+  street_element: 'Street element',
 };

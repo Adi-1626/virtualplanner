@@ -65,6 +65,8 @@ export class LayerManager {
       { id: 'metro', name: 'Elevated Metro Network', category: 'infrastructure', visible: true, opacity: 1.0, supportsOpacity: true },
       { id: 'demand_zones', name: 'Demand zones (traffic)', category: 'infrastructure', visible: true, opacity: 1.0, supportsOpacity: true },
       { id: 'gateways', name: 'Gateways', category: 'infrastructure', visible: true, opacity: 1.0, supportsOpacity: true },
+      // Crossings, bus stops, streetlights, street trees, roundabouts and paths drawn in Design (streetDesign/)
+      { id: 'street_elements', name: 'Street elements', category: 'infrastructure', visible: true, opacity: 1.0, supportsOpacity: false },
       { id: 'water_util', name: 'Water Pipe Network', category: 'utilities', visible: false, opacity: 0.8, supportsOpacity: true },
       { id: 'electric_util', name: 'Electric Grid', category: 'utilities', visible: false, opacity: 0.8, supportsOpacity: true },
       { id: 'sewage_util', name: 'Sewage Lines', category: 'utilities', visible: false, opacity: 0.8, supportsOpacity: true },

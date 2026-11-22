@@ -1,4 +1,4 @@
-export type CityObjectType = 'road' | 'building' | 'junction' | 'flyover' | 'utility' | 'metro_line' | 'metro_station' | 'zone' | 'gateway' | 'metro_flyover' | 'underground_alignment';
+export type CityObjectType = 'road' | 'building' | 'junction' | 'flyover' | 'utility' | 'metro_line' | 'metro_station' | 'zone' | 'gateway' | 'metro_flyover' | 'underground_alignment' | 'street_element';
 
 export interface BaseCityObject {
   id: string;
@@ -117,6 +117,14 @@ export interface RoadObject extends BaseCityObject {
   levelCrossings?: import('../editing/levelCrossings').LevelCrossing[];
   /** Vertices this object's crossings / end junctions put into other roads (editing/addedVertices.ts): taken back when a reshape no longer uses them. */
   addedNetworkVertices?: import('../editing/addedVertices').AddedVertex[];
+
+  /**
+   * Bus lane / BRT upgrade of the whole road (docs/urbanos/DESIGN_TOOLS_P7.md §3): the kerb-side (bus lane) or median-side
+   * (BRT) lane of each listed direction is taken from general traffic. Absent = none.
+   */
+  busPriority?: import('../streetDesign/busLane').BusPrioritySpec;
+  /** DERIVED, only on Simulate's copy of the road (streetDesign/network.ts): what street elements do to it in the model. Never stored. */
+  streetEffects?: import('../streetDesign/network').StreetEffects;
 
   // Set when a flyover ramp merge/weave zone reduces this road's effective capacity
   flyoverImpact?: {
@@ -347,7 +355,25 @@ export interface MetroFlyoverObject extends BaseCityObject {
   surfaceRoadIds?: string[];
 }
 
-export type CityObject = RoadObject | BuildingObject | JunctionObject | FlyoverObject | UtilityObject | MetroLineObject | MetroStationObject | ZoneObject | GatewayObject | MetroFlyoverObject | UndergroundAlignmentObject;
+export type CityObject = RoadObject | BuildingObject | JunctionObject | FlyoverObject | UtilityObject | MetroLineObject | MetroStationObject | ZoneObject | GatewayObject | MetroFlyoverObject | UndergroundAlignmentObject | StreetElementObject;
+
+/**
+ * A street element drawn in Design (docs/urbanos/DESIGN_TOOLS_P7.md): pedestrian crossing, bus stop, streetlight run,
+ * street-tree run, roundabout or standalone path. `coordinates`: one point for a placed element (a run's first item,
+ * a roundabout's centre), the polyline for a path. Kind-specific data in the matching field.
+ */
+export interface StreetElementObject extends BaseCityObject {
+  type: 'street_element';
+  kind: import('../streetDesign/types').StreetElementKind;
+  coordinates: [number, number, number][];
+  /** The road it sits on (crossing, bus stop, roadside run), when placed on one. */
+  anchor?: import('../streetDesign/types').RoadAnchor | null;
+  crossing?: import('../streetDesign/types').CrossingSpec;
+  busStop?: import('../streetDesign/types').BusStopSpec;
+  roadside?: import('../streetDesign/types').RoadsideSpec;
+  roundabout?: import('../streetDesign/types').RoundaboutSpec;
+  path?: import('../streetDesign/types').PathSpec;
+}
 
 /** What an underground alignment is (docs/urbanos/UNDERGROUND_WORKSPACE.md). Planning geometry only, no design. */
 export type UndergroundAlignmentKind = 'bored_tunnel' | 'underground_metro' | 'cut_and_cover' | 'utility_trunk' | 'storm_drain';
