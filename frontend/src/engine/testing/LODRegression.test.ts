@@ -66,6 +66,7 @@ vi.mock('cesium', () => {
       fromCssColorString: () => ({ alpha: 1, withAlpha: (alpha: number) => ({ alpha }) })
     },
     PerInstanceColorAppearance: class {},
+    Appearance: Object.assign(class {}, { getDefaultRenderState: () => ({}) }),
     Math: {
       toDegrees: (val: number) => val * (180 / Math.PI)
     }

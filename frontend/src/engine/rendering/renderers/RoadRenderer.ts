@@ -16,6 +16,8 @@ export class RoadRenderer extends TileBatchRenderer {
         return height < 1500;
       case 'curb':
         return height < 400;
+      case 'props':
+        return height < 800; // streetlights and trees: close views only
       default:
         return true; // asphalt, cycleway, verge, parking, drainage
     }
@@ -30,7 +32,7 @@ export class RoadRenderer extends TileBatchRenderer {
   }
 
   /** Traffic tint for one road. */
-  public setRoadColor(roadId: string, colorHex: string): void {
+  public setRoadColor(roadId: string, colorHex: string | null): void {
     this.setColor(roadId, colorHex);
   }
 }

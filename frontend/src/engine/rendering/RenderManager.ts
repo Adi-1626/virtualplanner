@@ -1,4 +1,14 @@
-import { Viewer } from 'cesium';
+import { getVisualStyle, onVisualStyleChange } from './visualStyle';
+import { applySceneStyle } from './sceneStyle';
+import { onQualityTierChange } from './qualityTier';
+import { startQualityWatchdog } from './qualityWatchdog';
+import { Viewer, Primitive, GeometryInstance, ColorGeometryInstanceAttribute, PerInstanceColorAppearance } from 'cesium';
+import type { JunctionMarkingInput } from './junctionMarkingInput';
+import { CesiumAdapter } from './adapters/CesiumAdapter';
+import { createLitTintAppearance } from './appearance/LitTintAppearance';
+import { styleColor } from './materials/materialPalette';
+import { withOpacity } from './renderers/opacity';
+import { realisticMesh } from './renderers/TileBatchRenderer';
 import type { CityObject } from '../objects/types';
 import { ProceduralGeometryGenerator } from './geometry/ProceduralGeometryGenerator';
 import { MeshCache } from './cache/MeshCache';
@@ -40,12 +50,81 @@ export class RenderManager {
     });
   }
 
+  private viewer: Viewer | null = null;
+
   public initialize(viewer: Viewer): void {
+    this.viewer = viewer;
     const getOpacity = (objId: string) => this.getObjectOpacity(objId);
     this.roadRenderer = new RoadRenderer(viewer, this.meshCache, this.spatialGrid, getOpacity);
     this.buildingRenderer = new BuildingRenderer(viewer, this.meshCache, this.spatialGrid, getOpacity);
     this.transitRenderer = new TransitRenderer(viewer, this.meshCache, this.spatialGrid, getOpacity);
+    this.stopStyleWatch?.();
+    applySceneStyle(viewer, getVisualStyle());
+    // Visual style only changes appearance: meshes stay cached, loaded tiles rebuild their primitives
+    this.stopStyleWatch = onVisualStyleChange(style => {
+      applySceneStyle(viewer, style);
+      this.roadRenderer?.refreshAll();
+      this.buildingRenderer?.refreshAll();
+      this.transitRenderer?.refreshAll();
+      viewer.scene?.requestRender?.();
+    });
+    this.stopTierWatch?.();
+    this.stopTierWatch = onQualityTierChange(() => {
+      applySceneStyle(viewer, getVisualStyle());
+      this.roadRenderer?.refreshAll();
+      this.buildingRenderer?.refreshAll();
+      this.transitRenderer?.refreshAll();
+      viewer.scene?.requestRender?.();
+    });
+    this.stopWatchdog?.();
+    this.stopWatchdog = startQualityWatchdog(viewer);
+    this.stopMarkingStyleWatch?.();
+    this.stopMarkingStyleWatch = onVisualStyleChange(() => this.buildJunctionMarkings());
   }
+
+  // ── Junction markings (street-design junction tool) ─────────────────────────
+  private junctionMarkingItems: readonly JunctionMarkingInput[] = [];
+  private junctionMarkingVisible = true;
+  private junctionMarkingPrim: Primitive | null = null;
+  private stopMarkingStyleWatch: (() => void) | null = null;
+
+  /**
+   * Renderer hook for the junction tool's IRC:35 markings (`junctionMarkings(...).items`, structurally typed): replaces
+   * the set drawn so far with painted meshes (stop / give-way lines, zebras, arrows, give-way triangles). Pass [] to
+   * clear. Returns how many items could not be drawn (STOP word, degenerate lines).
+   */
+  public setJunctionMarkings(items: readonly JunctionMarkingInput[], visible = true): number {
+    this.junctionMarkingItems = items;
+    this.junctionMarkingVisible = visible;
+    return this.buildJunctionMarkings();
+  }
+
+  private buildJunctionMarkings(): number {
+    const viewer = this.viewer;
+    if (this.junctionMarkingPrim && viewer) viewer.scene.primitives.remove(this.junctionMarkingPrim);
+    this.junctionMarkingPrim = null;
+    if (!viewer || !this.junctionMarkingVisible || !this.junctionMarkingItems.length) return 0;
+    const { meshes, skipped } = this.generator.generateJunctionMarkingMeshes(this.junctionMarkingItems);
+    if (!meshes.length) return skipped;
+    const style = getVisualStyle();
+    const realistic = style === 'realistic';
+    this.junctionMarkingPrim = viewer.scene.primitives.add(new Primitive({
+      geometryInstances: meshes.map(m => new GeometryInstance({
+        geometry: CesiumAdapter.buildGeometry(realistic ? realisticMesh(m) : m),
+        attributes: { color: ColorGeometryInstanceAttribute.fromColor(withOpacity(styleColor(m, style), 1)) },
+        id: 'junction-markings',
+      })),
+      appearance: realistic ? createLitTintAppearance(false) : new PerInstanceColorAppearance({ flat: true, translucent: false }),
+      asynchronous: false,
+    }));
+    viewer.scene.requestRender?.();
+    return skipped;
+  }
+
+  private stopTierWatch: (() => void) | null = null;
+  private stopWatchdog: (() => void) | null = null;
+
+  private stopStyleWatch: (() => void) | null = null;
 
   public getObjectOpacity(objId: string): number {
     const obj = this.allObjects.get(objId);
@@ -252,7 +331,8 @@ export class RenderManager {
     }
   }
 
-  public setRoadColor(roadId: string, colorHex: string): void {
+  /** Traffic tint; null restores the colour the road was drawn with (style-dependent). */
+  public setRoadColor(roadId: string, colorHex: string | null): void {
     if (this.roadRenderer) {
       this.roadRenderer.setRoadColor(roadId, colorHex);
     }
@@ -353,6 +433,7 @@ export class RenderManager {
    * Clears everything
    */
   public clear(): void {
+    if (this.viewer) applySceneStyle(this.viewer, getVisualStyle());
     if (this.opacityRefreshTimeout) {
       clearTimeout(this.opacityRefreshTimeout);
       this.opacityRefreshTimeout = null;
@@ -386,7 +467,8 @@ export class RenderManager {
       obj.type === 'metro_line' ||
       obj.type === 'metro_station' ||
       obj.type === 'utility' ||
-      obj.type === 'junction'
+      obj.type === 'junction' ||
+      obj.type === 'underground_alignment' // portals only (the tube is the Underground workspace's)
     ) {
       this.transitRenderer.render(objId);
     }

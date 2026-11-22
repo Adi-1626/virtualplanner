@@ -18,6 +18,7 @@ import type { OverlayKey } from '../../components/environment/envCatalogue';
 import { TerrainSection } from '../../components/explore/TerrainSection';
 import { MunicipalInspector, MunicipalLayerGroups } from '../../components/explore/MunicipalLayers';
 import { useMuniStore } from '../../components/explore/municipalOverlay';
+import { VisualStyleControl } from '../../components/VisualStyleControl';
 
 function useLayers(): Layer[] {
   const [layers, setLayers] = useState<Layer[]>(() => engineInstance.layers.getAll());
@@ -46,6 +47,7 @@ const LayerTree: React.FC<{ proposals: number }> = ({ proposals }) => {
   const groups = groupLayers(layers);
   return (
     <div className="space-y-3" data-testid="explore-layer-tree">
+      <VisualStyleControl />
       {groups.map(g => (
         <section key={g.id} aria-label={g.label}>
           <h4 className="text-meta font-semibold uppercase tracking-wide text-text-3 mb-0.5">{g.label}</h4>

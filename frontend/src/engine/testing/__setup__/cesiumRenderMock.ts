@@ -42,7 +42,8 @@ export function cesiumRenderMock() {
     GeometryInstance: class { constructor(opts: any) { Object.assign(this, opts); } },
     ColorGeometryInstanceAttribute: { fromColor: () => ({}), toValue: () => new Uint8Array(4) },
     Color: { fromCssColorString: () => color(1), WHITE: color(1), CYAN: color(1) },
-    PerInstanceColorAppearance: class { constructor(opts: any = {}) { Object.assign(this, opts); } },
+    PerInstanceColorAppearance: Object.assign(class { constructor(opts: any = {}) { Object.assign(this, opts); } }, { VERTEX_FORMAT: {} }),
+    Appearance: Object.assign(class { constructor(opts: any = {}) { Object.assign(this, opts); } }, { getDefaultRenderState: () => ({}) }),
     Math: { toDegrees: (v: number) => v * (180 / Math.PI), toRadians: (v: number) => v * (Math.PI / 180) },
   };
 }

@@ -30,6 +30,14 @@ export class CesiumAdapter {
         values: doublePositions
       })
     };
+    // Explicit (hard-edge) normals from the generator / creaseNormals: used as given, not re-smoothed
+    if (mesh.normals && mesh.normals.length === mesh.positions.length) {
+      attributes.normal = new GeometryAttribute({
+        componentDatatype: ComponentDatatype.FLOAT,
+        componentsPerAttribute: 3,
+        values: mesh.normals
+      });
+    }
 
     // Calculate bounding sphere manually to bypass typing definition errors
     let minX = Infinity, minY = Infinity, minZ = Infinity;
@@ -68,6 +76,7 @@ export class CesiumAdapter {
       boundingSphere
     });
 
+    if (attributes.normal) return geometry;
     try {
       return GeometryPipeline.computeNormal(geometry);
     } catch (e) {

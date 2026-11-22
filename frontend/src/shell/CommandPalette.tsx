@@ -5,6 +5,7 @@ import { TOOLS } from '../components/tools';
 import { planningApi, type Project } from '../engine/planning/planningApi';
 import { WORKSPACES } from './workspaces';
 import { useShellStore } from './useShellStore';
+import { getVisualStyle, toggleVisualStyle } from '../engine/rendering/visualStyle';
 
 interface Command {
   id: string;
@@ -70,6 +71,7 @@ export const CommandPalette: React.FC<{ onHelp: () => void }> = ({ onHelp }) => 
       run: () => { st.setWorkspace('projects'); st.openProject(p.id); },
     });
     out.push({ id: 'act:data', group: 'Actions', label: 'Open traffic data', hint: 'counts, import', icon: Database, run: () => { st.setWorkspace('projects'); st.setProjectsTab('data'); } });
+    out.push({ id: 'act:visual-style', group: 'Actions', label: `Visual style: switch to ${getVisualStyle() === 'realistic' ? 'Schematic' : 'Realistic'}`, hint: 'realistic / schematic', icon: LayersIcon, run: () => { toggleVisualStyle(); } });
     out.push({ id: 'act:layers', group: 'Actions', label: 'Open layers', hint: 'Explore', icon: LayersIcon, run: () => st.setWorkspace('explore') });
     out.push({ id: 'act:help', group: 'Actions', label: 'Keyboard shortcuts', hint: '?', icon: Keyboard, run: onHelp });
     return out;

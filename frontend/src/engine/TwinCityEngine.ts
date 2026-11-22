@@ -97,6 +97,7 @@ export class TwinCityEngine {
   private streetPlaceholders = new StreetElementPlaceholders(() => this.viewer ?? null);
   /** IRC:35 markings of junctions whose control was set in this session, by junction id (data for the visuals). */
   private junctionMarkingsById = new Map<string, MarkingsResult>();
+  private lastJunctionMarkingKey = '';
 
   private viewer: Viewer | null = null;
   private drawPreviewEntity: Entity | null = null;
@@ -1843,7 +1844,16 @@ export class TwinCityEngine {
     const selectedObj = selectedId ? this.objects.getById(selectedId) : null;
     this.junctionOverlay.sync(filtered, this.isPlanningMode && this.layers.isVisible('junctions'), selectedId);
     this.streetPlaceholders.sync(filtered, this.layers.isVisible('street_elements'), selectedId);
-    this.streetPlaceholders.syncMarkings(this.isPlanningMode ? [...this.junctionMarkingsById.values()].flatMap(m => m.items) : [], this.layers.isVisible('junctions'));
+    {
+      // IRC:35 junction markings are drawn by the renderer (painted meshes in Realistic, flat in Schematic).
+      const markingItems = this.isPlanningMode ? [...this.junctionMarkingsById.values()].flatMap(m => m.items) : [];
+      const markingsVisible = this.layers.isVisible('junctions');
+      const markingKey = `${markingsVisible}|${JSON.stringify(markingItems)}`;
+      if (markingKey !== this.lastJunctionMarkingKey) {
+        this.lastJunctionMarkingKey = markingKey;
+        renderManagerInstance.setJunctionMarkings(markingItems, markingsVisible);
+      }
+    }
 
     // 2. Render Zones if layer is visible
     if (this.layers.isVisible('demand_zones')) {

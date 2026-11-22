@@ -144,8 +144,7 @@ export class SimulationManager {
       if (engine) {
         const roads = engine.objects.getAll().filter((o: CityObject) => o.type === 'road' || o.type === 'flyover' || o.type === 'metro_flyover') as (RoadObject | FlyoverObject | MetroFlyoverObject)[];
         roads.forEach(r => {
-          const defaultColor = r.roadClass === 'highway' ? '#0f172a' : r.roadClass === 'collector' ? '#334155' : r.roadClass === 'local' ? '#475569' : '#1e293b';
-          renderManagerInstance.setRoadColor(r.id, defaultColor);
+          renderManagerInstance.setRoadColor(r.id, null); // back to the drawn colour (Realistic or Schematic)
         });
       }
 
@@ -379,16 +378,13 @@ export class SimulationManager {
         const laneCount = road.laneCount || 2;
         const congestion = count / (laneCount * 1.5);
 
-        let color = '#1e293b'; // Default arterial
+        let color: string | null = null; // uncongested: the drawn colour
         if (congestion > 0.8) {
           color = '#ef4444'; // Red (Congested)
         } else if (congestion > 0.4) {
           color = '#f97316'; // Orange (Heavy)
         } else if (congestion > 0.1) {
           color = '#fbbf24'; // Yellow (Moderate)
-        } else {
-          // Default class colors
-          color = road.roadClass === 'highway' ? '#0f172a' : road.roadClass === 'collector' ? '#334155' : road.roadClass === 'local' ? '#475569' : '#1e293b';
         }
         if (congestion > 0.1) tintedThisTick.add(road.id);
         renderManagerInstance.setRoadColor(road.id, color);
@@ -431,8 +427,7 @@ export class SimulationManager {
       roadCount++;
 
       // Restore base colors
-      const defaultColor = road.roadClass === 'highway' ? '#0f172a' : road.roadClass === 'collector' ? '#334155' : road.roadClass === 'local' ? '#475569' : '#1e293b';
-      renderManagerInstance.setRoadColor(road.id, defaultColor);
+      renderManagerInstance.setRoadColor(road.id, null); // back to the drawn colour
     });
 
     const averageSpeed = roadCount > 0 ? Math.round(totalSpeed / roadCount) : 0;
