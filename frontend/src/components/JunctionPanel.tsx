@@ -4,6 +4,7 @@ import { engineInstance } from '../engine/TwinCityEngine';
 import type { RoadObject } from '../engine/objects/types';
 import type { LogicalJunction } from '../engine/simulation/junctionGroups';
 import { cycleOf, armGreenS, validateEdit, type JunctionEditSpec } from '../engine/simulation/junctionControl';
+import { JunctionMarkingsSection } from './design/StreetDesignPanels';
 import { startingDraft, startingNote, setControl, setGreen, setTiming, toggleArmInPhase, addPhase, removePhase, toggleMajor, toggleBan, toggleLane, resetLanes, defaultLanePairs, sameEdit } from '../engine/editing/junctionDraft';
 import { SidePanel, PanelHeader, PanelBody, Section, Button, Segmented, Notice } from './ui/kit';
 import { JUNCTION_HIGHLIGHT_STYLE } from '../engine/rendering/renderers/JunctionHighlight';
@@ -146,6 +147,10 @@ const JunctionEditor: React.FC<{ j: LogicalJunction }> = ({ j }) => {
             </div>
           </Section>
         )}
+
+        <Section title="Signs and markings" aside="IRC:35-2015">
+          <JunctionMarkingsSection junction={j} draft={draft} onChange={setDraft} />
+        </Section>
 
         <Section title="Turning movements" aside="Click a movement for its lanes">
           <div className="space-y-2" data-testid="junction-movements">

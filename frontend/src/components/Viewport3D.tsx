@@ -126,6 +126,12 @@ const HUD_TEXT: Record<Exclude<EditingMode, 'select'>, (n: number) => string> = 
   draw_junction: () => 'Junction: click where two or more roads meet',
   place_station: () => 'Station: click on or near a metro line',
   draw_gateway: () => 'Gateway: click on or near a road where traffic enters the area',
+  brush_junction_control: () => 'Junction control: click a junction to apply the chosen control (signal, stop, give way or uncontrolled)',
+  place_crossing: () => 'Crossing: click on a road where people cross',
+  place_bus_stop: () => 'Bus stop: click on the side of the road where the stop goes',
+  place_roadside: () => 'Streetlights / trees: click on a road where the run starts',
+  place_roundabout: () => 'Roundabout: click on a junction where three or more roads meet',
+  draw_path: n => `Path: click points along the route, double-click or Enter to finish (${n} placed)`,
   // Study area: the outline's data loads as soon as it is finished (no "Map Selected Area" step any more)
   import_osm: n => engineInstance.editing.getAreaShape() === 'rectangle'
     ? (n > 0 ? 'Study area: click the opposite corner' : 'Study area: click one corner, then the opposite corner. Its data loads automatically')

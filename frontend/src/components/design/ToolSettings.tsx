@@ -10,6 +10,7 @@ import { ImportAreaPanel } from './ImportAreaPanel';
 import { CROSS_SECTION_TEMPLATES, sourceLabel, templateById } from '../../engine/crossSection/templates';
 import { CrossSectionDiagram } from './CrossSectionDiagram';
 import { UndergroundToolSettings } from '../underground/AlignmentForms';
+import { StreetToolSettingsPanel } from './StreetDesignPanels';
 
 const field = 'flex flex-col gap-0.5';
 const lbl = 'text-[11px] font-semibold uppercase tracking-wide flex items-center gap-1.5';
@@ -156,6 +157,8 @@ export const ToolSettings: React.FC<{ mode: EditingMode }> = ({ mode }) => {
   );
 
   if (mode === 'draw_underground') return <UndergroundToolSettings />;
+  if (mode === 'brush_junction_control' || mode === 'place_crossing' || mode === 'place_bus_stop' || mode === 'place_roadside' || mode === 'place_roundabout' || mode === 'draw_path')
+    return <StreetToolSettingsPanel mode={mode} />;
   if (mode === 'import_osm') return <ImportAreaPanel />;
   return null;
 };

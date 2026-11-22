@@ -7,6 +7,7 @@ import { RoadGapPanel } from './RoadGapPanel';
 import { LevelCrossingPanel } from './LevelCrossingPanel';
 import { AlignmentPanel } from './design/AlignmentPanel';
 import { CrossSectionPanel } from './design/CrossSectionPanel';
+import { BusPriorityPanel, MetroCorridorPanel, StreetElementInspector } from './design/StreetDesignPanels';
 import { FeasibilityPanel } from './FeasibilityPanel';
 import { isProposalObject } from '../engine/feasibility/proposal';
 import { TYPE_LABELS } from '../engine/objects/builtBy';
@@ -17,7 +18,7 @@ import { utilityLayerId } from '../engine/layers/LayerManager';
 const BUILDING_SPLIT_KEYS = ['car', 'twoWheeler', 'bus', 'metro', 'walk', 'other'] as const;
 type BuildingSplitKey = typeof BUILDING_SPLIT_KEYS[number];
 import { findNearestTrack, normalizeHeading, resolveStationHeading } from '../engine/objects/stationAlignment';
-import type { UndergroundAlignmentObject, UtilityType } from '../engine/objects/types';
+import type { UndergroundAlignmentObject, UtilityType, StreetElementObject } from '../engine/objects/types';
 import type { CityObject, RoadObject, BuildingObject, JunctionObject, UtilityObject, FlyoverObject, MetroLineObject, MetroStationObject, BuildingCategory, BuildingState, ZoneObject, GatewayObject } from '../engine/objects/types';
 import { getFlyoverConnectionStatus } from '../engine/objects/flyoverHelper';
 import { commitRoadFieldEdit, flyoverFieldUpdates } from '../engine/editing/roadEdits';
@@ -390,6 +391,7 @@ export const PropertiesPanel: React.FC = () => {
               <RoadEditor r={selectedObj as any} onUpdate={handleUpdateField} isFlyover={selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover'} />
             )}
             {selectedObj.type === 'road' && <CrossSectionPanel road={selectedObj as RoadObject} />}
+            {selectedObj.type === 'road' && <BusPriorityPanel key={selectedObj.id} road={selectedObj as RoadObject} />}
             {selectedObj.type === 'road' && <RoadGapPanel road={selectedObj as RoadObject} />}
             {(selectedObj.type === 'road' || selectedObj.type === 'flyover' || selectedObj.type === 'metro_flyover') && <LevelCrossingPanel roadId={selectedObj.id} />}
             {/* Shape (PIs + radii) of line objects: roads, flyovers, metro, tunnels, utilities — renders nothing for other types */}
@@ -409,6 +411,10 @@ export const PropertiesPanel: React.FC = () => {
             {selectedObj.type === 'metro_line' && (
               <MetroLineEditor m={selectedObj as MetroLineObject} onUpdate={handleUpdateField} />
             )}
+
+            {(selectedObj.type === 'metro_line' || selectedObj.type === 'metro_flyover') && <MetroCorridorPanel obj={selectedObj} />}
+
+            {selectedObj.type === 'street_element' && <StreetElementInspector el={selectedObj as StreetElementObject} />}
 
             {/* Metro Station Specifics */}
             {selectedObj.type === 'metro_station' && (

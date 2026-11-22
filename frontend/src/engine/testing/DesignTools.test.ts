@@ -19,7 +19,8 @@ describe('design tools', () => {
   it('keeps the EditingMode ids and the 1-9 hotkeys of the old toolbar', () => {
     const expected: Record<string, string> = { 1: 'select', 2: 'draw_road', 3: 'draw_building', 4: 'draw_junction', 5: 'draw_flyover', 6: 'draw_metro', 7: 'draw_metro_flyover', 8: 'place_station', 9: 'draw_utility' };
     for (const [k, mode] of Object.entries(expected)) expect(toolByHotkey(k)?.mode).toBe(mode);
-    expect(TOOLS.map(t => t.mode).sort()).toEqual(['draw_building', 'draw_flyover', 'draw_gateway', 'draw_junction', 'draw_metro', 'draw_metro_flyover', 'draw_road', 'draw_underground', 'draw_utility', 'draw_zone', 'import_osm', 'place_station', 'select']);
+    expect(TOOLS.map(t => t.mode).sort()).toEqual(['brush_junction_control', 'draw_building', 'draw_flyover', 'draw_gateway', 'draw_junction', 'draw_metro', 'draw_metro_flyover', 'draw_path', 'draw_road', 'draw_underground', 'draw_utility', 'draw_zone', 'import_osm',
+      'place_bus_stop', 'place_crossing', 'place_roadside', 'place_roundabout', 'place_station', 'select']);
   });
   it('every tool has a category, short label, icon and description, and sits in exactly one listed group', () => {
     const cats = new Set(TOOL_CATEGORIES.map(c => c.id));

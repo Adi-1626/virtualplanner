@@ -48,6 +48,10 @@ import { TrafficSignalSource } from './simulation/trafficSignals';
 import { LocalOsmIndex } from './editing/LocalOsmIndex';
 import { isSampleObject } from './objects/sampleObjects';
 import { isDrivable, boundsOf, type StudyProblem } from './simulation/StudyAreaExplorer';
+import { simulationRoads } from './streetDesign/network';
+import { StreetElementPlaceholders } from './streetDesign/placeholders';
+import { brushSpec, junctionMarkings, BRUSH_LABEL, type JunctionBrush, type MarkingItem, type MarkingsResult } from './streetDesign/junctionTool';
+import { validateEdit } from './simulation/junctionControl';
 import { roadConnections, type RoadConnections } from './simulation/roadConnections';
 import { isUserBuilt } from './objects/builtBy';
 import { STUDY_AREA_ROADS_PREFIX } from './simulation/osmCoverage';
@@ -89,6 +93,10 @@ export class TwinCityEngine {
   public trafficDemandMatrix: any = null;
   private trafficVisualizer = new TrafficNetworkVisualizer();
   private junctionOverlay = new JunctionEditorOverlay();
+  /** Placeholders for street elements and IRC:35 junction markings (the visuals work draws the real ones). */
+  private streetPlaceholders = new StreetElementPlaceholders(() => this.viewer ?? null);
+  /** IRC:35 markings of junctions whose control was set in this session, by junction id (data for the visuals). */
+  private junctionMarkingsById = new Map<string, MarkingsResult>();
 
   private viewer: Viewer | null = null;
   private drawPreviewEntity: Entity | null = null;
@@ -168,7 +176,8 @@ export class TwinCityEngine {
     const localOsm = new LocalOsmIndex();
     this.simMode = new SimulationMode(
       // The sample objects of an empty project are not part of the city: Simulate leaves them out
-      () => filterObjectsForScenario(this.objects.getAll(), this.scenarios.getActiveScenarioId()).filter(isDrivable).filter(o => !isSampleObject(o)),
+      // Street elements (crossings, roundabouts, bus lanes) ride on copies of the roads they act on (streetDesign/network.ts)
+      () => simulationRoads(this.objects.getAll(), this.scenarios.getActiveScenarioId()),
       // Study areas reaching past the imported map load the OSM roads there through the importer
       {
         load: (boxes, signal) => this.editing.loadOsmRoadsForStudyArea(boxes, signal),
@@ -184,6 +193,9 @@ export class TwinCityEngine {
     this.objects.setScenarioSource(() => this.scenarios.getActiveScenarioId());
     this.history = new HistoryManager(this.objects);
     this.editing = new EditingEngine(this.objects, this.history, () => this.getTrafficNetwork(), localOsm);
+    // Street design tools: the junction brush and the roundabout tool find the junction at the click
+    this.editing.junctionBrushHandler = (at, brush) => { void this.brushJunctionAt(at, brush); };
+    this.editing.junctionFinder = at => junctionAt(this.buildObjects(), at);
     this.alignmentEditor = new AlignmentEditSession({
       getObject: id => this.objects.getById(id),
       commit: (obj, alignment) => commitGeometry(obj, alignment, { objects: this.objects, history: this.history, editing: this.editing, scenarioId: this.scenarios.getActiveScenarioId() }),
@@ -224,7 +236,7 @@ export class TwinCityEngine {
         this.simMode.networkChanged();
       } else {
         this.queueTrafficDemandRebuildOnly();
-        if (['building', 'zone', 'gateway'].some(type => changedTypes.has(type))) this.simMode.networkChanged();
+        if (['building', 'zone', 'gateway', 'street_element'].some(type => changedTypes.has(type))) this.simMode.networkChanged();
       }
       renderManagerInstance.reconcile(this.getFilteredObjects());
       this.syncZonesAndGatewaysWithCesium();
@@ -859,7 +871,9 @@ export class TwinCityEngine {
       if (defined(picked) && picked.id) {
         const pickedObject = picked;
         const rawId = pickedObject.id.id || pickedObject.id;
-        const entityId = typeof rawId === 'string' && rawId.startsWith('junction_edit_') ? rawId.slice('junction_edit_'.length) : rawId;
+        const entityId0 = typeof rawId === 'string' && rawId.startsWith('junction_edit_') ? rawId.slice('junction_edit_'.length) : rawId;
+        // A street element's extra placeholder parts ("se_x#2") select the element
+        const entityId = typeof entityId0 === 'string' && entityId0.startsWith('se_') ? entityId0.split('#')[0] : entityId0;
 
         if (typeof entityId === 'string' && (entityId.startsWith('debug_node_') || entityId.startsWith('debug_edge_'))) {
           this.selection.selectSingle(entityId);
@@ -1240,6 +1254,46 @@ export class TwinCityEngine {
     const centre = open?.junction.id === spec.junctionId ? open.junction.centre : [0, 0];
     applyJunctionEdit(this.objects, this.history, spec, this.scenarios.getActiveScenarioId(), centre);
     this.emitJunction();
+  }
+
+  /**
+   * Junction control brush (streetDesign/junctionTool.ts): sets the control of the imported junction at a point in one
+   * click (one Undo step, the same edit as the junction editor) and keeps its IRC:35 markings as data.
+   */
+  public async brushJunctionAt(at: readonly number[], brush: JunctionBrush): Promise<boolean> {
+    const hit = junctionAt(this.buildObjects(), at, await this.signalsNear(at));
+    if (!hit) { (window as any).showToast?.('No junction where three or more roads meet within 40 m of the click.', 'error'); return false; }
+    const spec = brushSpec(hit.junction, this.getImportedJunctionEdit(hit.junction.id), brush);
+    const problems = validateEdit(spec);
+    if (problems.length) { (window as any).showToast?.(problems.join(' '), 'error'); return false; }
+    applyJunctionEdit(this.objects, this.history, spec, this.scenarios.getActiveScenarioId(), hit.junction.centre);
+    this.junctionMarkingsById.set(hit.junction.id, junctionMarkings(hit.junction, hit.local.network, hit.local.roads, spec));
+    this.emitJunction();
+    this.syncZonesAndGatewaysWithCesium();
+    (window as any).showToast?.(`${hit.junction.label}: ${BRUSH_LABEL[brush]}. Simulate re-runs the analysis; Ctrl+Z to undo.`, 'info');
+    return true;
+  }
+
+  /** The active alternative's objects (no samples), for the street design checks. */
+  public streetDesignObjects(): CityObject[] {
+    return this.buildObjects();
+  }
+
+  /** IRC:35 markings (stop / give-way lines, zebras, arrows) of a junction as the control in force sets them, or null when not computed. */
+  public junctionMarkingsOf(junctionId: string): MarkingsResult | null {
+    const open = this.openJunction;
+    const spec = this.getImportedJunctionEdit(junctionId);
+    if (open && open.junction.id === junctionId && spec) {
+      const m = junctionMarkings(open.junction, open.local.network, open.local.roads, spec);
+      this.junctionMarkingsById.set(junctionId, m);
+      return m;
+    }
+    return this.junctionMarkingsById.get(junctionId) ?? null;
+  }
+
+  /** Every computed junction marking (data for the visuals work). */
+  public allJunctionMarkings(): MarkingItem[] {
+    return [...this.junctionMarkingsById.values()].flatMap(m => m.items);
   }
 
   /** Removes the active scenario's edit of a junction (back to OpenStreetMap; one Undo step). */
@@ -1788,6 +1842,8 @@ export class TwinCityEngine {
     const selectedId = selections[0];
     const selectedObj = selectedId ? this.objects.getById(selectedId) : null;
     this.junctionOverlay.sync(filtered, this.isPlanningMode && this.layers.isVisible('junctions'), selectedId);
+    this.streetPlaceholders.sync(filtered, this.layers.isVisible('street_elements'), selectedId);
+    this.streetPlaceholders.syncMarkings(this.isPlanningMode ? [...this.junctionMarkingsById.values()].flatMap(m => m.items) : [], this.layers.isVisible('junctions'));
 
     // 2. Render Zones if layer is visible
     if (this.layers.isVisible('demand_zones')) {

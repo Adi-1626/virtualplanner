@@ -38,6 +38,8 @@ import {
   type AngleSnapMode, type DrawRadius, type DrawReadoutData, type ResolvedCursor, type TangentGuide, type TypedInput,
 } from './drawConstraints';
 import type { HorizontalAlignment } from '../geometry/alignment/index';
+import { DEFAULT_STREET_SETTINGS, isStreetToolMode, placeStreetElement, type StreetToolSettings } from '../streetDesign/placement';
+import type { JunctionBrush } from '../streetDesign/junctionTool';
 import { GEOMETRY_DEFAULTS } from '../geometry/alignment/defaults';
 
 /** Tool defaults (HYPOTHETICAL, editable in the tool settings): not data. */
@@ -93,9 +95,12 @@ const NEW_OBJECT_LABEL: Partial<Record<EditingMode, string>> = {
   draw_road: 'road', draw_building: 'building', draw_junction: 'junction', draw_flyover: 'flyover',
   draw_metro: 'metro line', draw_metro_flyover: 'double-deck', place_station: 'station', draw_utility: 'utility line',
   draw_zone: 'demand zone', draw_gateway: 'gateway', draw_underground: 'underground alignment',
+  place_crossing: 'pedestrian crossing', place_bus_stop: 'bus stop', place_roadside: 'roadside run', place_roundabout: 'roundabout', draw_path: 'path',
 };
 
-export type EditingMode = 'select' | 'draw_road' | 'draw_building' | 'draw_junction' | 'draw_utility' | 'draw_flyover' | 'draw_metro' | 'place_station' | 'import_osm' | 'draw_zone' | 'draw_gateway' | 'draw_metro_flyover' | 'draw_underground';
+export type EditingMode = 'select' | 'draw_road' | 'draw_building' | 'draw_junction' | 'draw_utility' | 'draw_flyover' | 'draw_metro' | 'place_station' | 'import_osm' | 'draw_zone' | 'draw_gateway' | 'draw_metro_flyover' | 'draw_underground'
+  // Street design tools (docs/urbanos/DESIGN_TOOLS_P7.md)
+  | 'brush_junction_control' | import('../streetDesign/placement').StreetToolMode;
 
 /**
  * Deck / platform level (m) stored for an imported OSM metro way or station: 12 m for a bridge (or layer > 0), else 0.
@@ -143,6 +148,14 @@ export class EditingEngine {
 
   // Selected creation types
   public roadClass: RoadClassification = 'local';
+  /** Street design tools: settings of the next placed element (streetDesign/placement.ts). */
+  public streetSettings: StreetToolSettings = { ...DEFAULT_STREET_SETTINGS };
+  /** Junction control brush: the control a click applies. */
+  public junctionBrush: JunctionBrush = 'signal';
+  /** Set by the engine: applies the brush at a clicked point (finds the imported junction and writes its edit). */
+  public junctionBrushHandler: ((at: [number, number, number], brush: JunctionBrush) => void) | null = null;
+  /** Set by the engine: the logical junction at a point (for the Roundabout tool). */
+  public junctionFinder: ((at: readonly number[]) => { junction: import('../simulation/junctionGroups').LogicalJunction } | null) | null = null;
   /** Street cross-section template for the next drawn road (engine/crossSection/templates.ts); null = the class defaults. */
   public roadTemplateId: string | null = null;
   public buildingUsage: BuildingUsage = 'residential';
@@ -406,7 +419,8 @@ export class EditingEngine {
 
   /** Tools that complete on a single click rather than a double-click. */
   public isSingleClickMode(mode: EditingMode = this.activeMode): boolean {
-    return mode === 'draw_junction' || mode === 'place_station' || mode === 'draw_gateway';
+    return mode === 'draw_junction' || mode === 'place_station' || mode === 'draw_gateway' || mode === 'brush_junction_control'
+      || mode === 'place_crossing' || mode === 'place_bus_stop' || mode === 'place_roadside' || mode === 'place_roundabout';
   }
 
   public clearDrawing() {
@@ -981,7 +995,8 @@ export class EditingEngine {
     const mode = this.activeMode;
     const label = NEW_OBJECT_LABEL[mode] ?? mode.replace(/^draw_|^place_/, '').replace(/_/g, ' ');
     const kind = mode === 'draw_road' ? ROAD_CLASS_NAME[this.roadClass] ?? 'road'
-      : mode === 'draw_flyover' ? `${this.roadClass === 'highway' ? 'highway' : this.roadClass} flyover` : label;
+      : mode === 'draw_flyover' ? `${this.roadClass === 'highway' ? 'highway' : this.roadClass} flyover`
+      : mode === 'place_roadside' ? (this.streetSettings.roadsideKind === 'streetlight' ? 'streetlights' : 'street trees') : label;
     const visible = filterObjectsForScenario(this.objectManager.getAll(), scenarioId);
     const streets: NamedLine[] = [];
     for (const o of visible) {
@@ -1005,6 +1020,18 @@ export class EditingEngine {
 
     let newObj: CityObject | null = null;
     let splitDiffs: HistoryDiff[] = [];
+    if (this.activeMode === 'brush_junction_control') {
+      const at = this.drawingPoints[0];
+      if (!this.junctionBrushHandler) throw new Error('The junction brush is not ready yet.');
+      this.junctionBrushHandler([at[0], at[1], at[2] || 0], this.junctionBrush);
+      this.clearDrawing();
+      return;
+    }
+    if (isStreetToolMode(this.activeMode)) {
+      newObj = placeStreetElement(this.activeMode, this.drawingPoints, this.streetSettings,
+        { objects: filterObjectsForScenario(this.objectManager.getAll(), scenarioId), junctionAt: this.junctionFinder ?? undefined },
+        { id, name, scenarioId, createdAt });
+    }
     const minPoints = (n: number, what: string) => {
       if (this.drawingPoints.length < n) {
         throw new Error(`${what} needs at least ${n} points — keep clicking on the map, then double-click to finish.`);
