@@ -203,6 +203,15 @@ def _save_version(db: Session, scn: ScenarioEntity, label: str, note: str, assum
     return v
 
 
+def _dialect_insert(db: Session):
+    """INSERT … ON CONFLICT for the database in use (SQLite in development, PostgreSQL supported)."""
+    if db.get_bind().dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert
+    else:
+        from sqlalchemy.dialects.sqlite import insert
+    return insert
+
+
 def _next_seq(db: Session, sid: str) -> int:
     m = db.query(func.max(ScenarioObjectChangeEntity.seq)).filter(ScenarioObjectChangeEntity.scenario_id == sid).scalar()
     return (m or 0) + 1
@@ -259,30 +268,27 @@ def write_changes(sid: str, changes: List[ChangeIn], db: Session = Depends(get_d
     for i in range(0, len(ids), 500):
         base_ids |= {r[0] for r in db.query(CityObjectEntity.id).filter(CityObjectEntity.id.in_(ids[i:i + 500]), CityObjectEntity.scenario_id == BASE)}
     seq = _next_seq(db, sid)
+    upsert = _dialect_insert(db)
     for c in changes:
         if c.op != "revert" and c.objectId not in base_ids:
             raise HTTPException(status_code=400, detail=f"{c.objectId} is not a baseline object: a proposal's own objects are saved through /objects")
-        row = db.get(ScenarioObjectChangeEntity, (sid, c.objectId))
         if c.op == "revert":
-            if row:
-                db.delete(row)
+            db.query(ScenarioObjectChangeEntity).filter(ScenarioObjectChangeEntity.scenario_id == sid,
+                                                       ScenarioObjectChangeEntity.object_id == c.objectId).delete(synchronize_session=False)
             continue
         if c.op == "modify":
             if not c.object or c.object.id != c.objectId:
                 raise HTTPException(status_code=400, detail="A modify needs the whole object, with the same id")
         o = c.object
-        if not row:
-            row = ScenarioObjectChangeEntity(scenario_id=sid, object_id=c.objectId)
-            db.add(row)
-        row.op, row.seq = c.op, seq
+        vals = dict(op=c.op, seq=seq, type=o.type if o else None, name=o.name if o else None, layer_id=o.layerId if o else None,
+                    geometry_geojson=json.dumps(o.coordinates) if o else None,
+                    properties_json=json.dumps(o.properties) if o else None, updated_at=datetime.datetime.utcnow())
         seq += 1
-        row.type = o.type if o else None
-        row.name = o.name if o else None
-        row.layer_id = o.layerId if o else None
-        row.geometry_geojson = json.dumps(o.coordinates) if o else None
-        row.properties_json = json.dumps(o.properties) if o else None
-        row.updated_at = datetime.datetime.utcnow()
-        db.flush()
+        # One atomic upsert per (proposal, object): the client can send two saves of the same object at once (a drawn road
+        # that splits a crossed road, then re-joins it), and a read-then-insert let the second one fail with a UNIQUE
+        # constraint error and "Save failed" (p5-qa 2026-11-22).
+        db.execute(upsert(ScenarioObjectChangeEntity).values(scenario_id=sid, object_id=c.objectId, **vals)
+                   .on_conflict_do_update(index_elements=["scenario_id", "object_id"], set_=vals))
     db.commit()
     return {"status": "success", "count": len(changes)}
 

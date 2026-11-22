@@ -254,3 +254,23 @@ def test_migration_of_a_copy_of_the_project_database_loses_nothing(tmp_path):
     n_before = sqlite3.connect(path).execute("SELECT count(*) FROM city_objects").fetchone()[0]
     _migrate_and_check(path)
     assert sqlite3.connect(path).execute("SELECT count(*) FROM city_objects").fetchone()[0] == n_before
+
+
+def test_concurrent_modifies_of_one_base_object_all_succeed(client):
+    """p5-qa 2026-11-22: two saves of the same base road arrived together (a drawn road splitting it, then re-joining
+    it); both read 'no row yet' and inserted, the second failed with a UNIQUE-constraint 500 ("Save failed").
+    The write is now one INSERT … ON CONFLICT per object. Synthetic objects."""
+    from concurrent.futures import ThreadPoolExecutor
+    ids = _base(client, 1)
+    sid = _scenario(client)
+
+    def post(k):
+        return client.post(f"/api/scenarios/{sid}/changes",
+                           json=[{"objectId": ids[0], "op": "modify", "object": _obj(ids[0], sid, lanes=2 + k)}]).status_code
+
+    for _ in range(3):
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            codes = list(ex.map(post, range(16)))
+        assert codes == [200] * 16
+    rows = [c for c in client.get("/api/scenario-changes", params={"scenario_id": sid}).json() if c["objectId"] == ids[0]]
+    assert len(rows) == 1 and rows[0]["op"] == "modify"

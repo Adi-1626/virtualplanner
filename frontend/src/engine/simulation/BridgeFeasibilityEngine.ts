@@ -117,7 +117,10 @@ const MIN_MEDIAN_FOR_PIER_M = 3.0;
 export const MIN_FLAT_DECK_M = 50.0;
 export const MIN_FLAT_DECK_LABEL = 'assumed, no official figure';
 
-/** MORTH — Ramp merge/weave zone capacity penalty applied to the surface road */
+/**
+ * Ramp merge/weave zone capacity penalty applied to the surface roads near each ramp end: 25 %, ASSUMED. It was labelled
+ * "MORTH" with no document or clause, and none was found (p5-qa 2026-11-22), so it is shown as an assumption.
+ */
 const RAMP_MERGE_CAPACITY_REDUCTION = 0.25; // 25% reduction
 
 // ─── Geometry Helpers ────────────────────────────────────────────────────────
@@ -399,17 +402,17 @@ export class BridgeFeasibilityEngine {
     for (const road of allAdjRoads) {
       if (flyoverLanes > road.laneCount) {
         laneMatchStatus = 'warn';
-        laneMismatchList.push(`${road.name} (${road.laneCount} lanes)`);
+        laneMismatchList.push(`${road.name} (${road.laneCount} ${road.laneCount === 1 ? 'lane' : 'lanes'})`);
       }
     }
 
     checks.push({
       id: 'lane_match',
-      name: 'Lane Count Match (MORTH)',
+      name: 'Lane count match',
       status: laneMatchStatus,
       message: laneMatchStatus === 'pass'
         ? `Flyover ${flyoverLanes} lanes matches or is ≤ adjacent surface roads.`
-        : `Flyover has ${flyoverLanes} lanes but connects to: ${listNames(laneMismatchList)}. Merge bottleneck risk.`,
+        : `Flyover has ${flyoverLanes} lanes; mapped roads within 60 m of its ends have fewer: ${listNames(laneMismatchList)}. Merge bottleneck risk.`,
       actual: flyoverLanes,
       required: allAdjRoads.length > 0 ? Math.max(...allAdjRoads.map(r => r.laneCount)) : flyoverLanes,
       unit: 'lanes',
@@ -429,7 +432,7 @@ export class BridgeFeasibilityEngine {
         capacityReductionPercent: Math.round(RAMP_MERGE_CAPACITY_REDUCTION * 100),
         originalCapacity: road.trafficCapacity,
         reducedCapacity,
-        reason: 'Flyover ramp merge/weave zone reduces effective lane throughput (MORTH)'
+        reason: 'Assumed 25 % loss in the ramp merge/weave zone (no published figure; screening assumption)'
       });
     }
 

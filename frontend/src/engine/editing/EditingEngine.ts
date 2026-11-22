@@ -1,6 +1,7 @@
 import { osmRoadClass } from '../simulation/networkCorrections';
 import { templateById } from '../crossSection/templates';
 import { templateRoadUpdates } from '../crossSection/apply';
+import { formatWhen } from '../../lib/formatWhen';
 import type { CityObject, RoadClassification, BuildingUsage, UtilityType, Area, BuildingCategory, RoadObject } from '../objects/types';
 import { ObjectManager } from '../objects/ObjectManager';
 import { HistoryManager, type HistoryDiff } from '../history/HistoryManager';
@@ -2052,7 +2053,7 @@ export class EditingEngine {
 
   private async localSourceDetail(): Promise<string> {
     const st = await this.localOsm.getStatus();
-    return `local OSM index${st.dataTimestamp ? `, data of ${String(st.dataTimestamp).slice(0, 16)}` : ''}`;
+    return `local OSM index${st.dataTimestamp ? `, data of ${formatWhen(String(st.dataTimestamp))}` : ''}`;
   }
 
   private async fetchAreaElements(area: Area, category: Exclude<InfrastructureCategory, 'signals'>, signal: AbortSignal): Promise<any[]> {
