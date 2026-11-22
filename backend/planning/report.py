@@ -151,7 +151,8 @@ def build_model(db: Session, p: PlanningProjectEntity, now: datetime.datetime | 
             if works:
                 tot = Q.totals(works)
                 summary = "; ".join([f"{Q.TYPE_LABEL.get(k, k)} {v / 1000:.2f} km" for k, v in sorted(tot.items()) if k != "piers"]
-                                    + ([f"{int(tot['piers'])} new piers"] if tot.get("piers") else []))
+                                    + ([f"{int(tot['piers'])} new piers"] if tot.get("piers") else [])
+                                    + [f"{n} {Q.STREET_COUNT_LABEL[k]}" for k, n in sorted(Q.street_counts(works).items())])
                 b4.append(Block("subhead", text="Built works in this alternative (current head, as drawn in Design)"))
                 b4.append(Block("table", header=["Object", "Type", "Change", "Plan length", "Lanes", "Level", "Piers", "Detail"], rows=Q.table_rows(works)))
                 b4.append(Block("note", text=("New works: " + summary + ". " if summary else "") +

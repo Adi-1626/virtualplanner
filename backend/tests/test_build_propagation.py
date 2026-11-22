@@ -171,3 +171,72 @@ def test_planning_report_lists_the_built_works_of_an_attached_alternative_with_q
     assert int(rows["rq_fly"][6]) > 0 and "deck" in rows["rq_fly"][5]
     notes = " ".join(b.text or "" for b in sec.blocks if b.kind == "note")
     assert "new piers" in notes and "not measured" in notes
+
+
+def test_street_design_quantities_unit():
+    """Street elements and bus lanes drawn in Design (docs/urbanos/DESIGN_TOOLS_P7.md): kind, item counts, path length,
+    bus-lane lane length. SYNTHETIC objects."""
+    from planning import quantities as Q
+    path = {"type": "street_element", "coordinates": [_pt(0, 0), _pt(100, 0)],
+            "properties": {"kind": "path", "path": {"pathType": "cycle_two_way", "level": "ground", "widthM": 3.0}}}
+    q = Q.object_quantities(path)
+    assert 99 < q["length_m"] < 101 and "cycle track (two-way)" in q["detail"] and q["level"] == "at ground level"
+    lights = {"type": "street_element", "coordinates": [_pt(0, 0)],
+              "properties": {"kind": "streetlight", "roadside": {"count": 5, "spacingM": 30, "poleHeightM": 10, "zone": "furniture",
+                                                                 "points": [_pt(30 * i, 5) for i in range(4)]}}}
+    q = Q.object_quantities(lights)
+    assert q["count"] == 4 and q["length_m"] is None and "4 pole(s)" in q["detail"]   # the placed points, not the asked count
+    trees = {"type": "street_element", "coordinates": [_pt(0, 0)], "properties": {"kind": "street_tree", "roadside": {"count": 3, "points": []}}}
+    q = Q.object_quantities(trees)
+    assert q["count"] == 3 and "pit UNKNOWN" in q["detail"]
+    rb = {"type": "street_element", "coordinates": [_pt(0, 0)],
+          "properties": {"kind": "roundabout", "roundabout": {"category": "urban_single", "icdM": 32, "islandM": 12, "circulatoryM": 10, "armCount": 4}}}
+    assert "ICD 32.0 m" in Q.object_quantities(rb)["detail"]
+    road = {"type": "road", "coordinates": [_pt(0, 0), _pt(500, 0)],
+            "properties": {"laneCount": 4, "busPriority": {"kind": "brt", "directions": "both", "laneWidthM": 3.5, "dividerM": 0.5}}}
+    q = Q.object_quantities(road)
+    assert "BRT (both directions, 3.5 m lane, divider 0.5 m)" in q["detail"]
+    assert 990 < q["bus_lane_m"] < 1010                                  # 500 m x 2 directions
+    one = {**road, "properties": {**road["properties"], "busPriority": {"kind": "bus_lane", "directions": "forward", "laneWidthM": 3.5, "dividerM": None}}}
+    assert 495 < Q.object_quantities(one)["bus_lane_m"] < 505
+    assert Q.object_quantities({**road, "properties": {"laneCount": 4}}).get("bus_lane_m") is None
+    rows = [{"type": "street_element", "op": "add", "q": Q.object_quantities(x)} for x in (path, lights, trees, rb)] + \
+           [{"type": "road", "op": "modify", "q": Q.object_quantities(road)}]
+    tot = Q.totals(rows)
+    assert 99 < tot["path"] < 101 and 990 < tot["bus_lane"] < 1010 and "street_element" not in tot
+    assert Q.street_counts(rows) == {"streetlight": 4, "street_tree": 3, "roundabout": 1}
+
+
+def test_planning_report_lists_street_elements_and_a_bus_lane_on_a_changed_base_road(client):
+    from database.connection import SessionLocal
+    from planning.models import PlanningProjectEntity
+    from planning.report import build_model
+    sid = "syn_alt_street"
+    assert client.post("/api/scenarios", json={"id": sid, "name": "SYNTHETIC street alt", "description": "SYNTHETIC", "year": 2026}).status_code == 201
+    base = {"id": "sq_base_road", "type": "road", "name": "SYNTHETIC base arterial", "scenarioId": "base",
+            "coordinates": [_pt(0, 2000), _pt(800, 2000)], "properties": {"laneCount": 4, "isOneWay": False, "speedLimit": 50}}
+    _post(client, base, "roads")
+    mod = {**base, "scenarioId": sid, "layerId": "roads",
+           "properties": {**base["properties"], "busPriority": {"kind": "bus_lane", "directions": "both", "laneWidthM": 3.5, "dividerM": None, "appliedAt": "2026-11-22"}}}
+    assert client.post(f"/api/scenarios/{sid}/changes", json=[{"objectId": base["id"], "op": "modify", "object": mod}]).status_code == 200
+    _post(client, {"id": "se_sq_x", "type": "street_element", "name": "SYNTHETIC crossing", "scenarioId": sid, "coordinates": [_pt(400, 2000)],
+                   "properties": {"kind": "crossing", "anchor": {"roadId": base["id"], "chainageM": 400, "offsetM": 0, "side": "left"},
+                                  "crossing": {"crossingType": "signalised", "widthM": 3, "refuge": True, "refugeWidthM": 1.5}}}, "street_elements")
+    _post(client, {"id": "se_sq_s", "type": "street_element", "name": "SYNTHETIC stop", "scenarioId": sid, "coordinates": [_pt(200, 2005)],
+                   "properties": {"kind": "bus_stop", "busStop": {"placement": "kerb", "shelterLengthM": 10, "shelterDepthM": 1.5}}}, "street_elements")
+    pid = client.post("/api/planning/projects", json={"name": "SYNTHETIC street project", "description": "SYNTHETIC", "created_by": "T"}).json()["id"]
+    assert client.post(f"/api/planning/projects/{pid}/links", json={"entity_type": "scenario", "entity_id": sid, "added_by": "T"}).status_code == 201
+    db = SessionLocal()
+    try:
+        m = build_model(db, db.get(PlanningProjectEntity, pid))
+    finally:
+        db.close()
+    sec = m.sections[3]
+    rows = {r[0]: r for r in next(b for b in sec.blocks if b.kind == "table" and "Plan length" in (b.header or [])).rows}
+    assert rows["SYNTHETIC crossing"][1] == "Street element" and "signalised" in rows["SYNTHETIC crossing"][7] and "refuge 1.5 m" in rows["SYNTHETIC crossing"][7]
+    assert "kerb-side" in rows["SYNTHETIC stop"][7]
+    assert rows["SYNTHETIC base arterial"][2] == "changes an existing object" and "bus lane (both directions" in rows["SYNTHETIC base arterial"][7]
+    notes = " ".join(b.text or "" for b in sec.blocks if b.kind == "note")
+    assert "Bus / BRT lane (lane length) 1.6" in notes          # 800 m x 2 directions
+    assert "1 pedestrian crossing(s)" in notes and "1 bus stop(s)" in notes
+
