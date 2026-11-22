@@ -1,0 +1,260 @@
+{
+ "id": "syn_curved_road",
+ "type": "road",
+ "name": "SYNTHETIC curved road",
+ "layerId": "roads",
+ "scenarioId": "base",
+ "coordinates": [
+  [
+   73.85,
+   18.5,
+   0
+  ],
+  [
+   73.85,
+   18.50235136650569,
+   0
+  ],
+  [
+   73.8500032416181,
+   18.50239858418515,
+   0
+  ],
+  [
+   73.85001291100741,
+   18.502444993957024,
+   0
+  ],
+  [
+   73.850028842722,
+   18.50248980173725,
+   0
+  ],
+  [
+   73.85005076416583,
+   18.50253224085228,
+   0
+  ],
+  [
+   73.8500783002569,
+   18.502571585157092,
+   0
+  ],
+  [
+   73.85011097984507,
+   18.502607161459725,
+   0
+  ],
+  [
+   73.85014824377352,
+   18.50263836103977,
+   0
+  ],
+  [
+   73.8501894544461,
+   18.50266465006377,
+   0
+  ],
+  [
+   73.85023390673678,
+   18.502685578719234,
+   0
+  ],
+  [
+   73.85028084005454,
+   18.50270078891106,
+   0
+  ],
+  [
+   73.8503294513573,
+   18.502710020388655,
+   0
+  ],
+  [
+   73.8503789088922,
+   18.502713115198873,
+   0
+  ],
+  [
+   73.85284183170214,
+   18.502713115198873,
+   0
+  ]
+ ],
+ "properties": {
+  "roadClass": "local",
+  "width": 10,
+  "laneCount": 2,
+  "laneWidth": 3.5,
+  "hasDivider": false,
+  "dividerWidth": 0,
+  "hasFootpath": true,
+  "footpathWidth": 1.5,
+  "speedLimit": 40,
+  "isOneWay": false,
+  "trafficCapacity": 2000,
+  "connectedJunctions": [],
+  "createdAt": "2026-11-22T07:00:00.000Z",
+  "updatedAt": "2026-11-22T07:00:00.000Z",
+  "alignment": {
+   "v": 1,
+   "behaviour": "curved",
+   "designSpeedKmh": 30,
+   "designSpeedSource": "class-default",
+   "eMax": 0.04,
+   "criteria": "irc86-urban",
+   "pis": [
+    {
+     "lon": 73.85,
+     "lat": 18.5,
+     "radiusM": 0
+    },
+    {
+     "lon": 73.85,
+     "lat": 18.502713115198873,
+     "radiusM": 40,
+     "radiusSource": "auto"
+    },
+    {
+     "lon": 73.85284183170214,
+     "lat": 18.502713115198873,
+     "radiusM": 0
+    }
+   ]
+  },
+  "sections": [
+   {
+    "startNodeIndex": 0,
+    "endNodeIndex": 14,
+    "totalRowWidth": 10,
+    "wideningPossible": true,
+    "hasMedian": false,
+    "medianWidth": 0,
+    "carriagewayA": {
+     "direction": "both",
+     "lanes": 1,
+     "laneWidth": 3.5,
+     "leftRoadside": {
+      "footpathWidth": 1.5,
+      "cycleTrackWidth": 0,
+      "vergeWidth": 0,
+      "parkingWidth": 0,
+      "drainageWidth": 0
+     },
+     "rightRoadside": {
+      "footpathWidth": 0,
+      "cycleTrackWidth": 0,
+      "vergeWidth": 0,
+      "parkingWidth": 0,
+      "drainageWidth": 0
+     }
+    },
+    "carriagewayB": {
+     "direction": "backward",
+     "lanes": 1,
+     "laneWidth": 3.5,
+     "leftRoadside": {
+      "footpathWidth": 0,
+      "cycleTrackWidth": 0,
+      "vergeWidth": 0,
+      "parkingWidth": 0,
+      "drainageWidth": 0
+     },
+     "rightRoadside": {
+      "footpathWidth": 1.5,
+      "cycleTrackWidth": 0,
+      "vergeWidth": 0,
+      "parkingWidth": 0,
+      "drainageWidth": 0
+     }
+    },
+    "reservedSpaces": [],
+    "provenance": {
+     "originalSource": "OSM",
+     "originalConfidence": "estimated",
+     "geometryModified": false,
+     "profileModified": false,
+     "lastModifiedBy": "importer",
+     "verificationStatus": "unverified"
+    }
+   }
+  ],
+  "sourceCoordinates": [
+   [
+    73.85,
+    18.5,
+    0
+   ],
+   [
+    73.85,
+    18.50235136650569,
+    0
+   ],
+   [
+    73.8500032416181,
+    18.50239858418515,
+    0
+   ],
+   [
+    73.85001291100741,
+    18.502444993957024,
+    0
+   ],
+   [
+    73.850028842722,
+    18.50248980173725,
+    0
+   ],
+   [
+    73.85005076416583,
+    18.50253224085228,
+    0
+   ],
+   [
+    73.8500783002569,
+    18.502571585157092,
+    0
+   ],
+   [
+    73.85011097984507,
+    18.502607161459725,
+    0
+   ],
+   [
+    73.85014824377352,
+    18.50263836103977,
+    0
+   ],
+   [
+    73.8501894544461,
+    18.50266465006377,
+    0
+   ],
+   [
+    73.85023390673678,
+    18.502685578719234,
+    0
+   ],
+   [
+    73.85028084005454,
+    18.50270078891106,
+    0
+   ],
+   [
+    73.8503294513573,
+    18.502710020388655,
+    0
+   ],
+   [
+    73.8503789088922,
+    18.502713115198873,
+    0
+   ],
+   [
+    73.85284183170214,
+    18.502713115198873,
+    0
+   ]
+  ]
+ }
+}

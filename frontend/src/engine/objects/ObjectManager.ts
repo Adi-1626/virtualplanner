@@ -1,4 +1,5 @@
 import type { CityObject, RoadObject, RoadSectionProfile, CarriagewayProfile, RoadsideProfile } from './types';
+import { objectToRow } from './objectRows';
 import { applyFlyoverElevationProfile } from './flyoverHelper';
 import { bridgeGeometry } from './bridgeElevation';
 import { remapRoadSections, repairRoadSections } from './roadSections';
@@ -79,16 +80,7 @@ export class ObjectManager {
   public schemaOf(obj: CityObject) { return this.mapToSchema(obj); }
 
   private mapToSchema(obj: CityObject) {
-    const { id, type, name, layerId, scenarioId, coordinates, ...rest } = obj;
-    return {
-      id,
-      type,
-      name,
-      layerId,
-      scenarioId,
-      coordinates,
-      properties: rest
-    };
+    return objectToRow(obj);
   }
 
   /**

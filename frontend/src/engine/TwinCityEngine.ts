@@ -61,6 +61,7 @@ import { EditingEngine } from './editing/EditingEngine';
 import { AlignmentEditSession, HANDLE_PREFIX } from './editing/AlignmentEditor';
 import { commitGeometry } from './editing/geometryCommit';
 import { AlignmentEditorView } from './editing/AlignmentEditorView';
+import { objectFromRow } from './objects/objectRows';
 import { runProgressivePerformanceTest, runRoadPerformanceTest } from './testing/PerformanceTester';
 import { apiGet, apiPost } from '../lib/api';
 import { directionOfArrowId } from './rendering/renderers/DirectionArrows';
@@ -1912,17 +1913,7 @@ export class TwinCityEngine {
         data.forEach((obj: any) => {
           if (obj.type === 'building') hasBuildings = true;
           if (obj.type === 'zone') hasZones = true;
-          const unpacked = {
-            id: obj.id,
-            type: obj.type as any,
-            name: obj.name,
-            layerId: obj.layerId,
-            scenarioId: obj.scenarioId,
-            coordinates: obj.coordinates,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            ...obj.properties
-          };
+          const unpacked = objectFromRow(obj);
           if (unpacked.type === 'road') {
             this.objects.syncRoadProperties(unpacked as any);
           }
