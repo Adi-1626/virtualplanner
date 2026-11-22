@@ -73,6 +73,15 @@ export const VISUAL_DIMS = {
   standardGauge: d(1.435, 'm', 'Track gauge (standard)', 'Pune Metro standard gauge', 'official'),
   uGirderSection: d(Number.NaN, 'm', 'U-girder section', 'no official Pune U-girder drawing found', 'unknown'),
 
+  // ── Roadside props (indicative placement, drawn roads only) ──────────────────
+  streetlightHeightNarrow: d(9, 'm', 'Streetlight pole height, RoW ≤ 9 m (8–10 m)', 'IRC:86-2018 Table 5.6', 'irc-copy'),
+  streetlightSpacingNarrow: d(26, 'm', 'Streetlight spacing, RoW ≤ 9 m (25–27 m)', 'IRC:86-2018 Table 5.6', 'irc-copy'),
+  streetlightHeightWide: d(11, 'm', 'Streetlight pole height, RoW > 9 m (10–12 m)', 'IRC:86-2018 Table 5.6', 'irc-copy'),
+  streetlightSpacingWide: d(31, 'm', 'Streetlight spacing, RoW > 9 m (30–33 m)', 'IRC:86-2018 Table 5.6', 'irc-copy'),
+  streetlightKerbOffset: d(0.6, 'm', 'Streetlight pole set back from the kerb face', 'none found', 'assumed'),
+  treeSpacing: d(8, 'm', 'Street tree spacing in the verge', 'none found (IRC:86 §5.1.10 asks for a continuous tree line)', 'assumed'),
+  treePitMin: d(1.0, 'm', 'Tree pit, minimum side (verge narrower than this gets no trees)', 'IRC:86-2018 §5.1.10', 'irc-copy'),
+
   // ── Tunnels ───────────────────────────────────────────────────────────────────
   boredTunnelDiameter: d(5.8, 'm', 'Bored tunnel internal diameter (Swargate–Katraj)', 'Pune Metro Swargate–Katraj revised DPR 2022', 'official'),
   portalHeadwallThickness: d(0.5, 'm', 'Portal headwall thickness', 'none found', 'assumed'),
@@ -87,7 +96,7 @@ export function dim(key: VisualDimKey): number {
 
 /** Which drawn details of each object type use assumed (or unknown) values, for the inspector list. */
 export const ASSUMED_BY_TYPE: Readonly<Record<string, readonly VisualDimKey[]>> = {
-  road: ['cycleTrackHeight'],
+  road: ['cycleTrackHeight', 'streetlightKerbOffset', 'treeSpacing'],
   flyover: ['flyoverSpan', 'flyoverGirderDepth', 'flyoverSoffitRatio', 'crashBarrierHeight', 'pierCapDepth', 'pierCapLength', 'retainingWallMaxHeight'],
   metro_flyover: ['flyoverGirderDepth', 'flyoverSoffitRatio', 'crashBarrierHeight', 'pierCapDepth', 'pierCapLength', 'metroGirderDepth', 'metroGirderSoffit', 'metroParapetHeight'],
   metro_line: ['metroGirderDepth', 'metroGirderSoffit', 'metroParapetHeight', 'pierCapDepth', 'pierCapLength'],

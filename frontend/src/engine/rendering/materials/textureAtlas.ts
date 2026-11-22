@@ -48,4 +48,7 @@ export const MATERIAL_SLOT: Record<MaterialId, number> = {
   marking_white: -1,
   marking_yellow: -1,
   glass: -1,
+  light_pole: 6,
+  tree_canopy: 4,
+  tree_trunk: 5,
 };

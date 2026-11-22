@@ -18,6 +18,7 @@ import { getVisualStyle, type VisualStyle } from '../visualStyle';
 import { materialOf, styleColor } from '../materials/materialPalette';
 import { MATERIAL_SLOT } from '../materials/textureAtlas';
 import { getQualityTier } from '../qualityTier';
+import { detailShown } from '../detailVisibility';
 import { createTexturedTintAppearance, texturesSupported } from '../appearance/TexturedTintAppearance';
 import { createLitTintAppearance } from '../appearance/LitTintAppearance';
 import { creaseNormals } from '../geometry/creaseNormals';
@@ -221,7 +222,8 @@ export abstract class TileBatchRenderer implements SubRenderer {
     const style = getVisualStyle();
     const realistic = style === 'realistic';
     // Medium / High tiers: CC0 detail textures (needs WebGL 2); Low tier or no WebGL 2: lit colours only
-    const textured = realistic && getQualityTier() !== 'low' && texturesSupported(this.viewer);
+    const tier = getQualityTier();
+    const textured = realistic && tier !== 'low' && texturesSupported(this.viewer);
     let instanceCount = 0;
     let primitiveCount = 0;
 
@@ -247,6 +249,8 @@ export abstract class TileBatchRenderer implements SubRenderer {
         if (opacity <= 0) continue;
 
         meshes.forEach((mesh, index) => {
+          // street props: Realistic at Medium/High only (not Schematic, not Low tier)
+          if (!detailShown(mesh, style, tier)) return;
           const layer = this.layerOf(mesh, index, meshes);
           if (!layer) return;
           if (!this.isLayerVisible(layer, height) && !keep?.has(layer)) {

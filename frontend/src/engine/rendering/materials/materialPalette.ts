@@ -28,7 +28,10 @@ export type MaterialId =
   | 'glass'
   | 'building_plaster'
   | 'building_roof'
-  | 'pipe';
+  | 'pipe'
+  | 'light_pole'
+  | 'tree_canopy'
+  | 'tree_trunk';
 
 export const MATERIAL_COLORS: Record<MaterialId, string> = {
   asphalt: '#424448',
@@ -52,6 +55,9 @@ export const MATERIAL_COLORS: Record<MaterialId, string> = {
   building_plaster: '#d6cfc2',
   building_roof: '#a59e94',
   pipe: '#6b7280',
+  light_pole: '#7d8186',
+  tree_canopy: '#4d6b34',
+  tree_trunk: '#5e4a38',
 };
 
 /** Legend colour → material, for meshes that do not name their material (older generator paths). */
@@ -76,6 +82,7 @@ const BY_LAYER_COLOR: Record<string, MaterialId> = {
 };
 
 const BY_LAYER: Record<string, MaterialId> = {
+  props: 'light_pole',
   asphalt: 'asphalt',
   sidewalk: 'paver_footpath',
   curb: 'kerb_stone',

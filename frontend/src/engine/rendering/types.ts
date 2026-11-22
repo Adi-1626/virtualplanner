@@ -15,5 +15,5 @@ export interface MeshData {
   normals?: Float32Array;  // Vertex normals (optional, for lighting)
   uvs?: Float32Array;      // UV texture mappings (optional)
   material: MaterialConfig;
-  layerId?: 'asphalt' | 'sidewalk' | 'curb' | 'divider' | 'building' | 'transit_deck' | 'transit_rails' | 'transit_pillars' | 'transit_station' | 'transit_utility' | 'transit_junction' | 'cycleway' | 'verge' | 'parking' | 'drainage' | 'marking' | 'transit_deck_details' | 'transit_pillars_details';
+  layerId?: 'asphalt' | 'sidewalk' | 'curb' | 'divider' | 'building' | 'transit_deck' | 'transit_rails' | 'transit_pillars' | 'transit_station' | 'transit_utility' | 'transit_junction' | 'cycleway' | 'verge' | 'parking' | 'drainage' | 'marking' | 'transit_deck_details' | 'transit_pillars_details' | 'props';
 }

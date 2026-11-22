@@ -66,6 +66,21 @@ function ecefTangent(a: readonly number[], b: readonly number[]): [number, numbe
   return [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
 }
 
+/** ECEF → [lng, lat] (degrees), for props placed by ECEF offset (one Bowring iteration; mm-accurate at ground level). */
+function Cartographic_fromECEF(p: readonly number[]): [number, number] {
+  const a = 6378137.0, f = 1 / 298.257223563, e2 = 2 * f - f * f, b = a * (1 - f), ep2 = (a * a - b * b) / (b * b);
+  const [x, y, z] = p;
+  const r = Math.hypot(x, y);
+  const th = Math.atan2(z * a, r * b);
+  const lat = Math.atan2(z + ep2 * b * Math.sin(th) ** 3, r - e2 * a * Math.cos(th) ** 3);
+  return [(Math.atan2(y, x) * 180) / Math.PI, (lat * 180) / Math.PI];
+}
+
+/** IRC:86-2018 Table 5.6 row for streetlights: right of way above 9 m takes the taller, wider-spaced poles. */
+export function streetlightRowIsWide(rowWidth: number): boolean {
+  return rowWidth > 9;
+}
+
 export class ProceduralGeometryGenerator {
   /**
    * Translates a CityObject configuration to a group of MeshData meshes
@@ -692,6 +707,22 @@ export class ProceduralGeometryGenerator {
             layerId: 'drainage'
           });
         }
+
+        // Roadside props on roads drawn in Design (not the imported city): streetlights at IRC:86 Table 5.6 height and
+        // spacing by RoW, street trees in verges at least a tree pit wide. Indicative placement, not a lighting design.
+        if (!road.osmProvenance && !isBridge) {
+          const side = Math.sign(elements.curb[0] + elements.curb[1]) || 1;
+          const kerbFace = side > 0 ? elements.curb[0] : elements.curb[1];
+          if (elements.footpath[1] - elements.footpath[0] > 0.9) {
+            const wide = streetlightRowIsWide(section.totalRowWidth || road.width || 0);
+            meshes.push(...this.streetlightsAlong(pieces, kerbFace + side * (0.2 + dim('streetlightKerbOffset')), side,
+              wide ? dim('streetlightHeightWide') : dim('streetlightHeightNarrow'),
+              wide ? dim('streetlightSpacingWide') : dim('streetlightSpacingNarrow'), kerbH));
+          }
+          if (elements.verge[1] - elements.verge[0] >= dim('treePitMin')) {
+            meshes.push(...this.treesAlong(pieces, (elements.verge[0] + elements.verge[1]) / 2, dim('treeSpacing')));
+          }
+        }
       };
 
       // Generate for all roadsides
@@ -739,6 +770,72 @@ export class ProceduralGeometryGenerator {
     }
 
     return meshes;
+  }
+
+  /** Frames (ECEF origin, up, right, forward) at `spacing` along each piece, `offset` metres to the right. */
+  private framesAlong(pieces: readonly (readonly number[])[][], offset: number, spacing: number, base = 0) {
+    const out: { o: [number, number, number]; up: [number, number, number]; right: [number, number, number]; fwd: [number, number, number] }[] = [];
+    for (const piece of pieces) {
+      const path = piece as unknown as PathPt[];
+      if (path.length < 2) continue;
+      const cum = cumulativeLengths(path);
+      for (const st of pierStations(cum[cum.length - 1], spacing)) {
+        const { pt, seg } = pointAt(path, cum, st);
+        const c = wgs84ToCartesian(pt[0], pt[1], (pt[2] || 0) + base);
+        const up = normalize(c);
+        const t = ecefTangent(path[seg], path[seg + 1] ?? path[seg]);
+        const right = normalize(cross(normalize(t), up));
+        const fwd = normalize(cross(up, right));
+        out.push({ o: [c[0] + right[0] * offset, c[1] + right[1] * offset, c[2] + right[2] * offset], up, right, fwd });
+      }
+    }
+    return out;
+  }
+
+  /** Merges many small meshes of one material into one (one instance per object and material in the tile batch). */
+  private mergeMeshes(parts: MeshData[], color: string, materialId: MaterialConfig['materialId']): MeshData | null {
+    if (!parts.length) return null;
+    let nv = 0, ni = 0;
+    for (const p of parts) { nv += p.positions.length; ni += p.indices.length; }
+    const positions = new Float64Array(nv);
+    const indices = new Uint32Array(ni);
+    let ov = 0, oi = 0;
+    for (const p of parts) {
+      positions.set(p.positions, ov);
+      const base = ov / 3;
+      for (let k = 0; k < p.indices.length; k++) indices[oi + k] = p.indices[k] + base;
+      ov += p.positions.length; oi += p.indices.length;
+    }
+    return { positions, indices, material: { type: 'solid', color, materialId }, layerId: 'props' };
+  }
+
+  /** Streetlights: a pole with a single arm reaching over the carriageway (pole 0.18 m square, arm 1.5 m; assumed). */
+  private streetlightsAlong(pieces: readonly (readonly number[])[][], offset: number, side: number, height: number, spacing: number, base: number): MeshData[] {
+    const poles: MeshData[] = [];
+    for (const f of this.framesAlong(pieces, offset, spacing, base)) {
+      const mid: [number, number, number] = [f.o[0] + f.up[0] * height / 2, f.o[1] + f.up[1] * height / 2, f.o[2] + f.up[2] * height / 2];
+      poles.push(this.generateLocalBox(mid, f.up, f.right, f.fwd, 0.18, 0.18, height, '#94a3b8', 'props'));
+      const armLen = 1.5;
+      const armC: [number, number, number] = [0, 1, 2].map(i => f.o[i] + f.up[i] * (height - 0.1) - f.right[i] * side * armLen / 2) as [number, number, number];
+      poles.push(this.generateLocalBox(armC, f.up, f.right, f.fwd, 0.12, armLen, 0.1, '#94a3b8', 'props'));
+      const headC: [number, number, number] = [0, 1, 2].map(i => f.o[i] + f.up[i] * (height - 0.2) - f.right[i] * side * (armLen - 0.2)) as [number, number, number];
+      poles.push(this.generateLocalBox(headC, f.up, f.right, f.fwd, 0.25, 0.5, 0.12, '#94a3b8', 'props'));
+    }
+    const m = this.mergeMeshes(poles, '#94a3b8', 'light_pole');
+    return m ? [m] : [];
+  }
+
+  /** Street trees: trunk and a two-cone canopy (generic shape; no species implied), canopy clearance 3 m (IRC:86 §5.1.10). */
+  private treesAlong(pieces: readonly (readonly number[])[][], offset: number, spacing: number): MeshData[] {
+    const trunks: MeshData[] = [];
+    const crowns: MeshData[] = [];
+    for (const f of this.framesAlong(pieces, offset, spacing)) {
+      const c = Cartographic_fromECEF(f.o);
+      trunks.push(this.generateFrustum(c[0], c[1], 0, 3.2, 0.18, 0.14, 'props', '#78350f', 'tree_trunk', false));
+      crowns.push(this.generateFrustum(c[0], c[1], 3.0, 1.4, 0.4, 2.4, 'props', '#166534', 'tree_canopy', false));
+      crowns.push(this.generateFrustum(c[0], c[1], 4.4, 2.6, 2.4, 0.3, 'props', '#166534', 'tree_canopy', true));
+    }
+    return [this.mergeMeshes(trunks, '#78350f', 'tree_trunk'), this.mergeMeshes(crowns, '#166534', 'tree_canopy')].filter((m): m is MeshData => !!m);
   }
 
   /** The pieces of a road's centre line between the places other roads meet or cross it. */
