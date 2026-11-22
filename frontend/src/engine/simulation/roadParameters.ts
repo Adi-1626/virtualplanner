@@ -18,7 +18,7 @@ import { roadKeys } from './roadSection';
  *     ref and the same OSM highway class) - OSM often tags only one piece;
  *  3. an urban default by OSM highway class (assumption, below), never above
  *     the legal ceiling for municipal areas in Maharashtra.
- * Roads drawn in Build keep the speed the user set.
+ * Roads drawn in Build keep the speed the user set, capped at their alignment's design speed.
  *
  * Sources:
  *  - MoRTH S.O. 1522(E), 6 April 2018: roads within municipal limits, M1 cars
@@ -105,7 +105,13 @@ export function urbanSpeeds(roads: readonly DrivableObject[]): { speeds: Map<str
   };
   for (const r of roads) {
     const tags = tagsOf(r);
-    if (!tags) { speeds.set(r.id, { kmh: r.speedLimit || 40, basis: 'user' }); report.user++; continue; }
+    if (!tags) {
+      // A road drawn in Build: the speed the user set, never above the geometric design speed of its alignment (the
+      // design speed is the highest speed the curves were checked for: IRC:86-2018 §3; the shape editor sets it)
+      const own = r.speedLimit || 40;
+      const design = r.alignment?.designSpeedKmh;
+      speeds.set(r.id, { kmh: design && design > 0 && design < own ? design : own, basis: 'user' }); report.user++; continue;
+    }
     const own = tagged.get(r.id);
     let kmh: number, basis: SpeedBasis;
     if (own !== undefined) { kmh = own; basis = 'tagged'; report.tagged++; }

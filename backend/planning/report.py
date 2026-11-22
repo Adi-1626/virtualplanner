@@ -144,6 +144,22 @@ def build_model(db: Session, p: PlanningProjectEntity, now: datetime.datetime | 
         b4.append(Block("para", text=f"Scenario: {s.name if s else '(record no longer exists)'} ({sid}, {s.kind if s else '?'})"))
         if s and s.description:
             b4.append(Block("note", text=s.description))
+        if s and s.kind != "baseline":
+            # What the alternative builds, as built (docs/urbanos/BUILD_PROPAGATION.md): from its stored change set
+            from planning import quantities as Q
+            works = Q.built_works(db, sid)
+            if works:
+                tot = Q.totals(works)
+                summary = "; ".join([f"{Q.TYPE_LABEL.get(k, k)} {v / 1000:.2f} km" for k, v in sorted(tot.items()) if k != "piers"]
+                                    + ([f"{int(tot['piers'])} new piers"] if tot.get("piers") else []))
+                b4.append(Block("subhead", text="Built works in this alternative (current head, as drawn in Design)"))
+                b4.append(Block("table", header=["Object", "Type", "Change", "Plan length", "Lanes", "Level", "Piers", "Detail"], rows=Q.table_rows(works)))
+                b4.append(Block("note", text=("New works: " + summary + ". " if summary else "") +
+                                "Quantities are computed from the drawn design (plan length along the centreline; piers every pier spacing "
+                                "where the deck is at least 3 m up, as in the 3D view), not measured. Pile and foundation sizes are not designed "
+                                "in UrbanOS (UNKNOWN). A saved version freezes these; the head can still change."))
+            else:
+                b4.append(Block("note", text="This alternative builds nothing yet (its change set is empty)."))
         vs = db.query(ScenarioVersionEntity).filter(ScenarioVersionEntity.scenario_id == sid).order_by(ScenarioVersionEntity.number).all()
         if vs:
             b4.append(Block("table", header=["Version", "Label", "Saved (UTC)", "Changes", "Change-set hash", "On current baseline", "Key assumptions"], rows=[[

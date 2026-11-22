@@ -20,7 +20,8 @@ import { clearConflictHighlight, showConflictHighlight } from './conflictHighlig
 import { gapCountText, groupGaps, type GapGroup } from './screeningGroups';
 import { plural } from '../../lib/plural';
 
-const SCREENED_TYPES = new Set(['underground_alignment', 'utility', 'metro_line', 'metro_station']);
+/** What the screening reads (coordination/screening.py SCREENED_TYPES): underground works, metro, and the decks whose piers go into the ground. */
+const SCREENED_TYPES = new Set(['underground_alignment', 'utility', 'metro_line', 'metro_station', 'flyover', 'metro_flyover']);
 const isScreened = (o: CityObject) => SCREENED_TYPES.has(o.type);
 const PAGE = 40;
 
@@ -258,7 +259,7 @@ export const ConflictCheck: React.FC<{ a?: UndergroundAlignmentObject | null }> 
   const filtered = statusFilter ? scoped.filter(f => f.status === statusFilter) : scoped;
   const groups = groupBySeverity(filtered, a?.id);
   const origin = entry?.origin;
-  const stale = entry ? (origin?.stale ?? false) || isStale(origin?.comparedAt ?? entry.at, visible) : false;
+  const stale = entry ? (origin?.stale ?? false) || isStale(origin?.comparedAt ?? entry.at, visible, entry.run.objects_count) : false;
   const objChecklist = run?.summary.proposed_checked.find(p => p.id === scope);
 
   return (

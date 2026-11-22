@@ -157,6 +157,8 @@ export interface ScreeningRun {
   engine_version: string; config_version: string; scenario_id: string; generated_at: string; banner: string; disclaimer: string;
   /** Set when the run was saved (every full check): reopening the alternative shows it. */
   run_id?: string; saved_at?: string; inputs_hash?: string;
+  /** How many Design objects the check was sent (a deletion since then makes the result stale). */
+  objects_count?: number;
   summary: {
     counts: Record<ScreeningStatus, number>; worst_status: ScreeningStatus | null; headline: string;
     proposed_checked: (ScreeningAsset & { checklist: ScreeningChecklistItem[] })[]; skipped: { id: string; name: string; reason: string }[];

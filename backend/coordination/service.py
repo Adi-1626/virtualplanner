@@ -288,12 +288,13 @@ def building_segments(boxes: list[tuple]) -> tuple[list[G.Segment], Optional[dic
 
 DESIGN_KIND = {"tunnel": "tunnel", "metro_tunnel": "metro_tunnel", "storm": "drainage", "sewer": "pipeline", "water": "pipeline",
                "gas": "pipeline", "power": "utility", "telecom": "utility", "utility": "utility", "metro_viaduct": "metro_viaduct",
-               "metro_station": "metro_station"}
+               "metro_station": "metro_station", "pier_foundation": "pier"}
 
 
 def design_object_segments(db: Session, scenario_ids: set, exclude_ids: set, exclude_markers: list[str],
                            osm_metro_ids: Optional[set] = None, dropped: Optional[list] = None) -> list[G.Segment]:
-    """Objects drawn in Design (underground alignments, utilities, elevated metro lines / stations) in the baseline and
+    """Objects drawn in Design (underground alignments, utilities, elevated metro lines / stations, and the pier foundations
+    of drawn flyovers / double-decks / proposed elevated metro lines, screening.pier_asset) in the baseline and
     in the scenarios the project's elements belong to, as side-B segments (layer `design_object`). Objects registered
     as one of the project's own elements (element_ref or the Underground conflict-check provenance marker) are skipped.
     Depths: crown/invert from the drawn profile and section (screening.design_asset); a utility whose depth certainty is
