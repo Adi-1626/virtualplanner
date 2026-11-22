@@ -134,6 +134,12 @@ describe('road analysis panel pieces', () => {
     expect(b).toContain('131%');
     expect(b).toContain('Show Airport Road on the map');
   });
+  it('sources card with no routed traffic says so instead of "0% through · 100% local" (QA 2026-11-22)', () => {
+    const s = renderToStaticMarkup(createElement(SourcesCard, { r: result({ composition: { throughShare: 0, localShare: 0 }, origins: [], destinations: [] }), overlay: 'none', actions: actions() }));
+    expect(s).toContain('No simulated traffic is routed over this road');
+    expect(s).not.toContain('100%');
+    expect(s).not.toContain('Show its routes on the map');
+  });
   it('a bottleneck label with the forced-flow note fits: three lines, not cut at two (docs/OVERHAUL.md §16 merged-build check)', () => {
     const r = result();
     r.areaBottlenecks = [{ ...r.areaBottlenecks[0], label: 'Old Pune–Mumbai Highway, south-east of the road, 200 m (no other route in the model for 100% of its traffic)' }];

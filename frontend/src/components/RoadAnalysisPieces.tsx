@@ -337,6 +337,10 @@ export const SourcesCard: React.FC<{ r: RoadAnalysisResult; overlay: MapOverlay;
     <section className="space-y-2">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Where its traffic comes from</h3>
       <Card testId="sources">
+        {r.composition.throughShare + r.composition.localShare === 0 ? (
+          // QA 2026-11-22: with no traffic routed over the road the bar read "0% through · 100% local"
+          <p className="text-xs text-slate-400" data-testid="sources-empty">No simulated traffic is routed over this road, so there is no through / local split and no origins or destinations to show.</p>
+        ) : <>
         <div className="space-y-1" title="Of the traffic routed over the road: share that starts and ends beyond the area (through), and share with one end inside it (local)">
           <div className="flex h-3 rounded-full overflow-hidden bg-white/10"><div className="bg-violet-400" style={{ width: `${through}%` }} /><div className="bg-cyan-400" style={{ width: `${100 - through}%` }} /></div>
           <div className="flex justify-between text-[11px]"><span className="text-violet-300"><strong className="tabular-nums">{through}%</strong> through</span><span className="text-cyan-300"><strong className="tabular-nums">{100 - through}%</strong> local</span></div>
@@ -346,6 +350,7 @@ export const SourcesCard: React.FC<{ r: RoadAnalysisResult; overlay: MapOverlay;
           <PlaceBars title="Goes to" icon={ArrowUpRight} places={r.destinations} actions={actions} />
         </div>
         <Button size="sm" icon={MapIcon} variant={overlay === 'select-link' ? 'primary' : 'secondary'} onClick={() => actions.setOverlay(overlay === 'select-link' ? 'none' : 'select-link')}>{overlay === 'select-link' ? 'Hide routes' : 'Show its routes on the map'}</Button>
+        </>}
       </Card>
     </section>
   );
