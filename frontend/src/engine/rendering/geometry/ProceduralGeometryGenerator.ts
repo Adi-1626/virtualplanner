@@ -2,6 +2,7 @@ import { utilityZ } from '../../underground/utilityModel';
 import { isUnmappedMetroTunnel, unmappedUndergroundStation } from '../../underground/metroLevel';
 import type { CityObject, RoadObject, BuildingObject, FlyoverObject, MetroLineObject, MetroStationObject, UtilityObject, JunctionObject, MetroFlyoverObject, UndergroundAlignmentObject } from '../../objects/types';
 import { depthsOf, sectionHeightM, sectionWidthM } from '../../underground/alignmentGeometry';
+import type { JunctionMarkingInput } from '../junctionMarkingInput';
 import { planPortalsOnPath, levelAt, type PortalPlan, type BoatRun } from './tunnelPortal';
 import { groundAt, getGroundField, withFlatGround } from '../../terrain/groundHeight';
 import { depressedLevel, elevatedLayer, isOsmBridge } from '../../objects/bridgeElevation';
@@ -2121,6 +2122,81 @@ export class ProceduralGeometryGenerator {
 
   private dot(a: [number, number, number], b: [number, number, number]): number {
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  }
+
+  /**
+   * Painted junction markings from the junction tool's marking items (IRC:35 stop / give-way lines, zebras, arrows),
+   * one merged white mesh in the 'marking' layer. Shapes follow each item's own widths, dashes and gaps; the arrow
+   * head and give-way triangle sizes are assumed (visualDims). The STOP word is not drawn (text), counted in `skipped`.
+   * `lift`: height above the item's z (default: marking lift plus the largest road-class surface lift, 0.15 m).
+   */
+  public generateJunctionMarkingMeshes(items: readonly JunctionMarkingInput[], lift = dim('markingLift') + 0.15): { meshes: MeshData[]; skipped: number } {
+    const positions: number[] = [];
+    const indices: number[] = [];
+    let skipped = 0;
+    /** Quad in the item's local plane: corners given as (across, along) metres from origin o. */
+    const quad = (o: [number, number, number], ax: number[], al: number[], pts: [number, number][]) => {
+      const b = positions.length / 3;
+      for (const [x, y] of pts) positions.push(o[0] + ax[0] * x + al[0] * y, o[1] + ax[1] * x + al[1] * y, o[2] + ax[2] * x + al[2] * y);
+      if (pts.length === 3) indices.push(b, b + 1, b + 2);
+      else indices.push(b, b + 1, b + 2, b, b + 2, b + 3);
+    };
+    for (const m of items) {
+      if (m.line.length < 2) { skipped++; continue; }
+      if (m.kind === 'stop_word') { skipped++; continue; }
+      const p0 = m.line[0], p1 = m.line[m.line.length - 1];
+      const mid = [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2, ((p0[2] || 0) + (p1[2] || 0)) / 2];
+      const o = wgs84ToCartesian(mid[0], mid[1], mid[2] + lift);
+      const a = wgs84ToCartesian(p0[0], p0[1], mid[2] + lift), b = wgs84ToCartesian(p1[0], p1[1], mid[2] + lift);
+      const up = normalize(o);
+      const dir: [number, number, number] = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+      const len = Math.hypot(dir[0], dir[1], dir[2]);
+      if (len < 1e-3) { skipped++; continue; }
+      const u = normalize(dir);
+      // along the line (u) and the in-plane normal to it (v)
+      const v = normalize(cross(up, u));
+      const h = len / 2;
+      const band = (y0: number, y1: number, x0 = -h, x1 = h) => quad(o, u, v, [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]);
+      const dashed = (y0: number, y1: number, dash: number, gap: number) => {
+        for (let x = -h; x < h - 1e-6; x += dash + gap) band(y0, y1, x, Math.min(h, x + dash));
+      };
+      const w = m.widthM;
+      switch (m.kind) {
+        case 'stop_line': band(-w / 2, w / 2); break;
+        case 'double_stop_line': {
+          const g = m.doubleGapM ?? 0.15;
+          band(-g / 2 - w, -g / 2); band(g / 2, g / 2 + w); break;
+        }
+        case 'give_way_line': {
+          const g = m.doubleGapM ?? 0.15, dash = m.dashM ?? 0.6, gap = m.gapM ?? 0.3;
+          dashed(-g / 2 - w, -g / 2, dash, gap); dashed(g / 2, g / 2 + w, dash, gap); break;
+        }
+        case 'zebra': {
+          // stripes run along the road, `widthM` long, `dashM` wide, spaced `gapM` across the carriageway
+          const stripe = m.dashM ?? 0.5, gap = m.gapM ?? 0.5;
+          for (let x = -h; x < h - 1e-6; x += stripe + gap) band(-w / 2, w / 2, x, Math.min(h, x + stripe));
+          break;
+        }
+        case 'arrow': {
+          // line runs tail → head; shaft then a triangular head over the last `arrowHeadLength`
+          const head = Math.min(dim('arrowHeadLength'), len / 2), sw = dim('arrowShaftWidth') / 2, hw = dim('arrowHeadWidth') / 2;
+          quad(o, u, v, [[-h, -sw], [h - head, -sw], [h - head, sw], [-h, sw]]);
+          quad(o, u, v, [[h - head, -hw], [h, 0], [h - head, hw]]);
+          break;
+        }
+        case 'give_way_triangle': {
+          // apex toward the junction; the item line runs across the lane, so the triangle points along -v
+          const L = dim('giveWayTriangleLength') / 2, B = Math.min(dim('giveWayTriangleBase'), len) / 2;
+          quad(o, u, v, [[-B, L], [B, L], [0, -L]]);
+          break;
+        }
+      }
+    }
+    if (!indices.length) return { meshes: [], skipped };
+    return {
+      meshes: [{ positions: new Float64Array(positions), indices: new Uint32Array(indices), material: { type: 'solid', color: '#e2e8f0', materialId: 'marking_white' }, layerId: 'marking' }],
+      skipped,
+    };
   }
 
   private generateLocalBox(

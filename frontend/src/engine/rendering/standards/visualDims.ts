@@ -45,6 +45,11 @@ export const VISUAL_DIMS = {
   edgeLineWidth: d(0.15, 'm', 'Edge line width (divided multi-lane)', `${IRC35} §4.5.3`, 'irc-copy'),
   edgeLineOffset: d(0.1, 'm', 'Edge line offset from kerb', 'MoUD CoP Part 3 Road Marking §(3)', 'official'),
   markingLift: d(0.02, 'm', 'Marking height above the surface (render only)', 'rendering (polygon offset substitute)', 'assumed'),
+  arrowShaftWidth: d(0.2, 'm', 'Junction arrow shaft width', 'none found (IRC:35 arrow drawings not read)', 'assumed'),
+  arrowHeadWidth: d(0.6, 'm', 'Junction arrow head width', 'none found (IRC:35 arrow drawings not read)', 'assumed'),
+  arrowHeadLength: d(1.5, 'm', 'Junction arrow head length', 'none found (IRC:35 arrow drawings not read)', 'assumed'),
+  giveWayTriangleBase: d(1.5, 'm', 'Give-way triangle base', 'none found (IRC:35 drawing not read)', 'assumed'),
+  giveWayTriangleLength: d(3.5, 'm', 'Give-way triangle length', 'none found (IRC:35 drawing not read)', 'assumed'),
 
   // ── Road flyover ──────────────────────────────────────────────────────────────
   flyoverSpan: d(30, 'm', 'Flyover span (pier spacing)', 'none found (IRC:SP:90 points to IRC:SP:54, not read)', 'assumed'),

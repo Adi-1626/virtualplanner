@@ -2,7 +2,13 @@ import { getVisualStyle, onVisualStyleChange } from './visualStyle';
 import { applySceneStyle } from './sceneStyle';
 import { onQualityTierChange } from './qualityTier';
 import { startQualityWatchdog } from './qualityWatchdog';
-import { Viewer } from 'cesium';
+import { Viewer, Primitive, GeometryInstance, ColorGeometryInstanceAttribute, PerInstanceColorAppearance } from 'cesium';
+import type { JunctionMarkingInput } from './junctionMarkingInput';
+import { CesiumAdapter } from './adapters/CesiumAdapter';
+import { createLitTintAppearance } from './appearance/LitTintAppearance';
+import { styleColor } from './materials/materialPalette';
+import { withOpacity } from './renderers/opacity';
+import { realisticMesh } from './renderers/TileBatchRenderer';
 import type { CityObject } from '../objects/types';
 import { ProceduralGeometryGenerator } from './geometry/ProceduralGeometryGenerator';
 import { MeshCache } from './cache/MeshCache';
@@ -72,6 +78,47 @@ export class RenderManager {
     });
     this.stopWatchdog?.();
     this.stopWatchdog = startQualityWatchdog(viewer);
+    this.stopMarkingStyleWatch?.();
+    this.stopMarkingStyleWatch = onVisualStyleChange(() => this.buildJunctionMarkings());
+  }
+
+  // ── Junction markings (street-design junction tool) ─────────────────────────
+  private junctionMarkingItems: readonly JunctionMarkingInput[] = [];
+  private junctionMarkingVisible = true;
+  private junctionMarkingPrim: Primitive | null = null;
+  private stopMarkingStyleWatch: (() => void) | null = null;
+
+  /**
+   * Renderer hook for the junction tool's IRC:35 markings (`junctionMarkings(...).items`, structurally typed): replaces
+   * the set drawn so far with painted meshes (stop / give-way lines, zebras, arrows, give-way triangles). Pass [] to
+   * clear. Returns how many items could not be drawn (STOP word, degenerate lines).
+   */
+  public setJunctionMarkings(items: readonly JunctionMarkingInput[], visible = true): number {
+    this.junctionMarkingItems = items;
+    this.junctionMarkingVisible = visible;
+    return this.buildJunctionMarkings();
+  }
+
+  private buildJunctionMarkings(): number {
+    const viewer = this.viewer;
+    if (this.junctionMarkingPrim && viewer) viewer.scene.primitives.remove(this.junctionMarkingPrim);
+    this.junctionMarkingPrim = null;
+    if (!viewer || !this.junctionMarkingVisible || !this.junctionMarkingItems.length) return 0;
+    const { meshes, skipped } = this.generator.generateJunctionMarkingMeshes(this.junctionMarkingItems);
+    if (!meshes.length) return skipped;
+    const style = getVisualStyle();
+    const realistic = style === 'realistic';
+    this.junctionMarkingPrim = viewer.scene.primitives.add(new Primitive({
+      geometryInstances: meshes.map(m => new GeometryInstance({
+        geometry: CesiumAdapter.buildGeometry(realistic ? realisticMesh(m) : m),
+        attributes: { color: ColorGeometryInstanceAttribute.fromColor(withOpacity(styleColor(m, style), 1)) },
+        id: 'junction-markings',
+      })),
+      appearance: realistic ? createLitTintAppearance(false) : new PerInstanceColorAppearance({ flat: true, translucent: false }),
+      asynchronous: false,
+    }));
+    viewer.scene.requestRender?.();
+    return skipped;
   }
 
   private stopTierWatch: (() => void) | null = null;
