@@ -14,7 +14,7 @@ import { isUserBuilt, TYPE_LABELS } from '../engine/objects/builtBy';
 import { isSampleObject, SAMPLE_LABEL } from '../engine/objects/sampleObjects';
 import { filterObjectsForScenario } from '../engine/scenarios/scenarioFilter';
 import { isDrivable } from '../engine/simulation/StudyAreaExplorer';
-import { lineLength } from './drawnWorks';
+import { lineLength, LENGTH_DEFINITION } from './drawnWorks';
 import { formatDistanceM } from '../lib/format';
 import { plural } from '../lib/plural';
 import { useSelectedId } from '../hooks/useAppMode';
@@ -206,7 +206,7 @@ const RoadDetails: React.FC<{ road: RoadObject | FlyoverObject | MetroFlyoverObj
   );
 
   const facts: [string, React.ReactNode][] = [];
-  if (length !== null) facts.push(['Length', formatDistanceM(length)]);
+  if (length !== null) facts.push(['Length', <span title={LENGTH_DEFINITION}>{formatDistanceM(length)}</span>]);
   facts.push(['Lanes', lanesText(road)]);
   facts.push(['Speed limit', `${road.speedLimit} km/h`]);
   facts.push(['Type', CLASS_LABELS[road.roadClass] ?? road.roadClass]);

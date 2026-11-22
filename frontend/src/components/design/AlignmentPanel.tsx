@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Spline, Lock, AlertTriangle } from 'lucide-react';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import type { PIRow } from '../../engine/editing/AlignmentEditor';
+import { chainageNote, LENGTH_DEFINITION, lineLength } from '../drawnWorks';
 
 /**
  * Inspector section "Alignment" for the selected line object (docs/urbanos/GEOMETRY_EDITOR_DESIGN.md §4.2): one row per
@@ -62,12 +63,16 @@ export const AlignmentPanel: React.FC<{ objectId: string }> = ({ objectId }) => 
   const warn = sum?.flags.filter(f => f.severity === 'warn') ?? [];
   const info = sum?.flags.filter(f => f.severity === 'info' && f.code !== 'transition-not-modelled' && f.code !== 'sharp-angle-point') ?? [];
   const transitions = sum?.rows.filter(r => r.transitionNeededM !== null) ?? [];
+  const obj = engineInstance.objects.getById(objectId);
+  const centreline = obj ? lineLength(obj) : null;
+  const lengthNote = sum?.ok ? chainageNote(centreline, sum.lengthM) : null;
 
   return (
     <div data-testid="alignment-panel" className="bg-slate-950/50 p-3 rounded-lg border border-white/5 space-y-2 mt-3 text-sm">
       <div className="text-sm text-slate-400 uppercase font-semibold border-b border-white/5 pb-1.5 flex items-center gap-1.5">
-        <Spline size={12} /> Alignment {sum?.ok ? <span className="ml-auto normal-case font-normal text-slate-500">{m(sum.lengthM)}</span> : null}
+        <Spline size={12} /> Alignment {centreline !== null ? <span className="ml-auto normal-case font-normal text-slate-500" title={LENGTH_DEFINITION} data-testid="alignment-length">{m(centreline)}</span> : null}
       </div>
+      {lengthNote && <p className="text-xs text-slate-500 leading-snug" data-testid="alignment-chainage-note">{lengthNote}</p>}
       <p className="text-xs text-slate-500 leading-snug">
         Drag a square to move a point, a small circle to add one{angled ? '' : ', a diamond to change the radius (Shift: 5 m steps)'}. Right-click a point for more. Esc cancels a drag; Ctrl+Z undoes.
         {snap.editable.migrated && ' This object has no editable points yet: its corners become points (sharp, same shape) at the first change.'}
