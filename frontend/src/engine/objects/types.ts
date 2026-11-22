@@ -109,6 +109,8 @@ export interface RoadObject extends BaseCityObject {
   osmProvenance?: OSMProvenance;
   /** Crossings drawn where the level was not certain, with the user's decision (docs/TOPOLOGY_RECONSTRUCTION.md). */
   levelCrossings?: import('../editing/levelCrossings').LevelCrossing[];
+  /** Vertices this object's crossings / end junctions put into other roads (editing/addedVertices.ts): taken back when a reshape no longer uses them. */
+  addedNetworkVertices?: import('../editing/addedVertices').AddedVertex[];
 
   // Set when a flyover ramp merge/weave zone reduces this road's effective capacity
   flyoverImpact?: {
@@ -227,6 +229,8 @@ export interface FlyoverObject extends BaseCityObject {
   /** Editable PI + radius geometry (GEOMETRY_EDITOR_DESIGN.md §3.1). Absent = legacy polyline. When present, `coordinates` is derived from it. */
   alignment?: import('../geometry/alignment/types').HorizontalAlignment;
   levelCrossings?: import('../editing/levelCrossings').LevelCrossing[];
+  /** Vertices this object's crossings / end junctions put into other roads (editing/addedVertices.ts): taken back when a reshape no longer uses them. */
+  addedNetworkVertices?: import('../editing/addedVertices').AddedVertex[];
   coordinates: [number, number, number][]; // Path of flyover
   roadClass: RoadClassification;
   width: number; // overall width in meters
@@ -310,6 +314,8 @@ export interface MetroFlyoverObject extends BaseCityObject {
   /** Editable PI + radius geometry (GEOMETRY_EDITOR_DESIGN.md §3.1). Absent = legacy polyline. When present, `coordinates` is derived from it. */
   alignment?: import('../geometry/alignment/types').HorizontalAlignment;
   levelCrossings?: import('../editing/levelCrossings').LevelCrossing[];
+  /** Vertices this object's crossings / end junctions put into other roads (editing/addedVertices.ts): taken back when a reshape no longer uses them. */
+  addedNetworkVertices?: import('../editing/addedVertices').AddedVertex[];
   coordinates: [number, number, number][]; // Path of double-decker corridor
   roadClass: RoadClassification;
   width: number; // overall width of flyover deck (e.g. 19)

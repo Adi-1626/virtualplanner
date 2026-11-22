@@ -9,6 +9,7 @@ import { LocalOsmIndex } from './LocalOsmIndex';
 import { findNearestTrack } from '../objects/stationAlignment';
 import { utilityLayerId } from '../layers/LayerManager';
 import { findRoadEndGaps, insertRoadVertex, markGeometryEdited, type RoadEndGap } from './roadGaps';
+import { addedVerticesOf, mergeAdded, verticesInsertedBy } from './addedVertices';
 import { classifyOsmWay, findNonDrivableOsmRoads, type NonDrivableRoad } from './osmDrivability';
 import { STUDY_AREA_ROADS_PREFIX } from '../simulation/osmCoverage';
 import { BASE_SCENARIO_ID } from '../scenarios/ScenarioManager';
@@ -760,6 +761,8 @@ export class EditingEngine {
       }
       const r2 = withVertex(road);
       if (r2) roadChanges = { ...roadChanges, coordinates: r2.coordinates, ...(r2.sections ? { sections: r2.sections } : {}) } as Partial<CityObject>;
+      const added = verticesInsertedBy(diffs, road.id);
+      if (added.length) roadChanges = { ...roadChanges, addedNetworkVertices: mergeAdded(addedVerticesOf(road), added) } as Partial<CityObject>;
     }
     this.objectManager.update(road.id, roadChanges);
     diffs.push({ type: 'update', id: road.id, before: road, after: this.objectManager.getById(road.id)!, description: decision === 'junction' ? 'Confirm junction' : 'Keep crossing separate' });
@@ -1288,6 +1291,12 @@ export class EditingEngine {
         this.objectManager.update(u.id, u.updates);
         splitDiffs.push({ type: 'update', id: u.id, before, after: this.objectManager.getById(u.id)!, description: `Ramp merge on ${before.name || before.id}` });
       }
+    }
+
+    if (newObj && (newObj.type === 'road' || newObj.type === 'flyover' || newObj.type === 'metro_flyover')) {
+      // Vertices this line put into other roads, so a later reshape can take back the ones it no longer uses
+      const added = verticesInsertedBy(splitDiffs, newObj.id);
+      if (added.length) newObj = { ...newObj, addedNetworkVertices: added } as CityObject;
     }
 
     if (newObj) {

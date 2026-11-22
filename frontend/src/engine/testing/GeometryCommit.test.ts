@@ -127,6 +127,101 @@ describe('commitGeometry: roads', () => {
   });
 });
 
+describe('commitGeometry: crossing vertices left in other roads', () => {
+  // N first crosses A and B; reshaped, it still crosses A (elsewhere) but no longer reaches B
+  const AWAY: [number, number][] = [[73.800, 18.5000], [73.8015, 18.5020], [73.8025, 18.5000]];
+
+  it('a drawn road records the vertices it put into the roads it crosses (never their own vertices)', () => {
+    const { objects, editing } = setup();
+    objects.add(road('A', CROSS_A), true);
+    objects.add(road('B', CROSS_B), true);
+    editing.setMode('draw_road');
+    for (const [lon, lat] of PIS) editing.addDrawingPoint([lon, lat, 0]);
+    editing.finalizeDrawing('base');
+    const n = objects.getAll().find(o => o.type === 'road' && o.id !== 'A' && o.id !== 'B') as RoadObject;
+    const rec = n.addedNetworkVertices!;
+    expect(rec.map(v => v.roadId).sort()).toEqual(['A', 'B']);
+    for (const v of rec) {
+      const other = objects.getById(v.roadId) as RoadObject;
+      expect(other.coordinates).toHaveLength(3);
+      expect(other.coordinates[1].slice(0, 2)).toEqual(v.point);
+      expect((v.roadId === 'A' ? CROSS_A : CROSS_B).some(c => c[0] === v.point[0] && c[1] === v.point[1])).toBe(false);
+    }
+  });
+
+  it('a reshape removes the stale ones (crossing moved / gone), keeps the roads own vertices, and undoes as one step', () => {
+    const { objects, history, ctx } = setup();
+    objects.add(road('A', CROSS_A), true);
+    objects.add(road('B', CROSS_B), true);
+    const sharp = align(PIS, 0);
+    objects.add(road('N', lineOf(sharp), { alignment: sharp }), true);
+    commitGeometry(objects.getById('N')!, align(PIS, 60), ctx);
+    const oldA = (objects.getById('A') as RoadObject).coordinates[1];
+    expect((objects.getById('B') as RoadObject).coordinates).toHaveLength(3);
+    expect((objects.getById('N') as RoadObject).addedNetworkVertices).toHaveLength(2);
+    const mid = { A: objects.getById('A')!, B: objects.getById('B')!, N: objects.getById('N')! };
+
+    const res = commitGeometry(objects.getById('N')!, align(AWAY, 0), ctx);
+    expect(res.ok).toBe(true);
+    const a = objects.getById('A') as RoadObject, b = objects.getById('B') as RoadObject, n = objects.getById('N') as RoadObject;
+    // B: N no longer reaches it, its crossing vertex is gone and B is exactly as mapped
+    expect(b.coordinates).toEqual(CROSS_B);
+    // A: the old crossing vertex is gone, the new crossing has its vertex (shared with N); A's ends untouched
+    expect(a.coordinates).toHaveLength(3);
+    expect(a.coordinates.some(c => planDistM(c, oldA) < 0.05)).toBe(false);
+    expect(a.coordinates[0]).toEqual(CROSS_A[0]);
+    expect(a.coordinates[2]).toEqual(CROSS_A[1]);
+    expect(n.coordinates.some(q => planDistM(q, a.coordinates[1]) < 0.01)).toBe(true);
+    // The record now lists only the new one
+    expect(n.addedNetworkVertices).toHaveLength(1);
+    expect(n.addedNetworkVertices![0].roadId).toBe('A');
+    expect(planDistM(n.addedNetworkVertices![0].point, a.coordinates[1])).toBeLessThan(0.05);
+
+    history.undo();
+    expect(objects.getById('A')!.coordinates).toEqual(mid.A.coordinates);
+    expect(objects.getById('B')!.coordinates).toEqual(mid.B.coordinates);
+    expect(objects.getById('N')!.coordinates).toEqual(mid.N.coordinates);
+  });
+
+  it('keeps a vertex another road joined at since, and never removes vertices it did not add', () => {
+    const { objects, ctx } = setup();
+    // A carries a mapped vertex of its own away from the crossing
+    const A3: P[] = [[73.801, 18.4990, 0], [73.801, 18.5005, 0], [73.801, 18.5030, 0]];
+    objects.add(road('A', A3), true);
+    objects.add(road('B', CROSS_B), true);
+    const sharp = align(PIS, 0);
+    objects.add(road('N', lineOf(sharp), { alignment: sharp }), true);
+    commitGeometry(objects.getById('N')!, align(PIS, 60), ctx);
+    const pB = (objects.getById('B') as RoadObject).coordinates[1];
+    // Another road ends on B's crossing vertex (joined there later)
+    objects.add(road('C', [[pB[0], pB[1], 0], [pB[0] + 0.001, pB[1], 0]]), true);
+    commitGeometry(objects.getById('N')!, align(AWAY, 0), ctx);
+    const b = objects.getById('B') as RoadObject;
+    expect(b.coordinates).toHaveLength(3);
+    expect(b.coordinates[1]).toEqual(pB);
+    expect((objects.getById('N') as RoadObject).addedNetworkVertices!.some(v => v.roadId === 'B')).toBe(true);
+    // A's own mapped vertices are all still there
+    const a = objects.getById('A') as RoadObject;
+    for (const c of A3) expect(a.coordinates.some(q => q[0] === c[0] && q[1] === c[1])).toBe(true);
+  });
+
+  it('a road drawn before the record existed changes nothing in other roads on reshape', () => {
+    const { objects, ctx } = setup();
+    objects.add(road('A', CROSS_A), true);
+    objects.add(road('B', CROSS_B), true);
+    const sharp = align(PIS, 0);
+    objects.add(road('N', lineOf(sharp), { alignment: sharp }), true);
+    commitGeometry(objects.getById('N')!, align(PIS, 60), ctx);
+    const { addedNetworkVertices: _drop, ...legacy } = objects.getById('N') as RoadObject;
+    void _drop;
+    objects.update('N', legacy as RoadObject, false, true);
+    objects.update('N', { addedNetworkVertices: undefined } as Partial<RoadObject>, true);
+    const bBefore = (objects.getById('B') as RoadObject).coordinates;
+    commitGeometry(objects.getById('N')!, align(AWAY, 0), ctx);
+    expect((objects.getById('B') as RoadObject).coordinates).toEqual(bBefore);
+  });
+});
+
 describe('commitGeometry: level crossing decisions', () => {
   it('carries a decision to a crossing within 2 m of the old point on the same road, and not to a new one', () => {
     const prev: LevelCrossing[] = [{ roadId: 'X', point: [73.8, 18.5, 0], otherZ: 0, decision: 'separate', reason: 'r' }];
