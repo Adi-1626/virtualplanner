@@ -58,6 +58,9 @@ export function classifyObjectChange(changedTypes: ReadonlySet<string>): 'view' 
   return 'other';
 }
 
+/** Write-queue key of a proposal's change to a base object (separate from the object's own /objects writes). */
+const changeKey = (scenarioId: string, id: string) => `change:${scenarioId}:${id}`;
+
 export class ObjectManager {
   private objects: Map<string, CityObject> = new Map();
   private overlays: Map<string, Map<string, CityObject | null>> = new Map();
@@ -321,14 +324,24 @@ export class ObjectManager {
       overlay.set(obj.id, shown);
       write = { objectId: obj.id, op: 'modify', object: this.mapToSchema(shown) };
     }
-    if (!skipSync) this.reportSync(this.syncChanges(scenarioId, [write]), 'Save failed: Unable to sync the proposal\'s change with backend server');
+    // One proposal change of one object at a time, latest last (p5-qa 2026-11-22: drawing a road across an OSM road sent
+    // two modifies of it at once; the server raced them into a UNIQUE-constraint 500 and "Save failed")
+    if (!skipSync) this.reportSync(this.queueWrite(changeKey(scenarioId, obj.id), () => this.syncChanges(scenarioId, [write])), 'Save failed: Unable to sync the proposal\'s change with backend server');
     return shown;
   }
 
   private putTombstones(scenarioId: string, ids: string[], skipSync: boolean) {
     const overlay = this.overlayFor(scenarioId);
     for (const id of ids) overlay.set(id, null);
-    if (!skipSync && ids.length) this.reportSync(this.syncChanges(scenarioId, ids.map(objectId => ({ objectId, op: 'delete' as const }))), 'Delete failed: Unable to sync the proposal\'s change with backend server');
+    if (!skipSync && ids.length) {
+      const keys = ids.map(id => changeKey(scenarioId, id));
+      // After any change of these objects still in flight, so an earlier modify cannot land after the tombstone
+      const send = async () => {
+        if (keys.some(k => this.writes.has(k))) await this.writesSettled(keys);
+        await this.syncChanges(scenarioId, ids.map(objectId => ({ objectId, op: 'delete' as const })));
+      };
+      this.reportSync(send(), 'Delete failed: Unable to sync the proposal\'s change with backend server');
+    }
   }
 
   private reportSync(p: Promise<unknown>, message: string) {

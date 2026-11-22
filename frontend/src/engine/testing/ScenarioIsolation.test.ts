@@ -152,7 +152,7 @@ describe('three proposals from one baseline stay independent', () => {
 });
 
 describe('changes survive a reload and a restore replaces a proposal only', () => {
-  it('the changes sent to the backend rebuild the same proposal views in a fresh store; the baseline is unchanged', () => {
+  it('the changes sent to the backend rebuild the same proposal views in a fresh store; the baseline is unchanged', async () => {
     const { om, history } = setup();
     const sent: { scenarioId: string; objectId: string; op: string; object?: any }[] = [];
     (om.syncChanges as any).mockImplementation(async (scenarioId: string, list: any[]) => { for (const c of list) sent.push({ scenarioId, ...c }); });
@@ -160,6 +160,8 @@ describe('changes survive a reload and a restore replaces a proposal only', () =
     activate(om, 'B'); commitRoadFieldEdit(om, history, shown(om, 'osm_2'), 'lanesForward', 4, 'segment');
     commitRoadFieldEdit(om, history, shown(om, 'osm_3'), 'speedLimit', 20, 'segment');
     history.undo(); // the speed edit is reverted: its change must be dropped, not kept
+    // Writes of one object are queued one at a time (p5-qa): let the queued revert go out
+    for (let i = 0; i < 4; i++) await new Promise(r => setTimeout(r, 0));
     const a = viewKey(om, 'A'), b = viewKey(om, 'B'), base = viewKey(om, 'base');
     // Server state: the last write per (scenario, object); 'revert' removes it
     const server = new Map<string, any>();

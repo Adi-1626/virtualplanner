@@ -93,4 +93,27 @@ describe('object sync queue', () => {
     expect(warn).toHaveBeenCalledTimes(1); // the failed create only
     warn.mockRestore();
   });
+
+  it('two edits of one base road in a proposal go out one at a time, the latest last (p5-qa: UNIQUE-constraint "Save failed")', async () => {
+    const calls = holdFetch();
+    const om = new ObjectManager();
+    (om as any).deletedOsm = new Set<string>();
+    om.addMultiple([{ ...alignment(20), id: 'osm_syn_9', type: 'road', name: 'SYNTHETIC road', layerId: 'roads', laneCount: 2 } as any], true);
+    om.setActiveScenario('scn_syn');
+    om.update('osm_syn_9', { name: 'SYNTHETIC road A' } as any);
+    await flush();
+    om.update('osm_syn_9', { name: 'SYNTHETIC road B' } as any);
+    om.update('osm_syn_9', { name: 'SYNTHETIC road C' } as any);
+    await flush();
+    const changes = () => calls.filter(c => c.url.includes('/changes'));
+    expect(changes().length).toBe(1); // the second waits for the first
+    changes()[0].release(200);
+    await flush(); await flush();
+    expect(changes().length).toBe(2);
+    expect(changes()[0].body[0].object.name).toBe('SYNTHETIC road A');
+    expect(changes()[1].body[0].object.name).toBe('SYNTHETIC road C');
+    changes()[1].release(200);
+    await flush(); await flush();
+    expect(om.hasPendingWrite('change:scn_syn:osm_syn_9')).toBe(false);
+  });
 });
