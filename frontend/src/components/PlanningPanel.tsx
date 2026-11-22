@@ -10,6 +10,7 @@ import { ProjectList } from './projects/ProjectList';
 import { ProjectPage } from './projects/ProjectPage';
 import { GetStarted } from './projects/GetStarted';
 import { useShellStore } from '../shell/useShellStore';
+import { projectStudyAreaOptions } from './projects/studyAreaOptions';
 
 /**
  * Planning & Approval Workspace (docs/PLANNING_WORKSPACE.md) redesigned as the Projects & Coordination workspace
@@ -109,7 +110,7 @@ const NewProject: React.FC<{ user: string; open: boolean; setOpen: (v: boolean) 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
-    if (open && !areas) apiGet<{ id: string; name: string }[]>('/api/areas').then(a => setAreas(a.map(x => ({ id: x.id, name: x.name })))).catch(() => setAreas([]));
+    if (open && !areas) apiGet<{ id: string; name: string }[]>('/api/areas').then(a => setAreas(projectStudyAreaOptions(a))).catch(() => setAreas([]));
   }, [open, areas]);
   const reset = () => { setName(''); setDesc(''); setAreaId(''); setErr(null); };
   if (!open) return <Button icon={FolderPlus} variant="primary" data-testid="new-project" onClick={() => setOpen(true)}>New planning project</Button>;

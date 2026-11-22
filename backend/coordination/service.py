@@ -309,7 +309,10 @@ def design_object_segments(db: Session, scenario_ids: set, exclude_ids: set, exc
                 continue
             if sid != "base" and o.get("scenarioId") == "base":
                 continue   # baseline objects are read once, under 'base'
-            a = SCR.design_asset(o, "existing" if o.get("scenarioId") == "base" else "proposed")
+            # The lifecycle recorded on the object wins, as in the Underground check (screening.classify_objects): a
+            # utility drawn on the base city with status "proposed" is a proposal, not "Existing object drawn in Design".
+            side = SCR.lifecycle_side(SCR.object_lifecycle(o))
+            a = SCR.design_asset(o, side or ("existing" if o.get("scenarioId") == "base" else "proposed"))
             if a is None:
                 continue
             if osm_metro_ids and a.meta.get("osm_ref") and a.meta["osm_ref"] in osm_metro_ids:

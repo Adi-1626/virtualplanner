@@ -1451,7 +1451,11 @@ def _headline(counts: dict, n: int) -> str:
     if n == 0:
         return "Nothing to check: draw an underground alignment or a utility in this alternative first."
     parts = [f"{counts[s]} {STATUS_LABEL[s].lower()}" for s in STATUSES if counts[s]]
-    return f"{n} proposed object{'s' if n != 1 else ''} screened: " + (", ".join(parts) if parts else "no finding") + "."
+    total = sum(counts[s] for s in STATUSES)
+    # Findings are per pair / per missing dataset, so one object can carry several: say "findings" so 1 object with
+    # 3 findings does not read as 3 outcomes for 1 object.
+    head = f"{n} proposed object{'s' if n != 1 else ''} screened"
+    return head + (f", {total} finding{'s' if total != 1 else ''}: " + ", ".join(parts) if parts else ": no finding") + "."
 
 
 def _layers_report(rec, metro_meta, bld_meta, wc_meta, existing_design, cfg) -> list[dict]:

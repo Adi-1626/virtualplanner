@@ -150,7 +150,7 @@ export const ReportsContext: React.FC = () => {
       </PanelSection>
 
       <PanelSection title="Scenario traffic report">
-        <p className="text-label text-text-2">Not available: the builder exists in code but no run is connected to it yet. <TrustBadge trust="fails_validation" testId="scenario-report-trust" /></p>
+        <p className="text-label text-text-2">Not available yet: Simulate results are not connected to this report. Use the Simulate panel (Before vs after) for now. <TrustBadge trust="fails_validation" testId="scenario-report-trust" /></p>
       </PanelSection>
     </div>
   );

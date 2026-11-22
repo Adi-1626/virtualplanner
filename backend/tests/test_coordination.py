@@ -364,3 +364,21 @@ def test_osm_metro_baseline_when_index_present(client):
     rows = _by(_detect(client, p), e["id"], b_type="osm_metro")
     assert rows and all(r["class"] in ("potential_conflict", "no_conflict_within_available_data") for r in rows)
     assert all(r["evidence"]["b"]["z_min_m"] is None for r in rows)
+
+
+def test_design_object_side_follows_recorded_lifecycle_not_only_base_membership(monkeypatch):
+    # QA 2026-11-22: a utility drawn on the base city with status "proposed" was listed in project conflicts as
+    # "Existing object drawn in Design"; the Underground check (classify_objects) already lets the lifecycle win.
+    from coordination import screening as SCR, service as SVC
+    line = [[73.8567, 18.5340, 0], [73.8577, 18.5340, 0]]
+    objs = {"base": [
+        {"id": "u_prop", "type": "utility", "name": "Proposed main", "scenarioId": "base", "coordinates": line,
+         "properties": {"utilityType": "water", "depth": 1.5, "diameterMm": 300, "status": "proposed"}},
+        {"id": "u_old", "type": "utility", "name": "Old main", "scenarioId": "base", "coordinates": line,
+         "properties": {"utilityType": "water", "depth": 1.5, "diameterMm": 300}},
+    ]}
+    monkeypatch.setattr(SCR, "objects_from_db", lambda db, sid: objs.get(sid, []))
+    segs = SVC.design_object_segments(None, set(), set(), [])
+    by = {s.meta["object_id"]: s.meta["status"] for s in segs}
+    assert by["u_prop"] == "proposed"
+    assert by["u_old"] == "existing"
