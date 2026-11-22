@@ -240,3 +240,25 @@ def test_planning_report_lists_street_elements_and_a_bus_lane_on_a_changed_base_
     assert "Bus / BRT lane (lane length) 1.6" in notes          # 800 m x 2 directions
     assert "1 pedestrian crossing(s)" in notes and "1 bus stop(s)" in notes
 
+
+def test_a_subway_drawn_in_design_is_screened_as_a_dug_box_and_other_street_elements_are_not():
+    """DESIGN_TOOLS_P7.md §8: a pedestrian / cycle subway goes into the ground; crossings, stops, lights, trees, roundabouts,
+    ground paths and FOBs do not change the Underground inputs. SYNTHETIC objects."""
+    def path(oid, level, sid="alt"):
+        return {"id": oid, "type": "street_element", "name": oid, "scenarioId": sid, "coordinates": [_pt(-20, 300), _pt(20, 300)],
+                "properties": {"kind": "path", "path": {"pathType": "footpath", "level": level, "widthM": 3.0, "clearHeightM": 2.75}}}
+    sub = path("sub", "subway")
+    a = S.design_asset(sub, "proposed")
+    assert a is not None and a.cls == "tunnel" and a.method == "cut_and_cover"
+    assert a.half_width == 1.5 and a.envelope() == (0.0, None)               # dug from the surface; invert UNKNOWN
+    assert "UNKNOWN" in a.kind_label
+    assert S.design_asset(path("fob", "fob"), "proposed") is None
+    assert S.design_asset(path("gp", "ground"), "proposed") is None
+    crossing = {"id": "x", "type": "street_element", "name": "x", "scenarioId": "alt", "coordinates": [_pt(0, 300)], "properties": {"kind": "crossing"}}
+    assert S.is_screened(sub) and not S.is_screened(crossing) and not S.is_screened(path("fob", "fob"))
+    f = flyover("F")
+    h0 = S.inputs_hash([f], "alt")
+    assert S.inputs_hash([f, crossing, path("fob", "fob")], "alt") == h0      # nothing screened changed
+    assert S.inputs_hash([f, sub], "alt") != h0
+    prop, _, skipped = S.classify_objects([sub, crossing], "alt")
+    assert [x.id for x in prop] == ["sub"] and skipped == []

@@ -22,7 +22,8 @@ import { plural } from '../../lib/plural';
 
 /** What the screening reads (coordination/screening.py SCREENED_TYPES): underground works, metro, and the decks whose piers go into the ground. */
 const SCREENED_TYPES = new Set(['underground_alignment', 'utility', 'metro_line', 'metro_station', 'flyover', 'metro_flyover']);
-const isScreened = (o: CityObject) => SCREENED_TYPES.has(o.type);
+// Street elements: only a subway (a path at level 'subway') goes into the ground (screening.py is_screened)
+const isScreened = (o: CityObject) => SCREENED_TYPES.has(o.type) || (o.type === 'street_element' && o.kind === 'path' && o.path?.level === 'subway');
 const PAGE = 40;
 
 /** Legacy badge for project-detection classes (Projects → Conflicts style). */

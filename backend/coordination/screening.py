@@ -86,6 +86,19 @@ UTILITY_CLASS = {"water": "water", "electricity": "power", "sewage": "sewer", "g
 METRO_CLASSES = ("metro_tunnel", "metro_station", "metro_viaduct", "metro")
 # Design object types the screening reads: underground works, metro, and the decks whose piers go into the ground
 SCREENED_TYPES = ("underground_alignment", "utility", "metro_line", "metro_station", "flyover", "metro_flyover")
+
+
+def is_subway(o: dict) -> bool:
+    """A pedestrian / cycle subway drawn in Design (street_element kind 'path' at level 'subway', DESIGN_TOOLS_P7.md §8)."""
+    p = o.get("properties") or {}
+    return o.get("type") == "street_element" and p.get("kind") == "path" and (p.get("path") or {}).get("level") == "subway"
+
+
+def is_screened(o: dict) -> bool:
+    """Whether the screening reads a stored object: the SCREENED_TYPES, and subways among the street elements (the other
+    street elements — crossings, stops, lights, trees, roundabouts, ground paths, FOBs — put nothing into the ground that
+    is modelled; frontend ConflictCheck.tsx isScreened mirrors this)."""
+    return o.get("type") in SCREENED_TYPES or is_subway(o)
 BURIED = ("water", "sewer", "storm", "power", "gas", "telecom", "utility", "tunnel", "metro_tunnel")
 NETWORKS = {"water": "water supply", "power": "electricity", "gas": "gas (CGD)", "telecom": "telecom", "sewer": "sewer", "storm": "storm drain"}
 CERT_RANK = {"measured": 0, "estimated": 1, "hypothetical": 2, "unknown": 3}
@@ -489,6 +502,17 @@ def design_asset(obj: dict, status: str) -> Optional[Asset]:
                      meta={"design_type": t, "utility_type": p.get("utilityType"), "lifecycle": lc or status, "evidence": z["evidence"],
                            "z_model": z["model"], "z_ref": z["zref"], "default_vertices": z["defaults"], "default_flags": z["flags"],
                            "evidence_note": z["evidence_note"]})
+    if t == "street_element" and is_subway(obj) and len(pts) >= 2:
+        # A subway is dug from the surface (cut-and-cover box): excavation from ground level, invert / box depth not designed
+        line = G.project_geojson({"type": "LineString", "coordinates": pts})
+        sp = p.get("path") or {}
+        w = _num(sp.get("widthM"))
+        return Asset(str(obj.get("id")), obj.get("name") or "", layer, status, "tunnel", line, (w / 2) if w and w > 0 else None,
+                     [(0.0, 0.0, None)], "design" if status == "proposed" else "UNKNOWN", "unknown", ds,
+                     kind_label="Pedestrian / cycle subway (drawn in Design; internal width only, walls and invert depth UNKNOWN)" + _lc_suffix(lc),
+                     method="cut_and_cover",
+                     meta={"design_type": t, "street_kind": "path", "path_level": "subway", "clear_height_m": _num(sp.get("clearHeightM")),
+                           "lifecycle": lc or status})
     if t in PIER_TYPES and len(pts) >= 2:
         return pier_asset(obj, status, layer, ds, lc)
     if t == "metro_line" and len(pts) >= 2 and status == "proposed" and not metro_line_is_tunnel(p):
@@ -1270,7 +1294,7 @@ def objects_from_db(db, scenario_id: str) -> list[dict]:
     """Underground / metro objects visible in the alternative: baseline objects (minus the alternative's deletes, with its
     modifications) + the alternative's own objects."""
     from models.models import CityObjectEntity, ScenarioObjectChangeEntity
-    types = SCREENED_TYPES
+    types = SCREENED_TYPES + ("street_element",)   # street elements: subways only (is_screened, below)
     out: dict[str, dict] = {}
     for e in db.query(CityObjectEntity).filter(CityObjectEntity.type.in_(types), CityObjectEntity.scenario_id.in_(["base", scenario_id])):
         out[e.id] = {"id": e.id, "type": e.type, "name": e.name, "scenarioId": e.scenario_id,
@@ -1282,7 +1306,7 @@ def objects_from_db(db, scenario_id: str) -> list[dict]:
             elif c.op == "modify" and c.type in types:
                 out[c.object_id] = {"id": c.object_id, "type": c.type, "name": c.name, "scenarioId": scenario_id,
                                     "coordinates": json.loads(c.geometry_geojson or "[]"), "properties": json.loads(c.properties_json or "{}")}
-    return list(out.values())
+    return [o for o in out.values() if is_screened(o)]
 
 
 _VOLATILE_KEYS = {"createdAt", "updatedAt", "layerId", "visible", "selected", "highlighted", "locked", "hidden"}
@@ -1291,12 +1315,11 @@ _VOLATILE_KEYS = {"createdAt", "updatedAt", "layerId", "visible", "selected", "h
 def inputs_hash(objects: list[dict], scenario_id: str, config_overrides: Optional[dict] = None) -> str:
     """What a run screened: the alternative, its underground / metro objects (geometry, properties; timestamps and display
     state ignored) and any rule overrides. Same objects → same hash, whether sent by the UI or read from the database."""
-    types = SCREENED_TYPES
     canon = sorted(
         ({"id": o.get("id"), "type": o.get("type"), "name": o.get("name"), "scenarioId": o.get("scenarioId") or "base",
           "coordinates": o.get("coordinates"),
           "properties": {k: v for k, v in (o.get("properties") or {}).items() if k not in _VOLATILE_KEYS}}
-         for o in objects if o.get("type") in types), key=lambda d: str(d["id"]))
+         for o in objects if is_screened(o)), key=lambda d: str(d["id"]))
     raw = json.dumps([scenario_id, canon, config_overrides or {}], sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(raw.encode()).hexdigest()[:24]
 
