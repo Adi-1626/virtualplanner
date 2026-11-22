@@ -159,7 +159,7 @@ const DeleteProject: React.FC<{ b: ProjectBundle; who: string; onDeleted: () => 
       ) : (
         <div className="space-y-1.5 rounded-lg border border-rose-400/30 bg-rose-500/[0.06] px-2.5 py-2" data-testid="delete-confirm">
           <p className="text-xs text-slate-200">Deletes the project, its {b.elements.length} proposal element{b.elements.length === 1 ? '' : 's'} and its attachments. The alternatives, runs, datasets and screenings it links to are kept.{' '}
-            {runs ? `Its ${runs} conflict check${runs === 1 ? '' : 's'} and their findings are archived with it` : 'Its findings are archived with it'}, and so are other projects’ findings against it: kept in Activity, no longer in active lists or reports.</p>
+            {runs ? `Its ${runs} conflict check${runs === 1 ? ' and its findings are' : 's and their findings are'} archived with it` : 'Its findings are archived with it'}, and so are other projects’ findings against it: kept as an archived record on the server (the deletion is noted in the other projects’ Activity), no longer in active lists or reports. A deleted project cannot be opened again in the app.</p>
           <label className={labelCls} htmlFor="pd-name">Type the project name to confirm: <b className="text-slate-200">{p.name}</b></label>
           <input id="pd-name" className={inputCls} value={typed} onChange={e => setTyped(e.target.value)} data-testid="delete-name" autoComplete="off" />
           {err && <Notice tone="bad">{err}</Notice>}
