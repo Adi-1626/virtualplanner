@@ -44,6 +44,17 @@ _AMASR = ("AMASR Act 1958 as amended 2010, s.20A (prohibited area 100 m) and s.2
           "Act text https://prsindia.org/files/bills_acts/acts_parliament/2010/ancient-monuments-and-archaeological-sites-and-remains-act-2010.pdf "
           "(Gazette of India 29 Mar 2010, EXCERPT). Repo: docs/RESEARCH_FEASIBILITY_AND_INVESTIGATION.md §1.4, S1/S2.")
 
+# Maha-Metro DPR, Pune Metro Phase-2 (Line 2A/2B), Revision 4, July 2024, §5.9.2 "Land requirement for elevated stretches",
+# printed p. 5-80. Read with pdftotext (2026-11-22) from the official copy. Same value the Design metro setback check uses
+# (frontend/src/engine/streetDesign/sources.ts SD.metroSetbackM).
+_DPR_SETBACK = ("Maha-Metro, Detailed Project Report, Pune Metro Phase-2 (Line 2A/2B), Rev. 4, July 2024, §5.9.2 (Land requirement "
+                "for elevated stretches), printed p. 5-80: \"The existing viaduct structure of elevated Metro for Phase-1 is about 8.5 m "
+                "(edge to edge) wide. For reasons of safety a clean marginal distance / setback of about 5 m is necessary from either "
+                "edge of the viaduct (or 10 m on both sides of the centre line) wherein no structures are to be located.\" "
+                "https://www.punemetrorail.org/download/DPR01.pdf (READ 2026-11-22).")
+# Structures the setback is about ("no structures"): roads, utilities and excavations are not structures in this sense.
+SETBACK_STRUCTURE_KINDS = "building,foundation,pier,bridge,flyover,metro_station,other"
+
 RULE_SEEDS = [
     dict(id="metro_noc_20m", label="Metro NOC trigger: within 20 m of the edge of a metro route (UDCPR 14.2.1.7)",
          rule_type="permission_distance", subject_kind="*", other_kind=METRO_KINDS, horizontal_m=20.0, vertical_m=None,
@@ -60,6 +71,12 @@ RULE_SEEDS = [
          rule_type="permission_distance", subject_kind="*", other_kind="protected_monument", horizontal_m=300.0, vertical_m=None,
          basis="cited_permission_distance", citation=_AMASR,
          note="PERMISSION DISTANCE, NOT AN ENGINEERING CLEARANCE. Minimum, extendable by notification. Protected monuments are not imported (UNKNOWN)."),
+    dict(id="metro_dpr_setback_5m", label="Metro viaduct setback: no structures within about 5 m of either edge of the viaduct (Pune Metro Phase-2 DPR §5.9.2)",
+         rule_type="permission_distance", subject_kind=SETBACK_STRUCTURE_KINDS, other_kind="metro_viaduct", horizontal_m=5.0, vertical_m=None,
+         basis="cited_permission_distance", citation=_DPR_SETBACK,
+         note="PLANNING SETBACK STATED IN THE PROJECT DPR (\"about 5 m\"), NOT AN ENGINEERING CLEARANCE and not a statutory rule. Measured "
+              "here edge to edge from the drawn / OSM footprints (viaduct width estimated where not recorded), not from the surveyed "
+              "structure. Says nothing about whether a structure outside 5 m is physically safe; the 20 m metro NOC trigger still applies."),
 ]
 
 

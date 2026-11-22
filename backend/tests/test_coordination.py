@@ -321,8 +321,12 @@ def test_environment_catalogue_status(client):
 def test_rule_defaults_are_cited_permission_distances_only(client):
     data = client.get("/api/coordination/clearance-rules").json()
     seeded = {r["id"]: r for r in data["rules"] if r["created_by"] == "system (seed)"}
-    assert set(seeded) == {"metro_noc_20m", "amasr_prohibited_100m", "amasr_regulated_300m"}
-    assert [seeded[k]["horizontal_m"] for k in ("metro_noc_20m", "amasr_prohibited_100m", "amasr_regulated_300m")] == [20, 100, 300]
+    assert set(seeded) == {"metro_noc_20m", "amasr_prohibited_100m", "amasr_regulated_300m", "metro_dpr_setback_5m"}
+    assert [seeded[k]["horizontal_m"] for k in ("metro_noc_20m", "amasr_prohibited_100m", "amasr_regulated_300m", "metro_dpr_setback_5m")] == [20, 100, 300, 5]
+    # The DPR setback (Pune Metro Phase-2 DPR §5.9.2, p. 5-80) applies to structures near a viaduct, not to roads or utilities
+    sb = seeded["metro_dpr_setback_5m"]
+    assert sb["other_kind"] == "metro_viaduct" and "building" in sb["subject_kind"].split(",") and "road" not in sb["subject_kind"].split(",")
+    assert "utility" not in sb["subject_kind"].split(",") and "5-80" in sb["citation"] and "punemetrorail.org" in sb["citation"]
     for r in seeded.values():
         assert r["rule_type"] == "permission_distance" and r["basis"] == "cited_permission_distance" and not r["is_engineering_clearance"]
         assert "NOT an engineering clearance" in r["basis_label"] and "NOT AN ENGINEERING CLEARANCE" in r["note"]
