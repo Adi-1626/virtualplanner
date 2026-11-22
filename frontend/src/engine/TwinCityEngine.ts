@@ -642,7 +642,7 @@ export class TwinCityEngine {
       if (defined(pickedObject) && pickedObject.id && typeof pickedObject.id.id === 'string') {
         const idStr = pickedObject.id.id;
         // Shape editor grip (PI / midpoint / radius / end) of the selected line object
-        if (idStr.startsWith(HANDLE_PREFIX) && this.alignmentEditor.pointerDown(idStr)) {
+        if (idStr.startsWith(HANDLE_PREFIX) && this.alignmentEditor.pointerDown(idStr, this.pickGround(click.position))) {
           this.viewer.scene.screenSpaceCameraController.enableInputs = false;
           return;
         }
