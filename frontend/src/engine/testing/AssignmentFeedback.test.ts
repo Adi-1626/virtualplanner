@@ -158,4 +158,28 @@ describe('trips pinned to links', () => {
     // A pinned link that is not in the network (e.g. after a road edit) is ignored
     expect(viaShort(routeIds(mk(['no_such_link'])))).toBe(true);
   });
+
+  it('a pinned route through a joined junction keeps its links: the stretch inside the junction is skipped, not the route', () => {
+    // The long route's corner at (-600, 400) is two nodes 10 m apart (a 10 m piece, shorter than JOIN_JUNCTION_M = 16 m):
+    // the simulator joins them into one junction, so that piece has no link of its own
+    const roads = [
+      road('feed_w', [[-900, 0], [-600, 0]]),
+      road('short_w', [[-600, 0], [0, 0]]), road('short_e', [[0, 0], [600, 0]]),
+      road('long_w', [[-600, 0], [-600, 400]]), road('long_k', [[-600, 400], [-590, 400]]), road('long_n', [[-590, 400], [600, 400]]), road('long_e', [[600, 400], [600, 0]]),
+      road('feed_e', [[600, 0], [900, 0]]),
+    ];
+    const area = new StudyAreaExplorer().explore(roads, 1, { seedRoadIds: ['short_w'], rangeMeters: 2000, direction: 'both' });
+    const roadMap = new Map(roads.map(r => [r.id, r]));
+    const ids = [...area.network.edges.keys()];
+    const fwd = (prefix: string) => ids.find(id => id.startsWith(prefix) && id.endsWith('_fwd'))!;
+    const viaIds = ['long_w', 'long_k', 'long_n', 'long_e'].map(fwd);
+    const p = plan(100);
+    p.trips = p.trips.map(t => ({ ...t, viaLinkIds: viaIds }));
+    const sim = new TrafficMicroSim(area, roadMap, { demandLevel: OD_REFERENCE_LEVEL, seed: 1, demandTrips: snapDemandPlan(p, area.network) });
+    const simLinks = [...sim.debugLanes().keys()];
+    expect(simLinks).not.toContain(fwd('long_k'));
+    const r = routeIds(sim);
+    expect(viaLong(r)).toBe(true);
+    expect(viaShort(r)).toBe(false);
+  });
 });

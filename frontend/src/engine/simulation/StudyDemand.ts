@@ -41,6 +41,8 @@ export interface DemandComponents {
   /** Trips of the area's activity that would cross the edge but have no drivable way to or from it (left out, reported). */
   noEdgeRoute?: number;
   cordonPoints?: number;
+  /** Edge roads whose flow came from the calibrated window (AreaDemand.CalibratedEdgeFlows). */
+  calibratedCordonPoints?: number;
   throughIncluded?: boolean;
 }
 /** A place that makes or attracts trips: its vehicles per hour by class. */

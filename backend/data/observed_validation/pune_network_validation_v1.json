@@ -2,7 +2,7 @@
  "schema": "twincity.validation_observations/v1",
  "id": "pune_network_validation_v1",
  "created": "2026-11-09",
- "purpose": "Independent real-world observations for Pune used to validate (not calibrate) model demand, throughput, speed and LOS (docs/OVERHAUL.md \u00a724). Nothing is fitted to them.",
+ "purpose": "Independent real-world observations for Pune used to validate (not calibrate) model demand, throughput, speed and LOS (docs/OVERHAUL.md §24). Nothing is fitted to them.",
  "quality_grades": {
   "A": "recent (2023 or later) direct measurement, unambiguous location",
   "B": "direct measurement but older (pre-2020) or secondary-quoted, location clear",
@@ -64,7 +64,10 @@
    "veh": 7470,
    "pcu": 8131,
    "grade": "B",
-   "mapping": "name match, same bridge"
+   "mapping": "name match, same bridge",
+   "veh_motorised": 7245,
+   "motorised_basis": "veh x motorised share 0.970 of the 12 h count (CMP 2008 Table 4.1 SL2 #11 Shivaji Bridge: 61,385 vehicles of which cycles 1,823, carts 24, cycle rickshaws 0); the peak-hour class split is not published per site, so the 12 h share is applied to the peak hour (inferred)",
+   "role": "calibration"
   },
   {
    "id": "cmp08_mhatre",
@@ -78,7 +81,10 @@
    "veh": 10262,
    "pcu": 8807,
    "grade": "B",
-   "mapping": "name 'Raveendra Mhatre Bridge', two carriageways crossing the river at 73.8365E"
+   "mapping": "name 'Raveendra Mhatre Bridge', two carriageways crossing the river at 73.8365E",
+   "veh_motorised": 9753,
+   "motorised_basis": "veh x motorised share 0.950 of the 12 h count (CMP 2008 Table 4.1 SL2 #3 Mathre Bridge: 75,331 vehicles of which cycles 3,735, carts 1, cycle rickshaws 2); the peak-hour class split is not published per site, so the 12 h share is applied to the peak hour (inferred)",
+   "role": "holdout"
   },
   {
    "id": "cmp08_shinde",
@@ -92,7 +98,10 @@
    "veh": 4986,
    "pcu": 4484,
    "grade": "B",
-   "mapping": "as backend/data/observed_screenlines"
+   "mapping": "as backend/data/observed_screenlines",
+   "veh_motorised": 4636,
+   "motorised_basis": "veh x motorised share 0.930 of the 12 h count (CMP 2008 Table 4.1 SL2 #10 Shinde Bridge: 39,594 vehicles of which cycles 2,778, carts 5, cycle rickshaws 0); the peak-hour class split is not published per site, so the 12 h share is applied to the peak hour (inferred)",
+   "role": "calibration"
   },
   {
    "id": "cmp08_tilak",
@@ -106,7 +115,10 @@
    "veh": 2213,
    "pcu": 2162,
    "grade": "B",
-   "mapping": "as backend/data/observed_screenlines"
+   "mapping": "as backend/data/observed_screenlines",
+   "veh_motorised": 2070,
+   "motorised_basis": "veh x motorised share 0.935 of the 12 h count (CMP 2008 Table 4.1 SL2 #9 Tilak Bridge: 20,794 vehicles of which cycles 1,310, carts 37, cycle rickshaws 0); the peak-hour class split is not published per site, so the 12 h share is applied to the peak hour (inferred)",
+   "role": "holdout"
   },
   {
    "id": "cmp08_zbridge",
@@ -119,7 +131,10 @@
    "veh": 3928,
    "pcu": 3503,
    "grade": "B",
-   "mapping": "OSM name 'Kakasaheb Gadgil Bridge'"
+   "mapping": "OSM name 'Kakasaheb Gadgil Bridge'",
+   "veh_motorised": 3676,
+   "motorised_basis": "veh x motorised share 0.936 of the 12 h count (CMP 2008 Table 4.1 SL2 #8 Z- Bridge: 34,140 vehicles of which cycles 2,148, carts 38, cycle rickshaws 0); the peak-hour class split is not published per site, so the 12 h share is applied to the peak hour (inferred)",
+   "role": "not_scored"
   },
   {
    "id": "cmp08_smjoshi",
@@ -132,7 +147,10 @@
    "veh": 4302,
    "pcu": 3491,
    "grade": "B",
-   "mapping": "name match"
+   "mapping": "name match",
+   "veh_motorised": 4036,
+   "motorised_basis": "veh x motorised share 0.938 of the 12 h count (CMP 2008 Table 4.1 SL2 #4 S.M.Joshi Bridge: 35,015 vehicles of which cycles 2,160, carts 7, cycle rickshaws 0); the peak-hour class split is not published per site, so the 12 h share is applied to the peak hour (inferred)",
+   "role": "calibration"
   },
   {
    "id": "cmp08_sambhaji",
@@ -146,7 +164,12 @@
    "veh": 5042,
    "pcu": 7743,
    "grade": "B",
-   "mapping": "as backend/data/observed_screenlines; two-wheelers banned (count has none); the model does not apply the ban"
+   "mapping": "as backend/data/observed_screenlines; two-wheelers banned (count has none); the model does not apply the ban",
+   "veh_motorised": 4251,
+   "motorised_basis": "veh x motorised share 0.843 of the 12 h count (CMP 2008 Table 4.1 SL2 #6 Sambhaji Bridge: 35,960 vehicles of which cycles 5,638, carts 0, cycle rickshaws 0); the peak-hour class split is not published per site, so the 12 h share is applied to the peak hour (inferred)",
+   "class_filter": "no_two_wheeler",
+   "class_filter_note": "The 2008 count has no two-wheelers (banned on the bridge). Compared with the model's non-two-wheeler volume, because the assignment does not apply the ban. Whether the ban still holds in 2026 was not re-checked.",
+   "role": "holdout"
   },
   {
    "id": "cmp08_rajaram",
@@ -160,7 +183,10 @@
    "veh": 7830,
    "pcu": 6155,
    "grade": "B",
-   "mapping": "OSM name 'Chhatrapati Rajaram Maharaj Bridge', two carriageways"
+   "mapping": "OSM name 'Chhatrapati Rajaram Maharaj Bridge', two carriageways",
+   "veh_motorised": 7050,
+   "motorised_basis": "veh x motorised share 0.900 of the 12 h count (CMP 2008 Table 4.1 SL2 #2 Raja ram Bridge: 56,323 vehicles of which cycles 5,608, carts 0, cycle rickshaws 0); the peak-hour class split is not published per site, so the 12 h share is applied to the peak hour (inferred)",
+   "role": "calibration"
   },
   {
    "id": "cmp08_sangam",
@@ -176,7 +202,10 @@
    "veh": 16012,
    "pcu": 16888,
    "grade": "C",
-   "mapping": "OSM 'Sangam Bridge' plus parallel 'New Sangam Bridge' pieces summed; whether the 2008 count covered both structures is not stated"
+   "mapping": "OSM 'Sangam Bridge' plus parallel 'New Sangam Bridge' pieces summed; whether the 2008 count covered both structures is not stated",
+   "veh_motorised": 15640,
+   "motorised_basis": "veh x motorised share 0.977 of the 12 h count (CMP 2008 Table 4.1 SL2 #17 Sangam Bridge: 110,066 vehicles of which cycles 2,522, carts 33, cycle rickshaws 0); the peak-hour class split is not published per site, so the 12 h share is applied to the peak hour (inferred)",
+   "role": "calibration"
   },
   {
    "id": "cmp08_yerwada_ambedkar",
@@ -194,7 +223,24 @@
    "veh": 20240,
    "pcu": 21745,
    "grade": "C",
-   "mapping": "group: OSM 'Bund Garden Bridge', 'Babasaheb Ambedkar Bridge' and 'Tarkeswar Bridge' at 73.884E 18.544N; which 2008 name is which OSM structure is not known, so the group is compared with the sum of the two counts (their peak hours differ by one hour)"
+   "mapping": "group: OSM 'Bund Garden Bridge', 'Babasaheb Ambedkar Bridge' and 'Tarkeswar Bridge' at 73.884E 18.544N; which 2008 name is which OSM structure is not known, so the group is compared with the sum of the two counts (their peak hours differ by one hour)",
+   "veh_motorised": 19424,
+   "motorised_basis": "Yerwada 14,240 x 0.952 + Ambedkar 6,000 x 0.978 (CMP 2008 Table 4.1 SL2 #14 and #13, 12 h class shares applied to the peak hour, inferred)",
+   "parts": [
+    {
+     "name": "Yerwada Bridge",
+     "hour": 18,
+     "veh": 14240,
+     "veh_motorised": 13554
+    },
+    {
+     "name": "Ambedkar Bridge",
+     "hour": 19,
+     "veh": 6000,
+     "veh_motorised": 5869
+    }
+   ],
+   "role": "holdout"
   },
   {
    "id": "cmp08_wadia_rob",
@@ -208,7 +254,10 @@
    "veh": 4634,
    "pcu": 5995,
    "grade": "B",
-   "mapping": "OSM 'Wadia College Flyover', crosses the railway at 73.8791E 18.5305N"
+   "mapping": "OSM 'Wadia College Flyover', crosses the railway at 73.8791E 18.5305N",
+   "veh_motorised": 4454,
+   "motorised_basis": "veh x motorised share 0.961 of the 12 h count (CMP 2008 Table 4.1 SL1 #8 ROB at Wadia college: 44,423 vehicles of which cycles 1,720, carts 2, cycle rickshaws 0); the peak-hour class split is not published per site, so the 12 h share is applied to the peak hour (inferred)",
+   "role": "calibration"
   },
   {
    "id": "cmp08_rangehill_rub",
@@ -221,7 +270,10 @@
    "veh": 1693,
    "pcu": 1683,
    "grade": "B",
-   "mapping": "OSM 'Rangehills Marg Railway Underpass', crosses the railway at 73.8474E 18.5468N"
+   "mapping": "OSM 'Rangehills Marg Railway Underpass', crosses the railway at 73.8474E 18.5468N",
+   "veh_motorised": 1611,
+   "motorised_basis": "veh x motorised share 0.952 of the 12 h count (CMP 2008 Table 4.1 SL1 #3 RUB at Range hill Road: 16,414 vehicles of which cycles 791, carts 0, cycle rickshaws 0); the peak-hour class split is not published per site, so the 12 h share is applied to the peak hour (inferred)",
+   "role": "holdout"
   },
   {
    "id": "cmp08_sancheti_rob",
@@ -237,7 +289,10 @@
    "veh": 6600,
    "pcu": 6964,
    "grade": "C",
-   "mapping": "group of today's rail crossings at Shivajinagar: 'H. K. Firodia Bridge' (2 ways), 'Mokshagundam Vishweshvarayya Flyover' and 'G. D. Madgulkar Bhuyari Marg' underpass; the flyover and underpass did not exist in 2008 (inferred), so traffic now split over them is summed"
+   "mapping": "group of today's rail crossings at Shivajinagar: 'H. K. Firodia Bridge' (2 ways), 'Mokshagundam Vishweshvarayya Flyover' and 'G. D. Madgulkar Bhuyari Marg' underpass; the flyover and underpass did not exist in 2008 (inferred), so traffic now split over them is summed",
+   "veh_motorised": 6255,
+   "motorised_basis": "veh x motorised share 0.948 of the 12 h count (CMP 2008 Table 4.1 SL1 #5 ROB near Sancheti Hospital (24 h): 72,761 vehicles of which cycles 3,794, carts 7, cycle rickshaws 5); the peak-hour class split is not published per site, so the 12 h share is applied to the peak hour (inferred)",
+   "role": "calibration"
   },
   {
    "id": "gunjan17_09",
@@ -250,7 +305,10 @@
    "hour": 9,
    "veh": 10034,
    "grade": "B",
-   "mapping": "Nagar Road carriageways west of the 'Gunjan Corner' bus stop (73.8893E 18.5458N); count is both directions through the junction (inferred to be the Nagar Road through movement)"
+   "mapping": "Nagar Road carriageways west of the 'Gunjan Corner' bus stop (73.8893E 18.5458N); count is both directions through the junction (inferred to be the Nagar Road through movement)",
+   "veh_motorised": 10034,
+   "motorised_basis": "the 2017 table counts motor vehicles only (buses, 2-, 3-, 4-wheelers, trucks): veh as published",
+   "role": "holdout"
   },
   {
    "id": "gunjan17_14",
@@ -263,7 +321,10 @@
    "hour": 14,
    "veh": 6581,
    "grade": "B",
-   "mapping": "as above"
+   "mapping": "as above",
+   "veh_motorised": 6581,
+   "motorised_basis": "the 2017 table counts motor vehicles only (buses, 2-, 3-, 4-wheelers, trucks): veh as published",
+   "role": "holdout"
   },
   {
    "id": "gunjan17_19",
@@ -276,7 +337,10 @@
    "hour": 19,
    "veh": 9460,
    "grade": "B",
-   "mapping": "as above"
+   "mapping": "as above",
+   "veh_motorised": 9460,
+   "motorised_basis": "the 2017 table counts motor vehicles only (buses, 2-, 3-, 4-wheelers, trucks): veh as published",
+   "role": "holdout"
   }
  ],
  "speeds_corridor": [
@@ -606,5 +670,32 @@
   "CMP 2008 Dengale Bridge (now a one-way pair), Godzil Bridge (two-wheelers only), Warje Bridge (24 h count, edge of the database), Kalyani and Kharadi bridges (outside the database network), Near Sanjeevani Hospital (location not identified).",
   "Mendeley Pune CCTV 2023 (Alankar, Jehangir, RTO Chowk): camera-to-approach mapping and direction are not published with the counts; already used to build the hour-of-day profile, so not independent.",
   "PMRDA CMP 2018 junction counts (Wakad, Bhumkar, Kaspate Chowk; PCU, 16 h): used in backend/data/diurnal for the peak-hour share; not mapped to model junctions in this round."
- ]
+ ],
+ "split": {
+  "decided": "2026-11-22, before any calibration run",
+  "calibration": [
+   "cmp08_shivaji",
+   "cmp08_shinde",
+   "cmp08_sangam",
+   "cmp08_sancheti_rob",
+   "cmp08_rajaram",
+   "cmp08_smjoshi",
+   "cmp08_wadia_rob"
+  ],
+  "holdout": [
+   "cmp08_mhatre",
+   "cmp08_yerwada_ambedkar",
+   "cmp08_tilak",
+   "cmp08_sambhaji",
+   "cmp08_rangehill_rub",
+   "gunjan17_09",
+   "gunjan17_14",
+   "gunjan17_19"
+  ],
+  "not_scored": [
+   "cmp08_zbridge"
+  ],
+  "rule": "ODME (demand estimation) may use only calibration sites. Hold-out sites are never fitted and are reported separately (TAG M3.1 §3.3: report fitted and independent counts separately). Calibration sites are spread over both screen lines and both periods; Gunjan Chowk (all three hours, one location) is held out as a whole so no hour of it leaks into the fit; Sambhaji (class-filtered count) is held out because ODME matches total vehicles.",
+  "units": "Model volumes are motor vehicles per hour, both directions. Counts are compared as veh_motorised (cycles, carts and cycle rickshaws removed; the model has no non-motorised traffic)."
+ }
 }

@@ -9,11 +9,23 @@ from observed import counts
 from observed.diurnal import profile as diurnal
 from observed import network_corrections
 from observed import screenlines
+from observed import calibrated_flows
 
 router = APIRouter(prefix="/observed-counts", tags=["observed counts"])
 diurnal_router = APIRouter(prefix="/diurnal-profile", tags=["observed counts"])
 corrections_router = APIRouter(prefix="/network-corrections", tags=["network corrections"])
 screenline_router = APIRouter(prefix="/observed-screenlines", tags=["observed counts"])
+calibrated_flows_router = APIRouter(prefix="/calibrated-flows", tags=["observed counts"])
+
+
+@calibrated_flows_router.get("/{file_id}")
+def get_calibrated_flows(file_id: str):
+    try:
+        return calibrated_flows.load(file_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"No calibrated-flow file {file_id!r}")
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=f"Invalid calibrated-flow file {file_id!r}: {exc}")
 
 
 @screenline_router.get("/{file_id}")

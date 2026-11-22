@@ -5,6 +5,7 @@ import { Disclosure } from '../../components/ui/Disclosure';
 import { useSimulationMode } from '../../hooks/useSimulationMode';
 import { useShellStore } from '../useShellStore';
 import { TrafficCountsNotice } from '../../components/data/TrafficCountsNotice';
+import { TRAFFIC_VALIDATION, TRAFFIC_VALIDATION_SUMMARY, RIVER_SCREENLINE_TEXT, COUNTS_ALL, COUNTS_CALIBRATION, COUNTS_HOLDOUT } from '../../components/ui/badges/trafficValidation';
 
 /**
  * Simulate context panel: the model list with each model's standing, and how to start. The study itself
@@ -18,7 +19,7 @@ export const SimulateContext: React.FC = () => {
     <div className="space-y-5">
       <div className="uos-banner-fail" role="status" data-testid="simulate-validation-banner">
         <OctagonAlert size={16} aria-hidden className="shrink-0 mt-0.5" />
-        <p>Traffic model fails validation (TAG M3.1): 0 of 15 count sites within GEH 5; river screen line −30.5%. Results are estimates for comparing options on the same inputs, not forecasts.</p>
+        <p>Traffic model {TRAFFIC_VALIDATION.verdict === 'fails_validation' ? 'fails validation' : 'meets the recorded criteria'} ({TRAFFIC_VALIDATION.standard}): {TRAFFIC_VALIDATION_SUMMARY}. Results are estimates for comparing options on the same inputs, not forecasts.</p>
       </div>
       <PanelSection title="Study">
         {sim.seedRoadIds.length === 0
@@ -39,7 +40,7 @@ export const SimulateContext: React.FC = () => {
         <p className="text-meta text-text-3 mt-1.5">Pune has no openly published official traffic counts. The checks use research transcriptions (6 junctions, NICMAR 2025; 8 CCTV cameras, 2023; the 2008 river-bridge counts), so the model is compared with old or partial counts only.</p>
       </PanelSection>
       <Disclosure>
-        <p className="text-label text-text-2">How the model was checked against Pune: traffic counts within GEH 5 at 0 of 15 sites (85% needed); the nine river crossings carry 54,493 veh/h in the model against 78,357 counted (−30.5%; within 5% needed); section speeds within 15% at 4 of 21 (85% needed). Criteria: UK DfT TAG unit M3.1 (May 2026). The counts are from 2008 and 2017, the speeds from 2025–2026. Emissions are computed from the simulated traffic, so they carry the same limitation. Feasibility screening never declares a proposal feasible.</p>
+        <p className="text-label text-text-2">How the model was checked against Pune: traffic counts within GEH 5 at {COUNTS_ALL.withinGeh5} of {COUNTS_ALL.n} sites (85% needed), {COUNTS_CALIBRATION.withinGeh5} of the {COUNTS_CALIBRATION.n} calibration sites and {COUNTS_HOLDOUT.withinGeh5} of the {COUNTS_HOLDOUT.n} hold-out sites that are never fitted; {RIVER_SCREENLINE_TEXT}; section speeds within 15% at 4 of 21 (85% needed). Criteria: UK DfT TAG unit M3.1 (May 2026). The counts are from 2008 and 2017, the speeds from 2025–2026. Emissions are computed from the simulated traffic, so they carry the same limitation. Feasibility screening never declares a proposal feasible.</p>
       </Disclosure>
     </div>
   );

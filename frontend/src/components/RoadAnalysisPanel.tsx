@@ -144,11 +144,13 @@ const Measured: React.FC<{ sim: SimulationModeState; r: RoadAnalysisResult }> = 
   const checks = screenlineChecks(sim.screenlines, r, sim.analysis.hour).filter(c => c.station.osmWays.some(w => ids.has(w)));
   if (!checks.length) return null;
   const c = checks[0], src = sim.screenlines!.source;
-  const ratio = c.station.peakVehicles > 0 ? c.modelVph / c.station.peakVehicles : 0;
+  // Motor vehicles only: the model has no cycles or carts (peakMotorVehicles, inferred from the 12 h class split)
+  const counted = c.station.peakMotorVehicles ?? c.station.peakVehicles;
+  const ratio = counted > 0 ? c.modelVph / counted : 0;
   const far = ratio < 0.5 || ratio > 2;
-  const max = Math.max(1, c.station.peakVehicles, c.modelVph, c.simulatedVph ?? 0);
+  const max = Math.max(1, counted, c.modelVph, c.simulatedVph ?? 0);
   const rows: { k: string; v: number; color: string; badge: React.ReactNode; title: string }[] = [
-    { k: 'Counted', v: c.station.peakVehicles, color: '#34d399', badge: <SourceBadge source="observed" />, title: `${fmt(c.station.peakVehicles)} veh/h both directions, ${c.station.peakHour} (${src.surveyYear} count)` },
+    { k: 'Counted', v: counted, color: '#34d399', badge: <SourceBadge source="observed" />, title: `${fmt(counted)} motor vehicles/h both directions, ${c.station.peakHour} (${src.surveyYear} count${c.station.peakMotorVehicles !== undefined ? `; ${fmt(c.station.peakVehicles)} with cycles and carts, which the model does not have` : ''})` },
     { k: 'Model routes', v: c.modelVph, color: '#a78bfa', badge: <SourceBadge source={sourceOf(r.evidence.demand?.source)} />, title: `The area routing at ${hourLabel(sim.analysis.hour ?? 0)}` },
     ...(c.simulatedVph !== null ? [{ k: 'Got through', v: c.simulatedVph, color: '#818cf8', badge: <SourceBadge source="simulated" />, title: 'What got through in the simulation' }] : []),
   ];
@@ -509,7 +511,7 @@ export const CountChecks: React.FC<{ sim: SimulationModeState; withOdme?: boolea
         <div>
           <p className="text-slate-300 font-medium">River bridges in the area (both directions, veh/h)</p>
           <table className="w-full tabular-nums mt-1"><thead><tr className="text-slate-500"><th className="text-left font-medium">Bridge</th><th className="text-right font-medium">Counted</th><th className="text-right font-medium">Model</th><th className="text-right font-medium">GEH</th></tr></thead>
-            <tbody>{checks.map(c => <tr key={c.station.id} className="border-t border-white/5"><td className="py-1 text-slate-300">{c.station.name}<span className="block text-[11px] text-slate-500">{c.station.peakHour}{c.station.comparable ? '' : ' · not comparable'}</span></td><td className="text-right">{fmt(c.station.peakVehicles)}</td><td className="text-right">{fmt(c.modelVph)}</td><td className={`text-right ${c.geh > 10 ? 'text-rose-300' : c.geh > 5 ? 'text-amber-300' : 'text-emerald-300'}`}>{c.geh.toFixed(0)}</td></tr>)}</tbody></table>
+            <tbody>{checks.map(c => <tr key={c.station.id} className="border-t border-white/5"><td className="py-1 text-slate-300">{c.station.name}<span className="block text-[11px] text-slate-500">{c.station.peakHour}{c.station.comparable ? '' : ' · not comparable'}</span></td><td className="text-right">{fmt(c.station.peakMotorVehicles ?? c.station.peakVehicles)}</td><td className="text-right">{fmt(c.modelVph)}</td><td className={`text-right ${c.geh > 10 ? 'text-rose-300' : c.geh > 5 ? 'text-amber-300' : 'text-emerald-300'}`}>{c.geh.toFixed(0)}</td></tr>)}</tbody></table>
           <p className="mt-1 leading-snug">Counted: {sim.screenlines?.source.title}, {sim.screenlines?.source.surveyYear} (peak hour of each bridge). Model: the area routing at {hourLabel(sim.analysis.hour ?? 0)}. GEH under 5 is a good match in practice; these counts are old and at their own peak hours, so read large gaps as "the demand is incomplete here", not as precise errors. Nothing is fitted to them.</p>
         </div>
       ) : <p>No counted bridge lies in this area.</p>}

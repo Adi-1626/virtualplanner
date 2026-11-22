@@ -8,7 +8,9 @@ import type { RoadAnalysisResult } from '../simulation/RoadAnalysis';
  */
 export interface ScreenlineStation {
   id: string; name: string; osmWays: number[]; peakHour: string; peakStartHour: number;
-  peakVehicles: number; peakPcu: number; day12hVehicles: number; twoWheelerShare12h?: number; comparable: boolean; note?: string;
+  peakVehicles: number; peakPcu: number; day12hVehicles: number;
+  /** Peak-hour motor vehicles (cycles, carts and cycle rickshaws removed, inferred from the 12 h class split): what the model, which has no non-motorised traffic, is compared with. */
+  peakMotorVehicles?: number; twoWheelerShare12h?: number; comparable: boolean; note?: string;
 }
 export interface ScreenlineFile { id: string; name: string; source: { title: string; tables: string; url: string; surveyYear: number; note: string }; stations: ScreenlineStation[] }
 
@@ -50,8 +52,9 @@ export function screenlineChecks(file: ScreenlineFile | null, r: RoadAnalysisRes
     let simF = 0, simB = 0, simFound = false;
     r.linkVph.forEach((vph, linkId) => { const w = wayOf(linkId); if (w === null || !ways.has(w)) return; simFound = true; if (linkId.endsWith('_bwd')) simB = Math.max(simB, vph); else simF = Math.max(simF, vph); });
     const simulatedVph = simFound ? (st.osmWays.length > 1 ? sumByWay(r.linkVph, st.osmWays) : simF + simB) : null;
-    const m = modelVph, c = st.peakVehicles;
-    out.push({ station: st, modelVph: Math.round(m), simulatedVph: simulatedVph === null ? null : Math.round(simulatedVph), geh: Math.sqrt(2 * (m - c) ** 2 / Math.max(1, m + c)), sameHour: hour === st.peakStartHour || hour === st.peakStartHour + 1 });
+    // Motor vehicles (the model has no cycles); the count's hour is peakStartHour:00 to +1 h, the model's hour h is h:00 to h+1:00
+    const m = modelVph, c = st.peakMotorVehicles ?? st.peakVehicles;
+    out.push({ station: st, modelVph: Math.round(m), simulatedVph: simulatedVph === null ? null : Math.round(simulatedVph), geh: Math.sqrt(2 * (m - c) ** 2 / Math.max(1, m + c)), sameHour: hour === st.peakStartHour });
   }
   return out;
 }

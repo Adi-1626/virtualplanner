@@ -9,6 +9,7 @@ import type { CountJunction } from '../calibration/observedCounts';
 import { speedLos } from './roadParameters';
 import { indoHcmSaturationFlow } from './signalTiming';
 import { selectLink, type AssignmentResult } from './staticAssignment';
+import { isAccessRestricted } from './accessRestriction';
 
 /**
  * What is happening on one road section, and why (docs/OVERHAUL.md §3-§5).
@@ -614,9 +615,66 @@ export interface AreaContext {
   feeders: RoadUse[];
   nearby: RoadUse[];
   bottlenecks: Bottleneck[];
+  /** Where the selected road meets the rest of the network (sectionJoins): its ends and any joins part-way along it. */
+  joins?: SectionJoins;
   /** Main roads in the area that end without a connection (networkGaps). */
   networkGaps: NetworkGap[];
   summary: RoadAnalysisResult['assignment'];
+}
+
+
+export interface JoinRoad { id: string; name: string; roadClass: string; restricted: boolean }
+export interface SectionJoins {
+  /** The section's two ends (a loop or a stub can have fewer): the roads joined there, outside the section. */
+  ends: { compass: string; coordinates: [number, number, number]; roads: JoinRoad[] }[];
+  /** Nodes part-way along the section where another road joins it (for a structure, ramp joins under 3 m height difference). */
+  mid: { coordinates: [number, number, number]; roads: JoinRoad[]; fromEndM: number }[];
+}
+
+/**
+ * Where the selected road meets the network: the roads at each of its ends and any joined part-way along it. Read when
+ * almost nothing uses the road, to name why instead of a generic "poorly connected" (docs/urbanos/TRAFFIC_CALIBRATION_P9.md §6:
+ * a drawn flyover whose west end met only a private service road, OSM access=private, carried no through traffic).
+ */
+export function sectionJoins(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, section: RoadSection): SectionJoins {
+  const net = area.network;
+  const keys = new Set(section.segmentKeys);
+  const segOf = (id: string) => id.replace(/_(fwd|bwd)$/, '');
+  const deg = new Map<string, Set<string>>();
+  for (const e of net.edges.values()) {
+    const k = segOf(e.id);
+    if (!keys.has(k)) continue;
+    for (const n of [e.fromNodeId, e.toNodeId]) (deg.get(n) ?? deg.set(n, new Set()).get(n)!).add(k);
+  }
+  const roadAt = (nodeId: string): JoinRoad[] => {
+    const node = net.nodes.get(nodeId);
+    if (!node) return [];
+    const ids = new Set<string>();
+    for (const id of [...node.incomingSegments, ...node.outgoingSegments]) { const e = net.edges.get(id); if (e && !keys.has(segOf(e.id))) ids.add(e.roadId); }
+    return [...ids].map(id => { const r = roads.get(id); return { id, name: r?.name && !isGenericRoadName(r.name) ? r.name : (r?.name || 'Unnamed road'), roadClass: r?.roadClass ?? 'local', restricted: isAccessRestricted(r) }; });
+  };
+  const endNodes = [...deg].filter(([, ks]) => ks.size === 1).map(([n]) => n);
+  const coordsOf = (n: string) => [...(net.nodes.get(n)?.coordinates ?? [0, 0, 0])] as [number, number, number];
+  const centre = endNodes.length ? endNodes.map(coordsOf).reduce((a, c) => [a[0] + c[0] / endNodes.length, a[1] + c[1] / endNodes.length, 0], [0, 0, 0]) : [0, 0, 0];
+  const ends = endNodes.map(n => ({ compass: compass(bearing(centre, coordsOf(n))), coordinates: coordsOf(n), roads: roadAt(n) }));
+  const mid = [...deg].filter(([, ks]) => ks.size >= 2).map(([n]) => ({ n, roads: roadAt(n) })).filter(x => x.roads.length)
+    .map(x => { const c = coordsOf(x.n); return { coordinates: c, roads: x.roads, fromEndM: Math.round(Math.min(...ends.map(e => distM(e.coordinates, c)), Infinity)) }; });
+  return { ends, mid };
+}
+
+/** Why a road with (almost) no traffic gets none, from how it is joined; null when its joins explain nothing. */
+export function joinsExplanation(j: SectionJoins | undefined): string | null {
+  if (!j || !j.ends.length) return null;
+  const names = (rs: JoinRoad[]) => [...new Set(rs.map(r => r.name))].join(', ');
+  const parts: string[] = [];
+  for (const e of j.ends) {
+    if (!e.roads.length) parts.push(`Its ${e.compass} end is not joined to any road, so no route can leave or reach it there.`);
+    else if (e.roads.every(r => r.restricted)) parts.push(`Its ${e.compass} end joins only ${names(e.roads)}, a road with restricted access in OSM (private or destination only): through traffic may not use it, so routes do not pass that way.`);
+    else if (e.roads.every(r => r.restricted || r.roadClass === 'local')) parts.push(`Its ${e.compass} end joins only local streets (${names(e.roads)}), so few routes between main roads lead there.`);
+  }
+  if (!parts.length) return null;
+  const midTxt = j.mid.length ? ` It is also joined part-way along, ${j.mid.map(m => `to ${names(m.roads)} ${m.fromEndM} m from an end`).join('; ')}: the traffic it gets enters there.` : '';
+  return `${parts.join(' ')}${midTxt} Join its ends to public through roads (Design: drag the end onto the road) to let traffic use it.`;
 }
 
 /**
@@ -782,7 +840,7 @@ export function areaContext(res: AssignmentResult, area: StudyArea, roads: Reado
       ...(nearestGap ? { gap: { roadName: nearestGap.g.roadName, title: nearestGap.g.title, coordinates: nearestGap.g.coordinates, distanceM: Math.round(nearestGap.d) } } : {}) });
   }
   return { directions, origins: places('from'), destinations: places('to'), composition: { throughShare: total ? through / total : 0, localShare: total ? 1 - through / total : 0 },
-    selectLinkVph, areaVc, areaLinkVph, feeders, nearby, bottlenecks, networkGaps: gaps,
+    selectLinkVph, areaVc, areaLinkVph, feeders, nearby, bottlenecks, networkGaps: gaps, joins: sectionJoins(area, roads, section),
     summary: { iterations: res.iterations, relativeGap: res.relativeGap, demandVph, unroutedVph: res.unroutedVeh, overCapacityLinks: over, totalVehHours: vehH, elapsedMs: res.elapsedMs } };
 }
 
@@ -873,7 +931,9 @@ export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { 
       : 'The area has no trips to route.', chain: null };
   } else if (status === 'no_traffic' || !worst) {
     headline = 'Almost no simulated traffic uses this road.';
-    cause = { kind: 'insufficient', text: 'Routes through the area avoid it, or it is poorly connected. Check its connections under Advanced.', chain: null };
+    // Name the join that keeps traffic off it where the network shows one (an end on a private road, unjoined, local only)
+    const why = joinsExplanation(area.joins);
+    cause = { kind: 'insufficient', text: why ?? 'Routes through the area avoid it, or it is poorly connected. Check its connections under Advanced.', chain: null };
   } else {
     const speedTxt = (d: DirectionFlow) => d.meanSpeedKmh === null ? 'no speed measured' : `${Math.round(d.meanSpeedKmh)} km/h against a free-flow ${Math.round(d.freeSpeedKmh)} km/h`;
     const word: Record<RoadStatus, string> = { flowing: 'moves freely', moderate: 'moves with some delay', slow: 'is slow', congested: 'is congested', severe: 'is severely congested', no_traffic: 'is almost empty' };

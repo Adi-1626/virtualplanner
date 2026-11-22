@@ -1,10 +1,12 @@
 import React from 'react';
 import { TRAFFIC_VALIDATION } from './trafficValidation';
 
-/** Compact table of the recorded TAG M3.1 results (docs/ENGINEERING_VALIDATION.md §5.0). */
+/** Compact table of the recorded TAG M3.1 results, verdict and row status computed in trafficValidation.ts. */
 export const ValidationSummary: React.FC = () => (
   <div data-testid="validation-summary" className="flex flex-col gap-2">
-    <p className="font-semibold" style={{ color: 'var(--fail, #FF6B61)' }}>Traffic model fails validation ({TRAFFIC_VALIDATION.standard})</p>
+    <p className="font-semibold" style={{ color: TRAFFIC_VALIDATION.verdict === 'fails_validation' ? 'var(--fail, #FF6B61)' : 'var(--text-1, #E6EAF0)' }}>
+      {TRAFFIC_VALIDATION.verdict === 'fails_validation' ? 'Traffic model fails validation' : 'Traffic model meets the recorded criteria'} ({TRAFFIC_VALIDATION.standard})
+    </p>
     <p style={{ color: 'var(--text-2, #A9B3C1)' }}>{TRAFFIC_VALIDATION.meaning}</p>
     <table className="w-full text-[11px]" style={{ fontVariantNumeric: 'tabular-nums' }}>
       <thead><tr style={{ color: 'var(--text-3, #8B95A3)' }} className="text-left"><th className="font-medium pb-1">Test</th><th className="font-medium pb-1">Needed</th><th className="font-medium pb-1">Result</th></tr></thead>
@@ -13,7 +15,7 @@ export const ValidationSummary: React.FC = () => (
           <tr key={r.test} data-status={r.status} className="align-top border-t" style={{ borderColor: 'var(--border, #333C47)' }}>
             <td className="py-1 pr-1">{r.test}</td>
             <td className="py-1 pr-1" style={{ color: 'var(--text-2, #A9B3C1)' }}>{r.required}</td>
-            <td className="py-1"><span style={{ color: 'var(--fail, #FF6B61)' }} className="font-semibold">{r.status}</span> {r.result}</td>
+            <td className="py-1"><span style={{ color: r.status === 'FAIL' ? 'var(--fail, #FF6B61)' : 'var(--text-2, #A9B3C1)' }} className="font-semibold">{r.status}</span> {r.result}</td>
           </tr>
         ))}
       </tbody>

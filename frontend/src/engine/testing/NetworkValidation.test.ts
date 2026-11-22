@@ -87,6 +87,9 @@ describe.skipIf(!process.env.VAL24)('network-wide validation against observation
       if (o.type === 'road') om.syncRoadProperties(o as RoadObject);
       (om as unknown as { objects: Map<string, CityObject> }).objects.set(o.id, o);
     }
+    // VAL24_CHANGES: a proposal's modifies/deletes of base objects (GET /api/scenario-changes rows), as the app loads them
+    if (process.env.VAL24_CHANGES) om.loadChanges(JSON.parse(fs.readFileSync(process.env.VAL24_CHANGES, 'utf8')));
+    if (process.env.VAL24_SCENARIO) om.setActiveScenario(process.env.VAL24_SCENARIO);
     om.liftBridges();
     const hypo: Record<string, number> = {};
     const capTags = (objs: readonly CityObject[]) => {
@@ -110,7 +113,8 @@ describe.skipIf(!process.env.VAL24)('network-wide validation against observation
     const history = new HistoryManager(om);
     const localOsm = new LocalOsmIndex();
     const editing = new EditingEngine(om, history, () => null, localOsm);
-    const scenarioId = 'base';
+    // VAL24_SCENARIO: run in a proposal (alternative) instead of the base city, e.g. to study a drawn flyover
+    const scenarioId = process.env.VAL24_SCENARIO || 'base';
     const ctx = (): SimulationContext => {
       const objects = filterObjectsForScenario(om.getAll(), scenarioId).filter(o => !isSampleObject(o)) as (CityObject & Record<string, any>)[];
       const flows = (values: Record<string, number>) => Object.fromEntries((['AM_Peak', 'PM_Peak', 'Midday', 'Night'] as TimePeriod[]).map(p => [p, Math.max(0, values?.[p] || 0)])) as Record<TimePeriod, number>;
@@ -139,7 +143,7 @@ describe.skipIf(!process.env.VAL24)('network-wide validation against observation
     const settle = async () => {
       for (let i = 0; i < 600; i++) {
         const s = mode.getState();
-        if (s.osmRoads.status !== 'loading' && s.signals.status !== 'loading' && s.timeOfDay.status === 'ready' && s.area && s.section && s.screenlines) return true;
+        if (s.osmRoads.status !== 'loading' && s.signals.status !== 'loading' && s.timeOfDay.status === 'ready' && s.edgeFlows.status !== 'loading' && s.area && s.section && s.screenlines) return true;
         await sleep(200);
       }
       return false;
@@ -230,6 +234,9 @@ describe.skipIf(!process.env.VAL24)('network-wide validation against observation
             screenlines: screenlineChecks(s2.screenlines as ScreenlineFile | null, r, s2.analysis.hour).map(c => ({ id: c.station.id, count: c.station.peakVehicles, countHour: c.station.peakStartHour, modelVph: c.modelVph, simulatedVph: c.simulatedVph, geh: +c.geh.toFixed(2) })),
             counts: out.counts.map(c => ({ ...c })),
             ways: Object.fromEntries(Object.entries(run.ways ?? {}).map(([k, ws]) => [k, { assigned: wayVolume(r.areaLinkVph, ws), simulated: wayVolume(r.linkVph, ws) }])),
+                     // VAL24_DUMP_LINKS=prefix: every link of the roads whose id starts with it, assigned and simulated (diagnosis of one road)
+            linkDump: process.env.VAL24_DUMP_LINKS ? [...new Set([...r.areaLinkVph.keys(), ...r.linkVph.keys()])].filter(id => id.startsWith(process.env.VAL24_DUMP_LINKS!))
+              .sort().map(id => ({ id, assigned: Math.round(r.areaLinkVph.get(id) ?? 0), simulated: Math.round(r.linkVph.get(id) ?? 0) })) : undefined,
           });
         } else row.error = s2.analysis.error;
       }

@@ -37,7 +37,7 @@ import { fitPlan, measureFlows, compareRows, summarize, junctionsIn, zoneFor, ju
 import { gehAgainst } from '../calibration/ipf';
 import type { GehSummary } from '../calibration/geh';
 import { fetchDiurnalProfile, hourFactor, COUNT_HOURS, type DiurnalProfile, type DayType } from './timeOfDay';
-import { compileAreaDemand } from './AreaDemand';
+import { compileAreaDemand, fetchCalibratedEdgeFlows, type CalibratedEdgeFlows } from './AreaDemand';
 import { roadSection, type RoadSection } from './roadSection';
 import { startAnalysisJob, type RunningAnalysis } from './analysisRunner';
 import { DEFAULT_ANALYSIS, CORRIDOR_RANGE_M, type AnalysisJob, type AnalysisOutput } from './analysisJob';
@@ -312,6 +312,8 @@ export interface SimulationModeState {
   notice: string | null;
   /** Counted roads (river bridges, PMC CMP 2008) for checking the model's volumes. */
   screenlines: ScreenlineFile | null;
+  /** Calibrated central-Pune edge flows (docs/urbanos/TRAFFIC_CALIBRATION_P9.md): loading, ready (used for areas inside the window) or none (class-typical flows everywhere). */
+  edgeFlows: { status: 'loading' | 'ready' | 'none'; id: string | null };
   /** Demand estimated from calibration counts (ODME, docs/ODME_AND_EMISSIONS.md): opt-in; the estimate never replaces the baseline demand. */
   odme: OdmeState;
 }
@@ -412,6 +414,7 @@ export class SimulationMode {
     speeds: null,
     notice: null,
     screenlines: null,
+    edgeFlows: { status: 'loading', id: null },
   };
   private analysisRun: RunningAnalysis | null = null;
   private analysisTimer: ReturnType<typeof setTimeout> | null = null;
@@ -479,6 +482,13 @@ export class SimulationMode {
     loadScreenlines: (() => Promise<ScreenlineFile>) | null = () => fetchScreenlines()) {
     this.loadCounts = loadCounts;
     loadScreenlines?.().then(screenlines => this.setState({ screenlines })).catch(() => { /* no counts: the check is not shown */ });
+    // Calibrated window edge flows: areas inside the window take their edge flows from it once loaded; until then, and
+    // without the file, the class-typical flows per lane apply (state.edgeFlows says which)
+    fetchCalibratedEdgeFlows().then(flows => {
+      this.calibratedEdgeFlows = flows;
+      this.setState({ edgeFlows: { status: 'ready', id: flows.id } });
+      if (this.state.area && this.useCalibratedEdgeFlows) { this.analysisStale = true; this.scheduleAnalysis(); }
+    }).catch(() => this.setState({ edgeFlows: { status: 'none', id: null } }));
     // Roads for the simulation: the project's roads with the correction layer (and the OSM
     // one-way implications) applied on top; the stored roads are never changed
     this.getRoads = () => {
@@ -1120,6 +1130,9 @@ export class SimulationMode {
   }
 
   private planCache: { key: string; plan: DemandPlan | null } | null = null;
+  private calibratedEdgeFlows: CalibratedEdgeFlows | null = null;
+  /** Use the calibrated window edge flows where they cover the area (default). Off only to cut the window itself from the prior (WindowCalibration harness). */
+  public useCalibratedEdgeFlows = true;
 
   /**
    * The OD demand the area runs on: the counts-calibrated plan when applied,
@@ -1134,10 +1147,10 @@ export class SimulationMode {
     if (this.calibratedPlan) plan = this.calibratedPlan;
     else {
       const period = landUse;
-      const key = contentKey({ ctx: demandContextKey({ ...this.getContext(), period }), rev: this.revision, seeds: area.seedRoadIds, range: area.rangeMeters, dir: area.direction, through: settings.through, corr: this.correctionsEnabled });
+      const key = contentKey({ ctx: demandContextKey({ ...this.getContext(), period }), rev: this.revision, seeds: area.seedRoadIds, range: area.rangeMeters, dir: area.direction, through: settings.through, corr: this.correctionsEnabled, edge: this.useCalibratedEdgeFlows ? this.calibratedEdgeFlows?.id ?? null : null });
       if (this.planCache?.key !== key) {
         const ctx = { ...this.getContext(), period };
-        this.planCache = { key, plan: compileAreaDemand(ctx, area, new Map(this.getRoads().map(r => [r.id, r])), { through: settings.through }) };
+        this.planCache = { key, plan: compileAreaDemand(ctx, area, new Map(this.getRoads().map(r => [r.id, r])), { through: settings.through, calibratedEdgeFlows: this.useCalibratedEdgeFlows ? this.calibratedEdgeFlows : null }) };
       }
       plan = this.planCache.plan;
     }

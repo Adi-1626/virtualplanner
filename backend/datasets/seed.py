@@ -16,6 +16,8 @@ from sqlalchemy.orm import Session
 
 from planning.audit import acting_as
 
+from observed import traffic_validation
+
 from .models import DsDatasetEntity, DsDatasetVersionEntity, DsFeatureDependencyEntity, DsFeatureEntity
 from .quality import run_checks
 from .registry import add_version, ensure_dataset, ensure_source, find_version_by_fingerprint, fingerprint, versions_of
@@ -240,7 +242,7 @@ FEATURES = [
     ("flood.drainage_model", "environment", "Flood/drainage", "Storm-water drainage model (SWMM)", None, None,
      [("drainage_network", None, E, True, "pipes/nallas with inverts"), ("dem", None, E, True, ""), ("rainfall", None, E, True, "IDF")]),
     ("traffic.simulation", "simulate", "Traffic", "Traffic assignment and micro-simulation", "partial",
-     "Model FAILS validation (TAG M3.1: 0 of 15 counts within GEH 5; river screen line −30.5%). Compare options, not forecasts.",
+     traffic_validation.summary(),   # computed from the recorded per-site results (observed/traffic_validation.py)
      [("road_network", "osm_local_index", S, True, "network"), ("network_corrections", None, S, False, "local fixes"),
       ("diurnal_profile", None, S, True, "hour factors"), ("travel_demand", None, S, True, "observed OD (zones are SYNTHETIC)"),
       ("traffic_counts", None, S, True, "calibration counts")]),
@@ -343,6 +345,10 @@ RESTRICTED = [
 ]
 
 
+# Features whose status reason is a recorded measurement (kept current in existing databases)
+MEASURED_REASONS = {"traffic.simulation"}
+
+
 def _migrate(db: Session) -> None:
     """Additive columns on ds_* tables created by an earlier version of this module (nullable; nothing rewritten)."""
     from sqlalchemy import inspect as sa_inspect, text
@@ -405,6 +411,8 @@ def _seed(db: Session) -> None:
         existing = db.get(DsFeatureEntity, fid)
         if existing is not None and wired is not None and (existing.wired, existing.wiring_note) != (wired, note):
             existing.wired, existing.wiring_note = wired, note   # wiring describes the code, so the code's value wins
+        if existing is not None and fid in MEASURED_REASONS and existing.status_cap_reason != cap_reason:
+            existing.status_cap_reason = cap_reason   # a measured verdict: the latest recorded result wins
         if existing is None:
             db.add(DsFeatureEntity(id=fid, workspace=ws, capability=cap, name=name, status_cap=cap_status, status_cap_reason=cap_reason,
                                    wired=wired, wiring_note=note))

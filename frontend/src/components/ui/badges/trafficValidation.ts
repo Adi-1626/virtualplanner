@@ -1,8 +1,15 @@
 /**
- * The project-level traffic-model verdict, copied from docs/ENGINEERING_VALIDATION.md §5.0
- * (results on commit c916854; criteria UK DfT TAG unit M3.1, May 2026,
+ * The project-level traffic-model verdict, COMPUTED from recorded measurements against fixed TAG M3.1 criteria
+ * (UK DfT TAG unit M3.1, May 2026,
  * https://assets.publishing.service.gov.uk/media/6a033d074fb0713aa63ea802/tag-m3-1-highway-assignment-modelling.pdf).
- * These are recorded results, not live values: update them only when that document is re-run.
+ *
+ * Counts and the river screen line: the app's own per-site runs (each site in its own 2 km study area at its own
+ * hour, assigned volume, motor vehicles), branch p9-calibration, docs/urbanos/TRAFFIC_CALIBRATION_P9.md §4. The
+ * sites are split once into CALIBRATION (may be fitted) and HOLD-OUT (never fitted) in
+ * backend/data/observed_validation/pune_network_validation_v1.json; both are shown separately (TAG M3.1 §3.3).
+ * Speeds: docs/ENGINEERING_VALIDATION.md §5.0 (code c916854), not re-run in p9.
+ * These are recorded results, not live values: update COUNT_RESULTS / RIVER_SCREENLINE only from a re-run.
+ * The criteria below are TAG's and must not be loosened to change a verdict.
  */
 export interface ValidationRow {
   test: string;
@@ -11,23 +18,110 @@ export interface ValidationRow {
   status: 'FAIL' | 'PASS' | 'NOT EVALUATED';
 }
 
+/** One count site: observed motor vehicles and the model's assigned volume at the counted hour (veh/h, both directions). */
+export interface CountSiteResult {
+  id: string;
+  name: string;
+  role: 'calibration' | 'holdout';
+  hour: number;
+  count: number;
+  model: number;
+}
+
+/** TAG M3.1 Table 2/3 criteria (fixed). */
+export const TAG_CRITERIA = {
+  /** Share of sites that must have GEH < 5. */
+  gehShare: 0.85,
+  geh: 5,
+  /** Share of sites that must meet the flow criterion. */
+  flowShare: 0.85,
+  /** Screen-line total within this fraction of the count. */
+  screenline: 0.05,
+} as const;
+
+export const geh = (m: number, c: number) => Math.sqrt(2 * (m - c) ** 2 / Math.max(1, m + c));
+/** TAG flow criterion: within 100 veh/h below 700, 15% from 700 to 2,700, 400 veh/h above 2,700. */
+export const flowOk = (m: number, c: number) => Math.abs(m - c) <= (c < 700 ? 100 : c <= 2700 ? 0.15 * c : 400);
+
+/**
+ * Per-site results, p9-calibration, shipped configuration (no calibrated window edge flows: class-typical edge
+ * flows per lane). Counts: CMP 2008 (motor vehicles, cycles and carts removed; another hour of the same site moved
+ * with the Pune hourly profile; Sambhaji's model is its non-two-wheeler volume as the count excludes two-wheelers)
+ * and Gunjan Chowk 2017.
+ */
+export const COUNT_RESULTS: CountSiteResult[] = [
+  { id: 'cmp08_shivaji', name: 'Shivaji Bridge', role: 'calibration', hour: 18, count: 7245, model: 2393 },
+  { id: 'cmp08_shinde', name: 'Shinde Bridge', role: 'calibration', hour: 18, count: 4636, model: 2071 },
+  { id: 'cmp08_smjoshi', name: 'S. M. Joshi Bridge', role: 'calibration', hour: 11, count: 4036, model: 1973 },
+  { id: 'cmp08_rajaram', name: 'Raja Ram Bridge', role: 'calibration', hour: 10, count: 7050, model: 7093 },
+  { id: 'cmp08_sangam', name: 'Sangam Bridge (old + new)', role: 'calibration', hour: 19, count: 15640, model: 11000 },
+  { id: 'cmp08_wadia_rob', name: 'ROB at Wadia College', role: 'calibration', hour: 11, count: 4454, model: 3721 },
+  { id: 'cmp08_sancheti_rob', name: 'ROB near Sancheti Hospital', role: 'calibration', hour: 19, count: 6255, model: 5728 },
+  { id: 'cmp08_mhatre', name: 'Mhatre Bridge', role: 'holdout', hour: 18, count: 9753, model: 4741 },
+  { id: 'cmp08_tilak', name: 'Tilak Bridge', role: 'holdout', hour: 10, count: 2070, model: 1701 },
+  { id: 'cmp08_sambhaji', name: 'Sambhaji Bridge (no two-wheelers)', role: 'holdout', hour: 11, count: 4251, model: 1942 },
+  { id: 'cmp08_yerwada_ambedkar', name: 'Yerwada + Ambedkar bridges', role: 'holdout', hour: 18, count: 19143, model: 19487 },
+  { id: 'cmp08_rangehill_rub', name: 'RUB at Range Hill', role: 'holdout', hour: 16, count: 1611, model: 2782 },
+  { id: 'gunjan17_09', name: 'Gunjan Chowk 09:00', role: 'holdout', hour: 9, count: 10034, model: 5735 },
+  { id: 'gunjan17_14', name: 'Gunjan Chowk 14:00', role: 'holdout', hour: 14, count: 6581, model: 4043 },
+  { id: 'gunjan17_19', name: 'Gunjan Chowk 19:00', role: 'holdout', hour: 19, count: 9460, model: 5735 },
+];
+
+/** River screen line (CMP 2008 screen line 2, 9 crossings, each at its own hour, motor vehicles). Sambhaji at its total model volume. */
+export const RIVER_SCREENLINE = { crossings: 9, model: 54505, count: 73824 };
+
+export interface CountSummary { n: number; withinGeh5: number; flowOk: number; meanGeh: number }
+export function summarizeCounts(rows: readonly CountSiteResult[]): CountSummary {
+  const g = rows.map(r => geh(r.model, r.count));
+  return { n: rows.length, withinGeh5: g.filter(x => x < TAG_CRITERIA.geh).length, flowOk: rows.filter(r => flowOk(r.model, r.count)).length,
+    meanGeh: g.length ? g.reduce((a, b) => a + b, 0) / g.length : NaN };
+}
+
+const fmtPct = (x: number) => `${x < 0 ? '−' : '+'}${Math.abs(x * 100).toFixed(1)}%`;
+const fmtInt = (x: number) => Math.round(x).toLocaleString('en-US');
+const pass = (ok: boolean): ValidationRow['status'] => (ok ? 'PASS' : 'FAIL');
+
+export const COUNTS_ALL = summarizeCounts(COUNT_RESULTS);
+export const COUNTS_CALIBRATION = summarizeCounts(COUNT_RESULTS.filter(r => r.role === 'calibration'));
+export const COUNTS_HOLDOUT = summarizeCounts(COUNT_RESULTS.filter(r => r.role === 'holdout'));
+export const RIVER_SCREENLINE_ERROR = RIVER_SCREENLINE.model / RIVER_SCREENLINE.count - 1;
+
+const gehRow = (label: string, s: CountSummary): ValidationRow => ({
+  test: label, required: '> 85% of sites', result: `${s.withinGeh5} / ${s.n} (mean GEH ${s.meanGeh.toFixed(1)})`,
+  status: pass(s.withinGeh5 / s.n > TAG_CRITERIA.gehShare),
+});
+
+const rows: ValidationRow[] = [
+  gehRow('Counts, GEH < 5, all sites (assigned volume)', COUNTS_ALL),
+  gehRow(`Counts, GEH < 5, calibration sites (${COUNTS_CALIBRATION.n})`, COUNTS_CALIBRATION),
+  gehRow(`Counts, GEH < 5, hold-out sites (${COUNTS_HOLDOUT.n}, never fitted)`, COUNTS_HOLDOUT),
+  { test: 'Counts, flow criterion', required: '> 85% of sites', result: `${COUNTS_ALL.flowOk} / ${COUNTS_ALL.n}`, status: pass(COUNTS_ALL.flowOk / COUNTS_ALL.n > TAG_CRITERIA.flowShare) },
+  { test: `River screen line (${RIVER_SCREENLINE.crossings} crossings)`, required: 'within 5%',
+    result: `${fmtInt(RIVER_SCREENLINE.model)} vs ${fmtInt(RIVER_SCREENLINE.count)} (${fmtPct(RIVER_SCREENLINE_ERROR)})`, status: pass(Math.abs(RIVER_SCREENLINE_ERROR) <= TAG_CRITERIA.screenline) },
+  // Speeds: recorded in docs/ENGINEERING_VALIDATION.md §5.0 (c916854); the p9 changes do not touch the speed runs' inputs
+  { test: 'Section speeds within 15% (micro-sim)', required: '> 85% of 21', result: '4 / 21 (MAPE 38%, bias −18%)', status: 'FAIL' },
+  { test: 'Corridor-hour speeds within 15%', required: '> 85% of 120', result: '27 / 120 (MAPE 54%, bias +40%)', status: 'FAIL' },
+  { test: 'City speed by hour within 15%', required: '> 85% of 9', result: '2 / 9 (MAPE 32%, bias +32%)', status: 'FAIL' },
+];
+
 export const TRAFFIC_VALIDATION = {
-  verdict: 'fails_validation' as const,
+  verdict: (rows.some(r => r.status === 'FAIL') ? 'fails_validation' : 'meets_criteria') as 'fails_validation' | 'meets_criteria',
   standard: 'TAG M3.1',
   standardTitle: 'UK DfT TAG unit M3.1, Highway Assignment Modelling (May 2026)',
   standardUrl: 'https://assets.publishing.service.gov.uk/media/6a033d074fb0713aa63ea802/tag-m3-1-highway-assignment-modelling.pdf',
-  source: 'docs/ENGINEERING_VALIDATION.md §5.0',
-  codeRef: 'c916854',
-  rows: [
-    { test: 'Counts, GEH < 5 (assigned volume)', required: '> 85% of sites', result: '0 / 15 (mean GEH 32.3)', status: 'FAIL' },
-    { test: 'Counts, flow criterion', required: '> 85% of sites', result: '0 / 15', status: 'FAIL' },
-    { test: 'River screen line (9 crossings)', required: 'within 5%', result: '54,493 vs 78,357 (−30.5%)', status: 'FAIL' },
-    { test: 'Section speeds within 15% (micro-sim)', required: '> 85% of 21', result: '4 / 21 (MAPE 38%, bias −18%)', status: 'FAIL' },
-    { test: 'Corridor-hour speeds within 15%', required: '> 85% of 120', result: '27 / 120 (MAPE 54%, bias +40%)', status: 'FAIL' },
-    { test: 'City speed by hour within 15%', required: '> 85% of 9', result: '2 / 9 (MAPE 32%, bias +32%)', status: 'FAIL' },
-  ] as ValidationRow[],
+  source: 'docs/urbanos/TRAFFIC_CALIBRATION_P9.md (counts, screen line); docs/ENGINEERING_VALIDATION.md §5.0 (speeds)',
+  codeRef: 'p9-calibration (counts); c916854 (speeds)',
+  rows,
   meaning: 'Numbers are estimated: use them to compare options on the same inputs, not as forecasts of Pune traffic.',
 };
+
+/** One-line summary for banners: sites within GEH 5 (all, then calibration and hold-out separately) and the river screen line. */
+export const TRAFFIC_VALIDATION_SUMMARY =
+  `${COUNTS_ALL.withinGeh5} of ${COUNTS_ALL.n} count sites within GEH 5 (calibration ${COUNTS_CALIBRATION.withinGeh5}/${COUNTS_CALIBRATION.n}, hold-out ${COUNTS_HOLDOUT.withinGeh5}/${COUNTS_HOLDOUT.n}); river screen line ${fmtPct(RIVER_SCREENLINE_ERROR)}`;
+
+/** The river screen line in words, for longer explanations. */
+export const RIVER_SCREENLINE_TEXT =
+  `the ${RIVER_SCREENLINE.crossings === 9 ? 'nine' : RIVER_SCREENLINE.crossings} river crossings carry ${fmtInt(RIVER_SCREENLINE.model)} veh/h in the model against ${fmtInt(RIVER_SCREENLINE.count)} motor vehicles counted (${fmtPct(RIVER_SCREENLINE_ERROR)}; within 5% needed)`;
 
 /** Short label used on every traffic / ODME / emissions output. */
 export const FAILS_VALIDATION_LABEL = `Fails validation (${TRAFFIC_VALIDATION.standard})`;

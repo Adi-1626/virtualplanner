@@ -1,3 +1,4 @@
+import { apiGet } from '../../lib/api';
 import type { TrafficNetwork } from '../objects/trafficTypes';
 import { isAreaCutEnd, type StudyArea, type DrivableObject } from './StudyAreaExplorer';
 import type { VehicleKind } from './TrafficMicroSim';
@@ -49,6 +50,7 @@ export const SAME_ROAD_WEIGHT = 3;
 export const DEMAND_SOURCES = [
   'Trip generation: PCMC motorised trips per person 0.87/day, peak-hour share 7.8%, PCMC mode split and occupancy (CMP 2018 Tables 6-7, p. E-5; CMP 2008 Table 4.7).',
   'Trip length: mean motorised trip lengths 7.54 km two-wheeler, 4.68 km auto, 8.54 km car, 6.25 km bus (CMP 2018 Table 9, overall study area). Their spread (Erlang, shape 2) is an assumption.',
+  'Calibrated window edge flows (docs/urbanos/TRAFFIC_CALIBRATION_P9.md): used only when a file is installed in backend/data/calibrated_flows. None is shipped: on the 8 hold-out counts the window flows (unfitted or fitted to the 7 calibration counts) did worse than the class-typical flows below.',
   'Edge flows on arterials: 500 veh/h per lane per direction, the low end of the counted approaches at five west-Pune junctions (NICMAR 2025 / Kureshi 2026). Collector 300 veh/h per lane is an assumption and trunk roads use the arterial value; local streets carry no through traffic.',
   'Through traffic: edge-to-edge trips balanced to the edge flows (Furness), weighted by distance across the area and three times more likely to stay on the road they came in on (assumption).',
   'Vehicle mix of edge and through traffic: Gunjan Chowk classified counts (Thakur et al. 2017).',
@@ -67,6 +69,8 @@ export interface CordonPoint {
   /** Class-typical peak-hour flow entering / leaving here (veh/h). */
   inVph: number;
   outVph: number;
+  /** Where the flows come from: the calibrated window, or the class-typical flow per lane. */
+  flowSource?: 'calibrated' | 'class';
 }
 
 /**
@@ -81,12 +85,44 @@ export function edgeFlowPerLane(road: DrivableObject | undefined): number {
 }
 
 const segmentKey = (edgeId: string) => edgeId.replace(/_(fwd|bwd)$/, '');
+
+/**
+ * Calibrated edge flows (backend/data/calibrated_flows, docs/urbanos/TRAFFIC_CALIBRATION_P9.md): per link of one large
+ * window of central Pune, the motor-vehicle volume (veh/h at the period's reference hour) of the app's own assignment
+ * with the window's demand estimated from CALIBRATION counts only (ODME). A study area inside the window takes the
+ * flow on each road crossing its edge from here instead of the class-typical flow per lane (the sub-area / windowing
+ * method), so a road's volume no longer depends on which area was selected. Every value is an estimate.
+ */
+export interface CalibratedEdgeFlows {
+  id: string;
+  /** Window outline (lng/lat bounds): a link outside it is not covered. */
+  bounds: { minLng: number; maxLng: number; minLat: number; maxLat: number };
+  periods: Partial<Record<'AM_Peak' | 'PM_Peak', { refHour: number; links: Record<string, number>; calibrationSites: string[]; holdoutSites?: string[] }>>;
+}
+
+/** Edge flow of one cordon link from the calibrated window, or null where the window does not cover it. */
+export function calibratedLinkFlow(flows: CalibratedEdgeFlows | null | undefined, period: string, edgeId: string, at: readonly number[]): number | null {
+  const p = flows?.periods[period as 'AM_Peak' | 'PM_Peak'];
+  if (!p || !flows) return null;
+  const b = flows.bounds;
+  // Inside the window a link with no entry carried under 5 veh/h there (entries below 5 are not stored)
+  const v = p.links[edgeId];
+  if (v !== undefined) return v;
+  return at[0] >= b.minLng && at[0] <= b.maxLng && at[1] >= b.minLat && at[1] <= b.maxLat && isWindowLink(p.links, edgeId) ? 0 : null;
+}
+/** A link of the window network: its other direction or another piece of the same road is in the file. */
+const windowWays = new WeakMap<Record<string, number>, Set<string>>();
+function isWindowLink(links: Record<string, number>, edgeId: string): boolean {
+  let ways = windowWays.get(links);
+  if (!ways) { ways = new Set(Object.keys(links).map(k => k.replace(/_seg_\d+_(fwd|bwd)$/, ''))); windowWays.set(links, ways); }
+  return ways.has(edgeId.replace(/_seg_\d+_(fwd|bwd)$/, ''));
+}
 const M_PER_DEG_LAT = 111320;
 const distM = (a: readonly number[], b: readonly number[]) =>
   Math.hypot((a[0] - b[0]) * M_PER_DEG_LAT * Math.cos(a[1] * Math.PI / 180), (a[1] - b[1]) * M_PER_DEG_LAT);
 
 /** Where roads cross the area's edge, with their lanes and class-typical flows. */
-export function cordonOf(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>): CordonPoint[] {
+export function cordonOf(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, calibrated?: { flows: CalibratedEdgeFlows | null; period: string }): CordonPoint[] {
   const net = area.network;
   const included = new Set(area.segments.map(s => s.key));
   const out: CordonPoint[] = [];
@@ -94,7 +130,7 @@ export function cordonOf(area: StudyArea, roads: ReadonlyMap<string, DrivableObj
   for (const b of area.boundary) {
     const node = net.nodes.get(b.nodeId);
     if (!node) continue;
-    let inLanes = 0, outLanes = 0, inVph = 0, outVph = 0;
+    let inLanes = 0, outLanes = 0, inVph = 0, outVph = 0, usedCalibrated = false;
     let best: { roadId: string; rank: number } | null = null;
     const rank: Record<string, number> = { highway: 4, arterial: 3, collector: 2, local: 1 };
     const visit = (ids: string[], dir: 'in' | 'out') => {
@@ -103,7 +139,9 @@ export function cordonOf(area: StudyArea, roads: ReadonlyMap<string, DrivableObj
         if (!e || included.has(segmentKey(id))) continue;
         const cls = roads.get(e.roadId)?.roadClass ?? 'local';
         const lanes = Math.max(1, e.lanes || 1);
-        const vph = lanes * edgeFlowPerLane(roads.get(e.roadId));
+        const cal = calibrated ? calibratedLinkFlow(calibrated.flows, calibrated.period, id, node.coordinates) : null;
+        const vph = cal ?? lanes * edgeFlowPerLane(roads.get(e.roadId));
+        if (cal !== null) usedCalibrated = true;
         if (dir === 'in') { inLanes += lanes; inVph += vph; } else { outLanes += lanes; outVph += vph; }
         const r = rank[cls] ?? 1;
         if (!best || r > best.rank) best = { roadId: e.roadId, rank: r };
@@ -116,7 +154,7 @@ export function cordonOf(area: StudyArea, roads: ReadonlyMap<string, DrivableObj
     const road = roads.get((best as { roadId: string }).roadId);
     seen.add(b.nodeId);
     out.push({ nodeId: b.nodeId, coordinates: [...node.coordinates] as [number, number, number], roadId: (best as { roadId: string }).roadId,
-      roadClass: road?.roadClass ?? 'local', roadName: road?.name || 'Unnamed road', inLanes, outLanes, inVph, outVph });
+      roadClass: road?.roadClass ?? 'local', roadName: road?.name || 'Unnamed road', inLanes, outLanes, inVph, outVph, flowSource: usedCalibrated ? 'calibrated' : 'class' });
   }
   // Roads cut where they cross a mapped area's boundary ("Map Selected Area") go on outside it:
   // traffic enters and leaves there too, by the road's own lanes
@@ -131,12 +169,16 @@ export function cordonOf(area: StudyArea, roads: ReadonlyMap<string, DrivableObj
       let p = out.find(x => x.nodeId === nodeId);
       if (!p) {
         if (seen.has(nodeId)) continue;
-        p = { nodeId, coordinates: [...node.coordinates] as [number, number, number], roadId: e.roadId, roadClass: road?.roadClass ?? 'local', roadName: road?.name || 'Unnamed road', inLanes: 0, outLanes: 0, inVph: 0, outVph: 0 };
+        p = { nodeId, coordinates: [...node.coordinates] as [number, number, number], roadId: e.roadId, roadClass: road?.roadClass ?? 'local', roadName: road?.name || 'Unnamed road', inLanes: 0, outLanes: 0, inVph: 0, outVph: 0, flowSource: 'class' };
         out.push(p);
         cut.add(nodeId);
       }
       if (!cut.has(nodeId)) continue;
-      const lanes = Math.max(1, e.lanes || 1), vph = lanes * edgeFlowPerLane(road);
+      const lanes = Math.max(1, e.lanes || 1);
+      // The cut road's own link carries the window's flow across the cut (in: this link; out: this link)
+      const cal = calibrated ? calibratedLinkFlow(calibrated.flows, calibrated.period, e.id, node.coordinates) : null;
+      const vph = cal ?? lanes * edgeFlowPerLane(road);
+      if (cal !== null) p.flowSource = 'calibrated';
       if (dir === 'in') { p.inLanes += lanes; p.inVph += vph; } else { p.outLanes += lanes; p.outVph += vph; }
     }
   }
@@ -244,6 +286,8 @@ export interface AreaDemandOptions {
   through?: boolean;
   /** Snap distance from a trip end to the area's roads (m). */
   accessM?: number;
+  /** Calibrated window edge flows (null/undefined: class-typical flows per lane everywhere). */
+  calibratedEdgeFlows?: CalibratedEdgeFlows | null;
 }
 
 /**
@@ -278,7 +322,8 @@ export function compileAreaDemand(context: SimulationContext, area: StudyArea, r
   const b = area.bounds;
   const padLat = 250 / M_PER_DEG_LAT, padLng = padLat / Math.cos((b.minLat + b.maxLat) / 2 * Math.PI / 180);
   const { origins, destinations } = activityEndpoints(context, { minLng: b.minLng - padLng, maxLng: b.maxLng + padLng, minLat: b.minLat - padLat, maxLat: b.maxLat + padLat });
-  const cordon = cordonOf(area, roads);
+  const cordon = cordonOf(area, roads, options.calibratedEdgeFlows ? { flows: options.calibratedEdgeFlows, period } : undefined);
+  const calibratedPoints = cordon.filter(c => c.flowSource === 'calibrated').length;
   if (!cordon.length && !origins.length && !destinations.length) return null;
   // Directed reachability on the area's roads: an edge trip is only sent where it can actually drive
   const fwd = new Map<string, string[]>(), bwd = new Map<string, string[]>();
@@ -435,7 +480,7 @@ export function compileAreaDemand(context: SimulationContext, area: StudyArea, r
         source: 'project-estimate',
         label: 'Estimated peak-hour demand: trips of the area\'s buildings only, through traffic switched off. The project holds no buildings or zones with activity here, so there are no trips: 0 veh/h. Switch through traffic back on to see the traffic crossing the area.',
         period, vehiclesPerHour: 0, pairCount: 0,
-        components: { ...components, cordonPoints: cordon.length, throughIncluded: false },
+        components: { ...components, cordonPoints: cordon.length, calibratedCordonPoints: calibratedPoints, throughIncluded: false },
       },
     };
   }
@@ -445,9 +490,19 @@ export function compileAreaDemand(context: SimulationContext, area: StudyArea, r
     trips,
     provenance: {
       source: 'project-estimate',
-      label: `Estimated peak-hour demand: trips of the area's buildings (CMP 2018 Pune rates and trip lengths) plus traffic crossing the edge on main roads at counted Pune arterial flows. ${parts.join(', ')} veh/h. Not measured on these roads.`,
+      label: `Estimated peak-hour demand: trips of the area's buildings (CMP 2018 Pune rates and trip lengths) plus traffic crossing the edge ${calibratedPoints
+        ? `at flows from the central-Pune window calibrated to ${options.calibratedEdgeFlows!.periods[period as 'AM_Peak' | 'PM_Peak']?.calibrationSites.length ?? 0} 2008 counts (${calibratedPoints} of ${cordon.length} edge roads; the rest at class-typical flows)`
+        : 'on main roads at counted Pune arterial flows'}. ${parts.join(', ')} veh/h. Not measured on these roads.`,
       period, vehiclesPerHour: total, pairCount: trips.length,
-      components: { ...components, cordonPoints: cordon.length, throughIncluded: options.through !== false },
+      components: { ...components, cordonPoints: cordon.length, calibratedCordonPoints: calibratedPoints, throughIncluded: options.through !== false },
     },
   };
+}
+
+/** The calibrated window shipped with the app (backend/data/calibrated_flows). */
+export const DEFAULT_CALIBRATED_EDGE_FLOWS = 'pune_central_window_v1';
+export async function fetchCalibratedEdgeFlows(id = DEFAULT_CALIBRATED_EDGE_FLOWS): Promise<CalibratedEdgeFlows> {
+  const doc = await apiGet<{ id: string; window: { bounds: CalibratedEdgeFlows['bounds'] }; periods: CalibratedEdgeFlows['periods'] }>(`/api/calibrated-flows/${encodeURIComponent(id)}`);
+  if (!doc?.window?.bounds || !doc.periods) throw new Error(`Calibrated flows ${id}: no window or periods`);
+  return { id: doc.id, bounds: doc.window.bounds, periods: doc.periods };
 }

@@ -769,6 +769,8 @@ export class TrafficMicroSim {
   private focusNextT = Infinity;
   private readonly movements = new Map<string, LaneConnector>();
   private readonly reservations = new Set<Reservation>();
+  /** Stretches inside a joined junction (no link of their own: crossing the junction box covers them). */
+  private readonly internalLinkIds = new Set<string>();
   private readonly odArrivals: { index: number; key: string; trip: MicroDemandTrip; nextT: number; route: number[]; freeFlowS: number; rng: () => number }[] = [];
   private explicitDemand = false;
   /** Counted junctions (observed-count calibration): their layouts and the movements counted since countFromT. */
@@ -805,7 +807,7 @@ export class TrafficMicroSim {
     // Links: both travel directions of every stretch in the area, except those inside a joined junction
     for (const e of areaEdges) {
       const from = this.junction(e.fromNodeId), to = this.junction(e.toNodeId);
-      if (from === to) continue;
+      if (from === to) { this.internalLinkIds.add(e.id); continue; }
       this.linkById.set(e.id, this.links.length);
       this.links.push(this.makeLink(e, this.links.length, rankOf(e.roadId), from, to, roads.get(e.roadId)));
     }
@@ -883,8 +885,11 @@ export class TrafficMicroSim {
           path = paths.sort((a, b) => a.freeFlowS - b.freeFlowS)[0] ?? null;
         }
         if (trip.viaLinkIds?.length) {
-          const via = trip.viaLinkIds.map(id => linkIndexById.get(id));
-          if (via.every((i): i is number => i !== undefined)) {
+          // A listed stretch inside a joined junction has no link here (the junction box covers it): skip it, do not drop the
+          // route. Dropping it sent every vehicle whose assigned route crossed such a junction onto the simulator's own
+          // shortest path instead (docs/urbanos/TRAFFIC_CALIBRATION_P9.md §6: a drawn flyover got 10 of its 551 veh/h)
+          const via = trip.viaLinkIds.filter(id => !this.internalLinkIds.has(id)).map(id => linkIndexById.get(id));
+          if (via.length && via.every((i): i is number => i !== undefined)) {
             // Through each listed link in turn; the legs between them by route cost
             const route: number[] = [];
             let at = from, ok = true;
