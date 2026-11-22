@@ -26,6 +26,15 @@ const CURVED_MODES: ReadonlySet<string> = new Set(['draw_road', 'draw_flyover', 
  *
  * Mount it in the Design context panel (any width ≥ 232 px); it fills its container's width.
  */
+/**
+ * Where a tool's settings open: the Study area tool's settings sit in the column under the palette ('inline'), because
+ * drawing an area means clicking anywhere on the map and the floating panel took the first corner click (p5 QA F8);
+ * the other tools keep the popover beside the palette; Select has none.
+ */
+export function settingsPlacement(mode: EditingMode): 'inline' | 'popover' | 'none' {
+  return mode === 'select' ? 'none' : mode === 'import_osm' ? 'inline' : 'popover';
+}
+
 const ToolPalette: React.FC<{ className?: string }> = ({ className = '' }) => {
   const [activeMode, setActiveMode] = useState<EditingMode>('select');
   const [autoCurve, setAutoCurve] = useState<boolean>(engineInstance.editing.autoCurve);
@@ -65,6 +74,29 @@ const ToolPalette: React.FC<{ className?: string }> = ({ className = '' }) => {
   };
   const toggle = (c: ToolCategory) => setCollapsed(s => { const n = new Set(s); if (n.has(c)) n.delete(c); else n.add(c); return n; });
   const active = TOOLS.find(t => t.mode === activeMode);
+  const inlineSettings = settingsPlacement(activeMode) === 'inline';
+
+  const settingsBody = active ? (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-start justify-between gap-2 border-b pb-1.5" style={{ borderColor: C.border }}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <active.icon size={14} aria-hidden="true" style={{ color: C.accent }} />
+          <span className="font-semibold text-[13px] truncate">{active.label}</span>
+        </div>
+        <button type="button" onClick={() => setSettingsOpen(false)} aria-label="Hide tool settings" title="Hide settings (click the tool again to show)"
+          className="h-6 w-6 inline-flex items-center justify-center rounded cursor-pointer hover:bg-white/5 shrink-0" style={{ color: C.text2 }}><X size={14} /></button>
+      </div>
+      <p className="text-[11px] leading-snug" style={{ color: C.text3 }}>{active.description}</p>
+      {CURVED_MODES.has(activeMode) && (
+        <label className="flex items-center gap-2 text-[12px] cursor-pointer" title="New points get a curve with the automatic radius for the design speed. Off: sharp corners. Ctrl+click does the opposite for one point.">
+          <input type="checkbox" data-testid="tool-auto-curve" checked={autoCurve} onChange={e => engineInstance.editing.setAutoCurve(e.target.checked)} />
+          Auto-curve at new points
+          <span className="ml-auto text-[11px]" style={{ color: C.text3 }}>Ctrl+click: opposite</span>
+        </label>
+      )}
+      <ToolSettings mode={activeMode} />
+    </div>
+  ) : null;
 
   return (
     <div ref={rootRef} data-testid="tool-palette" data-coach="toolbar" aria-label="Design tools" role="toolbar" aria-orientation="vertical"
@@ -119,30 +151,17 @@ const ToolPalette: React.FC<{ className?: string }> = ({ className = '' }) => {
           </section>
         );
       })}
-      <AnchoredPopover anchor={root} alignTop={buttons.current.get(activeMode) ?? null} open={!!active && activeMode !== 'select' && settingsOpen}
+      {/* The Study area tool's settings sit in the column under the palette, not floating over the map: its first
+          corner click used to land on the floating panel (p5 QA F8). Other tools keep the popover beside the palette. */}
+      {inlineSettings && settingsOpen && active && (
+        <div data-testid="tool-settings" role="group" aria-label={`${active.label} settings`} className="mt-1 rounded-md border p-2.5 text-xs" style={{ borderColor: C.border, background: C.surface2 }}>
+          {settingsBody}
+        </div>
+      )}
+      <AnchoredPopover anchor={root} alignTop={buttons.current.get(activeMode) ?? null} open={!!active && activeMode !== 'select' && settingsOpen && !inlineSettings}
         onClose={() => setSettingsOpen(false)} placement="right" width={activeMode === 'import_osm' ? 300 : 264}
         label={`${active?.label ?? ''} settings`} testId="tool-settings">
-        {active && (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-start justify-between gap-2 border-b pb-1.5" style={{ borderColor: C.border }}>
-              <div className="flex items-center gap-1.5 min-w-0">
-                <active.icon size={14} aria-hidden="true" style={{ color: C.accent }} />
-                <span className="font-semibold text-[13px] truncate">{active.label}</span>
-              </div>
-              <button type="button" onClick={() => setSettingsOpen(false)} aria-label="Hide tool settings" title="Hide settings (click the tool again to show)"
-                className="h-6 w-6 inline-flex items-center justify-center rounded cursor-pointer hover:bg-white/5 shrink-0" style={{ color: C.text2 }}><X size={14} /></button>
-            </div>
-            <p className="text-[11px] leading-snug" style={{ color: C.text3 }}>{active.description}</p>
-            {CURVED_MODES.has(activeMode) && (
-              <label className="flex items-center gap-2 text-[12px] cursor-pointer" title="New points get a curve with the automatic radius for the design speed. Off: sharp corners. Ctrl+click does the opposite for one point.">
-                <input type="checkbox" data-testid="tool-auto-curve" checked={autoCurve} onChange={e => engineInstance.editing.setAutoCurve(e.target.checked)} />
-                Auto-curve at new points
-                <span className="ml-auto text-[11px]" style={{ color: C.text3 }}>Ctrl+click: opposite</span>
-              </label>
-            )}
-            <ToolSettings mode={activeMode} />
-          </div>
-        )}
+        {active && settingsBody}
       </AnchoredPopover>
       <ImportProgressOverlay />
       <DrawReadout />

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Database, Loader2, Pencil, RefreshCw, Square, Pentagon, Trash2, Undo2, X, Crosshair } from 'lucide-react';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { INFRASTRUCTURE_CATEGORIES, type InfrastructureCategory, type StudyAreaImportProgress, type StudyAreaImportReport } from '../../engine/editing/studyAreaImport';
@@ -364,13 +365,20 @@ export const ImportProgressOverlay: React.FC = () => {
     setIsImporting(engineInstance.editing.getIsImporting());
     setProgress(engineInstance.editing.studyAreaImportProgress ? { ...engineInstance.editing.studyAreaImportProgress } : null);
   }), []);
-  if (!isImporting) return null;
-  return (
-    <div className="fixed left-1/2 -translate-x-1/2 bottom-6 z-[60] pointer-events-auto flex items-center gap-2 rounded-full border px-3 py-1.5 text-label shadow-lg"
-      style={{ background: 'var(--surface-1)', borderColor: 'var(--border-strong)', color: 'var(--text-1)' }} role="status" aria-live="polite" data-testid="study-progress-pill">
+  if (!isImporting || typeof document === 'undefined') return null;
+  // Portalled to the body and placed above the drawing hint bar (bottom 16 px, about 48 px tall, z 999 in the map),
+  // which used to hide it (p5 QA F8)
+  return createPortal(
+    <div className="fixed left-1/2 -translate-x-1/2 z-[1100] pointer-events-auto flex items-center gap-2 rounded-full border px-3 py-1.5 text-label shadow-lg"
+      data-placement="above-hint-bar"
+      style={{ bottom: PILL_BOTTOM_PX, background: 'var(--surface-1)', borderColor: 'var(--border-strong)', color: 'var(--text-1)' }} role="status" aria-live="polite" data-testid="study-progress-pill">
       <Loader2 size={14} className="animate-spin" style={{ color: 'var(--accent)' }} aria-hidden />
       {progress ? `Loading study area: ${progress.category} (${progress.completed + 1}/${progress.total})` : 'Loading study area…'}
       <button type="button" className="uos-link text-meta" onClick={() => engineInstance.editing.cancelImport()}>Cancel</button>
-    </div>
+    </div>,
+    document.body,
   );
 };
+
+/** Bottom offset of the loading pill: clear of the drawing hint bar (Viewport3D `drawing-hud`: bottom-4, ~48 px high). */
+export const PILL_BOTTOM_PX = 88;

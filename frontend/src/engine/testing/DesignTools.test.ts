@@ -72,3 +72,14 @@ describe('design tools', () => {
     expect(renderToStaticMarkup(createElement(ToolSettings, { mode: 'draw_gateway' }))).toContain('440 m');
   });
 });
+
+describe('Study area layout (p5 QA F8)', () => {
+  it('its settings sit in the column under the palette, not floating over the map; the loading pill clears the hint bar', async () => {
+    const { settingsPlacement } = await import('../../components/design/ToolPalette');
+    expect(settingsPlacement('import_osm')).toBe('inline');
+    expect(settingsPlacement('draw_road')).toBe('popover');
+    expect(settingsPlacement('select')).toBe('none');
+    const { PILL_BOTTOM_PX } = await import('../../components/design/ImportAreaPanel');
+    expect(PILL_BOTTOM_PX).toBeGreaterThanOrEqual(16 + 48 + 16);   // drawing-hud: bottom-4, about 48 px high
+  });
+});
