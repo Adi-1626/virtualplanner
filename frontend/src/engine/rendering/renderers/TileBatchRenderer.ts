@@ -2,7 +2,10 @@ import {
   Viewer,
   Primitive,
   GeometryInstance,
+  GeometryInstanceAttribute,
   ColorGeometryInstanceAttribute,
+  ComponentDatatype,
+  Cartesian3,
   PerInstanceColorAppearance
 } from 'cesium';
 import { CesiumAdapter } from '../adapters/CesiumAdapter';
@@ -12,7 +15,10 @@ import { MeshCache } from '../cache/MeshCache';
 import { SpatialHashGrid } from '../spatial/SpatialHashGrid';
 import { withOpacity } from './opacity';
 import { getVisualStyle, type VisualStyle } from '../visualStyle';
-import { styleColor } from '../materials/materialPalette';
+import { materialOf, styleColor } from '../materials/materialPalette';
+import { MATERIAL_SLOT } from '../materials/textureAtlas';
+import { getQualityTier } from '../qualityTier';
+import { createTexturedTintAppearance, texturesSupported } from '../appearance/TexturedTintAppearance';
 import { createLitTintAppearance } from '../appearance/LitTintAppearance';
 import { creaseNormals } from '../geometry/creaseNormals';
 
@@ -214,6 +220,8 @@ export abstract class TileBatchRenderer implements SubRenderer {
     const height = this.currentHeight;
     const style = getVisualStyle();
     const realistic = style === 'realistic';
+    // Medium / High tiers: CC0 detail textures (needs WebGL 2); Low tier or no WebGL 2: lit colours only
+    const textured = realistic && getQualityTier() !== 'low' && texturesSupported(this.viewer);
     let instanceCount = 0;
     let primitiveCount = 0;
 
@@ -226,6 +234,7 @@ export abstract class TileBatchRenderer implements SubRenderer {
       for (const id of objIds) this.baseColors.delete(id);
 
       const instancesByLayer = new Map<string, GeometryInstance[]>();
+      let tileOrigin: Cartesian3 | null = null;
       const translucentLayers = new Set<string>();
       const skipped = new Set<string>();
 
@@ -249,11 +258,18 @@ export abstract class TileBatchRenderer implements SubRenderer {
           if (!list) instancesByLayer.set(layer, (list = []));
           instanceCount++;
           if (layer === this.colorLayer() && !this.baseColors.has(id)) this.baseColors.set(id, styleColor(mesh, style));
+          const attributes: Record<string, unknown> = {
+            color: ColorGeometryInstanceAttribute.fromColor(withOpacity(isSelected ? SELECTION_COLOR : styleColor(mesh, style), opacity))
+          };
+          if (textured) {
+            // Utilities keep a clean legend colour (no grain); everything else gets its material's atlas slot
+            const slot = mesh.layerId === 'transit_utility' ? -1 : MATERIAL_SLOT[materialOf(mesh)] ?? -1;
+            attributes.matSlot = new GeometryInstanceAttribute({ componentDatatype: ComponentDatatype.FLOAT, componentsPerAttribute: 1, value: [slot] });
+            if (!tileOrigin) tileOrigin = new Cartesian3(mesh.positions[0], mesh.positions[1], mesh.positions[2]);
+          }
           list.push(new GeometryInstance({
             geometry: CesiumAdapter.buildGeometry(realistic ? realisticMesh(mesh) : mesh),
-            attributes: {
-              color: ColorGeometryInstanceAttribute.fromColor(withOpacity(isSelected ? SELECTION_COLOR : styleColor(mesh, style), opacity))
-            },
+            attributes: attributes as ConstructorParameters<typeof GeometryInstance>[0]['attributes'],
             id
           }));
         });
@@ -264,9 +280,11 @@ export abstract class TileBatchRenderer implements SubRenderer {
         const translucent = translucentLayers.has(layer) || this.isAlwaysTranslucent(layer);
         const prim = new Primitive({
           geometryInstances: instances,
-          appearance: realistic
-            ? createLitTintAppearance(translucent)
-            : new PerInstanceColorAppearance({ flat: true, translucent }),
+          appearance: textured && tileOrigin
+            ? createTexturedTintAppearance(this.viewer, translucent, tileOrigin)
+            : realistic
+              ? createLitTintAppearance(translucent)
+              : new PerInstanceColorAppearance({ flat: true, translucent }),
           asynchronous: false
         });
         primitiveCount++;

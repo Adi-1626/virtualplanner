@@ -1,5 +1,7 @@
 import { getVisualStyle, onVisualStyleChange } from './visualStyle';
 import { applySceneStyle } from './sceneStyle';
+import { onQualityTierChange } from './qualityTier';
+import { startQualityWatchdog } from './qualityWatchdog';
 import { Viewer } from 'cesium';
 import type { CityObject } from '../objects/types';
 import { ProceduralGeometryGenerator } from './geometry/ProceduralGeometryGenerator';
@@ -60,7 +62,20 @@ export class RenderManager {
       this.transitRenderer?.refreshAll();
       viewer.scene?.requestRender?.();
     });
+    this.stopTierWatch?.();
+    this.stopTierWatch = onQualityTierChange(() => {
+      applySceneStyle(viewer, getVisualStyle());
+      this.roadRenderer?.refreshAll();
+      this.buildingRenderer?.refreshAll();
+      this.transitRenderer?.refreshAll();
+      viewer.scene?.requestRender?.();
+    });
+    this.stopWatchdog?.();
+    this.stopWatchdog = startQualityWatchdog(viewer);
   }
+
+  private stopTierWatch: (() => void) | null = null;
+  private stopWatchdog: (() => void) | null = null;
 
   private stopStyleWatch: (() => void) | null = null;
 

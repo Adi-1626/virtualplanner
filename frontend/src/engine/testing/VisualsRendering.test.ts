@@ -82,3 +82,54 @@ describe('visual style switch', () => {
     setVisualStyle('realistic');
   });
 });
+
+import { SlowFrameDetector, getQualityTier, setQualityTier, QUALITY_KEY, _reloadQualityForTests, wasAutoDropped } from '../rendering/qualityTier';
+import { MATERIAL_SLOT, ATLAS_SLOTS } from '../rendering/materials/textureAtlas';
+import { MATERIAL_COLORS as COLORS } from '../rendering/materials/materialPalette';
+import { TEXTURED_TINT_SHADERS } from '../rendering/appearance/TexturedTintAppearance';
+
+describe('quality tiers', () => {
+  beforeEach(() => { localStorage.removeItem(QUALITY_KEY); _reloadQualityForTests(); });
+  it('defaults to Medium; a user pick persists, an automatic drop does not', () => {
+    expect(getQualityTier()).toBe('medium');
+    setQualityTier('low', { auto: true });
+    expect(getQualityTier()).toBe('low');
+    expect(wasAutoDropped()).toBe(true);
+    expect(localStorage.getItem(QUALITY_KEY)).toBeNull();
+    setQualityTier('high');
+    expect(localStorage.getItem(QUALITY_KEY)).toBe('high');
+  });
+  it('slow-frame detector fires only after 3 s averaging over 33 ms', () => {
+    const d = new SlowFrameDetector(33, 3000);
+    let t = 0, fired = false;
+    for (let i = 0; i < 200 && !fired; i++) { t += 16; fired = d.frame(t); }
+    expect(fired).toBe(false); // 60 fps
+    const s = new SlowFrameDetector(33, 3000);
+    t = 0; let at = -1;
+    for (let i = 0; i < 200; i++) { t += 50; if (s.frame(t)) { at = t; break; } }
+    expect(at).toBeGreaterThanOrEqual(3000);
+    expect(at).toBeLessThan(3200);
+  });
+  it('a pause (idle requestRenderMode, hidden tab) does not count as slow', () => {
+    const s = new SlowFrameDetector(33, 3000);
+    let t = 0, fired = false;
+    for (let i = 0; i < 20; i++) { t += 2000; fired = fired || s.frame(t); }
+    expect(fired).toBe(false);
+  });
+});
+
+describe('texture atlas', () => {
+  it('every material has a slot within the atlas (or -1 = untextured)', () => {
+    for (const m of Object.keys(COLORS)) {
+      const s = MATERIAL_SLOT[m as keyof typeof MATERIAL_SLOT];
+      expect(s, m).toBeGreaterThanOrEqual(-1);
+      expect(s, m).toBeLessThan(ATLAS_SLOTS.length);
+    }
+    expect(MATERIAL_SLOT.marking_white).toBe(-1);
+  });
+  it('shader reads the per-instance material slot and colour from the batch table', () => {
+    expect(TEXTURED_TINT_SHADERS.VS).toContain('czm_batchTable_matSlot(batchId)');
+    expect(TEXTURED_TINT_SHADERS.VS).toContain('in vec4 color;');
+    expect(TEXTURED_TINT_SHADERS.FS).toContain(`float SLOT_TILE_M[${ATLAS_SLOTS.length}]`);
+  });
+});
