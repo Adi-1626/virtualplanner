@@ -40,35 +40,63 @@ const TYPE_LABEL: Record<string, string> = {
 };
 export const typeLabel = (t: string) => TYPE_LABEL[t] ?? t;
 
-/** Name substring (case-insensitive) or OSM id (digits, optional "way/"/"node/" prefix). Exact OSM id first, then by name. */
-export function searchObjects(objects: readonly CityObject[], query: string, limit = 12): CityObject[] {
+/** One search result: every loaded piece of a named road (or one object) together. */
+export interface SearchGroup {
+  key: string;
+  name: string;
+  type: string;
+  ids: string[];
+  /** Total length of the line pieces (m); null for points and areas. */
+  lengthM: number | null;
+  osmIds: number[];
+}
+
+const LINE_TYPES = new Set(['road', 'flyover', 'metro_flyover', 'metro_line', 'utility']);
+const groupName = (n: string) => n.trim().toLowerCase().replace(/\s+/g, ' ');
+
+/**
+ * Name substring (case-insensitive) or OSM id (digits, optional "way/"/"node/" prefix). Exact OSM id first, then by name.
+ * A road is imported as many pieces with the same name (cut at junctions and study-area edges): a name search returns
+ * the whole named road as one result with all its pieces, not one arbitrary piece (p5 QA: "Karve Road" picked a 129 m
+ * piece of 59). Generic placeholder names of unnamed ways are not merged across the city: those group per OSM way.
+ */
+export function searchObjectGroups(objects: readonly CityObject[], query: string, limit = 12): SearchGroup[] {
   const q = query.trim().toLowerCase();
   if (q.length < 2) return [];
   const idQ = /^(?:way\/|node\/|relation\/|osm:?\s*)?(\d{3,})$/.exec(q)?.[1];
-  const hits: { o: CityObject; rank: number }[] = [];
+  const groups = new Map<string, { g: SearchGroup; rank: number }>();
   for (const o of objects) {
+    let rank: number;
     if (idQ) {
       const id = osmIdOf(o);
-      if (id !== null && String(id) === idQ) hits.push({ o, rank: 0 });
-      continue;
+      if (id === null || String(id) !== idQ) continue;
+      rank = 0;
+    } else {
+      const n = (o.name ?? '').toLowerCase();
+      if (!n) continue;
+      const i = n.indexOf(q);
+      if (i < 0) continue;
+      rank = i === 0 ? 1 : 2;
     }
-    const n = (o.name ?? '').toLowerCase();
-    if (!n) continue;
-    const i = n.indexOf(q);
-    if (i >= 0) hits.push({ o, rank: i === 0 ? 1 : 2 });
+    const osm = osmIdOf(o);
+    const unnamed = /\(unnamed\)$/i.test(o.name ?? '') || /_/.test(o.name ?? '');
+    const key = idQ ? `osm|${idQ}|${o.type}` : unnamed && osm !== null ? `${o.type}|way|${osm}` : `${o.type}|${groupName(o.name ?? '')}`;
+    let e = groups.get(key);
+    if (!e) { e = { g: { key, name: o.name ?? '', type: o.type, ids: [], lengthM: LINE_TYPES.has(o.type) ? 0 : null, osmIds: [] }, rank }; groups.set(key, e); }
+    e.g.ids.push(o.id);
+    if (e.g.lengthM !== null && Array.isArray(o.coordinates[0])) e.g.lengthM += lineLengthKm(o.coordinates as number[][]) * 1000;
+    if (osm !== null && !e.g.osmIds.includes(osm)) e.g.osmIds.push(osm);
   }
-  hits.sort((a, b) => a.rank - b.rank || (a.o.name ?? '').localeCompare(b.o.name ?? ''));
-  // Roads are split into many pieces with the same name: keep one hit per (type, name) for name searches
-  const seen = new Set<string>();
-  const out: CityObject[] = [];
-  for (const h of hits) {
-    const key = idQ ? h.o.id : `${h.o.type}|${h.o.name}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(h.o);
-    if (out.length >= limit) break;
-  }
-  return out;
+  return [...groups.values()]
+    .sort((a, b) => a.rank - b.rank || a.g.name.localeCompare(b.g.name) || b.g.ids.length - a.g.ids.length)
+    .slice(0, limit)
+    .map(e => e.g);
+}
+
+/** First object of each search group (kept for callers that want one object per result). */
+export function searchObjects(objects: readonly CityObject[], query: string, limit = 12): CityObject[] {
+  const byId = new Map(objects.map(o => [o.id, o] as const));
+  return searchObjectGroups(objects, query, limit).map(g => byId.get(g.ids[0])!).filter(Boolean);
 }
 
 export interface SummaryRow { label: string; value: string; certainty?: Certainty }

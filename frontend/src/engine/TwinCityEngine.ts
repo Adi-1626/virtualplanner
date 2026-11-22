@@ -1052,6 +1052,18 @@ export class TwinCityEngine {
     this.simMode.flyToBounds(boundsOf(coords));
   }
 
+  /** Moves the camera to show several objects together (e.g. every piece of a named road). */
+  public flyToObjects(ids: readonly string[]): void {
+    if (!this.viewer) return;
+    const coords: number[][] = [];
+    for (const id of ids) {
+      const obj = this.objects.getById(id);
+      if (!obj) continue;
+      coords.push(...((Array.isArray(obj.coordinates[0]) ? obj.coordinates : [obj.coordinates]) as number[][]));
+    }
+    if (coords.length) this.simMode.flyToBounds(boundsOf(coords));
+  }
+
   /** Objects in the active scenario, whatever their layer visibility. */
   private getScenarioObjects(): CityObject[] {
     return filterObjectsForScenario(this.objects.getAll(), this.scenarios.getActiveScenarioId());

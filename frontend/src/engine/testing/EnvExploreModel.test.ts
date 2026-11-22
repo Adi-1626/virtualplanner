@@ -73,3 +73,21 @@ describe('explore model', () => {
     expect(g.find(x => x.id === 'utilities')!.layers[0].id).toBe('new_thing');
   });
 });
+
+describe('Explore search groups a named road (p5 QA F4)', () => {
+  it('returns the whole road with all its pieces and total length, not one arbitrary piece', async () => {
+    const { searchObjectGroups } = await import('../../components/explore/exploreModel');
+    const piece = (id: string, lon0: number, osm: number, name = 'Karve Road') => ({ id, type: 'road', name, osmProvenance: { osmId: osm }, coordinates: [[lon0, 18.5, 0], [lon0 + 0.001, 18.5, 0]] }) as any;
+    const objs = [piece('a', 73.80, 1001), piece('b', 73.801, 1001), piece('c', 73.802, 1002), piece('d', 73.81, 9, 'Karve Nagar Lane'),
+      piece('u1', 73.82, 11, 'Residential road (unnamed)'), piece('u2', 73.83, 12, 'Residential road (unnamed)')];
+    const g = searchObjectGroups(objs, 'karve road');
+    expect(g).toHaveLength(1);
+    expect(g[0].ids.sort()).toEqual(['a', 'b', 'c']);
+    expect(g[0].lengthM!).toBeGreaterThan(300);
+    expect(g[0].osmIds.sort()).toEqual([1001, 1002]);
+    // placeholder names of unnamed ways are not merged across the city
+    expect(searchObjectGroups(objs, 'residential')).toHaveLength(2);
+    // OSM id search groups the pieces of that way
+    expect(searchObjectGroups(objs, 'way/1001')[0].ids.sort()).toEqual(['a', 'b']);
+  });
+});

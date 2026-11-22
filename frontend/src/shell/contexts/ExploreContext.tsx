@@ -10,7 +10,8 @@ import { SelectionDetailsButton } from '../SelectionDetailsButton';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import type { Layer } from '../../engine/layers/LayerManager';
 import { filterObjectsForScenario } from '../../engine/scenarios/scenarioFilter';
-import { cityStats, groupLayers, osmIdOf, searchObjects, summarise, typeLabel } from '../../components/explore/exploreModel';
+import { cityStats, groupLayers, lineLengthKm, searchObjectGroups, summarise, typeLabel, type SearchGroup } from '../../components/explore/exploreModel';
+import { formatDistanceM } from '../../lib/format';
 import { OVERLAY_STYLE, setOverlayVisible, useEnvOverlayStore } from '../../components/environment/constraintOverlay';
 import type { OverlayKey } from '../../components/environment/envCatalogue';
 import { TerrainSection } from '../../components/explore/TerrainSection';
@@ -77,12 +78,23 @@ const LayerTree: React.FC<{ proposals: number }> = ({ proposals }) => {
   );
 };
 
+/** "Road · 59 loaded pieces · 4.2 km" / "Road · OSM 123". */
+function groupMeta(g: SearchGroup): string {
+  const parts = [typeLabel(g.type)];
+  if (g.ids.length > 1) parts.push(`${g.ids.length} loaded pieces`);
+  if (g.lengthM !== null && g.lengthM > 0) parts.push(formatDistanceM(g.lengthM));
+  if (g.osmIds.length === 1) parts.push(`OSM ${g.osmIds[0]}`);
+  return parts.join(' · ');
+}
+
 const ObjectSearch: React.FC<{ objects: ReturnType<typeof useEngineObjects> }> = ({ objects }) => {
   const [q, setQ] = useState('');
-  const hits = useMemo(() => searchObjects(objects, q), [objects, q]);
-  const go = (id: string) => {
-    engineInstance.selection.selectSingle(id);
-    engineInstance.flyToObject(id);
+  const hits = useMemo(() => searchObjectGroups(objects, q), [objects, q]);
+  // The whole named road: every loaded piece selected, the camera fitted to all of them
+  const go = (g: SearchGroup) => {
+    engineInstance.selection.selectSingle(g.ids[0]);
+    if (g.ids.length > 1) engineInstance.selection.selectMultiple(g.ids.slice(1));
+    engineInstance.flyToObjects(g.ids);
   };
   return (
     <div className="space-y-1.5">
@@ -96,19 +108,16 @@ const ObjectSearch: React.FC<{ objects: ReturnType<typeof useEngineObjects> }> =
         hits.length === 0
           ? <p className="text-meta text-text-3" role="status">No loaded object matches. Only the imported area is searchable.</p>
           : <ul className="max-h-56 overflow-y-auto" data-testid="explore-search-results">
-              {hits.map(o => {
-                const osm = osmIdOf(o);
-                return (
-                  <li key={o.id}>
-                    <button type="button" className="uos-row w-full text-left" onClick={() => go(o.id)} data-testid="explore-search-hit">
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-label text-text-1 truncate">{o.name || '(unnamed)'}</span>
-                        <span className="block text-meta text-text-3">{typeLabel(o.type)}{osm !== null ? ` · OSM ${osm}` : ''}</span>
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
+              {hits.map(g => (
+                <li key={g.key}>
+                  <button type="button" className="uos-row w-full text-left" onClick={() => go(g)} data-testid="explore-search-hit">
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-label text-text-1 truncate">{g.name || '(unnamed)'}</span>
+                      <span className="block text-meta text-text-3">{groupMeta(g)}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
             </ul>
       )}
     </div>
@@ -121,10 +130,17 @@ const SelectedSummary: React.FC = () => {
   const o = id ? engineInstance.objects.getById(id) : undefined;
   if (!o) return <p className="text-label text-text-2">Click an object on the map, or search above.</p>;
   const s = summarise(o);
+  const pieces = engineInstance.selection.getSelection().map(x => engineInstance.objects.getById(x)).filter(p => p && p.type === o.type && p.name === o.name);
+  const totalM = pieces.length > 1 ? pieces.reduce((t, p) => t + (Array.isArray(p!.coordinates[0]) ? lineLengthKm(p!.coordinates as number[][]) * 1000 : 0), 0) : 0;
   return (
     <div className="space-y-1.5" data-testid="explore-selected">
       <p className="text-body text-text-1 font-medium truncate">{o.name || '(unnamed)'}</p>
       <p className="text-meta text-text-2">{s.type} · source: {s.source}</p>
+      {pieces.length > 1 && (
+        <p className="text-meta text-text-2" data-testid="explore-selected-group">
+          Whole road selected: {pieces.length} loaded pieces{totalM > 0 ? `, ${formatDistanceM(totalM)} in total` : ''}. The details below are for one piece.
+        </p>
+      )}
       {s.rows.length > 0 && (
         <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-label tabular-nums">
           {s.rows.map(r => (
@@ -136,7 +152,7 @@ const SelectedSummary: React.FC = () => {
         </dl>
       )}
       <div className="flex flex-wrap gap-2">
-        <button type="button" className="uos-btn uos-btn-sm" onClick={() => engineInstance.flyToObject(o.id)}>Fly to</button>
+        <button type="button" className="uos-btn uos-btn-sm" onClick={() => pieces.length > 1 ? engineInstance.flyToObjects(pieces.map(p => p!.id)) : engineInstance.flyToObject(o.id)}>Fly to</button>
         <SelectionDetailsButton />
       </div>
     </div>
