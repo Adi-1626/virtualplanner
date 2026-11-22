@@ -530,7 +530,15 @@ export class ObjectManager {
       : flyover.coordinates;
     const surfaceRoads = Array.from(this.objects.values()).filter(o => o.type === 'road') as RoadObject[];
     const asBuilt = !opts.edited && isAsBuiltFlyover(obj as any);
-    const feasibility = new BridgeFeasibilityEngine().run(groundCoords, flyover.elevation ?? 6.0, flyover.laneCount ?? 4, surfaceRoads, { asBuilt, roadClass: flyover.roadClass, designSpeedKmh: flyover.alignment?.designSpeedKmh ?? flyover.speedLimit ?? null });
+    // Elevated metro in the model (OSM imports carry the model's default level: OSM does not map viaduct height)
+    const metroLines = Array.from(this.objects.values()).filter(o => o.type === 'metro_line').map(o => {
+      const m = o as any;
+      const osm = m.osmId !== undefined || String(m.id).startsWith('osm_');
+      const zs = (m.coordinates as [number, number, number][]).map(c => c[2] || 0);
+      return { id: m.id, name: m.name || 'Metro line', coordinates: m.coordinates, level: Math.max(m.elevation || 0, ...zs),
+        levelSource: osm ? 'osm_assumed' as const : 'drawn' as const, deckWidthM: osm ? undefined : m.deckWidth };
+    });
+    const feasibility = new BridgeFeasibilityEngine().run(groundCoords, flyover.elevation ?? 6.0, flyover.laneCount ?? 4, surfaceRoads, { asBuilt, roadClass: flyover.roadClass, designSpeedKmh: flyover.alignment?.designSpeedKmh ?? flyover.speedLimit ?? null, metroLines, deckWidthM: flyover.width });
     const roadUpdates: { id: string; updates: Partial<RoadObject> }[] = [];
     for (const impact of feasibility.surfaceRoadImpacts) {
       if (!this.objects.has(impact.roadId)) continue;

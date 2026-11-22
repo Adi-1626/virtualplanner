@@ -1570,10 +1570,10 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
                 <span>▲ Flyover is disconnected from the traffic network.</span>
                 <span className="text-xs text-slate-500">
                   {!conn.startConnected && !conn.endConnected
-                    ? "Both ends are disconnected. Draw ramps snapping to existing roads."
+                    ? "Neither ramp end is joined to a road in the traffic network (a road nearby is not joined unless the ramp ends on it). Redraw the ends onto existing roads."
                     : !conn.startConnected
-                    ? "Start ramp is disconnected."
-                    : "End ramp is disconnected."}
+                    ? "The start ramp is not joined to a road in the traffic network."
+                    : "The end ramp is not joined to a road in the traffic network."}
                 </span>
               </span>
             )}
@@ -1722,9 +1722,11 @@ const FlyoverFeasibilityReport: React.FC<{ result: FeasibilityResult }> = ({ res
   const failed = result.checks.filter(c => c.status === 'fail').length;
   const open = result.checks.filter(c => c.status === 'warn' || c.status === 'unknown').length;
   const overallColor = failed === 0 ? 'border-slate-500/30 bg-slate-900/40' : 'border-red-500/30 bg-red-950/20';
+  const metroConflict = result.checks.some(c => c.id === 'metro_clearance' && c.status === 'warn' && /Potential conflict/.test(c.message));
   const overallLabel = result.asBuilt ? 'As-built · information only'
     : failed > 0
     ? `❌ ${failed} blocker${failed > 1 ? 's' : ''}`
+    : metroConflict ? `Potential metro conflict · ${open} to check`
     : open > 0 ? `No blocker · ${open} to check` : 'No blocker found';
   const overallTextColor = failed === 0 ? (open > 0 ? 'text-amber-300' : 'text-slate-200') : 'text-red-400';
   const notChecked = result.notChecked ?? BRIDGE_SCREEN_NOT_CHECKED;
@@ -1765,7 +1767,7 @@ const FlyoverFeasibilityReport: React.FC<{ result: FeasibilityResult }> = ({ res
                   <span>{check.name}</span>
                 </span>
                 <span className={`text-[11px] font-bold font-mono ${statusColor(check.status)}`}>
-                  {check.actual == null ? '—' : `${check.actual} / ${check.required} ${check.unit}`}
+                  {check.display ?? (check.actual == null ? '—' : `${check.actual} / ${check.required} ${check.unit}`)}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 leading-relaxed">{check.message}</p>

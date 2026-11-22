@@ -20,6 +20,8 @@ export interface FeasibilityCheck {
   unit: string;
   /** What the check was worked out from, and what it assumed. */
   basis?: string;
+  /** Short plain-language figure for the card header; when absent the header shows `actual / required unit`. */
+  display?: string;
 }
 
 export interface SurfaceImpact {
@@ -60,14 +62,53 @@ export interface BridgeScreenOptions {
   roadClass?: RoadClassification;
   /** Design speed of the deck (sets the vertical-curve length). Absent = the class design speed (IRC:86-2018 Table 3.1). */
   designSpeedKmh?: number | null;
+  /**
+   * Metro lines in the model (OSM imports and drawn lines). Only elevated ones (level above ground) are screened.
+   * Absent = not supplied, so the metro check says it could not look.
+   */
+  metroLines?: MetroScreenInput[];
+  /** Width of the flyover deck (m). Absent = lanes × 3.5 m + 1.5 m (assumed). */
+  deckWidthM?: number;
 }
+
+export interface MetroScreenInput {
+  id: string;
+  name: string;
+  coordinates: [number, number, number][];
+  /** Track level above ground (m) as the model holds it. */
+  level: number;
+  /** Where the level comes from: an OSM line (bridge / layer tag only, height not mapped) or a drawn design. */
+  levelSource: 'osm_assumed' | 'drawn';
+  /** Modelled deck width (m); OSM does not map it. */
+  deckWidthM?: number;
+}
+
+/**
+ * Maha-Metro NOC zone: 20 m either side of the edge of any Metro structure. Official: UDCPR 2020 cl. 14.2.1.7, applied by
+ * Maha-Metro Public Notice No. Maha Metro/Pune/Plng/NOC/9549/2026 (15.04.2026), https://punemetrorail.org/download/PUBLIC-NOTICE-ENGLISH.pdf
+ * (read 2026-11-21; the same rule as backend/coordination/seed.py and screening_config.py C15).
+ */
+export const METRO_NOC_ZONE_M = 20;
+export const METRO_NOC_SOURCE = 'UDCPR 2020 cl. 14.2.1.7 + Maha-Metro Public Notice 9549/2026 (15.04.2026)';
+/**
+ * Vertical clearance between a road deck and a metro viaduct used by the screen: 5.5 m, ASSUMED. No official clearance
+ * standard was read for this case (IRC:54 and the IRC:SP:90 clearance clause are not read; Maha-Metro publishes no road-
+ * over/under-viaduct clearance on its site that was found; decision T3 in TRANSPORT_TOOLS_CS2_RESEARCH.md). 5.5 m is the
+ * figure the model already uses for the space under a flyover deck (objects/bridgeElevation.ts).
+ */
+export const METRO_VERTICAL_CLEARANCE_M = 5.5;
+/** Depth of the upper structure (viaduct girder or flyover deck) between its running level and its underside: 2.0 m, ASSUMED (not modelled). */
+export const UPPER_STRUCTURE_DEPTH_M = 2.0;
+export const METRO_CLEARANCE_LABEL = 'assumed, no official clearance standard read';
+/** Deck width the model assumes for an OSM metro viaduct, which does not map width. */
+const OSM_METRO_DECK_WIDTH_M = 8;
 
 export const BRIDGE_SCREEN_SCOPE =
   'Desk screen on mapped road geometry (OpenStreetMap and drawn roads). Not a feasibility study.';
 
 export const BRIDGE_SCREEN_NOT_CHECKED: string[] = [
   'Whether the ramps and piers fit inside the road width (right-of-way, land take)',
-  'Vertical clearance under the deck (deck depth is not modelled)',
+  'Vertical clearance to roads under the deck (deck depth is not modelled); the elevated metro is screened, with assumed values',
   'Ground conditions and foundations (no soil data)',
   'Underground utilities along the pier line',
   'Buildings, trees and heritage structures beside the alignment',
@@ -406,20 +447,32 @@ export class BridgeFeasibilityEngine {
       }
     }
 
+    const adjLanes = allAdjRoads.map(r => r.laneCount);
+    const laneRange = adjLanes.length === 0 ? '' : Math.min(...adjLanes) === Math.max(...adjLanes) ? `${adjLanes[0]}` : `${Math.min(...adjLanes)}–${Math.max(...adjLanes)}`;
+    if (allAdjRoads.length === 0) laneMatchStatus = 'info';
     checks.push({
       id: 'lane_match',
       name: 'Lane count match',
       status: laneMatchStatus,
-      message: laneMatchStatus === 'pass'
-        ? `Flyover ${flyoverLanes} lanes matches or is ≤ adjacent surface roads.`
-        : `Flyover has ${flyoverLanes} lanes; mapped roads within 60 m of its ends have fewer: ${listNames(laneMismatchList)}. Merge bottleneck risk.`,
+      // Nearness only: this check does not say the ramps are joined to those roads (the connectivity line says that).
+      message: allAdjRoads.length === 0
+        ? `No mapped road within 60 m of either end of the flyover, so there is nothing to compare its ${flyoverLanes} lanes with.`
+        : laneMatchStatus === 'pass'
+          ? `The flyover's ${flyoverLanes} ${flyoverLanes === 1 ? 'lane is' : 'lanes are'} no more than any road within 60 m of its ends (${laneRange} lanes). Whether the ramps are joined to those roads is shown under Connectivity.`
+          : `The flyover has ${flyoverLanes} lanes; roads within 60 m of its ends have fewer: ${listNames(laneMismatchList)}. Merge bottleneck risk if the ramps feed them. Whether the ramps are joined to those roads is shown under Connectivity.`,
       actual: flyoverLanes,
-      required: allAdjRoads.length > 0 ? Math.max(...allAdjRoads.map(r => r.laneCount)) : flyoverLanes,
+      required: allAdjRoads.length > 0 ? Math.max(...adjLanes) : flyoverLanes,
       unit: 'lanes',
-      basis: allAdjRoads.some(isMappedOsm)
-        ? 'Lane counts of OpenStreetMap roads come from their lanes tag, or a default for the road class when the tag is missing.'
-        : allAdjRoads.length === 0 ? 'No mapped road within 60 m of either end.' : 'Lane counts as set on the roads in the model.'
+      display: allAdjRoads.length === 0 ? `Deck ${flyoverLanes} lanes` : `Deck ${flyoverLanes} lanes · roads near the ends ${laneRange}`,
+      basis: (allAdjRoads.length === 0 ? 'Roads within 60 m of either end (joined or not).' : 'Roads within 60 m of either end, joined or not. ')
+        + (allAdjRoads.some(isMappedOsm)
+          ? 'Lane counts of OpenStreetMap roads come from their lanes tag, or a default for the road class when the tag is missing.'
+          : allAdjRoads.length === 0 ? '' : 'Lane counts as set on the roads in the model.')
     });
+
+    // ── Check 5: Elevated metro (NOC zone, footprint and vertical clearance) ───
+    checks.push(metroClearanceCheck(flyoverCoords, totalLength, elevation, model.modelledRampM, opts.metroLines,
+      opts.deckWidthM ?? flyoverLanes * 3.5 + 1.5));
 
     // ── Surface Road Impact Calculation ───────────────────────────────────────
     // Ramp-adjacent roads lose 25% effective capacity (MORTH weave zone penalty).
@@ -459,4 +512,131 @@ export class BridgeFeasibilityEngine {
       notChecked: BRIDGE_SCREEN_NOT_CHECKED,
     };
   }
+}
+
+// ─── Elevated metro screen ──────────────────────────────────────────────────
+
+/** Local metres east / north of `o`. */
+function toLocal(o: readonly number[], p: readonly number[]): [number, number] {
+  return [(p[0] - o[0]) * 111320 * Math.cos((o[1] * Math.PI) / 180), (p[1] - o[1]) * 110540];
+}
+
+function distToSegment(p: [number, number], a: [number, number], b: [number, number]): number {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const len2 = dx * dx + dy * dy;
+  const t = len2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2)) : 0;
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
+
+/** Samples along the drawn line every `step` m: position and chainage. */
+function sampleLine(coords: [number, number, number][], step: number): { p: [number, number, number]; d: number }[] {
+  const out: { p: [number, number, number]; d: number }[] = [];
+  let cum = 0;
+  for (let i = 1; i < coords.length; i++) {
+    const a = coords[i - 1], b = coords[i];
+    const seg = bfe_getDistanceMeters(a[0], a[1], b[0], b[1]);
+    const n = Math.max(1, Math.ceil(seg / step));
+    for (let k = i === 1 ? 0 : 1; k <= n; k++) {
+      const t = k / n;
+      out.push({ p: [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), 0], d: cum + t * seg });
+    }
+    cum += seg;
+  }
+  return out;
+}
+
+/**
+ * Screens a flyover against elevated metro lines in the model:
+ * - inside the official Maha-Metro NOC zone (20 m from the edge of the metro structure) → NOC needed;
+ * - where the two footprints overlap (crossing, or running along under / over the viaduct), the level difference
+ *   less the upper structure's depth is compared with a vertical clearance. Both the clearance and the structure
+ *   depth are assumed (no official standard read), and an OSM viaduct's level is the model's default because OSM
+ *   does not map its height — so this can only warn ("potential conflict"), never clear or approve.
+ */
+export function metroClearanceCheck(
+  flyoverCoords: [number, number, number][],
+  totalLength: number,
+  deckLevel: number,
+  rampM: number,
+  metroLines: MetroScreenInput[] | undefined,
+  deckWidthM: number,
+): FeasibilityCheck {
+  const base = {
+    id: 'metro_clearance',
+    name: `Elevated metro (NOC ${METRO_NOC_ZONE_M} m; clearance ${METRO_VERTICAL_CLEARANCE_M} m, ${METRO_CLEARANCE_LABEL})`,
+    required: METRO_VERTICAL_CLEARANCE_M,
+    unit: 'm clearance',
+  };
+  if (!metroLines) {
+    return { ...base, status: 'unknown', actual: null, message: 'Metro lines were not available to this check, so the elevated metro was not screened.', basis: 'No metro data supplied.' };
+  }
+  const elevated = metroLines.filter(m => m.level > 0 && m.coordinates.length >= 2);
+  const origin = flyoverCoords[0];
+  const samples = sampleLine(flyoverCoords, 5);
+  const levelAt = (d: number) => rampM > 0 ? deckLevel * Math.max(0, Math.min(1, d / rampM, (totalLength - d) / rampM)) : deckLevel;
+
+  type Hit = { line: MetroScreenInput; minDist: number; overlapM: number; minGap: number | null; inNoc: boolean };
+  const hits: Hit[] = [];
+  for (const line of elevated) {
+    const pts = line.coordinates.map(c => toLocal(origin, c));
+    const half = (line.deckWidthM ?? OSM_METRO_DECK_WIDTH_M) / 2;
+    let minDist = Infinity, overlapM = 0, minGap: number | null = null;
+    let prevOverlap: number | null = null;
+    for (const s of samples) {
+      const q = toLocal(origin, s.p);
+      let dist = Infinity;
+      for (let i = 1; i < pts.length; i++) dist = Math.min(dist, distToSegment(q, pts[i - 1], pts[i]));
+      minDist = Math.min(minDist, dist);
+      const overlaps = dist <= half + deckWidthM / 2;
+      if (overlaps) {
+        if (prevOverlap !== null) overlapM += s.d - prevOverlap;
+        prevOverlap = s.d;
+        const road = levelAt(s.d);
+        // Running level to running level, less the depth of whichever structure is on top
+        const gap = Math.abs(line.level - road) - UPPER_STRUCTURE_DEPTH_M;
+        minGap = minGap === null ? gap : Math.min(minGap, gap);
+      } else prevOverlap = null;
+    }
+    const edgeDist = minDist - half;
+    if (edgeDist <= METRO_NOC_ZONE_M) hits.push({ line, minDist, overlapM, minGap, inNoc: true });
+  }
+
+  const sources = [...new Set(elevated.map(m => m.levelSource))];
+  const levelBasis = sources.includes('osm_assumed')
+    ? 'OpenStreetMap marks the line as elevated (bridge / layer) but does not map its height or deck width, so the model\'s 12 m level and 8 m deck are assumed.'
+    : 'Metro levels as drawn in the model.';
+  const basis = `Metro lines loaded in the model (study-area imports and drawn lines). NOC zone: ${METRO_NOC_SOURCE} (official). `
+    + `Clearance ${METRO_VERTICAL_CLEARANCE_M} m and ${UPPER_STRUCTURE_DEPTH_M} m upper-structure depth are ${METRO_CLEARANCE_LABEL} `
+    + `(IRC:54 and the IRC:SP:90 clearance clause were not read). Flyover deck level from the modelled ramp profile. ${elevated.length ? levelBasis : ''}`.trim();
+
+  if (hits.length === 0) {
+    return { ...base, status: 'info', actual: null,
+      message: elevated.length === 0
+        ? `No elevated metro line is loaded in the model here. Metro is loaded per study area, so this is not a confirmation that none exists; check the area is imported.`
+        : `No elevated metro line loaded in the model comes within ${METRO_NOC_ZONE_M} m of the flyover (an absence in the loaded data, not a confirmation).`,
+      basis };
+  }
+  const conflicts = hits.filter(h => h.minGap !== null && h.minGap < METRO_VERTICAL_CLEARANCE_M);
+  const overlapping = hits.filter(h => h.minGap !== null);
+  const names = (hs: Hit[]) => listNames(hs.map(h => h.line.name));
+  const worst = overlapping.length ? Math.min(...overlapping.map(h => h.minGap!)) : null;
+  const along = overlapping.filter(h => h.overlapM >= 30);
+  let message: string;
+  if (conflicts.length) {
+    message = `Potential conflict with the elevated metro: ${names(conflicts)}. Where the flyover ${along.length ? `runs along the viaduct for about ${Math.round(Math.max(...along.map(h => h.overlapM)))} m` : 'crosses the viaduct'}, `
+      + `the level difference less a ${UPPER_STRUCTURE_DEPTH_M} m structure leaves about ${Math.max(0, worst!).toFixed(1)} m, less than the ${METRO_VERTICAL_CLEARANCE_M} m used here. `
+      + `${along.length ? 'Piers of one would also stand in the other\'s footprint. ' : ''}Inside the ${METRO_NOC_ZONE_M} m zone, a Maha-Metro NOC is required before any work.`;
+  } else if (overlapping.length) {
+    message = `The flyover crosses or runs along ${names(overlapping)}; the level difference less a ${UPPER_STRUCTURE_DEPTH_M} m structure leaves about ${worst!.toFixed(1)} m (≥ ${METRO_VERTICAL_CLEARANCE_M} m used here). Inside the ${METRO_NOC_ZONE_M} m zone, a Maha-Metro NOC is required before any work.`;
+  } else {
+    message = `The flyover passes within ${METRO_NOC_ZONE_M} m of ${names(hits)} without crossing it. A Maha-Metro NOC is required before any work in that zone.`;
+  }
+  return {
+    ...base,
+    status: 'warn',
+    actual: worst === null ? null : Math.round(Math.max(0, worst) * 10) / 10,
+    display: worst === null ? `NOC zone (${METRO_NOC_ZONE_M} m)` : `≈${Math.max(0, worst).toFixed(1)} m clear · ${METRO_VERTICAL_CLEARANCE_M} m used`,
+    message,
+    basis,
+  };
 }

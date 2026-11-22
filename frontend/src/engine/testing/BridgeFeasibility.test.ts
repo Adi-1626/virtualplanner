@@ -236,3 +236,52 @@ describe('BridgeFeasibilityEngine', () => {
     expect(isAsBuiltFlyover({ id: 'f4', provenance: { originalSource: 'manual' } })).toBe(false);
   });
 });
+
+describe('Flyover desk check: elevated metro (p6)', () => {
+  const engine = new BridgeFeasibilityEngine();
+  const approach = [
+    makeRoad('ra', 'Start Road', [FLY_START, [BASE_LON + mToLonDeg(500, BASE_LAT), BASE_LAT, 0]], { laneCount: 3 }),
+    makeRoad('rb', 'End Road', [FLY_END, [BASE_LON + mToLonDeg(500, FLY_END[1]), FLY_END[1], 0]], { laneCount: 2 }),
+  ];
+  // OSM Line 2 style viaduct along the same alignment, level 12 m (model default; OSM does not map height)
+  const viaduct = { id: 'osm_m_way_1', name: 'Pune Metro Line 2', coordinates: [[BASE_LON, BASE_LAT - mToLatDeg(100), 12], [BASE_LON, BASE_LAT + mToLatDeg(600), 12]] as [number, number, number][], level: 12, levelSource: 'osm_assumed' as const };
+
+  it('a flyover along the elevated metro raises a potential conflict with assumed clearance and the official NOC zone', () => {
+    const result = engine.run([FLY_START, FLY_END], 6.0, 2, approach, { metroLines: [viaduct] });
+    const c = result.checks.find(x => x.id === 'metro_clearance')!;
+    expect(c.status).toBe('warn');
+    expect(c.message).toMatch(/Potential conflict/);
+    expect(c.message).toMatch(/runs along the viaduct/);
+    expect(c.message).toMatch(/NOC/);
+    expect(c.basis).toMatch(/assumed/);
+    expect(c.basis).toMatch(/UDCPR 2020/);
+    expect(c.basis).toMatch(/does not map its height/);
+    expect(c.actual).toBeLessThan(5.5);
+  });
+
+  it('a metro 300 m away is outside the NOC zone; an absence is not called clear', () => {
+    const far = { ...viaduct, coordinates: viaduct.coordinates.map(([x, y, z]) => [x + mToLonDeg(300, y), y, z]) as [number, number, number][] };
+    const c = engine.run([FLY_START, FLY_END], 6.0, 2, approach, { metroLines: [far] }).checks.find(x => x.id === 'metro_clearance')!;
+    expect(c.status).toBe('info');
+    expect(c.message).toMatch(/not a confirmation/);
+    const none = engine.run([FLY_START, FLY_END], 6.0, 2, approach, { metroLines: [] }).checks.find(x => x.id === 'metro_clearance')!;
+    expect(none.status).toBe('info');
+    const notSupplied = engine.run([FLY_START, FLY_END], 6.0, 2, approach).checks.find(x => x.id === 'metro_clearance')!;
+    expect(notSupplied.status).toBe('unknown');
+  });
+
+  it('an underground metro (level 0) is not screened as a viaduct', () => {
+    const tunnel = { ...viaduct, level: 0, coordinates: viaduct.coordinates.map(([x, y]) => [x, y, 0]) as [number, number, number][] };
+    const c = engine.run([FLY_START, FLY_END], 6.0, 2, approach, { metroLines: [tunnel] }).checks.find(x => x.id === 'metro_clearance')!;
+    expect(c.status).toBe('info');
+  });
+
+  it('lane check: plain header, and it never implies the ramps are joined', () => {
+    const lane = engine.run([FLY_START, FLY_END], 6.0, 2, approach, { metroLines: [] }).checks.find(x => x.id === 'lane_match')!;
+    expect(lane.display).toBe('Deck 2 lanes · roads near the ends 2–3');
+    expect(lane.message).toMatch(/joined or not|Connectivity/);
+    expect(lane.message).not.toMatch(/adjacent surface roads/);
+    const alone = engine.run([FLY_START, FLY_END], 6.0, 2, [], { metroLines: [] }).checks.find(x => x.id === 'lane_match')!;
+    expect(alone.status).toBe('info');
+  });
+});
