@@ -1,6 +1,28 @@
 # Design workspace: realistic visuals and new buildable tools (research + design, 2026-11-22)
 
-Status: **plan only, nothing implemented, nothing built or tested.** Branch `p7-plan` (from `next-phase` at `640da42`).
+Status (updated 2026-11-22): **Part A visuals R1–R8 implemented on branch `p7-visuals`** (from `next-phase` at
+`0f47fc7`; not pushed, not merged), with the deviations listed in the implementation status below. Part B tools are on
+the parallel `p7-tools` branch. The plan text further down is kept as written (originally `p7-plan`, from `640da42`).
+
+### Implementation status (branch `p7-visuals`)
+
+| Step | State | Commit | What was built / what differs from the plan |
+|---|---|---|---|
+| R1 | done | `d00b91e` | Realistic / Schematic style (Realistic default, persisted in `localStorage['urbanos.visualStyle']`), lit hard-edge shading (`creaseNormals`), material colours, FXAA. Traffic tint resets to the drawn colour. |
+| R2 + R4 | done | `b279f61` | `standards/visualDims.ts` (value / source / status), IRC:35 dashed lines, kerbs 0.15 m, box-girder decks, Jersey barriers, pier caps, metro viaduct 8.5 m box girder, 4.1 m track centres, U-girder option (type not confirmed), inspector "Drawn with assumed dimensions". Junction stop lines / zebras / arrows: see "Junction markings" below. |
+| R3 | partly | `a97d477` | Adaptive subdivision ≤ 5 m, 30 m moving-median profile, ≤ 0.3 m bury, DSM spikes bridged, `depthTestAgainstTerrain` in Realistic with terrain. **Not done:** embankment / cut skirts, terrain `ClippingPolygon` at cuts and portals. |
+| R5 + R8 | done | `4c0f0a7` | CC0 ambientCG atlas (9 slots, JPEG; KTX2 not used), `TexturedTintAppearance`, tiers Low / Medium (default) / High, FXAA (Medium) / MSAA 4× (High), slow-frame auto-drop to Low. |
+| R6 | done (simplified) | `c8f2b36` | Streetlights (IRC:86-2018 Table 5.6: RoW ≤ 9 m → 9 m poles every 26 m; RoW > 9 m → 11 m every 31 m) on footpaths > 0.9 m and street trees in verges ≥ 1 m (tree pit), 8 m spacing [assumed], on **drawn roads only** (not imported OSM roads, not bridges). Built as merged procedural meshes in the tile batches, **not** glTF instancing; hidden in Schematic, in the Low tier and above 800 m camera height. **Not done:** bollards, signal heads, bus shelters. |
+| R7 | done (no clipping, no lining) | `9937f74` | `geometry/tunnelPortal.ts` places a headwall where the floor reaches −(opening + 1 m cover) and a boat section (U retaining walls) from −0.3 m to there; headwall with opening, jambs, lintel and coping. Applied to road tunnels and their ramped approaches (opening 5.0 m, IRC:54) and, Design-side, to bored / metro / cut-and-cover underground alignments with all depths known. Portal / boat dimensions are **assumed** in `visualDims.ts` and listed in the inspector. **Not done:** terrain clipping over the boat section, segment-lining texture in the Underground cutaway. |
+| Junction markings | hook only | `1c56f18` | `RenderManager.setJunctionMarkings(items)` draws the `p7-tools` junction tool's `MarkingItem[]` (`junctionMarkings(...).items`, structurally typed as `JunctionMarkingInput`) as painted meshes: stop / double stop / dashed give-way lines, zebras, lane arrows, give-way triangles (arrow and triangle sizes assumed). The STOP word is not drawn. **Wiring is left for the merge:** in `TwinCityEngine`, call it where `p7-tools` calls `streetPlaceholders.syncMarkings` (the `p7-tools` branch was not edited). |
+
+Headless timings (SwiftShader software GL, shared machine under load ≈ 4–5, same camera, quality pre-set Medium, QA scene
+with flyover, metro and a drawn street; `js/perf.js`): road rebuild of all loaded tiles, before (`0f47fc7`, Schematic
+only) 292 / 227 / 218 ms and 468 / 398 / 203 ms; after (`1c56f18`) Realistic Medium 266 / 201 / 196 ms and 416 / 333 /
+302 ms, Schematic 457 / 442 / 423 ms; mean forced frame before 6–14 ms, after Realistic 15–17 ms, Schematic 15 ms. The
+run-to-run spread on this machine is as large as the differences, so these show no regression beyond noise for rebuilds
+and a frame cost in the low-teens ms in software GL; they are not GPU numbers. Screenshots (headless):
+`/workspace/work/urbanos/shots/p7-visuals/final-{overview,road,flyover,metro,pier}.png` (not committed).
 Companions: [TRANSPORT_TOOLS_CS2_RESEARCH.md](TRANSPORT_TOOLS_CS2_RESEARCH.md) (CS2 inventory, palette, keys — not repeated
 here), [CROSS_SECTIONS.md](CROSS_SECTIONS.md) (USDG templates + checks, built), [PLANNING_DEFAULTS_DECISIONS.md](PLANNING_DEFAULTS_DECISIONS.md)
 (D1–D11), [GEOMETRY_EDITOR_DESIGN.md](GEOMETRY_EDITOR_DESIGN.md) (alignments, grades, ramps).

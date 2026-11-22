@@ -328,6 +328,48 @@ JSON is stored as TEXT (`*_json`); no PostGIS/SpatiaLite (geoalchemy2 and psycop
 
 **C. Data → app** (examples): DEM `derived/elevation_copdem30/v3/*.tif` → `terrain/dem.py` → `/api/terrain/profile` → `lib/terrainApi.ts` → `components/underground/useTerrain.ts` → Profile chart; PMC layers → `infra_index.sqlite` → `/api/infra/layers/{lid}/features?bbox=` → `municipalOverlay.ts` (Cesium entities); official facts → `/api/updater/facts` → `reportedFacts.ts` → `HoverTooltip.tsx`.
 
+### 4.6 Rendering of Design objects (visual style, dimensions, textures, tiers)
+
+Everything drawn from city objects goes through `engine/rendering/`: `RenderManager` registers objects in a 300 m
+spatial grid, `ProceduralGeometryGenerator` turns each object into `MeshData` (ECEF positions, a `layerId` and a
+`material`), and the tile renderers (`RoadRenderer`, `BuildingRenderer`, `TransitRenderer`, all `TileBatchRenderer`)
+batch one Cesium `Primitive` per tile and layer. Plan and rationale: `BUILD_VISUALS_AND_TOOLS_PLAN.md` Part A.
+
+- **Visual style toggle.** `engine/rendering/visualStyle.ts` holds `'realistic' | 'schematic'` (Realistic default,
+  persisted in `localStorage['urbanos.visualStyle']`); UI in `components/VisualStyleControl.tsx` (Explore › Layers ›
+  Visual style) and a palette command (`toggleVisualStyle`). A change only rebuilds the loaded tiles' primitives (meshes
+  stay cached). Realistic: lit appearance (`appearance/LitTintAppearance.ts`) on hard-edge copies (`geometry/creaseNormals.ts`)
+  and material colours (`materials/materialPalette.ts`, `styleColor`); Schematic: flat legend colours as before.
+  Traffic tint and selection work in both (tint resets to the drawn colour of the current style).
+- **Dimensions (`standards/visualDims.ts`).** Every drawn dimension is a `d(value, unit, label, source, status)` with
+  status `official` (agency document), `irc-copy` (IRC text from the law.resource.org mirror, unconfirmed), `assumed`
+  or `unknown`. Read with `dim(key)`; never put a bare number in the generator. `ASSUMED_BY_TYPE` + `assumedDimsFor`
+  feed the inspector's "Drawn with assumed dimensions" (`components/design/DrawnDimensionsSection.tsx`); add a new
+  assumed key there for the object type that draws it. Cross-section profiles (box girder, Jersey) are in
+  `standards/profiles.ts`; marking dash patterns, pier stations and terrain fit in `geometry/markingPattern.ts`.
+- **Texture atlas.** `frontend/public/textures/urbanos-detail-atlas.jpg` (2048², 4 × 4 slots of 512 px, luminance
+  detail normalised to mean 0.5) is built by `python3 frontend/public/textures/build_atlas.py` from CC0 ambientCG
+  1K-JPG downloads (asset ids, URLs and licence in `frontend/public/textures/ASSET_LICENCES.md`; keep that file in step
+  when a slot changes). Material → slot: `materials/textureAtlas.ts` (`MATERIAL_SLOT`, −1 = untextured). The shader
+  (`appearance/TexturedTintAppearance.ts`) multiplies the detail × 2 with the per-instance colour, so tint and selection
+  colours stay exact; it needs WebGL 2 (`texturesSupported`) and falls back to the lit colours otherwise.
+- **Quality tiers (`qualityTier.ts`).** Low (lit colours, no textures, no FXAA, no street props), Medium (default:
+  textures + FXAA), High (textures + MSAA 4× on WebGL 2), persisted in `localStorage['urbanos.qualityTier']`; scene
+  settings in `sceneStyle.ts`. Schematic ignores the tier.
+- **Auto-drop (`qualityWatchdog.ts`).** In Realistic, if frames average over 33 ms for 3 s (after the first 10 s), the
+  tier drops to Low for the session with a toast; only from the default tier, never over a tier the user picked, once
+  per session.
+- **Detail layers.** Street props (`layerId: 'props'`, streetlights per IRC:86 Table 5.6, verge trees) are shown only
+  in Realistic at Medium / High (`detailVisibility.ts`) and below 800 m camera height (`RoadRenderer.isLayerVisible`),
+  and are generated for drawn roads only. Tunnel portals (`layerId: 'portal'`, `geometry/tunnelPortal.ts`) are drawn
+  for road tunnels / ramped approaches and for underground alignments (routed to `TransitRenderer`; the tube itself
+  stays the Underground workspace's entity view).
+- **Junction markings hook.** `RenderManager.setJunctionMarkings(items, visible)` draws the junction tool's IRC:35
+  marking items (`junctionMarkingInput.ts` mirrors the tool's `MarkingItem`) as one painted primitive, rebuilt on style
+  change.
+- **Tests:** `engine/testing/Visuals*.test.ts` (geometry, rendering, props, portals, junction markings). Headless
+  timings: `window.__rebuildStats` and `window.last_road_rebuild_time` are read by the perf probe.
+
 ---
 
 ## 5. Running locally, tests and pitfalls
