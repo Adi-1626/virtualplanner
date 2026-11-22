@@ -15,6 +15,7 @@ import { findRoadEndGaps, insertRoadVertex, markGeometryEdited, type RoadEndGap 
 import { addedVerticesOf, mergeAdded, verticesInsertedBy } from './addedVertices';
 import { classifyOsmWay, findNonDrivableOsmRoads, type NonDrivableRoad } from './osmDrivability';
 import { STUDY_AREA_ROADS_PREFIX } from '../simulation/osmCoverage';
+import { middleOf, nearestStreetName, newObjectName, ROAD_CLASS_NAME, type NamedLine } from './objectNames';
 import { BASE_SCENARIO_ID } from '../scenarios/ScenarioManager';
 import { filterObjectsForScenario } from '../scenarios/scenarioFilter';
 import { connectEnds, withTouchingEndHeights, AUTO_CONNECT_M } from './autoConnect';
@@ -87,11 +88,11 @@ export const ROAD_CLASS_DEFAULTS: Record<RoadClassification, { laneCount: number
   local: { laneCount: 2, dividerWidth: 0, footpathWidth: 2.0, speedLimit: 30, flyoverSpeed: 30 },
 };
 
-/** Readable default name of a new object ("Road 4kq2"); the user renames it in the inspector. */
+/** What a new object is called by default (objectNames.ts adds the nearest street or a number); the user renames it in the inspector. */
 const NEW_OBJECT_LABEL: Partial<Record<EditingMode, string>> = {
-  draw_road: 'Road', draw_building: 'Building', draw_junction: 'Junction', draw_flyover: 'Flyover',
-  draw_metro: 'Metro line', draw_metro_flyover: 'Double-deck', place_station: 'Station', draw_utility: 'Utility',
-  draw_zone: 'Demand zone', draw_gateway: 'Gateway',
+  draw_road: 'road', draw_building: 'building', draw_junction: 'junction', draw_flyover: 'flyover',
+  draw_metro: 'metro line', draw_metro_flyover: 'double-deck', place_station: 'station', draw_utility: 'utility line',
+  draw_zone: 'demand zone', draw_gateway: 'gateway', draw_underground: 'underground alignment',
 };
 
 export type EditingMode = 'select' | 'draw_road' | 'draw_building' | 'draw_junction' | 'draw_utility' | 'draw_flyover' | 'draw_metro' | 'place_station' | 'import_osm' | 'draw_zone' | 'draw_gateway' | 'draw_metro_flyover' | 'draw_underground';
@@ -975,13 +976,31 @@ export class EditingEngine {
     }
   }
 
+  /** "New arterial road near Karve Road" / "New arterial road 1" (objectNames.ts), never a slice of the random id. */
+  private defaultNameForNew(scenarioId: string): string {
+    const mode = this.activeMode;
+    const label = NEW_OBJECT_LABEL[mode] ?? mode.replace(/^draw_|^place_/, '').replace(/_/g, ' ');
+    const kind = mode === 'draw_road' ? ROAD_CLASS_NAME[this.roadClass] ?? 'road'
+      : mode === 'draw_flyover' ? `${this.roadClass === 'highway' ? 'highway' : this.roadClass} flyover` : label;
+    const visible = filterObjectsForScenario(this.objectManager.getAll(), scenarioId);
+    const streets: NamedLine[] = [];
+    for (const o of visible) {
+      if (o.type !== 'road' && o.type !== 'flyover') continue;
+      const r = o as RoadObject;
+      // A real street name: OSM's name tag, or a name typed on a drawn road (not one of our default names)
+      const real = r.osmProvenance ? r.osmProvenance.originalTags?.name : (r.name && !r.name.startsWith('New ') ? r.name : undefined);
+      if (real) streets.push({ name: real, coordinates: r.coordinates });
+    }
+    const taken = new Set(visible.map(o => o.name).filter((n): n is string => !!n));
+    return newObjectName(kind, nearestStreetName(middleOf(this.drawingPoints), streets), taken);
+  }
+
   private finalizeDrawingPoints(scenarioId: string, alignment: HorizontalAlignment | null) {
     this.lastUncertainCrossings = 0;
 
     const id = Math.random().toString(36).substr(2, 9);
     const createdAt = new Date().toISOString();
-    const label = NEW_OBJECT_LABEL[this.activeMode];
-    const name = label ? `${label} ${id.slice(0, 4)}` : `${this.activeMode.split('_')[1].toUpperCase()} #${id.slice(0, 4)}`;
+    const name = this.defaultNameForNew(scenarioId);
     const cls = ROAD_CLASS_DEFAULTS[this.roadClass] ?? ROAD_CLASS_DEFAULTS.local;
 
     let newObj: CityObject | null = null;

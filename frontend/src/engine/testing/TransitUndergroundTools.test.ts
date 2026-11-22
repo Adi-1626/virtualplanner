@@ -75,7 +75,7 @@ describe('metro line and double-deck', () => {
     const m = objects.getAll().find(o => o.type === 'metro_line') as MetroLineObject;
     expect(m.coordinates.every(c => c[2] === 0)).toBe(true);
     expect(m.elevation).toBe(12);
-    expect(m.name).toMatch(/^Metro line /);
+    expect(m.name).toBe('New metro line 1');
   });
 
   it('the double-deck metro deck height slider writes metroElevation (it used to be dropped)', () => {
