@@ -309,6 +309,8 @@ Shown in the readout, in the panel rows and as a small ⚠ marker on the map at 
 8. **Licences**: the IRC texts are copyrighted (public.resource.org copies). Cite clause numbers; do not ship the PDFs or long extracts in the repo.
 
 ## 10. Decisions needed from the user
+> **Decided 2026-11-22** (D1–D5): see PLANNING_DEFAULTS_DECISIONS.md — IRC:86-2018 speeds, 4 % surface / 7 % deck, no spirals this phase, flyover grade 4 % urban / 3.3 % highway per IRC:SP:90-2023 §4.13 (the 3.5 % SP:90-2010 cap is superseded).
+
 - **D1 Default design speeds**: IRC:86 urban (arterial 80, collector 50, local 30). For the `highway` class, 100 km/h (rural IRC:73) or 80? Flyovers: keep the current flyover speeds 100/80/60/40?
 - **D2 Superelevation cap for the screen**: 4 % (IRC:86 "urban sections with frequent intersections") for surface roads and 7 % for flyover decks (recommended), or 7 % everywhere?
 - **D3 Spirals in phase 1?** Recommendation: **no**. Circular curves first, with a "transition not modelled" note and the required Ls shown; clothoids in phase 3. (Spirals make the fit rule and handles harder; the curve shape changes little at urban radii.)
