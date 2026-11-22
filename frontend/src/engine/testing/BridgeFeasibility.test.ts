@@ -128,12 +128,13 @@ describe('BridgeFeasibilityEngine', () => {
 
     const laneCheck = result.checks.find(c => c.id === 'lane_match')!;
     expect(laneCheck.status).toBe('warn');
-    expect(laneCheck.message).toContain('Local Street');
+    expect(laneCheck.message).toContain('Local Street (2 lanes)');
+    expect(laneCheck.name).not.toMatch(/MORTH/);
     // All ramp grade / deck length checks pass → overall feasible despite lane warn
     expect(result.feasible).toBe(true);
   });
 
-  it('Test 5: PASS+IMPACT - surface road capacity reduced by 25% (MORTH weave zone)', () => {
+  it('Test 5: PASS+IMPACT - surface road capacity reduced by an assumed 25% (weave zone; no published figure)', () => {
     const artRoad = makeRoad('r8', 'Main Arterial', [
       FLY_START,
       [BASE_LON + mToLonDeg(500, BASE_LAT), BASE_LAT, 0],
@@ -146,6 +147,9 @@ describe('BridgeFeasibilityEngine', () => {
     expect(impact.capacityReductionPercent).toBe(25);
     expect(impact.reducedCapacity).toBe(1500);
     expect(impact.originalCapacity).toBe(2000);
+    // p5-qa: it was cited as "MORTH" with no document; it is an assumption and must say so
+    expect(impact.reason).toMatch(/assumed/i);
+    expect(impact.reason).not.toMatch(/MORTH/);
   });
 
   it('Test 7: honesty - says what it checked and what it did not', () => {
