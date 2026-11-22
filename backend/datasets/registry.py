@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import json
+import re
 import uuid
 from typing import Any, Iterable
 
@@ -163,8 +164,11 @@ def review_version(db: Session, version_id: str, decision: str, reviewer: str, n
     if decision == "activate":
         for other in versions_of(db, v.dataset_id):
             if other.id != v.id and other.review_status == "active":
-                other.review_status, other.reviewed_by, other.reviewed_at = "superseded", reviewer, now
-                other.review_note = f"superseded by {v.id}"
+                # The old record keeps the reviewer (and time, note) of ITS review; who superseded it is on the new
+                # record's review and in the audit log (actor of this update), never written over the old reviewer
+                other.review_status = "superseded"
+                kept = re.sub(r"\s*·?\s*superseded by dsv_[0-9a-f]+\s*$", "", other.review_note or "").strip()
+                other.review_note = f"{kept} · superseded by {v.id}" if kept else f"superseded by {v.id}"
         v.review_status = "active"
     else:
         v.review_status = "rejected"

@@ -143,6 +143,39 @@ def test_changed_manifest_is_new_pending_version_never_replacing_active(client, 
     assert vs[first]["review_status"] == "superseded" and vs[first]["sha256"]   # old version kept, readable
 
 
+def test_supersede_keeps_the_old_reviewer_and_records_the_new_one(client, root):
+    """Activating v3 supersedes v2: v2 keeps who reviewed v2 (and when, and their note); v3 records its reviewer; the
+    supersede itself is in the audit log under the new reviewer."""
+    from database.connection import SessionLocal
+    from planning.models import AuditLogEntity
+    _raw_tree(root, source="test_dem_rev")
+    client.post("/api/datasets/import", json={"root": root})
+    _raw_tree(root, source="test_dem_rev", date="2026-11-20", payload=b"SYNTHETIC DEM rev2")
+    client.post("/api/datasets/import", json={"root": root})
+    v2 = _ds(client, "test_dem_rev")["pending_version_ids"][0]
+    assert client.post(f"/api/datasets/versions/{v2}/review", json={"decision": "activate", "reviewer": "Reviewer A", "note": "checked tiles"}).status_code == 200
+    before = {v["id"]: v for v in _ds(client, "test_dem_rev")["versions"]}[v2]
+    _raw_tree(root, source="test_dem_rev", date="2026-11-21", payload=b"SYNTHETIC DEM rev3")
+    client.post("/api/datasets/import", json={"root": root})
+    v3 = _ds(client, "test_dem_rev")["pending_version_ids"][0]
+    assert client.post(f"/api/datasets/versions/{v3}/review", json={"decision": "activate", "reviewer": "Reviewer B"}).status_code == 200
+    vs = {v["id"]: v for v in _ds(client, "test_dem_rev")["versions"]}
+    assert vs[v2]["review_status"] == "superseded"
+    assert vs[v2]["reviewed_by"] == "Reviewer A"                       # not overwritten by Reviewer B
+    assert vs[v2]["reviewed_at"] == before["reviewed_at"]
+    assert vs[v2]["review_note"] == f"checked tiles · superseded by {v3}"
+    assert vs[v3]["review_status"] == "active" and vs[v3]["reviewed_by"] == "Reviewer B"
+    with SessionLocal() as db:
+        rows = db.query(AuditLogEntity).filter(AuditLogEntity.entity_type == "ds_dataset_version", AuditLogEntity.entity_id == v2,
+                                               AuditLogEntity.action == "update").all()
+    assert any(r.actor == "Reviewer B" and "review_status" in (r.changed_fields or "") for r in rows)
+    # Rolled back to v2 and forward to v3 again: the note does not pile up "superseded by" lines
+    assert client.post(f"/api/datasets/versions/{v2}/review", json={"decision": "activate", "reviewer": "Reviewer C"}).status_code == 200
+    assert client.post(f"/api/datasets/versions/{v3}/review", json={"decision": "activate", "reviewer": "Reviewer D"}).status_code == 200
+    v2_after = {v["id"]: v for v in _ds(client, "test_dem_rev")["versions"]}[v2]
+    assert v2_after["reviewed_by"] == "Reviewer C" and v2_after["review_note"].count("superseded by") == 1
+
+
 def test_versions_are_immutable(client, root):
     from database.connection import SessionLocal
     from datasets.models import DsDatasetVersionEntity, ImmutableVersionError
