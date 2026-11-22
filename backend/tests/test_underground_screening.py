@@ -478,3 +478,15 @@ def test_water_sewer_cpheeo_values_confirmed_in_official_mohua_copy():
     assert rows["C2c"]["compare_only"] and "UNCONFIRMED" in rows["C2c"]["source"]
     r = C.requirement(CFG, "water", "sewer", None, None)
     assert any(x.get("confirmed_in") for x in r["rows"] if x["id"] == "C1")
+
+
+def test_headline_counts_findings_not_outcomes_per_object():
+    # QA 2026-11-22: "1 proposed object screened: 1 requires investigation, 2 insufficient data" read as three outcomes
+    # for one object; the headline now says these are findings.
+    from coordination.screening import STATUSES, _headline
+    counts = {s: 0 for s in STATUSES}
+    counts["requires_investigation"] = 1
+    counts["insufficient_data"] = 2
+    h = _headline(counts, 1)
+    assert h.startswith("1 proposed object screened, 3 findings: ")
+    assert _headline({s: 0 for s in STATUSES}, 2) == "2 proposed objects screened: no finding."

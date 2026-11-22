@@ -182,14 +182,14 @@ def build_model(run: dict, alternative: str, now: Optional[datetime.datetime] = 
             ["Alternative", alternative], ["Alternative id", run["scenario_id"]], ["Screened", when(run["generated_at"])],
             ["Engine", run["engine_version"]], ["Rules version", run["config_version"]], ["Report", REPORT_VERSION],
             ["Proposed objects screened", str(len(sm["proposed_checked"]))],
-            ["Existing assets read", f"{sm.get('existing_assets_read', 0):,}"]]),
+            ["Existing assets compared (within the clearance search distance)", f"{sm.get('existing_assets_read', 0):,}"]]),
         Block("para", text=run["banner"] + "."),
     ])
     sec("Summary", [
         Block("para", text=sm["headline"]),
         Block("table", header=["Status", "Count", "What it means"],
               rows=[[S.STATUS_LABEL[s], str(counts.get(s, 0)), S.STATUS_MEANING[s]] for s in S.STATUSES]),
-        Block("table", header=["Proposed object", "Type", "Depth (crown to invert)", "Count"],
+        Block("table", header=["Proposed object", "Type", "Depth (crown to invert)", "Findings"],
               rows=[[p["name"], p.get("kind_label") or p.get("kind") or "",
                      f"{_m(p.get('crown_depth_m')) or 'unknown'} to {_m(p.get('invert_depth_m')) or 'unknown'}",
                      str(sum(1 for f in run["findings"] if f["proposed"]["id"] == p["id"]))] for p in sm["proposed_checked"]]),
