@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dashPieces, dashAll, pierStations, densify, cumulativeLengths, movingMedian, smoothedProfileOffsets, type PathPt } from '../rendering/geometry/markingPattern';
+import { dashPieces, dashAll, pierStations, densify, adaptiveDensify, fitToTerrain, cumulativeLengths, movingMedian, smoothedProfileOffsets, type PathPt } from '../rendering/geometry/markingPattern';
 import { VISUAL_DIMS, dim, assumedDimsFor } from '../rendering/standards/visualDims';
 import { boxGirderProfile, jerseyMedianProfile } from '../rendering/standards/profiles';
 import { extrudeProfile } from '../rendering/geometry/extrudeProfile';
@@ -85,11 +85,47 @@ describe('pier spacing and subdivision', () => {
     const cum = [0, 5, 10, 15, 20, 25, 30];
     expect(movingMedian(g, cum, 15)[3]).toBe(10);
   });
-  it('smoothed profile never buries the road more than 0.3 m below ground', () => {
-    const g = [10, 10, 10, 18, 18, 18, 10, 10];
+  it('smoothed profile never buries the road more than 0.3 m below a genuine slope', () => {
+    const g = [10, 10, 10, 11.2, 11.2, 11.2, 10, 10];
     const cum = [0, 5, 10, 15, 20, 25, 30, 35];
     const off = smoothedProfileOffsets(g, cum, 30, 0.3);
     off.forEach((o, i) => expect(g[i] + o).toBeGreaterThanOrEqual(g[i] - 0.3 - 1e-9));
+  });
+  it('a narrow bump far above the median (DSM canopy / roof) is bridged', () => {
+    const g = [10, 10, 10, 18, 10, 10, 10];
+    const cum = [0, 5, 10, 15, 20, 25, 30];
+    expect(g[3] + smoothedProfileOffsets(g, cum, 30)[3]).toBe(10);
+  });
+});
+
+describe('terrain fit', () => {
+  it('adaptive subdivision adds nothing on flat ground and splits a hill to ≤ 5 m', () => {
+    const p = straight(400);
+    expect(adaptiveDensify(p, () => 560, 5, 0.2, 1000).length).toBe(2);
+    // a 6 m hump 30 m wide in the middle of the segment
+    const x0 = p[0][0], x1 = p[1][0];
+    const hill = (lng: number) => { const t = (lng - x0) / (x1 - x0) * 400 - 200; return 560 + 6 * Math.exp(-(t * t) / (2 * 15 * 15)); };
+    const d = adaptiveDensify(p, lng => hill(lng), 5, 0.2, 1000);
+    const cum = cumulativeLengths(d);
+    expect(d.length).toBeGreaterThan(10);
+    // every segment is either ≤ 5 m (rounded by halving) or its chord is within 0.2 m of the ground at its midpoint
+    for (let i = 1; i < d.length; i++) {
+      const L = cum[i] - cum[i - 1];
+      const mid = hill((d[i][0] + d[i - 1][0]) / 2);
+      const chord = (hill(d[i][0]) + hill(d[i - 1][0])) / 2;
+      expect(L <= 6.3 || Math.abs(mid - chord) <= 0.2).toBe(true);
+    }
+  });
+  it('long flat segments are still split at maxSeg so the profile has stations', () => {
+    expect(adaptiveDensify(straight(200), () => 0, 5, 0.2, 60).length).toBeGreaterThanOrEqual(5);
+  });
+  it('fitted profile bridges a canopy spike instead of riding over it', () => {
+    const p = straight(120);
+    const x0 = p[0][0], x1 = p[1][0];
+    const g = (lng: number) => { const t = (lng - x0) / (x1 - x0) * 120; return Math.abs(t - 60) < 4 ? 570 : 560; };
+    const f = fitToTerrain(p, g);
+    const top = Math.max(...f.map(q => g(q[0]) + q[2]));
+    expect(top).toBeLessThan(562);
   });
 });
 

@@ -30,6 +30,7 @@ export function realisticMesh(mesh: MeshData): MeshData {
 
 /** Build timings of the last rebuild, per style (read by the headless perf probe). */
 export const rebuildStats: { style: VisualStyle; ms: number; instances: number; primitives: number }[] = [];
+if (typeof window !== 'undefined') (window as unknown as { __rebuildStats: typeof rebuildStats }).__rebuildStats = rebuildStats;
 
 const SELECTION_COLOR = '#00ffff';
 

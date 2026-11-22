@@ -1,7 +1,7 @@
 import { utilityZ } from '../../underground/utilityModel';
 import { isUnmappedMetroTunnel, unmappedUndergroundStation } from '../../underground/metroLevel';
 import type { CityObject, RoadObject, BuildingObject, FlyoverObject, MetroLineObject, MetroStationObject, UtilityObject, JunctionObject, MetroFlyoverObject } from '../../objects/types';
-import { groundAt, withFlatGround } from '../../terrain/groundHeight';
+import { groundAt, getGroundField, withFlatGround } from '../../terrain/groundHeight';
 import { depressedLevel, elevatedLayer, isOsmBridge } from '../../objects/bridgeElevation';
 import { junctionLayout } from '../../objects/junctionLayout';
 import { ROAD_CLASS_LIFT_M } from '../../objects/roadSurface';
@@ -9,7 +9,7 @@ import { crossingGaps, piecesBetween, type Gap } from './junctionGaps';
 import { resolveStationHeading } from '../../objects/stationAlignment';
 import { GeometryContext } from './GeometryContext';
 import type { MeshData, MaterialConfig } from '../types';
-import { cumulativeLengths, dashAll, pierStations, pointAt, type PathPt } from './markingPattern';
+import { cumulativeLengths, dashAll, fitToTerrain, pierStations, pointAt, type PathPt } from './markingPattern';
 import { dim } from '../standards/visualDims';
 import { extrudeProfile } from './extrudeProfile';
 import { boxGirderProfile, jerseyMedianProfile, jerseyParapetProfile, rectProfile, uGirderParts } from '../standards/profiles';
@@ -514,7 +514,13 @@ export class ProceduralGeometryGenerator {
       const endIdx = Math.max(startIdx, Math.min(section.endNodeIndex, coords.length - 1));
       if (endIdx - startIdx < 1) continue;
 
-      const sectionCoords = roadCoords.slice(startIdx, endIdx + 1);
+      let sectionCoords = roadCoords.slice(startIdx, endIdx + 1);
+      // Terrain on: at-grade roads are subdivided where the ground bends between vertices (no chording through or
+      // floating over a hill) and follow a 30 m moving-median profile (DSM canopy / roof bumps removed, never more
+      // than 0.3 m below the ground). Bridges, cuts and tunnels keep their worked-out levels.
+      if (getGroundField() && !isBridge && !isTunnel) {
+        sectionCoords = fitToTerrain(sectionCoords as PathPt[], groundAt);
+      }
       const offsets = this.calculateOffsetsForSection(section);
 
       // Keep the road surface continuous. The junction surface overlaps its approaches.

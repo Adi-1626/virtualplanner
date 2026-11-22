@@ -114,11 +114,78 @@ export function movingMedian(values: readonly number[], cum: readonly number[], 
 }
 
 /**
- * Smoothed road profile over sampled ground (§A4.2): moving median over `windowM`, then never more than `maxBury` below
- * the raw ground at any station (a road must not disappear under the terrain), returned as offsets to add to each
- * vertex's own ground height (so `ground + offset` = profile).
+ * Smoothed road profile over sampled ground (§A4.2): moving median over `windowM`. Where the ground is a genuine slope
+ * (within `spikeTol` of the median) the road never sits more than `maxBury` below it; a narrow bump more than `spikeTol`
+ * above the median (a tree or roof in a surface model) is bridged instead of ridden over, and the depth test against
+ * terrain shows the bump as terrain. Returned as offsets to add to each vertex's own ground height.
+ * Window 30 m, maxBury 0.3 m and spikeTol 1.5 m are ASSUMED rendering values (plan §A4).
  */
-export function smoothedProfileOffsets(ground: readonly number[], cum: readonly number[], windowM = 30, maxBury = 0.3): number[] {
+export function smoothedProfileOffsets(ground: readonly number[], cum: readonly number[], windowM = 30, maxBury = 0.3, spikeTol = 1.5): number[] {
   const med = movingMedian(ground, cum, windowM);
-  return med.map((m, i) => Math.max(m, ground[i] - maxBury) - ground[i]);
+  return med.map((m, i) => {
+    const g = ground[i];
+    if (g - m > spikeTol) return m - g;
+    return Math.max(m, g - maxBury) - g;
+  });
+}
+
+/**
+ * Terrain-adaptive subdivision (§A4.1): a segment is split at its midpoint while the ground there departs from the
+ * straight chord by more than `tol` metres and the piece is longer than `minSeg`. Flat ground adds no vertices, so the
+ * cost stays near today's on a city-wide import; hilly stretches end up at ≤ `minSeg` spacing where it matters.
+ */
+export function adaptiveDensify(path: readonly PathPt[], ground: (lng: number, lat: number) => number, minSeg = 5, tol = 0.2, maxSeg = 60): PathPt[] {
+  if (path.length < 2) return path.map(p => [p[0], p[1], p[2] || 0] as PathPt);
+  const out: PathPt[] = [[path[0][0], path[0][1], path[0][2] || 0]];
+  const split = (a: PathPt, b: PathPt, ga: number, gb: number, depth: number) => {
+    const L = segLen(a, b);
+    if (L > minSeg && depth < 12) {
+      const m = lerp(a, b, 0.5);
+      const gm = ground(m[0], m[1]);
+      if (Math.abs(gm - (ga + gb) / 2) > tol || L > maxSeg) {
+        split(a, m, ga, gm, depth + 1);
+        split(m, b, gm, gb, depth + 1);
+        return;
+      }
+    }
+    out.push(b);
+  };
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1], b = path[i];
+    split([a[0], a[1], a[2] || 0], [b[0], b[1], b[2] || 0], ground(a[0], a[1]), ground(b[0], b[1]), 0);
+  }
+  return out;
+}
+
+/**
+ * Terrain fit of an at-grade road centreline (§A4.1–2): adaptive subdivision, then the smoothed profile expressed as
+ * a per-vertex z offset (the renderer adds the ground at each vertex, so ground + z + offset = smoothed profile + z).
+ */
+export function fitToTerrain(path: readonly PathPt[], ground: (lng: number, lat: number) => number, windowM = 30, maxBury = 0.3, spikeTol = 1.5): PathPt[] {
+  const d = adaptiveDensify(path, ground);
+  const cum = cumulativeLengths(d);
+  const total = cum[cum.length - 1];
+  // The median is taken over ground sampled every 2 m along the path (length-weighted), not over the vertices:
+  // subdivision is dense exactly at bumps, which would otherwise outvote the flat ground around them
+  const step = 2;
+  const n = Math.max(2, Math.ceil(total / step) + 1);
+  const us: number[] = [], ug: number[] = [];
+  for (let k = 0; k < n; k++) {
+    const sk = Math.min(total, k * step);
+    const p = pointAt(d, cum, sk).pt;
+    us.push(sk);
+    ug.push(ground(p[0], p[1]));
+  }
+  const med = movingMedian(ug, us, windowM);
+  const medAt = (sv: number) => {
+    const k = Math.min(n - 2, Math.max(0, Math.floor(sv / step)));
+    const t = us[k + 1] > us[k] ? (sv - us[k]) / (us[k + 1] - us[k]) : 0;
+    return med[k] + (med[k + 1] - med[k]) * Math.min(1, Math.max(0, t));
+  };
+  return d.map((p, i) => {
+    const g = ground(p[0], p[1]);
+    const m = medAt(cum[i]);
+    const target = g - m > spikeTol ? m : Math.max(m, g - maxBury);
+    return [p[0], p[1], p[2] + target - g] as PathPt;
+  });
 }

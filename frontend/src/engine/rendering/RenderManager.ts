@@ -42,7 +42,10 @@ export class RenderManager {
     });
   }
 
+  private viewer: Viewer | null = null;
+
   public initialize(viewer: Viewer): void {
+    this.viewer = viewer;
     const getOpacity = (objId: string) => this.getObjectOpacity(objId);
     this.roadRenderer = new RoadRenderer(viewer, this.meshCache, this.spatialGrid, getOpacity);
     this.buildingRenderer = new BuildingRenderer(viewer, this.meshCache, this.spatialGrid, getOpacity);
@@ -368,6 +371,7 @@ export class RenderManager {
    * Clears everything
    */
   public clear(): void {
+    if (this.viewer) applySceneStyle(this.viewer, getVisualStyle());
     if (this.opacityRefreshTimeout) {
       clearTimeout(this.opacityRefreshTimeout);
       this.opacityRefreshTimeout = null;

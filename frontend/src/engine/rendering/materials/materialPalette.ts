@@ -31,13 +31,13 @@ export type MaterialId =
   | 'pipe';
 
 export const MATERIAL_COLORS: Record<MaterialId, string> = {
-  asphalt: '#55575a',
-  asphalt_deck: '#4d4f52',
+  asphalt: '#424448',
+  asphalt_deck: '#3c3e41',
   concrete_deck: '#b9b6ae',
   concrete_pier: '#c4c0b7',
   concrete_barrier: '#cfccc4',
   kerb_stone: '#9d9a93',
-  paver_footpath: '#8f8a84',
+  paver_footpath: '#8a837b',
   cycle_track: '#7a4f45', // red-tinted surfacing (assumed; Pune cycle tracks vary)
   grass_verge: '#5f7a3e',
   soil: '#8a7458',
