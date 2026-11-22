@@ -83,14 +83,14 @@
  ],
  "properties": {
   "roadClass": "local",
-  "width": 10,
+  "width": 11,
   "laneCount": 2,
   "laneWidth": 3.5,
   "hasDivider": false,
   "dividerWidth": 0,
   "hasFootpath": true,
-  "footpathWidth": 1.5,
-  "speedLimit": 40,
+  "footpathWidth": 2,
+  "speedLimit": 30,
   "isOneWay": false,
   "trafficCapacity": 2000,
   "connectedJunctions": [],
@@ -126,7 +126,7 @@
    {
     "startNodeIndex": 0,
     "endNodeIndex": 14,
-    "totalRowWidth": 10,
+    "totalRowWidth": 11,
     "wideningPossible": true,
     "hasMedian": false,
     "medianWidth": 0,
@@ -135,7 +135,7 @@
      "lanes": 1,
      "laneWidth": 3.5,
      "leftRoadside": {
-      "footpathWidth": 1.5,
+      "footpathWidth": 2,
       "cycleTrackWidth": 0,
       "vergeWidth": 0,
       "parkingWidth": 0,
@@ -161,7 +161,7 @@
       "drainageWidth": 0
      },
      "rightRoadside": {
-      "footpathWidth": 1.5,
+      "footpathWidth": 2,
       "cycleTrackWidth": 0,
       "vergeWidth": 0,
       "parkingWidth": 0,
