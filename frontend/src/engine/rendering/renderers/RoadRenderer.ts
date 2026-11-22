@@ -30,7 +30,7 @@ export class RoadRenderer extends TileBatchRenderer {
   }
 
   /** Traffic tint for one road. */
-  public setRoadColor(roadId: string, colorHex: string): void {
+  public setRoadColor(roadId: string, colorHex: string | null): void {
     this.setColor(roadId, colorHex);
   }
 }

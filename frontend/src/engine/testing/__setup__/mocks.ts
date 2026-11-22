@@ -95,7 +95,9 @@ vi.mock('cesium', () => ({
   PolylineGeometry: { createGeometry: vi.fn() },
   GroundPrimitive: vi.fn(),
   Primitive: vi.fn(),
-  PerInstanceColorAppearance: vi.fn(),
+  PerInstanceColorAppearance: Object.assign(vi.fn(), { VERTEX_FORMAT: {} }),
+  // Realistic style (LitTintAppearance / TexturedTintAppearance): custom shaders on a plain Appearance
+  Appearance: Object.assign(vi.fn(), { getDefaultRenderState: vi.fn(() => ({})) }),
   PolylineMaterialAppearance: vi.fn(),
   ColorGeometryInstanceAttribute: { fromColor: vi.fn() },
   GeometryAttribute: vi.fn(),

@@ -30,7 +30,7 @@ export class TransitRenderer extends TileBatchRenderer {
   }
 
   /** Traffic tint for a flyover deck. */
-  public setTransitColor(transitId: string, colorHex: string): void {
+  public setTransitColor(transitId: string, colorHex: string | null): void {
     this.setColor(transitId, colorHex);
   }
 }

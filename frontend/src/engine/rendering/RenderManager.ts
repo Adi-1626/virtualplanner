@@ -1,3 +1,5 @@
+import { getVisualStyle, onVisualStyleChange } from './visualStyle';
+import { applySceneStyle } from './sceneStyle';
 import { Viewer } from 'cesium';
 import type { CityObject } from '../objects/types';
 import { ProceduralGeometryGenerator } from './geometry/ProceduralGeometryGenerator';
@@ -45,7 +47,19 @@ export class RenderManager {
     this.roadRenderer = new RoadRenderer(viewer, this.meshCache, this.spatialGrid, getOpacity);
     this.buildingRenderer = new BuildingRenderer(viewer, this.meshCache, this.spatialGrid, getOpacity);
     this.transitRenderer = new TransitRenderer(viewer, this.meshCache, this.spatialGrid, getOpacity);
+    this.stopStyleWatch?.();
+    applySceneStyle(viewer, getVisualStyle());
+    // Visual style only changes appearance: meshes stay cached, loaded tiles rebuild their primitives
+    this.stopStyleWatch = onVisualStyleChange(style => {
+      applySceneStyle(viewer, style);
+      this.roadRenderer?.refreshAll();
+      this.buildingRenderer?.refreshAll();
+      this.transitRenderer?.refreshAll();
+      viewer.scene?.requestRender?.();
+    });
   }
+
+  private stopStyleWatch: (() => void) | null = null;
 
   public getObjectOpacity(objId: string): number {
     const obj = this.allObjects.get(objId);
@@ -252,7 +266,8 @@ export class RenderManager {
     }
   }
 
-  public setRoadColor(roadId: string, colorHex: string): void {
+  /** Traffic tint; null restores the colour the road was drawn with (style-dependent). */
+  public setRoadColor(roadId: string, colorHex: string | null): void {
     if (this.roadRenderer) {
       this.roadRenderer.setRoadColor(roadId, colorHex);
     }

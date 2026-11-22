@@ -11,6 +11,25 @@ import type { SubRenderer } from './SubRenderer';
 import { MeshCache } from '../cache/MeshCache';
 import { SpatialHashGrid } from '../spatial/SpatialHashGrid';
 import { withOpacity } from './opacity';
+import { getVisualStyle, type VisualStyle } from '../visualStyle';
+import { styleColor } from '../materials/materialPalette';
+import { createLitTintAppearance } from '../appearance/LitTintAppearance';
+import { creaseNormals } from '../geometry/creaseNormals';
+
+/** Hard-edge copies of cached meshes for Realistic, made once per mesh (meshes are immutable once cached). */
+const creased = new WeakMap<MeshData, MeshData>();
+export function realisticMesh(mesh: MeshData): MeshData {
+  let m = creased.get(mesh);
+  if (!m) {
+    const c = creaseNormals(mesh.positions, mesh.indices);
+    m = { ...mesh, positions: c.positions, indices: c.indices, normals: c.normals };
+    creased.set(mesh, m);
+  }
+  return m;
+}
+
+/** Build timings of the last rebuild, per style (read by the headless perf probe). */
+export const rebuildStats: { style: VisualStyle; ms: number; instances: number; primitives: number }[] = [];
 
 const SELECTION_COLOR = '#00ffff';
 
@@ -41,6 +60,8 @@ export abstract class TileBatchRenderer implements SubRenderer {
   /** Tiles whose rebuild must keep already-built layers (LOD expansion rather than content change). */
   private keepBuiltLayers = new Set<string>();
   private selections = new Set<string>();
+  /** Colour each object's tint layer was built with (style colour), so a tint can be reset. */
+  private baseColors = new Map<string, string>();
 
   private rebuildTimeout: ReturnType<typeof setTimeout> | null = null;
   protected currentHeight = 800;
@@ -112,6 +133,7 @@ export abstract class TileBatchRenderer implements SubRenderer {
     this.dirtyTiles.clear();
     this.keepBuiltLayers.clear();
     this.selections.clear();
+    this.baseColors.clear();
   }
 
   public unloadTile(tileKey: string): void {
@@ -153,11 +175,14 @@ export abstract class TileBatchRenderer implements SubRenderer {
    * Tints one object's instances on the GPU without a rebuild. Looks only at the
    * tiles that object occupies (item 29) instead of every tile in the city.
    */
-  public setColor(objId: string, colorHex: string): void {
+  public setColor(objId: string, colorHex: string | null): void {
     const layer = this.colorLayer();
     const tileKeys = this.objectTiles.get(objId);
     if (!layer || !tileKeys) return;
-    const value = ColorGeometryInstanceAttribute.toValue(withOpacity(colorHex, this.getOpacity(objId)));
+    // null = back to the colour it was built with (material colour in Realistic, legend colour in Schematic)
+    const hex = colorHex ?? this.baseColors.get(objId);
+    if (!hex) return;
+    const value = ColorGeometryInstanceAttribute.toValue(withOpacity(hex, this.getOpacity(objId)));
     for (const tileKey of tileKeys) {
       const prim = this.tilePrimitives.get(tileKey)?.get(layer);
       if (!prim) continue;
@@ -178,12 +203,18 @@ export abstract class TileBatchRenderer implements SubRenderer {
       this.rebuildTimeout = null;
       const start = performance.now();
       this.rebuildDirtyTiles();
-      this.onRebuilt(performance.now() - start);
+      const ms = performance.now() - start;
+      if (rebuildStats.length) rebuildStats[rebuildStats.length - 1].ms = ms;
+      this.onRebuilt(ms);
     }, 16);
   }
 
   private rebuildDirtyTiles() {
     const height = this.currentHeight;
+    const style = getVisualStyle();
+    const realistic = style === 'realistic';
+    let instanceCount = 0;
+    let primitiveCount = 0;
 
     this.dirtyTiles.forEach(tileKey => {
       const keep = this.keepBuiltLayers.has(tileKey) ? new Set(this.tilePrimitives.get(tileKey)?.keys() ?? []) : null;
@@ -191,6 +222,7 @@ export abstract class TileBatchRenderer implements SubRenderer {
 
       const objIds = this.spatialGrid.getObjectsInTiles([tileKey]).filter(id => this.objectTiles.has(id));
       if (objIds.length === 0) return;
+      for (const id of objIds) this.baseColors.delete(id);
 
       const instancesByLayer = new Map<string, GeometryInstance[]>();
       const translucentLayers = new Set<string>();
@@ -214,10 +246,12 @@ export abstract class TileBatchRenderer implements SubRenderer {
           if (opacity < 1) translucentLayers.add(layer);
           let list = instancesByLayer.get(layer);
           if (!list) instancesByLayer.set(layer, (list = []));
+          instanceCount++;
+          if (layer === this.colorLayer() && !this.baseColors.has(id)) this.baseColors.set(id, styleColor(mesh, style));
           list.push(new GeometryInstance({
-            geometry: CesiumAdapter.buildGeometry(mesh),
+            geometry: CesiumAdapter.buildGeometry(realistic ? realisticMesh(mesh) : mesh),
             attributes: {
-              color: ColorGeometryInstanceAttribute.fromColor(withOpacity(isSelected ? SELECTION_COLOR : mesh.material.color, opacity))
+              color: ColorGeometryInstanceAttribute.fromColor(withOpacity(isSelected ? SELECTION_COLOR : styleColor(mesh, style), opacity))
             },
             id
           }));
@@ -226,14 +260,15 @@ export abstract class TileBatchRenderer implements SubRenderer {
 
       const layers = new Map<string, Primitive>();
       instancesByLayer.forEach((instances, layer) => {
+        const translucent = translucentLayers.has(layer) || this.isAlwaysTranslucent(layer);
         const prim = new Primitive({
           geometryInstances: instances,
-          appearance: new PerInstanceColorAppearance({
-            flat: true,
-            translucent: translucentLayers.has(layer) || this.isAlwaysTranslucent(layer)
-          }),
+          appearance: realistic
+            ? createLitTintAppearance(translucent)
+            : new PerInstanceColorAppearance({ flat: true, translucent }),
           asynchronous: false
         });
+        primitiveCount++;
         prim.show = this.isLayerVisible(layer, height);
         this.viewer.scene.primitives.add(prim);
         layers.set(layer, prim);
@@ -245,5 +280,12 @@ export abstract class TileBatchRenderer implements SubRenderer {
 
     this.dirtyTiles.clear();
     this.keepBuiltLayers.clear();
+    rebuildStats.push({ style, ms: 0, instances: instanceCount, primitives: primitiveCount });
+    if (rebuildStats.length > 200) rebuildStats.shift();
+  }
+
+  /** Colour a mesh is drawn with now (style colour), for setColor resets by subclasses. */
+  protected baseColor(mesh: MeshData): string {
+    return styleColor(mesh, getVisualStyle());
   }
 }

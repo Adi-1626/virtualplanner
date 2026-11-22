@@ -1,6 +1,10 @@
+import type { MaterialId } from './materials/materialPalette';
+
 export interface MaterialConfig {
   type: 'solid' | 'dashed' | 'textured';
-  color: string;           // Hex or RGBA string
+  color: string;           // Hex or RGBA string (the Schematic / legend colour; also the base of traffic tint)
+  /** What the surface is made of; Realistic draws its material colour / texture. Derived from layer + colour when absent. */
+  materialId?: MaterialId;
   textureUrl?: string;     // Optional texture image URL
   dashPattern?: number;    // Dash pattern spacing (for polylines)
 }
