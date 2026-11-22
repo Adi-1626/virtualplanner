@@ -21,6 +21,9 @@ import {
   Cartesian3,
   PerspectiveFrustum
 } from 'cesium';
+import type { SnapResult } from './editing/SnapManager';
+import type { EditingMode } from './editing/EditingEngine';
+import { snapPreviewStale, snapPreviewWanted } from './editing/snapPreview';
 import { pxToMetres } from './editing/drawConstraints';
 import { TerrainHeightField, cellsFor, type GroundSampler } from './terrain/TerrainHeightField';
 import { setGroundField, getGroundField, scenePoint } from './terrain/groundHeight';
@@ -91,6 +94,8 @@ export class TwinCityEngine {
   private drawPreviewEntity: Entity | null = null;
   private drawMarkers: Entity[] = [];
   private snapReticleEntity: Entity | null = null;
+  /** Tool the snap marker was drawn for (snapPreview.ts). */
+  private snapPreviewMode: EditingMode | null = null;
   private gapPreviewEntity: Entity | null = null;
   private readonly roadHighlight = new RoadHighlight();
   private readonly junctionHighlight = new JunctionHighlight();
@@ -268,9 +273,13 @@ export class TwinCityEngine {
       }
       this.syncSavedAreasWithCesium();
       this.syncZonesAndGatewaysWithCesium();
-      if (this.editing.getMode() === 'select') {
+      // A tool change (or a tool that does not snap) removes the previous tool's snap marker and label
+      const mode = this.editing.getMode();
+      if (snapPreviewStale(this.snapPreviewMode, mode)) {
         this.clearSnapPreview();
+        this.editing.setActiveSnap(null);
       }
+      this.snapPreviewMode = mode;
     });
 
 
@@ -1428,7 +1437,8 @@ export class TwinCityEngine {
       return;
     }
 
-    const snap = this.editing.findSnap([mouseLng, mouseLat, mouseAlt]);
+    // The Study area outline never joins a road: no snap marker or label there
+    const snap: SnapResult = snapPreviewWanted(mode) ? this.editing.findSnap([mouseLng, mouseLat, mouseAlt]) : { point: [mouseLng, mouseLat, mouseAlt], type: 'none' };
     this.editing.setActiveSnap(snap.type !== 'none' ? snap : null);
 
     let activePoint: [number, number, number] = snap.type !== 'none' ? snap.point : [mouseLng, mouseLat, mouseAlt];
