@@ -22,8 +22,8 @@ import { summariseStudyArea, type StudyAreaSummary } from './studyAreaSummary';
 import { areaFromBoundary, buildingRing, geometryTouchesArea, type InfrastructureCategory, type StudyAreaImportOptions, type StudyAreaImportProgress, type StudyAreaImportReport } from './studyAreaImport';
 import { clipPolylineToPolygon, footprintInPolygon, pointInPolygon } from './polygonClip';
 import type { Certainty } from '../objects/certainty';
-import type { UndergroundAlignmentKind, UndergroundSection } from '../objects/types';
-import { buildAlignment, DRAWING_DEFAULTS } from '../underground/alignmentFactory';
+import type { UndergroundAlignmentKind, UndergroundAlignmentObject, UndergroundSection } from '../objects/types';
+import { buildAlignment, DRAWING_DEFAULTS, withDepthControls } from '../underground/alignmentFactory';
 import { initialUtilityDepths, withUtilityZ } from '../underground/utilityModel';
 import type { UtilityObject } from '../objects/types';
 import {
@@ -1262,6 +1262,13 @@ export class EditingEngine {
       const n = pis.length - 1;
       if (distanceM([pis[n].lon, pis[n].lat], last) < AUTO_CONNECT_M + 5) { pis[n].lon = last[0]; pis[n].lat = last[1]; }
       newObj = { ...newObj, alignment: { ...alignment, pis } } as CityObject;
+      // A drawn tunnel stores its depth controls at the PIs (the drawing depth, typed, not derived) with the per-vertex
+      // depths derived from them, as the shape editor and the depth table expect (before, only derived controls existed)
+      if (newObj.type === 'underground_alignment') {
+        const u = newObj as UndergroundAlignmentObject;
+        const e = u.depths?.[0];
+        newObj = withDepthControls(u, pis.map(() => ({ crownDepthM: e?.crownDepthM ?? null, certainty: e?.certainty ?? 'unknown' })));
+      }
     }
 
     if (newObj && (newObj.type === 'flyover' || newObj.type === 'metro_flyover')) {
