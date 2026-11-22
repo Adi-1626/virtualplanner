@@ -9,7 +9,8 @@ import { ObjectManager } from '../objects/ObjectManager';
 import { HistoryManager } from '../history/HistoryManager';
 import { EditingEngine } from '../editing/EditingEngine';
 import { touchingRoadHeight } from '../editing/autoConnect';
-import type { RoadObject, UndergroundAlignmentObject } from '../objects/types';
+import type { RoadObject, UndergroundAlignmentObject, UtilityObject } from '../objects/types';
+import { utilityDepthControls, withUtilityControlDepth } from '../underground/utilityModel';
 import { editableOf } from '../editing/AlignmentEditor';
 
 const O: Pt3 = [73.85, 18.5, 0];
@@ -200,6 +201,50 @@ describe('EditingEngine line drawing', () => {
     // the shape editor takes them as stored
     const ed = editableOf(t);
     expect(ed.kind === 'editable' && ed.state.depthControls).toEqual(t.depthControls);
+  });
+
+  it('a newly drawn utility stores typed depth controls at its PIs (typed depth, or the type default)', () => {
+    const { om, editing } = setup();
+    editing.setMode('draw_utility');
+    editing.utilityType = 'sewage';
+    editing.utilityDepthM = 2.5;
+    editing.utilityDepthCertainty = 'estimated';
+    const p1 = at(0, 300), p2 = at(90, 300, p1);
+    editing.addDrawingPoint(O);
+    editing.addDrawingPoint(p1);
+    editing.addDrawingPoint(p2);
+    editing.finalizeDrawing('base');
+    const u = om.getAll().find(o => o.type === 'utility') as UtilityObject;
+    expect(u.alignment?.pis).toHaveLength(3);
+    expect(u.depthControls).toHaveLength(3);
+    for (const c of u.depthControls!) {
+      expect(c.depthM).toBe(2.5);
+      expect(c.certainty).toBe('estimated');
+      expect((c as { derived?: boolean }).derived).toBeUndefined();
+    }
+    expect(u.depths).toHaveLength(u.coordinates.length);
+    expect(u.depths!.every(d => d.depthM === 2.5)).toBe(true);
+    // the depth table reads them as typed controls (not derived), and editing one PI moves only the derived depths near it
+    expect(utilityDepthControls(u)!.every(c => !c.derived)).toBe(true);
+    const ed = editableOf(u);
+    expect(ed.kind === 'editable' && ed.state.depthControls).toEqual(u.depthControls);
+    const e = withUtilityControlDepth(u, 2, { depthM: 4 });
+    expect(e.depthControls![0].depthM).toBe(2.5);
+    expect(e.depthControls![2].depthM).toBe(4);
+    expect(e.depths![e.depths!.length - 1].depthM).toBe(4);
+  });
+
+  it('a newly drawn utility with no typed depth gets the type default at its PIs, marked default', () => {
+    const { om, editing } = setup();
+    editing.setMode('draw_utility');
+    editing.utilityType = 'water';
+    editing.utilityDepthM = null;
+    editing.addDrawingPoint(O);
+    editing.addDrawingPoint(at(0, 200));
+    editing.finalizeDrawing('base');
+    const u = om.getAll().find(o => o.type === 'utility') as UtilityObject;
+    expect(u.depthControls).toHaveLength(2);
+    expect(u.depthControls!.every(c => c.isDefault === true && c.certainty === 'hypothetical' && c.depthM !== null)).toBe(true);
   });
 
   it('Ctrl+click gives a sharp corner: coordinates are the clicked points', () => {

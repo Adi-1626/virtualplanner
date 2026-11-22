@@ -1277,6 +1277,13 @@ export class EditingEngine {
         const e = u.depths?.[0];
         newObj = withDepthControls(u, pis.map(() => ({ crownDepthM: e?.crownDepthM ?? null, certainty: e?.certainty ?? 'unknown' })));
       }
+      // A drawn utility likewise: its drawing depth (typed, or the type's typical cover marked as a default) at each PI,
+      // the per-vertex depths derived from them. Before, it had per-vertex depths only and its controls were derived
+      if (newObj.type === 'utility') {
+        const typed = this.utilityDepthM !== null && Number.isFinite(this.utilityDepthM) && this.utilityDepthM > 0 ? this.utilityDepthM : null;
+        newObj = withUtilityZ(newObj as UtilityObject, { controls: initialUtilityDepths(pis.length, this.utilityType, typed, this.utilityDepthCertainty) });
+        (newObj as UtilityObject).updatedAt = (newObj as UtilityObject).createdAt;
+      }
     }
 
     if (newObj && (newObj.type === 'flyover' || newObj.type === 'metro_flyover')) {
