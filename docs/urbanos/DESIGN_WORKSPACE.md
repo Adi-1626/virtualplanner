@@ -144,3 +144,11 @@ Details and sources: [GEOMETRY_EDITOR_DESIGN.md §11](GEOMETRY_EDITOR_DESIGN.md)
 | Utility tool | Depth controls at PIs were derived only | Typed drawing depth (or the type default, marked) stored at each PI; per-vertex depths derived |
 
 Verified by unit tests only in this branch (no browser run): `FlyoverRamp`, `DrawElevation`, `BridgeFeasibility`, `GeometryCommit`, `DrawConstraints`, `TopologyProperty`.
+
+## Fixes from the p5 QA pass (branch `p6-fixes`, 2026-11-22)
+
+Each fix has its own commit and a targeted unit test; no browser re-run in this branch unless stated.
+
+| # | Issue (p5 QA) | Now |
+|---|---|---|
+| 1 | Study area imported while a proposal was open went into the proposal (F10): Compare/Simulate treated the existing city as additions | `importStudyArea` always writes to the base city (the scenario argument is ignored); the Study area panel says so while a proposal is open. Rows already imported into a proposal by the old code are **not** migrated. Test: `StudyAreaImport.test.ts` "existing city data lands in Base" |

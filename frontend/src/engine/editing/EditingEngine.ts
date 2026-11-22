@@ -1905,7 +1905,15 @@ export class EditingEngine {
     return zone?.type === 'zone' ? areaFromBoundary(`zone-boundary:${zone.id}`, zone.name, zone.coordinates) : null;
   }
 
-  public async importStudyArea(area: Area, scenarioId: string, categories: InfrastructureCategory[], options: StudyAreaImportOptions = {}): Promise<StudyAreaImportReport> {
+  /**
+   * Loads existing city data (OpenStreetMap roads, buildings, metro, signals) for a study area.
+   * What is already built belongs to the base city, never to a proposal: an import made while a
+   * proposal is open still lands in Base (PROJECTS_WORKSPACE.md), otherwise Compare and Simulate
+   * would treat the existing city as the proposal's additions. `_requestedScenarioId` is kept for
+   * callers and ignored.
+   */
+  public async importStudyArea(area: Area, _requestedScenarioId: string, categories: InfrastructureCategory[], options: StudyAreaImportOptions = {}): Promise<StudyAreaImportReport> {
+    const scenarioId = BASE_SCENARIO_ID;
     const clip = !!options.clipToBoundary;
     if (this.locked) throw new Error('Import is available in Build mode.');
     if (this.isImporting) throw new Error('An import is already running.');

@@ -125,3 +125,15 @@ describe('junction placement connections', () => {
     expect(()=>editing.finalizeDrawing('base')).toThrow(/two road approaches/);
   });
 });
+
+describe('existing city data lands in Base', () => {
+  it('imports into the base city even when a proposal id is passed', async () => {
+    const { editing, fetch, om } = setup();
+    fetch.mockImplementation(async (_a, category) => category === 'roads' ? [way(11)] : category === 'buildings' ? [building(12)] : []);
+    const report = await editing.importStudyArea(area, 'proposal_abc', ['roads', 'buildings']);
+    expect(report.completed).toBe(true);
+    const imported = om.getAll().filter(o => o.id.startsWith('osm_'));
+    expect(imported.length).toBeGreaterThanOrEqual(2);
+    for (const o of imported) expect(o.scenarioId).toBe('base');
+  });
+});

@@ -7,6 +7,7 @@ import { formatWhen } from '../../lib/formatWhen';
 import type { LocalOsmStatus } from '../../engine/editing/LocalOsmIndex';
 import type { Area } from '../../engine/objects/types';
 import { STUDY_AREA_ROADS_PREFIX } from '../../engine/simulation/osmCoverage';
+import { BASE_SCENARIO_ID } from '../../engine/scenarios/ScenarioManager';
 import { API_BASE, trackedFetch } from '../../lib/api';
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
 
@@ -152,7 +153,7 @@ export const ImportAreaPanel: React.FC = () => {
   const runImport = useCallback(async (area: Area, cats: InfrastructureCategory[], clip: boolean) => {
     setFailure(null);
     try {
-      const outcome = await ed.importStudyArea(area, engineInstance.scenarios.getActiveScenarioId(), cats, { clipToBoundary: clip });
+      const outcome = await ed.importStudyArea(area, BASE_SCENARIO_ID, cats, { clipToBoundary: clip });
       if (outcome.cancelled) toast('Loading cancelled; what was loaded is kept.', 'info');
       else if (outcome.categories.every(c => c.error)) setFailure(outcome.categories[0]?.error ?? 'No data could be loaded.');
     } catch (err: any) {
@@ -206,6 +207,11 @@ export const ImportAreaPanel: React.FC = () => {
   return (
     <div className="flex flex-col gap-2.5" data-testid="study-area-panel">
       <SourceLine status={status} />
+      {engineInstance.scenarios.getActiveScenarioId() !== BASE_SCENARIO_ID && (
+        <p className="text-meta text-text-2" data-testid="study-base-note">
+          Existing city data loads into the base city, not into the open proposal, so every alternative is compared against the same existing city.
+        </p>
+      )}
 
       {/* Drawing */}
       <div className="flex items-center gap-1" role="radiogroup" aria-label="Area shape">
