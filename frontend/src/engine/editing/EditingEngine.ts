@@ -9,6 +9,7 @@ import { LocalOsmIndex } from './LocalOsmIndex';
 import { findNearestTrack } from '../objects/stationAlignment';
 import { utilityLayerId } from '../layers/LayerManager';
 import { findRoadEndGaps, insertRoadVertex, markGeometryEdited, type RoadEndGap } from './roadGaps';
+import { addedVerticesOf, mergeAdded, verticesInsertedBy } from './addedVertices';
 import { classifyOsmWay, findNonDrivableOsmRoads, type NonDrivableRoad } from './osmDrivability';
 import { STUDY_AREA_ROADS_PREFIX } from '../simulation/osmCoverage';
 import { BASE_SCENARIO_ID } from '../scenarios/ScenarioManager';
@@ -22,8 +23,8 @@ import { summariseStudyArea, type StudyAreaSummary } from './studyAreaSummary';
 import { areaFromBoundary, buildingRing, geometryTouchesArea, type InfrastructureCategory, type StudyAreaImportOptions, type StudyAreaImportProgress, type StudyAreaImportReport } from './studyAreaImport';
 import { clipPolylineToPolygon, footprintInPolygon, pointInPolygon } from './polygonClip';
 import type { Certainty } from '../objects/certainty';
-import type { UndergroundAlignmentKind, UndergroundSection } from '../objects/types';
-import { buildAlignment, DRAWING_DEFAULTS } from '../underground/alignmentFactory';
+import type { UndergroundAlignmentKind, UndergroundAlignmentObject, UndergroundSection } from '../objects/types';
+import { buildAlignment, DRAWING_DEFAULTS, withDepthControls } from '../underground/alignmentFactory';
 import { initialUtilityDepths, withUtilityZ } from '../underground/utilityModel';
 import type { UtilityObject } from '../objects/types';
 import {
@@ -760,6 +761,8 @@ export class EditingEngine {
       }
       const r2 = withVertex(road);
       if (r2) roadChanges = { ...roadChanges, coordinates: r2.coordinates, ...(r2.sections ? { sections: r2.sections } : {}) } as Partial<CityObject>;
+      const added = verticesInsertedBy(diffs, road.id);
+      if (added.length) roadChanges = { ...roadChanges, addedNetworkVertices: mergeAdded(addedVerticesOf(road), added) } as Partial<CityObject>;
     }
     this.objectManager.update(road.id, roadChanges);
     diffs.push({ type: 'update', id: road.id, before: road, after: this.objectManager.getById(road.id)!, description: decision === 'junction' ? 'Confirm junction' : 'Keep crossing separate' });
@@ -1262,6 +1265,13 @@ export class EditingEngine {
       const n = pis.length - 1;
       if (distanceM([pis[n].lon, pis[n].lat], last) < AUTO_CONNECT_M + 5) { pis[n].lon = last[0]; pis[n].lat = last[1]; }
       newObj = { ...newObj, alignment: { ...alignment, pis } } as CityObject;
+      // A drawn tunnel stores its depth controls at the PIs (the drawing depth, typed, not derived) with the per-vertex
+      // depths derived from them, as the shape editor and the depth table expect (before, only derived controls existed)
+      if (newObj.type === 'underground_alignment') {
+        const u = newObj as UndergroundAlignmentObject;
+        const e = u.depths?.[0];
+        newObj = withDepthControls(u, pis.map(() => ({ crownDepthM: e?.crownDepthM ?? null, certainty: e?.certainty ?? 'unknown' })));
+      }
     }
 
     if (newObj && (newObj.type === 'flyover' || newObj.type === 'metro_flyover')) {
@@ -1281,6 +1291,12 @@ export class EditingEngine {
         this.objectManager.update(u.id, u.updates);
         splitDiffs.push({ type: 'update', id: u.id, before, after: this.objectManager.getById(u.id)!, description: `Ramp merge on ${before.name || before.id}` });
       }
+    }
+
+    if (newObj && (newObj.type === 'road' || newObj.type === 'flyover' || newObj.type === 'metro_flyover')) {
+      // Vertices this line put into other roads, so a later reshape can take back the ones it no longer uses
+      const added = verticesInsertedBy(splitDiffs, newObj.id);
+      if (added.length) newObj = { ...newObj, addedNetworkVertices: added } as CityObject;
     }
 
     if (newObj) {

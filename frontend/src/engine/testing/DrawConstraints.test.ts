@@ -9,7 +9,8 @@ import { ObjectManager } from '../objects/ObjectManager';
 import { HistoryManager } from '../history/HistoryManager';
 import { EditingEngine } from '../editing/EditingEngine';
 import { touchingRoadHeight } from '../editing/autoConnect';
-import type { RoadObject } from '../objects/types';
+import type { RoadObject, UndergroundAlignmentObject } from '../objects/types';
+import { editableOf } from '../editing/AlignmentEditor';
 
 const O: Pt3 = [73.85, 18.5, 0];
 const at = (b: number, m: number, from: Pt3 = O) => destination(from, b, m);
@@ -175,6 +176,30 @@ describe('EditingEngine line drawing', () => {
     expect(road.alignment!.pis[1].radiusM).toBeGreaterThan(0);
     expect(road.coordinates.length).toBeGreaterThan(3);
     expect(road.coordinates[0][0]).toBeCloseTo(O[0], 9);
+  });
+
+  it('a newly drawn tunnel stores typed depth controls at its PIs (not only derived ones)', () => {
+    const { om, editing } = setup();
+    editing.setMode('draw_underground');
+    const p1 = at(0, 400), p2 = at(90, 400, p1);
+    editing.addDrawingPoint(O);
+    editing.addDrawingPoint(p1);
+    editing.addDrawingPoint(p2);
+    editing.finalizeDrawing('base');
+    const t = om.getAll().find(o => o.type === 'underground_alignment') as UndergroundAlignmentObject;
+    expect(t.alignment?.pis).toHaveLength(3);
+    expect(t.depthControls).toHaveLength(3);
+    for (const c of t.depthControls!) {
+      expect(c.crownDepthM).toBe(15); // DRAWING_DEFAULTS.bored_tunnel, hypothetical
+      expect(c.certainty).toBe('hypothetical');
+      expect((c as { derived?: boolean }).derived).toBeUndefined();
+    }
+    // per-vertex depths are derived from the controls along the densified line
+    expect(t.depths).toHaveLength(t.coordinates.length);
+    expect(t.depths!.every(d => d.crownDepthM === 15)).toBe(true);
+    // the shape editor takes them as stored
+    const ed = editableOf(t);
+    expect(ed.kind === 'editable' && ed.state.depthControls).toEqual(t.depthControls);
   });
 
   it('Ctrl+click gives a sharp corner: coordinates are the clicked points', () => {

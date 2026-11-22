@@ -1,7 +1,7 @@
 // Shape editor after drawing (docs/urbanos/GEOMETRY_EDITOR_DESIGN.md §4.2, phase 2 agent C).
 import { describe, expect, it } from 'vitest';
 import {
-  AlignmentEditSession, commitGeometry, regenerateLocal, deletePI, editableOf, handlesFor, insertPI, makeCurve, makeSharp, movePI, radiusFromDrag,
+  AlignmentEditSession, bisectorDistanceM, commitGeometry, gripSeparationPx, GRIP_MIN_SEPARATION_PX, regenerateLocal, deletePI, editableOf, handlesFor, insertPI, makeCurve, makeSharp, movePI, radiusFromDrag,
   setRadius, summarise, type EditState,
 } from '../editing/AlignmentEditor';
 import { destination, type Pt3 } from '../editing/drawConstraints';
@@ -75,6 +75,56 @@ describe('pure edit operations', () => {
     // Dragging past what fits is clamped to the fit rule
     const far = radiusFromDrag(s.alignment, 1, O[0], O[1])!;
     expect(far).toBeLessThanOrEqual(300.01);
+  });
+
+  it('small radius: the radius grip is pushed clear of the PI grip on screen, both stay clickable', () => {
+    // Arc midpoint 3 px from the PI (small radius): pushed out along PI → grip to the minimum separation
+    const o = gripSeparationPx({ x: 100, y: 100 }, { x: 103, y: 100 });
+    expect(o[0] + 103 - 100).toBeCloseTo(GRIP_MIN_SEPARATION_PX, 6);
+    expect(o[1]).toBeCloseTo(0, 9);
+    // Coincident on screen: along the bisector given, else straight down; never left on the PI
+    const c = gripSeparationPx({ x: 50, y: 50 }, { x: 50, y: 50 }, 20, { x: 3, y: 4 });
+    expect(c[0]).toBeCloseTo(12, 6);
+    expect(c[1]).toBeCloseTo(16, 6);
+    expect(gripSeparationPx({ x: 50, y: 50 }, { x: 50, y: 50 }, 20)).toEqual([0, 20]);
+    // Far enough already (large radius / zoomed in): untouched
+    expect(gripSeparationPx({ x: 0, y: 0 }, { x: 30, y: 0 })).toEqual([0, 0]);
+    // 16 px icons: centres ≥ 20 px apart do not overlap
+    expect(GRIP_MIN_SEPARATION_PX).toBeGreaterThanOrEqual(17);
+  });
+
+  it('a radius grip grabbed where it is drawn (pushed off the arc) drags relative to the grab: no jump', () => {
+    const { om, editing, session } = setup();
+    const r = drawRoad(editing, om, [O, P1, P2]);
+    session.setTarget(r.id);
+    expect(session.setRadius(1, 8)).toBe(true); // small radius: arc midpoint ~2.3 m from the PI
+    const a = (om.getById(r.id) as RoadObject).alignment!;
+    const grip = session.getSnapshot().handles.find(h => h.id === 'align_radius_1')!;
+    const e0 = bisectorDistanceM(a, 1, grip.lon, grip.lat)!;
+    expect(e0).toBeGreaterThan(0);
+    expect(e0).toBeLessThan(5);
+    // Where the diamond is drawn: 15 m further out along the bisector than the arc midpoint
+    const along = (m: number): [number, number] => {
+      const k = m / Math.max(e0, 1e-9);
+      return [a.pis[1].lon + (grip.lon - a.pis[1].lon) * k, a.pis[1].lat + (grip.lat - a.pis[1].lat) * k];
+    };
+    const grabbed = along(e0 + 15);
+    expect(session.pointerDown('align_radius_1', grabbed)).toBe(true);
+    session.pointerMove(grabbed[0], grabbed[1]);
+    expect(session.getSnapshot().state!.alignment.pis[1].radiusM).toBeCloseTo(8, 0);
+    // Moving 2 m further changes E by 2 m, as it would on the arc midpoint itself
+    const further = along(e0 + 17);
+    session.pointerMove(further[0], further[1]);
+    const rel = session.getSnapshot().state!.alignment.pis[1].radiusM;
+    const direct = radiusFromDrag(a, 1, along(e0 + 2)[0], along(e0 + 2)[1])!;
+    expect(rel).toBeCloseTo(direct, 0);
+    expect(session.pointerUp()).toBe(true);
+    expect((om.getById(r.id) as RoadObject).alignment!.pis[1].radiusM).toBeCloseTo(direct, 0);
+    // Without a grab point (old callers) the drag is absolute, as before
+    session.pointerDown('align_radius_1');
+    session.pointerMove(grabbed[0], grabbed[1]);
+    expect(session.getSnapshot().state!.alignment.pis[1].radiusM).toBeGreaterThan(direct + 20);
+    session.cancelDrag();
   });
 
   it('handles: one per PI, one midpoint per tangent, a radius grip per curve, ⚠ on a warned curve', () => {

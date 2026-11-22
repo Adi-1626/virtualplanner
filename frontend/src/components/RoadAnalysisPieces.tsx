@@ -80,7 +80,7 @@ export const WorstKpis: React.FC<{ r: RoadAnalysisResult }> = ({ r }) => {
   return (
     <div className="space-y-1.5" data-testid="kpis">
       <div className="flex items-center justify-between text-[11px] text-slate-500">
-        <span className="inline-flex items-center gap-1.5"><span className="font-semibold uppercase tracking-wide">Worst direction</span><TrustBadge trust="fails_validation" testId="trust-kpis" /></span>
+        <span className="font-semibold uppercase tracking-wide">Worst direction</span>
         <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: directionColor(w.index) }} />{dirName(d)} · {Math.round(d.labelBearingDeg ?? d.bearingDeg)}°</span>
       </div>
       <div className="grid grid-cols-4 gap-1.5">

@@ -12,7 +12,8 @@
  *
  * `regenerateGeometry` is the pure part (no network, no history), used for tunnels, utilities and metro lines as a
  * whole and by the network pipeline. The traffic graph rebuild follows the object update as for any other edit.
- * Vertices an earlier crossing inserted into OTHER roads are left in place: on a straight they are shape points only.
+ * Vertices this line's crossings / end junctions inserted into OTHER roads (recorded as `addedNetworkVertices`) are taken
+ * back when the reshaped line no longer passes through them, in the same Undo step (editing/addedVertices.ts).
  */
 import type { CityObject, FlyoverObject, MetroFlyoverObject, RoadObject, UndergroundAlignmentObject, UtilityObject } from '../objects/types';
 import type { ObjectManager } from '../objects/ObjectManager';
@@ -26,6 +27,7 @@ import type { AlignableObjectType, HorizontalAlignment } from '../geometry/align
 import { connectEnds, AUTO_CONNECT_M } from './autoConnect';
 import { carryCrossingDecisions, planDistM, type LevelCrossing } from './levelCrossings';
 import { insertRoadVertex, markGeometryEdited } from './roadGaps';
+import { addedVerticesOf, mergeAdded, pruneStaleAddedVertices, verticesInsertedBy } from './addedVertices';
 import { applyFlyoverElevationProfile } from '../objects/flyoverHelper';
 import { filterObjectsForScenario } from '../scenarios/scenarioFilter';
 import { remapControls, depthsFromControls } from '../underground/depthControls';
@@ -221,6 +223,15 @@ export function commitGeometry(obj: CityObject, alignment: HorizontalAlignment, 
         diffs.push({ type: 'update', id: r.id, before: r, after: objects.getById(r.id)!, description: `Ramp merge removed from ${r.name || r.id}` });
       }
     }
+
+    // 6. Vertices this line put into other roads earlier and no longer passes through are taken back (only ours)
+    const pruned = pruneStaleAddedVertices(obj.id, addedVerticesOf(before), next.coordinates, { objects, scenarioId });
+    diffs.push(...pruned.diffs);
+    const added = mergeAdded(pruned.kept, verticesInsertedBy(diffs, obj.id).filter(v => {
+      const r = objects.getById(v.roadId) as { coordinates?: Pt3[] } | undefined;
+      return !!r?.coordinates?.some(c => planDistM(c, v.point) < 0.05);
+    }));
+    if (added.length) next.addedNetworkVertices = added; else delete next.addedNetworkVertices;
   }
 
   objects.update(obj.id, asCity(next), false, true);

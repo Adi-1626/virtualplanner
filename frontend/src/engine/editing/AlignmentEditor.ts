@@ -181,11 +181,17 @@ export function setEMax(s: EditState, eMax: 0.04 | 0.07): EditState {
 }
 
 /**
- * Radius from a drag of the radius grip: the arc midpoint lies on the bisector at E = R(sec(Δ/2) − 1) from the PI, so
- * R = E / (sec(Δ/2) − 1), E = the cursor's distance from the PI measured along the bisector (towards the curve).
- * Clamped to the largest radius that fits; Shift snaps to 5 m. null when the PI has no turn.
+ * Signed distance (m) of a point from PI `i` measured along the PI's bisector, positive towards the curve (the side the
+ * arc midpoint lies on). null at an end PI or a PI with no turn.
  */
-export function radiusFromDrag(a: HorizontalAlignment, i: number, lon: number, lat: number, snap5 = false): number | null {
+export function bisectorDistanceM(a: HorizontalAlignment, i: number, lon: number, lat: number): number | null {
+  const g = bisectorFrame(a, i);
+  if (!g) return null;
+  const C = toXY(g.proj, [lon, lat]);
+  return (C[0] - g.P[0]) * g.bis[0] + (C[1] - g.P[1]) * g.bis[1];
+}
+
+function bisectorFrame(a: HorizontalAlignment, i: number) {
   if (isEnd(a, i)) return null;
   const pis = a.pis;
   const proj = alignmentProjector(pis);
@@ -197,9 +203,22 @@ export function radiusFromDrag(a: HorizontalAlignment, i: number, lon: number, l
   const dot = Math.max(-1, Math.min(1, ua[0] * ub[0] + ua[1] * ub[1]));
   const delta = Math.PI - Math.acos(dot); // deflection
   if (delta < (0.5 * Math.PI) / 180) return null;
-  const C = toXY(proj, [lon, lat]);
-  const E = Math.max(0, (C[0] - P[0]) * bis[0] + (C[1] - P[1]) * bis[1]);
-  const k = 1 / Math.cos(delta / 2) - 1;
+  return { proj, P, bis, delta };
+}
+
+/**
+ * Radius from a drag of the radius grip: the arc midpoint lies on the bisector at E = R(sec(Δ/2) − 1) from the PI, so
+ * R = E / (sec(Δ/2) − 1), E = the cursor's distance from the PI measured along the bisector (towards the curve), less
+ * `grabOffsetM` (how far along the bisector the grip was grabbed from the arc midpoint: the grip may be drawn pushed
+ * away from the PI grip at small radii, AlignmentEditorView, and the radius must not jump when the drag starts).
+ * Clamped to the largest radius that fits; Shift snaps to 5 m. null when the PI has no turn.
+ */
+export function radiusFromDrag(a: HorizontalAlignment, i: number, lon: number, lat: number, snap5 = false, grabOffsetM = 0): number | null {
+  const g = bisectorFrame(a, i);
+  if (!g) return null;
+  const C = toXY(g.proj, [lon, lat]);
+  const E = Math.max(0, (C[0] - g.P[0]) * g.bis[0] + (C[1] - g.P[1]) * g.bis[1] - grabOffsetM);
+  const k = 1 / Math.cos(g.delta / 2) - 1;
   let r = k > 1e-9 ? E / k : 0;
   const fit = maxFittingRadius(a, i);
   if (Number.isFinite(fit)) r = Math.min(r, fit);
@@ -255,6 +274,26 @@ export function handlesFor(a: HorizontalAlignment, flags: readonly AlignmentFlag
     out.push({ id: `align_warn_${fl.piIndex}`, kind: 'warn', index: fl.piIndex, lon: ll[0], lat: ll[1], title: fl.message });
   }
   return out;
+}
+
+/** Smallest screen distance (px) between a PI grip's centre and its radius grip's: both 16 px icons stay clickable. */
+export const GRIP_MIN_SEPARATION_PX = 20;
+
+/**
+ * Screen offset (px) for a radius grip drawn at `grip` so it is at least `minPx` from its PI grip at `pi` (window
+ * coordinates, y down). At small radii (or zoomed out) the arc midpoint is only a few pixels from the PI and the
+ * diamond sat on the square. The grip is pushed outward along PI → grip; when the two coincide, along `fallbackDir`
+ * (the bisector on screen, towards the curve), else straight down. [0, 0] when they are already far enough apart.
+ */
+export function gripSeparationPx(pi: { x: number; y: number }, grip: { x: number; y: number }, minPx = GRIP_MIN_SEPARATION_PX,
+  fallbackDir?: { x: number; y: number } | null): [number, number] {
+  const dx = grip.x - pi.x, dy = grip.y - pi.y;
+  const d = Math.hypot(dx, dy);
+  if (d >= minPx) return [0, 0];
+  let u: V2 | null = d > 0.5 ? [dx / d, dy / d] : null;
+  if (!u && fallbackDir) u = norm([fallbackDir.x, fallbackDir.y]);
+  if (!u) u = [0, 1];
+  return [pi.x + u[0] * minPx - grip.x, pi.y + u[1] * minPx - grip.y];
 }
 
 // ---- panel rows -------------------------------------------------------------------------------------------------------------
@@ -397,7 +436,7 @@ export interface AlignmentEditorDeps {
 }
 
 type DragKind = 'pi' | 'end' | 'radius';
-interface Drag { kind: DragKind; index: number; start: EditState; current: EditState; moved: boolean; inserted: boolean }
+interface Drag { kind: DragKind; index: number; start: EditState; current: EditState; moved: boolean; inserted: boolean; grabOffsetM: number }
 
 export interface ContextMenuState { index: number; x: number; y: number; isEnd: boolean; radiusM: number; behaviour: 'curved' | 'angled'; canDelete: boolean }
 
@@ -474,8 +513,11 @@ export class AlignmentEditSession {
     this.listeners.forEach(l => l());
   }
 
-  /** Mouse down on a grip. Returns true when the editor took the gesture. */
-  pointerDown(handleId: string): boolean {
+  /**
+   * Mouse down on a grip. Returns true when the editor took the gesture. `at` = the ground point under the cursor: a
+   * radius grip drawn pushed off its arc midpoint (small radii) is then dragged relative to where it was grabbed.
+   */
+  pointerDown(handleId: string, at?: readonly [number, number] | readonly number[] | null): boolean {
     const h = parseHandleId(handleId);
     const state = this.current();
     if (!h || !state || this.editable.kind !== 'editable' || h.kind === 'warn') return false;
@@ -486,9 +528,16 @@ export class AlignmentEditSession {
       if (!hd) return false;
       const ins = insertPI(state, h.index, hd.lon, hd.lat, { tbm: this.tbm(), autoCurve: this.deps.autoCurve?.() });
       if (!ins) return false;
-      this.drag = { kind: 'pi', index: h.index + 1, start: state, current: ins, moved: false, inserted: true };
+      this.drag = { kind: 'pi', index: h.index + 1, start: state, current: ins, moved: false, inserted: true, grabOffsetM: 0 };
     } else {
-      this.drag = { kind: h.kind === 'radius' ? 'radius' : h.kind === 'end' ? 'end' : 'pi', index: h.index, start: state, current: state, moved: false, inserted: false };
+      let grabOffsetM = 0;
+      const hd = h.kind === 'radius' && at ? this.snap.handles.find(x => x.id === handleId) : undefined;
+      if (hd && at) {
+        const eAt = bisectorDistanceM(state.alignment, h.index, at[0], at[1]);
+        const eGrip = bisectorDistanceM(state.alignment, h.index, hd.lon, hd.lat);
+        if (eAt !== null && eGrip !== null) grabOffsetM = eAt - eGrip;
+      }
+      this.drag = { kind: h.kind === 'radius' ? 'radius' : h.kind === 'end' ? 'end' : 'pi', index: h.index, start: state, current: state, moved: false, inserted: false, grabOffsetM };
     }
     this.emit();
     return true;
@@ -500,7 +549,7 @@ export class AlignmentEditSession {
     if (!d) return false;
     let next: EditState | null;
     if (d.kind === 'radius') {
-      const r = radiusFromDrag(d.current.alignment, d.index, lon, lat, !!mods.shift);
+      const r = radiusFromDrag(d.current.alignment, d.index, lon, lat, !!mods.shift, d.grabOffsetM);
       next = r === null ? null : setRadius(d.current, d.index, r, 'user');
     } else {
       next = movePI(d.current, d.index, lon, lat);

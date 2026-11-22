@@ -108,3 +108,20 @@ export function versionNote(note: string, vs: FactsVersion[]): string {
 export function rollbackTargets(vs: FactsVersion[]): FactsVersion[] {
   return vs.filter(v => v.review_status === 'superseded');
 }
+
+/**
+ * The service status line of the Fact updates pane, for a reviewer: plain words, never a command to type (reviewers
+ * do not run the service; the data administrator does).
+ */
+export function runStatusText(error: boolean, lastRun: { started_at?: string | null; errors: readonly unknown[] } | null | undefined): string {
+  if (error) return 'Last run unknown (the server did not answer).';
+  if (lastRun) return `Last run ${lastRun.started_at?.slice(0, 16).replace('T', ' ')} UTC · ${lastRun.errors.length} source error(s)`;
+  return 'The service has not checked the official sites yet. New facts will appear here after its first check.';
+}
+
+/** Notice for facts of the active version that are not from an official source (hidden), with the reviewer's next step. */
+export function withheldText(n: number): string {
+  const one = n === 1;
+  return `${n} fact${one ? '' : 's'} in the active version ${one ? 'is' : 'are'} not from an official source and ${one ? 'is' : 'are'} hidden from the app. `
+    + `Nothing is needed from you to keep ${one ? 'it' : 'them'} hidden. Ask your data administrator to replace that version with one that keeps only the official facts.`;
+}
