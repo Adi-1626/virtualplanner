@@ -28,6 +28,8 @@ import { CapacityStretchCard, LaneInsightCard } from './LaneBottleneckCard';
 import { ComparisonHourNote, EvidenceTag, ResultHeading } from './simulate/SimulatePieces';
 import { useShellStore } from '../shell/useShellStore';
 import { JunctionCompareCard } from './JunctionCompareCard';
+import { baselineSaveLabel, baselineScenarioWarning, type BaselineScenarioInfo } from './simulate/baselineScenario';
+import { BASE_SCENARIO_ID } from '../engine/scenarios/ScenarioManager';
 import {
   StatusChip, StatusHeader, WorstKpis, DirectionsGrid, WhyCard, LoadCard, AccountingCard, SourcesCard, BottlenecksCard, SuggestionCard, PerRunDetail, MethodNote, type AnalysisActions,
 } from './RoadAnalysisPieces';
@@ -312,6 +314,10 @@ export const ScenarioTest: React.FC<{ sim: SimulationModeState }> = ({ sim }) =>
   const setWorkspace = useShellStore(s => s.setWorkspace);
   const { baseline, result, staleReason, running, progress, demandChanged, showingProposal } = sim.comparison;
   const busy = running || sim.osmRoads.status === 'loading' || sim.signals.status === 'loading';
+  const scenOf = (): BaselineScenarioInfo => { const a = engineInstance.scenarios.getActiveScenario(); return { isProposal: !!a && !a.isBase, name: a?.name ?? '' }; };
+  const [scen, setScen] = React.useState<BaselineScenarioInfo>(scenOf);
+  React.useEffect(() => engineInstance.scenarios.onChange(() => setScen(scenOf())), []);
+  const scenWarning = baselineScenarioWarning(scen, !!baseline);
   const steps = [
     { n: 1, label: 'Save existing city', done: !!baseline, title: baseline ? `Saved at ${hourLabel(baseline.hour)}, ${fmt(baseline.demandVph)} veh/h of demand` : 'Save the existing city as the baseline' },
     { n: 2, label: 'Change it in Design', done: showingProposal || !!result, title: 'Draw or edit roads, lanes, junctions or signals in the Design workspace, then come back here', action: () => setWorkspace('design') },
@@ -336,9 +342,14 @@ export const ScenarioTest: React.FC<{ sim: SimulationModeState }> = ({ sim }) =>
         </ol>
         {baseline && <p className="text-[11px] text-slate-500">Baseline: {hourLabel(baseline.hour)}, {fmt(baseline.demandVph)} veh/h of demand · {mode.analysisSeeds.length} seeds on both</p>}
         <div className="flex gap-2 flex-wrap">
-          <Button size="sm" icon={running && !baseline ? Loader2 : Flag} spin={running && !baseline} disabled={busy} onClick={() => void mode.captureBaseline()}>{baseline ? 'Save again' : 'Save existing city'}</Button>
+          <Button size="sm" icon={running && !baseline ? Loader2 : Flag} spin={running && !baseline} disabled={busy} onClick={() => void mode.captureBaseline()}>{baselineSaveLabel(scen, !!baseline)}</Button>
           <Button size="sm" variant="primary" icon={running && baseline ? Loader2 : GitCompareArrows} spin={running && !!baseline} disabled={busy || !baseline} onClick={() => void mode.runComparison()}>Compare</Button>
         </div>
+        {scenWarning && (
+          <Notice tone="warn" icon={Info} action={<Button size="sm" variant="ghost" onClick={() => engineInstance.scenarios.setActiveScenario(BASE_SCENARIO_ID)}>Switch to Base</Button>}>
+            <span data-testid="baseline-scenario-warning">{scenWarning}</span>
+          </Notice>
+        )}
         {running && <div className="h-1 rounded-full bg-white/10 overflow-hidden"><div className="h-full bg-indigo-400" style={{ width: `${Math.round(progress * 100)}%` }} /></div>}
         {staleReason && <p role="status" className="text-xs text-amber-300">{staleReason}</p>}
         {demandChanged && !running && (
