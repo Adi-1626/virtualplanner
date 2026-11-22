@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import { toolByHotkey } from '../components/tools';
+import { DRAW_HEIGHT_FINE_STEP_M, DRAW_HEIGHT_STEP_M } from '../engine/editing/drawConstraints';
 
 interface ShortcutHandlers {
   /** Ask the UI to confirm deleting the object with this id. */
@@ -57,6 +58,7 @@ function handleSimulationKey(e: KeyboardEvent): boolean {
  *   Backspace      edit the typed number, else remove the last point
  *   Ctrl+Z         remove the last point (the global undo stack is untouched until finish)
  *   Shift / Alt+Shift (held)   snap direction to 15° / to 15° relative to the previous segment
+ *   PageUp / PageDown  Road tool: raise / lower the next point 1 m (Shift: 0.5 m); Flyover / double-deck: the deck height
  *   Ctrl+Z         undo
  *   Ctrl+Y         redo (also Ctrl+Shift+Z)
  *   Delete         delete selected object (with confirmation)
@@ -83,6 +85,17 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
       const key = e.key;
 
       if (engineInstance.isSimulationModeActive() && handleSimulationKey(e)) return;
+
+      // Elevation while drawing (road point height / flyover deck height); before the first point too
+      if ((key === 'PageUp' || key === 'PageDown') && !ctrl && !e.altKey && editing.drawHeightKind()) {
+        const step = e.shiftKey ? DRAW_HEIGHT_FINE_STEP_M : DRAW_HEIGHT_STEP_M;
+        const r = editing.stepDrawHeight(key === 'PageUp' ? step : -step);
+        if (r && editing.getDrawingPoints().length === 0) {
+          (window as any).showToast?.(`${r.kind === 'road' ? 'Next point' : 'Deck'} ${r.heightM.toFixed(1)} m above ground`, 'info');
+        }
+        e.preventDefault();
+        return;
+      }
 
       // Line drawing in progress: typed length / bearing / radius and drawing-local undo come first
       const lineDrawing = editing.isAlignableDrawing() && editing.getDrawingPoints().length > 0;

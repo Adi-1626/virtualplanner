@@ -29,7 +29,8 @@ import { initialUtilityDepths, withUtilityZ } from '../underground/utilityModel'
 import type { UtilityObject } from '../objects/types';
 import {
   alignableTypeForMode, applyTypedKey, buildDrawAlignment, densifyWithZ, drawAlignmentSettings, drawReadout, emptyTypedInput,
-  guideFromRoadEnd, hasTypedInput, isNearDuplicate, resolveCursor, snapRadiiDeg, typedValues, distanceM,
+  guideFromRoadEnd, hasTypedInput, isNearDuplicate, resolveCursor, snapRadiiDeg, typedValues, distanceM, steppedHeight,
+  DECK_HEIGHT_DEFAULT_M, DECK_HEIGHT_MAX_M, DECK_HEIGHT_MIN_M, DRAW_HEIGHT_MAX_M,
   type AngleSnapMode, type DrawRadius, type DrawReadoutData, type ResolvedCursor, type TangentGuide, type TypedInput,
 } from './drawConstraints';
 import type { HorizontalAlignment } from '../geometry/alignment/index';
@@ -152,6 +153,14 @@ export class EditingEngine {
   public utilityDepthCertainty: Certainty = 'hypothetical';
   /** null = unknown diameter (never stored as 0). */
   public utilityDiameterMm: number | null = null;
+  /**
+   * Elevation while drawing (PageUp / PageDown, Shift for 0.5 m steps). Road tool: height above ground of the next point
+   * (and the ones after it; back to the ground for each new road); a point snapped to a road keeps that road's height.
+   * Flyover / double-deck tools: the deck height the new structure gets (its ramps follow from it, flyoverRamp.ts).
+   * Both are HYPOTHETICAL design inputs.
+   */
+  public drawHeightM = 0;
+  public flyoverDeckHeightM = DECK_HEIGHT_DEFAULT_M;
   /** Underground alignment tool (docs/urbanos/UNDERGROUND_WORKSPACE.md): drawing defaults are HYPOTHETICAL placeholders. */
   public undergroundKind: UndergroundAlignmentKind = 'bored_tunnel';
   public undergroundCrownDepthM: number | null = DRAWING_DEFAULTS.bored_tunnel.crownDepthM;
@@ -397,6 +406,7 @@ export class EditingEngine {
   public clearDrawing() {
     this.drawingPoints = [];
     this.drawingRadii = [];
+    this.drawHeightM = 0;
     this.typed = emptyTypedInput();
     this.guide = null;
     this.lastCursor = null;
@@ -432,10 +442,38 @@ export class EditingEngine {
 
   private resolveWith(raw: [number, number, number], snap: SnapResult | null): ResolvedCursor {
     const networkSnapped = !!snap && snap.type !== 'none';
-    return resolveCursor({
+    return this.withDrawHeight(resolveCursor({
       points: this.drawingPoints, cursor: networkSnapped ? snap!.point : raw, networkSnapped,
       angleSnap: this.angleSnap, typed: this.typed, guide: this.guide, metresPerPixel: this.metresPerPixel,
-    });
+    }));
+  }
+
+  /** Road tool: the next point at the PageUp/PageDown height (a point snapped to a road keeps that road's height). */
+  private withDrawHeight(r: ResolvedCursor): ResolvedCursor {
+    if (this.activeMode !== 'draw_road' || r.constraint === 'network') return r;
+    return { ...r, point: [r.point[0], r.point[1], this.drawHeightM] };
+  }
+
+  /** Which height PageUp / PageDown changes in the current tool, or null when the tool has none. */
+  public drawHeightKind(mode: EditingMode = this.activeMode): 'road' | 'deck' | null {
+    if (mode === 'draw_road') return 'road';
+    if (mode === 'draw_flyover' || mode === 'draw_metro_flyover') return 'deck';
+    return null;
+  }
+
+  /**
+   * PageUp / PageDown while drawing: road → the next point's height above ground (0 … 30 m); flyover → the deck height
+   * (1 … 30 m). Steps snap to 0.5 m. Returns what changed, or null when the tool has no height.
+   */
+  public stepDrawHeight(deltaM: number): { kind: 'road' | 'deck'; heightM: number } | null {
+    const kind = this.drawHeightKind();
+    if (!kind) return null;
+    if (kind === 'road') this.drawHeightM = steppedHeight(this.drawHeightM, deltaM, 0, DRAW_HEIGHT_MAX_M);
+    else this.flyoverDeckHeightM = steppedHeight(this.flyoverDeckHeightM, deltaM, DECK_HEIGHT_MIN_M, DECK_HEIGHT_MAX_M);
+    if (this.lastRawCursor) this.resolveDrawCursor(this.lastRawCursor);
+    else this.emitReadout();
+    this.notify();
+    return { kind, heightM: kind === 'road' ? this.drawHeightM : this.flyoverDeckHeightM };
   }
 
   /** Where the next point would go for this cursor position (used by the preview); updates the readout. */
@@ -500,10 +538,10 @@ export class EditingEngine {
     if (v.lengthM === null && v.bearingDeg === null) { this.clearTypedInput(); return true; }
     const last = this.drawingPoints[this.drawingPoints.length - 1];
     const raw = this.lastRawCursor ?? last;
-    const res = resolveCursor({
+    const res = this.withDrawHeight(resolveCursor({
       points: this.drawingPoints, cursor: raw, networkSnapped: false, angleSnap: this.angleSnap, typed: this.typed,
       guide: this.guide, metresPerPixel: this.metresPerPixel,
-    });
+    }));
     if (distanceM(last, res.point) < 0.01) { this.clearTypedInput(); return true; }
     this.drawingPoints.push(res.point);
     this.drawingRadii.length = this.drawingPoints.length - 1;
@@ -562,7 +600,10 @@ export class EditingEngine {
   public getDrawReadout(): DrawReadoutData | null {
     const s = this.currentDrawSettings();
     if (!s || this.drawingPoints.length === 0) return null;
-    return drawReadout(this.drawingPoints, this.drawingRadii, s, this.lastCursor, this.typed, this.drawCheckOptions());
+    const kind = this.drawHeightKind();
+    const vertical = kind === 'road' ? { kind, roadClass: this.roadClass } as const
+      : kind === 'deck' ? { kind, deckHeightM: this.flyoverDeckHeightM, roadClass: this.roadClass } as const : undefined;
+    return drawReadout(this.drawingPoints, this.drawingRadii, s, this.lastCursor, this.typed, { ...this.drawCheckOptions(), vertical });
   }
 
   public cancelDrawing() {
@@ -1091,7 +1132,7 @@ export class EditingEngine {
         footpathWidth: cls.footpathWidth,
         speedLimit: cls.flyoverSpeed,
         isOneWay: false,
-        elevation: 6.0,
+        elevation: this.flyoverDeckHeightM,
         pierSpacing: 30.0,
         createdAt,
         updatedAt: createdAt
@@ -1120,8 +1161,9 @@ export class EditingEngine {
         footpathWidth: cls.footpathWidth,
         speedLimit: cls.flyoverSpeed,
         isOneWay: false,
-        elevation: 6.0,
-        metroElevation: 12.0,
+        elevation: this.flyoverDeckHeightM,
+        // The metro deck stays 6 m above the road deck at least (12 m over the default 6 m road deck)
+        metroElevation: Math.max(12.0, this.flyoverDeckHeightM + 6),
         pierSpacing: 30.0,
         createdAt,
         updatedAt: createdAt
