@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Fact, FactsVersion, Proposal } from '../../lib/freshnessApi';
 import { ApplyBar, ProposalCard, type ProposalActions } from '../../components/data/FactUpdatesPane';
-import { approvedNotApplied, changeLine, flagLabel, conflictSummary, groupProposals, needsNote, proposalIsOfficial, rollbackTargets, versionNote } from '../../components/data/factUpdatesModel';
+import { approvedNotApplied, changeLine, flagLabel, conflictSummary, groupProposals, needsNote, proposalIsOfficial, rollbackTargets, runStatusText, versionNote, withheldText } from '../../components/data/factUpdatesModel';
 import { loadReportedFacts, reportedDepthFor, reportedDepthText, reportedFacts, setReportedFacts } from '../underground/reportedFacts';
 import { DEPTH_NOT_MAPPED, NO_OFFICIAL_STATION_DEPTH, NO_OFFICIAL_TUNNEL_DEPTH, objectTip } from '../underground/hoverInfo';
 import { allOfficial, isOfficialUrl, officialDomain } from '../../lib/officialSources';
@@ -209,6 +209,32 @@ describe('Underground: official tunnel depth in the metro tooltip (official sour
     await fresh.loadReportedFacts(async () => ({ facts: [fact, newsFact], sha256_ok: true }));
     expect(fresh.reportedFacts()).toEqual([fact]);
     expect(mod).toBeTruthy();
+  });
+});
+
+describe('Fact updates pane: reviewer next steps are in plain words', () => {
+  const CLI = /python|-m updater|migrate-official-only|\brun\b.*updater/i;
+  it('withheld facts: what happens and who to ask, no command to type', () => {
+    for (const n of [1, 3]) {
+      const t = withheldText(n);
+      expect(t).not.toMatch(CLI);
+      expect(t).toContain('hidden from the app');
+      expect(t).toContain('data administrator');
+    }
+    expect(withheldText(1)).toMatch(/^1 fact in the active version is not/);
+    expect(withheldText(2)).toMatch(/^2 facts in the active version are not/);
+  });
+  it('service status line has no command either', () => {
+    expect(runStatusText(false, null)).not.toMatch(CLI);
+    expect(runStatusText(true, null)).toBe('Last run unknown (the server did not answer).');
+    expect(runStatusText(false, { started_at: '2026-11-21T05:30:00', errors: [1] })).toBe('Last run 2026-11-21 05:30 UTC · 1 source error(s)');
+  });
+  it('the pane itself shows no command-line text', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const src = readFileSync(join(__dirname, '../../components/data/FactUpdatesPane.tsx'), 'utf8')
+      .split('\n').filter(l => !/^\s*(\/\*\*|\*|\/\/)/.test(l)).join('\n');
+    expect(src).not.toMatch(/python -m|migrate-official-only/);
   });
 });
 

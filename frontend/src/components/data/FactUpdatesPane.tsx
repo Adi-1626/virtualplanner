@@ -7,6 +7,7 @@ import { Disclosure } from '../ui/Disclosure';
 import {
   CONFIDENCE_HELP, CONFIDENCE_LABEL, CONFIDENCE_TONE, STATUS_LABEL, flagLabel, approvedNotApplied, changeLine,
   conflictSummary, evidenceDate, evidenceSource, groupProposals, needsNote, proposalIsOfficial, rollbackTargets, sourceCount, versionNote,
+  runStatusText, withheldText,
 } from './factUpdatesModel';
 
 const TONE_COLOR = { good: 'var(--measured, #3FB950)', warn: 'var(--warn, #E8833A)', bad: 'var(--fail, #FF6B61)', unknown: 'var(--unknown, #9AA4B2)' };
@@ -124,7 +125,7 @@ export const ApplyBar: React.FC<{ approved: Proposal[]; versions: FactsVersion[]
   );
 };
 
-/** Data catalogue → Fact updates: the review queue of `python -m updater` (docs/urbanos/DATA_FRESHNESS_SERVICE.md). */
+/** Data catalogue → Fact updates: the review queue of the data-freshness service (backend/updater) (docs/urbanos/DATA_FRESHNESS_SERVICE.md). */
 export const FactUpdatesPane: React.FC = () => {
   const [list, setList] = useState<Proposal[] | null>(null);
   const [versions, setVersions] = useState<FactsVersion[]>([]);
@@ -161,7 +162,7 @@ export const FactUpdatesPane: React.FC = () => {
       </p>
       {error && <p className="text-label text-warn" role="status">Could not load the review queue ({error}).</p>}
       <div className="flex items-center gap-2 text-meta text-text-3 flex-wrap">
-        <span>{error ? 'Last run unknown (the server did not answer).' : lastRun ? `Last run ${lastRun.started_at?.slice(0, 16).replace('T', ' ')} UTC · ${lastRun.errors.length} source error(s)` : 'The service has not run yet (python -m updater run).'}</span>
+        <span>{runStatusText(!!error, lastRun)}</span>
         {status && !status.audit.ok && <span style={{ color: TONE_COLOR.bad }}>Audit log check failed: {status.audit.reason}</span>}
         <span className="flex-1" />
         <button type="button" className="uos-btn uos-btn-sm" onClick={load} aria-label="Reload review queue"><RefreshCw size={13} aria-hidden />Reload</button>
@@ -169,8 +170,7 @@ export const FactUpdatesPane: React.FC = () => {
       {!error && !!status?.facts.withheld?.length && (
         <p className="text-label flex items-start gap-1" style={{ color: TONE_COLOR.warn }} role="status" data-testid="facts-withheld">
           <TriangleAlert size={13} aria-hidden className="mt-0.5 shrink-0" />
-          {status.facts.withheld.length} fact{status.facts.withheld.length === 1 ? '' : 's'} in the active version {status.facts.withheld.length === 1 ? 'is' : 'are'} not
-          from an official source and {status.facts.withheld.length === 1 ? 'is' : 'are'} hidden from the app. Run python -m updater migrate-official-only to replace that version.</p>
+          {withheldText(status.facts.withheld.length)}</p>
       )}
       {!reviewer && <p className="text-label" style={{ color: TONE_COLOR.warn }}>Set your name (Traffic data or Projects) to approve, reject or apply.</p>}
       {!error && <ApplyBar approved={approved} versions={versions} reviewer={reviewer} busy={busy}
