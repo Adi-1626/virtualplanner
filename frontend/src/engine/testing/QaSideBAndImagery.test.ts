@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { otherSideLabel, recordRef, sideBLabel, sideBRefShown } from '../../lib/planningProjects';
-import { baseImageryErrorMessage, watchImageryErrors } from '../../lib/baseImageryErrors';
+import { baseImageryReason } from '../../lib/baseImageryErrors';
 import type { ProjectIssue } from '../../lib/coordinationApi';
 
 const f = (b_type: string, b_ref: string, b: Record<string, unknown> = {}) => ({ b_type, b_ref, evidence: { b } }) as never;
@@ -31,23 +31,10 @@ describe('side B labels (Underground conflict check + Projects conflicts)', () =
 });
 
 describe('base imagery errors', () => {
-  const coll = () => {
-    const listeners: ((l: unknown) => void)[] = [];
-    const mk = () => { const fns: ((e: unknown) => void)[] = []; return { errorEvent: { addEventListener: (fn: (e: unknown) => void) => fns.push(fn) }, fire: (e: unknown) => fns.forEach(x => x(e)) }; };
-    const first = mk();
-    return { first, mk, c: { length: 1, get: () => first, layerAdded: { addEventListener: (fn: (l: unknown) => void) => { listeners.push(fn); return () => {}; } } }, add: (l: unknown) => listeners.forEach(x => x(l)) };
-  };
-  it('reports a failed base layer once, in words, for current and later layers', () => {
-    const t = coll(); const notify = vi.fn();
-    watchImageryErrors(t.c as never, notify);
-    t.first.fire({ statusCode: 401 });
-    const later = t.mk(); t.add(later); later.fire({ statusCode: 500 });
-    expect(notify).toHaveBeenCalledTimes(1);
-    expect(notify.mock.calls[0][0]).toMatch(/HTTP 401.*VITE_CESIUM_ION_TOKEN/);
-  });
-  it('messages for other failures', () => {
-    expect(baseImageryErrorMessage({ statusCode: 503 })).toMatch(/HTTP 503/);
-    expect(baseImageryErrorMessage(new Error('x'))).toMatch(/no response/);
+  it('says why a request failed in words (the fallback itself is tested in BaseMapFallback.test.ts)', () => {
+    expect(baseImageryReason({ statusCode: 401 })).toBe('access refused (HTTP 401)');
+    expect(baseImageryReason({ statusCode: 503 })).toBe('HTTP 503');
+    expect(baseImageryReason(new Error('x'))).toBe('no response');
   });
 });
 
@@ -58,50 +45,5 @@ describe('Explore inspector dates', () => {
     expect(readableWhen('2025-11-25T15:53:16.852943 UTC (CKAN last_modified)')).toBe('2025-11-25 15:53 UTC (CKAN last_modified)');
     expect(readableWhen('2025-01-02T03:04:05Z')).toBe('2025-01-02 03:04 UTC');
     expect(readableWhen('Fri 2026-11-13 9:48 PM IST (UTC+05:30)')).toBe('Fri 2026-11-13 9:48 PM IST (UTC+05:30)');
-  });
-});
-
-describe('base imagery notice on the map', () => {
-  const layer = (base: boolean) => {
-    const fns: ((e: unknown) => void)[] = [];
-    return { isBaseLayer: () => base, errorEvent: { addEventListener: (f: (e: unknown) => void) => { fns.push(f); } }, fail: (e: unknown) => fns.forEach(f => f(e)) };
-  };
-  const coll = (first: ReturnType<typeof layer>) => {
-    const added: ((l: unknown) => void)[] = [];
-    return { c: { length: 1, get: () => first, layerAdded: { addEventListener: (f: (l: unknown) => void) => { added.push(f); return () => {}; } } }, add: (l: unknown) => added.forEach(f => f(l)) };
-  };
-
-  it('says why there is no imagery while the failed base layer is the base, and clears when another base replaces it', async () => {
-    const { watchBaseImageryState } = await import('../../lib/baseImageryErrors');
-    const first = layer(true); const t = coll(first); const states: (string | null)[] = [];
-    watchBaseImageryState(t.c as never, s => states.push(s));
-    first.fail({ statusCode: 401 });
-    expect(states.at(-1)).toBe('No base imagery: access refused (HTTP 401). City data is unaffected.');
-    t.add(layer(false));                 // an environment / terrain overlay: the notice stays
-    expect(states.at(-1)).toMatch(/HTTP 401/);
-    const next = layer(true); t.add(next); // the picker put another base layer in
-    expect(states.at(-1)).toBeNull();
-    first.fail({ statusCode: 401 });     // a late error of the replaced layer is not shown
-    expect(states.at(-1)).toBeNull();
-    next.fail({});
-    expect(states.at(-1)).toBe('No base imagery: no response. City data is unaffected.');
-  });
-
-  it('takes a failed base layer out (the globe waits for it forever) and turns ground atmosphere off until another base is added', async () => {
-    const { dropFailedBaseLayer } = await import('../../lib/baseImageryErrors');
-    const first = layer(true); const t = coll(first); const removed: unknown[] = [];
-    const globe = { showGroundAtmosphere: true, baseColor: 'navy' as unknown };
-    dropFailedBaseLayer({ ...t.c, remove: (l: unknown) => { removed.push(l); return true; } } as never, globe, 'dark');
-    first.fail({ statusCode: 401 });
-    expect(removed).toEqual([first]);
-    expect(globe.showGroundAtmosphere).toBe(false);
-    expect(globe.baseColor).toBe('dark');
-    t.add(layer(false));                 // an overlay: nothing changes
-    expect(globe.showGroundAtmosphere).toBe(false);
-    t.add(layer(true));                  // the picker added another base layer
-    expect(globe.showGroundAtmosphere).toBe(true);
-    expect(globe.baseColor).toBe('navy');
-    first.fail({ statusCode: 401 });     // late error of the replaced layer: ignored
-    expect(removed.length).toBe(1);
   });
 });

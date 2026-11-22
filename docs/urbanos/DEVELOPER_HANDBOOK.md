@@ -367,6 +367,23 @@ batch one Cesium `Primitive` per tile and layer. Plan and rationale: `BUILD_VISU
 - **Junction markings hook.** `RenderManager.setJunctionMarkings(items, visible)` draws the junction tool's IRC:35
   marking items (`junctionMarkingInput.ts` mirrors the tool's `MarkingItem`) as one painted primitive, rebuilt on style
   change.
+- **Base map and ground colour (`lib/baseMap.ts`, wired in `components/Viewport3D.tsx`).** Fallback chain, one switch
+  per failure and no retry loop: Cesium ion satellite (only when `VITE_CESIUM_ION_TOKEN` is set; without one the ion
+  models are left out of the base-layer picker, so nothing is requested that can only 401) → OpenStreetMap standard
+  tiles (`https://tile.openstreetmap.org/`, `maximumLevel` 19, credit "© OpenStreetMap contributors", which the map's
+  attribution link always shows; failed tiles are not retried, no prefetch beyond Cesium's defaults) → no base map.
+  A source counts as failed when its layer's `errorEvent` fires (provider creation: 401, offline) or when its first 8
+  tiles fail with none loaded (`watchTileHealth`: tile errors never reach the layer's `errorEvent`; seen headless,
+  where ion started fine and every Bing tile was 404). The switch goes through the picker
+  (`baseLayerPicker.viewModel.selectedImagery`), which also removes the failed layer (a failed base layer left in
+  keeps the globe from drawing, see `DESIGN_CONTROLS_TRANSIT_UNDERGROUND.md`); with no base map, ground atmosphere is
+  off. `globe.baseColor` (what shows under missing or loading tiles) is `#8a8a80` (earthy grey-beige) in Realistic
+  and `#6e7072` (muted neutral) in Schematic, re-applied on style change; never Cesium's default navy. Underground
+  view only changes translucency / underground colour, so it is unaffected. Explore › Layers › Base map shows the
+  active source ("Satellite (Cesium ion)", "OpenStreetMap map (fallback: ion unavailable)", "No base map"); the map
+  notice appears only when there is no base map after failures. Tests: `engine/testing/BaseMapFallback.test.ts`.
+  OSM tiles need a real browser User-Agent and Referer: a proxy that drops them gets OSM's "Access blocked" tile
+  (HTTP 200, so it cannot be detected).
 - **Tests:** `engine/testing/Visuals*.test.ts` (geometry, rendering, props, portals, junction markings). Headless
   timings: `window.__rebuildStats` and `window.last_road_rebuild_time` are read by the perf probe.
 

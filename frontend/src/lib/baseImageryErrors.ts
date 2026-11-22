@@ -1,93 +1,12 @@
 /**
- * Base-map imagery (Cesium ion / the base-layer picker) is created asynchronously by Cesium. When that creation fails
- * (no network, an invalid or missing ion token: HTTP 401) Cesium logs the raw RequestErrorEvent to the console unless the
- * layer's errorEvent has a listener. We listen, and tell the user once in words instead.
+ * Words for a failed base-map request (no network, an invalid or missing ion token: HTTP 401). The fallback itself
+ * (ion → OpenStreetMap → plain ground) is in `baseMap.ts`; Cesium logs the raw RequestErrorEvent to the console unless
+ * the layer's errorEvent has a listener, and that controller listens.
  */
-interface ErrorEventLike { addEventListener(fn: (err: unknown) => void): unknown }
-interface LayerLike { errorEvent?: ErrorEventLike; isBaseLayer?: () => boolean }
-interface LayerCollectionLike { length: number; get(i: number): LayerLike; layerAdded: { addEventListener(fn: (layer: LayerLike) => void): () => void } }
-
 function statusOf(err: unknown): unknown { return (err as { statusCode?: unknown } | null)?.statusCode; }
 
-/** The lasting map notice: why there is no base imagery, in a few words. */
-export function baseImageryNotice(err: unknown): string {
+/** Why a request failed, in a few words: "access refused (HTTP 401)", "HTTP 503", "no response". */
+export function baseImageryReason(err: unknown): string {
   const status = statusOf(err);
-  const why = status === 401 || status === 403 ? `access refused (HTTP ${status})` : typeof status === 'number' ? `HTTP ${status}` : 'no response';
-  return `No base imagery: ${why}. City data is unaffected.`;
-}
-
-export function baseImageryErrorMessage(err: unknown): string {
-  const status = statusOf(err);
-  const why = status === 401 || status === 403 ? `access refused (HTTP ${status}); check VITE_CESIUM_ION_TOKEN`
-    : typeof status === 'number' ? `HTTP ${status}` : 'no response; check the connection';
-  return `Base map imagery could not be loaded (${why}). The map is shown without satellite imagery; city data is unaffected.`;
-}
-
-/** Attaches an error listener to every current and future imagery layer; notify runs at most once per watcher. Returns the unsubscribe. */
-export function watchImageryErrors(layers: LayerCollectionLike, notify: (message: string) => void): () => void {
-  let told = false;
-  const seen = new WeakSet<object>();
-  const watch = (layer: LayerLike) => {
-    if (!layer?.errorEvent || seen.has(layer)) return;
-    seen.add(layer);
-    layer.errorEvent.addEventListener(err => {
-      if (told) return;
-      told = true;
-      notify(baseImageryErrorMessage(err));
-    });
-  };
-  for (let i = 0; i < layers.length; i++) watch(layers.get(i));
-  return layers.layerAdded.addEventListener(watch);
-}
-
-/**
- * The base map's state for a lasting notice on the map (the toast above goes after a few seconds and left a plain blue
- * globe unexplained): `onState(notice)` when the base layer fails, `onState(null)` when another base layer is put in
- * its place (the base-layer picker), so the notice never outlives the failure it reports. Overlay layers (environment,
- * terrain) do not touch it. Returns the unsubscribe.
- */
-export function watchBaseImageryState(layers: LayerCollectionLike, onState: (message: string | null) => void): () => void {
-  let current: LayerLike | null = null;
-  const watch = (layer: LayerLike) => {
-    if (!layer?.errorEvent || layer === current) return;
-    current = layer;
-    onState(null);
-    layer.errorEvent.addEventListener(err => { if (current === layer) onState(baseImageryNotice(err)); });
-  };
-  if (layers.length > 0) watch(layers.get(0));
-  return layers.layerAdded.addEventListener(layer => { if (layer?.isBaseLayer?.()) watch(layer); });
-}
-
-interface RemovableLayers extends LayerCollectionLike { remove(layer: LayerLike, destroy?: boolean): boolean }
-interface GlobeLike { showGroundAtmosphere: boolean; baseColor: unknown }
-
-/**
- * A base layer whose provider failed (no ion token: HTTP 401, offline) never becomes ready, and Cesium keeps every
- * globe tile waiting for it: the globe is never drawn (the sky shows through between the roads) and nothing that is
- * draped on the ground shows either: clamped polylines (study-area and zone outlines, drawing previews) and ground
- * polygons classify the globe's surface, so with no surface they draw nothing. Found in headless Chromium, but it is
- * the same in any browser without base imagery (docs/urbanos/DESIGN_CONTROLS_TRANSIT_UNDERGROUND.md).
- * The failed layer is taken out so the globe draws; meanwhile it is a plain dark `bareColor` with ground atmosphere off
- * (Cesium's default navy base colour under the atmosphere reads as a bright blue sheet, like water). Both come back
- * when the picker adds another base layer.
- * Returns the unsubscribe.
- */
-export function dropFailedBaseLayer(layers: RemovableLayers, globe: GlobeLike, bareColor?: unknown): () => void {
-  const atmosphere = globe.showGroundAtmosphere;
-  const base = globe.baseColor;
-  let current: LayerLike | null = null;
-  const watch = (layer: LayerLike) => {
-    if (!layer?.errorEvent || layer === current) return;
-    current = layer;
-    globe.showGroundAtmosphere = atmosphere;
-    globe.baseColor = base;
-    layer.errorEvent.addEventListener(() => {
-      if (current !== layer) return;
-      layers.remove(layer, false);
-      globe.showGroundAtmosphere = false;
-      if (bareColor !== undefined) globe.baseColor = bareColor;
-    });
-  };
-  if (layers.length > 0) watch(layers.get(0));
-  return layers.layerAdded.addEventListener(layer => { if (layer?.isBaseLayer?.()) watch(layer); });
+  return status === 401 || status === 403 ? `access refused (HTTP ${status})` : typeof status === 'number' ? `HTTP ${status}` : 'no response';
 }

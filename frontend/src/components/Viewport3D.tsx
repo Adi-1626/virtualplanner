@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { cesiumIonToken } from '../lib/cesiumToken';
-import { dropFailedBaseLayer, watchBaseImageryState, watchImageryErrors } from '../lib/baseImageryErrors';
+import { baseMapNotice, groundColorFor, watchTileHealth, installBaseMapFallback, onBaseMapState, OSM_ATTRIBUTION, OSM_MAX_LEVEL, OSM_TILE_URL } from '../lib/baseMap';
+import { getVisualStyle, onVisualStyleChange } from '../engine/rendering/visualStyle';
 import {
   Viewer,
   Ion,
@@ -8,7 +9,10 @@ import {
   Cartesian3,
   Math as CesiumMath,
   ScreenSpaceEventType,
-  Color
+  Color,
+  OpenStreetMapImageryProvider,
+  ProviderViewModel as ProviderViewModelCtor,
+  buildModuleUrl
 } from 'cesium';
 import * as CesiumNs from 'cesium';
 import { engineInstance } from '../engine/TwinCityEngine';
@@ -27,16 +31,36 @@ export const Viewport3D: React.FC = () => {
       Ion.defaultAccessToken = ionToken;
     }
 
-    // The base-layer picker's own models, with its default (first) one selected explicitly: otherwise the widget first
-    // creates a default world-imagery layer that the picker immediately replaces (a second, wasted ion request whose
-    // failure nobody could listen to)
-    // (exported at runtime by Cesium but missing from its type declarations)
-    const imageryModels = (CesiumNs as unknown as { createDefaultImageryProviderViewModels: () => ProviderViewModel[] }).createDefaultImageryProviderViewModels();
+    // Base map: Cesium ion satellite when a token is configured, else (or when ion fails) OpenStreetMap standard tiles,
+    // else plain ground (lib/baseMap.ts). The picker gets the ion models only with a token (without one they can only
+    // 401), and Cesium's own OSM model is replaced by ours (max zoom 19 and the attribution the OSM tile policy asks for).
+    // The default model is selected explicitly: otherwise the widget first creates a default world-imagery layer that
+    // the picker immediately replaces (a second, wasted request whose failure nobody could listen to).
+    // (createDefaultImageryProviderViewModels is exported at runtime by Cesium but missing from its type declarations)
+    const allModels = (CesiumNs as unknown as { createDefaultImageryProviderViewModels: () => ProviderViewModel[] }).createDefaultImageryProviderViewModels();
+    // Tile failures do not reach the layer's errorEvent: each source's tiles are watched too, so a source whose provider
+    // starts fine but whose tiles never load (seen in headless Chromium: every Bing tile 404) also falls back.
+    let onTilesUnreachable: (source: 'ion' | 'osm', err: unknown) => void = () => {};
+    const ionModels = ionToken ? allModels.filter(m => m.category === 'Cesium ion').map(m => new ProviderViewModelCtor({
+      name: m.name, iconUrl: m.iconUrl, tooltip: m.tooltip, category: m.category,
+      creationFunction: () => watchTileHealth((m.creationCommand as unknown as () => unknown)(), err => onTilesUnreachable('ion', err)) as never,
+    })) : [];
+    const osmModel = new ProviderViewModelCtor({
+      name: 'OpenStreetMap',
+      iconUrl: buildModuleUrl('Widgets/Images/ImageryProviders/openStreetMap.png'),
+      tooltip: 'OpenStreetMap standard map (© OpenStreetMap contributors). Used when satellite imagery is unavailable.',
+      category: 'Other',
+      creationFunction: () => watchTileHealth(
+        new OpenStreetMapImageryProvider({ url: OSM_TILE_URL, maximumLevel: OSM_MAX_LEVEL, credit: OSM_ATTRIBUTION }),
+        err => onTilesUnreachable('osm', err)),
+    });
+    const otherModels = allModels.filter(m => m.category !== 'Cesium ion' && !/^Open.?Street.?Map$/.test(m.name.replace(/\u00ad/g, '')));
+    const imageryModels = [...ionModels, osmModel, ...otherModels];
 
     // Initialize Cesium Viewer with clean, clutter-free options
     const viewer = new Viewer(containerRef.current, {
       imageryProviderViewModels: imageryModels,
-      selectedImageryProviderViewModel: imageryModels[0],
+      selectedImageryProviderViewModel: ionModels[0] ?? osmModel,
       animation: false, // Custom scenario timelines
       timeline: false,  // Custom simulation slider
       geocoder: false,
@@ -50,12 +74,22 @@ export const Viewport3D: React.FC = () => {
       terrainProvider: undefined // Default ellipsoid or generic terrain
     });
 
-    // A failed base-map request is reported to the user once, not dumped to the console as a raw RequestErrorEvent
-    const stopImageryWatch = watchImageryErrors(viewer.imageryLayers, msg => (window as any).showToast?.(msg, 'error'));
-    // ...and stays noted on the map while the base layer is the failed one
-    const stopBaseState = watchBaseImageryState(viewer.imageryLayers, setImageryError);
-    // ...and taken out, or the globe (and everything draped on it: area and zone outlines) is never drawn
-    const stopDropFailed = dropFailedBaseLayer(viewer.imageryLayers, viewer.scene.globe, Color.fromCssColorString('#12161c'));
+    // Ground under the imagery: neutral per visual style, never Cesium's default navy (reads as a bright blue sheet)
+    const globe = viewer.scene.globe;
+    const applyGround = () => { globe.baseColor = Color.fromCssColorString(groundColorFor(getVisualStyle())); viewer.scene.requestRender(); };
+    applyGround();
+    const stopStyle = onVisualStyleChange(applyGround);
+
+    // Fallback chain, switched once per failure; failed requests are told once in words, not dumped to the console
+    const fallback = installBaseMapFallback({
+      layers: viewer.imageryLayers, picker: viewer.baseLayerPicker.viewModel, ionModels, osmModel, hasIonToken: !!ionToken, globe,
+      notify: msg => (window as any).showToast?.(msg, 'error'),
+    });
+    onTilesUnreachable = (source, err) => fallback.tilesUnreachable(source, err);
+    // (knockout is exported at runtime by Cesium but missing from its type declarations)
+    const ko = (CesiumNs as unknown as { knockout: { getObservable: (o: object, p: string) => { subscribe: (f: (v: unknown) => void) => { dispose: () => void } } } }).knockout;
+    const pickerSub = ko.getObservable(viewer.baseLayerPicker.viewModel, 'selectedImagery').subscribe((m: unknown) => fallback.pickerChanged(m));
+    const stopNotice = onBaseMapState(s => setImageryError(baseMapNotice(s)));
 
     // Disable default double-click camera tracking/zoom
     viewer.screenSpaceEventHandler.removeInputAction(ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
@@ -80,9 +114,10 @@ export const Viewport3D: React.FC = () => {
 
     // Cleanup: release engine resources bound to this viewer before destroying it
     return () => {
-      stopImageryWatch();
-      stopBaseState();
-      stopDropFailed();
+      stopStyle();
+      stopNotice();
+      pickerSub.dispose();
+      fallback.dispose();
       engineInstance.dispose();
       viewer.destroy();
     };

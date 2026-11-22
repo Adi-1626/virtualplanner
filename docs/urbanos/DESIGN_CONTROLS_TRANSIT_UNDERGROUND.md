@@ -106,6 +106,9 @@ headless Chromium. Investigated in that browser against the built app (backend :
   (#12161c) with ground atmosphere off (Cesium's navy base under the atmosphere reads as bright blue water); both are
   restored when the base-layer picker adds another base layer. The existing "No base imagery" notice is unchanged.
   Unit test in `QaSideBAndImagery.test.ts`.
+  *Superseded by p8-basemap (2026-11-22)*: the failed layer is now replaced through the base-layer picker by the next
+  source (ion → OpenStreetMap → none, `lib/baseMap.ts`), which removes it the same way; the bare ground is a neutral
+  grey-beige / muted grey per visual style instead of #12161c. See DEVELOPER_HANDBOOK §4.6 "Base map".
 - **Verified (browser)**: after the fix, imagery layers 0, globe drawn, road drawing preview (clamped) and zone outline
   visible (`tr2_road_preview_and_zone_outline.png`). This affects every user without a working ion token or offline:
   saved-area outlines, drawing previews and ground polygons were invisible for them too.

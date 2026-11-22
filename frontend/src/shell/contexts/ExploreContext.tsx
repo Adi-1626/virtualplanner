@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Eye, EyeOff, Loader2, Search, X } from 'lucide-react';
 import { MetricTile } from '../../components/ui/MetricTile';
 import { PanelSection } from '../../components/ui/Panel';
@@ -19,6 +19,7 @@ import { TerrainSection } from '../../components/explore/TerrainSection';
 import { MunicipalInspector, MunicipalLayerGroups } from '../../components/explore/MunicipalLayers';
 import { useMuniStore } from '../../components/explore/municipalOverlay';
 import { VisualStyleControl } from '../../components/VisualStyleControl';
+import { baseMapLabel, getBaseMapState, onBaseMapState } from '../../lib/baseMap';
 
 function useLayers(): Layer[] {
   const [layers, setLayers] = useState<Layer[]>(() => engineInstance.layers.getAll());
@@ -45,6 +46,8 @@ const LayerTree: React.FC<{ proposals: number }> = ({ proposals }) => {
   const layers = useLayers();
   const overlays = useEnvOverlayStore(s => s.overlays);
   const groups = groupLayers(layers);
+  // The base map row names the source that is actually drawn (ion satellite, the OSM fallback, or none)
+  const baseMap = useSyncExternalStore(onBaseMapState, getBaseMapState);
   return (
     <div className="space-y-3" data-testid="explore-layer-tree">
       <VisualStyleControl />
@@ -53,7 +56,7 @@ const LayerTree: React.FC<{ proposals: number }> = ({ proposals }) => {
           <h4 className="text-meta font-semibold uppercase tracking-wide text-text-3 mb-0.5">{g.label}</h4>
           <ul>
             {g.layers.map(l => (
-              <ToggleRow key={l.id} label={l.name} on={l.visible} testId={`explore-layer-${l.id}`} onToggle={() => engineInstance.layers.setVisibility(l.id, !l.visible)}
+              <ToggleRow key={l.id} label={l.id === 'satellite' ? baseMapLabel(baseMap) : l.name} on={l.visible} testId={`explore-layer-${l.id}`} onToggle={() => engineInstance.layers.setVisibility(l.id, !l.visible)}
                 note={l.id === 'terrain' ? 'needs ion token' : undefined} />
             ))}
           </ul>

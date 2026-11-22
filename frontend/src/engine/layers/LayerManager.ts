@@ -56,7 +56,7 @@ export class LayerManager {
 
   private initializeDefaultLayers() {
     const defaults: Layer[] = [
-      { id: 'satellite', name: 'Satellite Imagery', category: 'base', visible: true, opacity: 1.0, supportsOpacity: true },
+      { id: 'satellite', name: 'Base map', category: 'base', visible: true, opacity: 1.0, supportsOpacity: true },
       // Off by default: city models sit at ellipsoid height, so real terrain (~560 m in Pune) would bury them
       { id: 'terrain', name: 'Terrain Relief', category: 'base', visible: false, opacity: 1.0, supportsOpacity: false },
       { id: 'roads', name: 'Road Network', category: 'infrastructure', visible: true, opacity: 1.0, supportsOpacity: true },
