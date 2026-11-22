@@ -62,11 +62,17 @@ describe('road analysis panel pieces', () => {
   });
   it('KPI cards are the explained direction\'s computed figures', () => {
     const d = doc(renderToStaticMarkup(createElement(WorstKpis, { r: result() })));
-    expect(d.querySelector('[data-testid="trust-kpis"]')!.textContent).toContain('Fails validation (TAG M3.1)');
+    // The verdict is on the headline just above; the KPI block does not repeat it (it showed twice)
+    expect(d.querySelector('[data-testid="trust-kpis"]')).toBeNull();
     expect(d.querySelector('[data-testid="kpi-speed"]')!.textContent).toContain('37');
     expect(d.querySelector('[data-testid="kpi-delay"]')!.textContent).toContain('15');
     expect(d.querySelector('[data-testid="kpi-vc"]')!.textContent).toContain('41%');
     expect(d.querySelector('[data-testid="kpi-los"]')!.textContent).toContain('C');
+  });
+  it('the Simulate result shows the "Fails validation (TAG M3.1)" badge once (headline + KPI block)', () => {
+    const r = result();
+    const html = renderToStaticMarkup(createElement('div', null, createElement(StatusHeader, { r, when: 'Evening peak · 6 pm' }), createElement(WorstKpis, { r })));
+    expect(html.split('Fails validation (TAG M3.1)').length - 1).toBe(1);
   });
   it('picks the direction the analysis explains, not just the longest delay', () => {
     const r = result({ explainedDirection: 'westbound' });
