@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { ObjectManager } from '../objects/ObjectManager';
-import { HistoryManager } from '../history/HistoryManager';
+import { HistoryManager, deleteWithHistory } from '../history/HistoryManager';
 import { EditingEngine } from '../editing/EditingEngine';
 import { TrafficNetworkBuilder } from '../simulation/TrafficNetworkBuilder';
 import { commitGeometry, regenerateGeometry } from '../editing/geometryCommit';
@@ -219,6 +219,90 @@ describe('commitGeometry: crossing vertices left in other roads', () => {
     const bBefore = (objects.getById('B') as RoadObject).coordinates;
     commitGeometry(objects.getById('N')!, align(AWAY, 0), ctx);
     expect((objects.getById('B') as RoadObject).coordinates).toEqual(bBefore);
+  });
+});
+
+describe('deleting a road / flyover takes back the vertices it put into other roads', () => {
+  const drawN = (objects: ObjectManager, editing: EditingEngine, mode: 'draw_road' | 'draw_flyover' = 'draw_road', pts: [number, number][] = PIS) => {
+    editing.setMode(mode);
+    for (const [lon, lat] of pts) editing.addDrawingPoint([lon, lat, 0]);
+    editing.finalizeDrawing('base');
+    return objects.getAll().find(o => o.id !== 'A' && o.id !== 'B' && o.id !== 'C' && (o.type === 'road' || o.type === 'flyover'))!;
+  };
+
+  it('removes them in the same Undo step; Undo puts back the road and the vertices, Redo removes them again', () => {
+    const { objects, history, editing } = setup();
+    objects.add(road('A', CROSS_A), true);
+    objects.add(road('B', CROSS_B), true);
+    const n = drawN(objects, editing);
+    expect((objects.getById('A') as RoadObject).coordinates).toHaveLength(3);
+    expect((objects.getById('B') as RoadObject).coordinates).toHaveLength(3);
+    const mid = { A: objects.getById('A')!.coordinates, B: objects.getById('B')!.coordinates };
+    const steps = history.getUndoStackCount();
+
+    deleteWithHistory(objects, history, n.id);
+    expect(objects.getById(n.id)).toBeUndefined();
+    expect(objects.getById('A')!.coordinates).toEqual(CROSS_A);
+    expect(objects.getById('B')!.coordinates).toEqual(CROSS_B);
+    expect(history.getUndoStackCount()).toBe(steps + 1);
+
+    history.undo();
+    expect(objects.getById(n.id)).toBeDefined();
+    expect(objects.getById('A')!.coordinates).toEqual(mid.A);
+    expect(objects.getById('B')!.coordinates).toEqual(mid.B);
+    history.redo();
+    expect(objects.getById(n.id)).toBeUndefined();
+    expect(objects.getById('A')!.coordinates).toEqual(CROSS_A);
+    expect(objects.getById('B')!.coordinates).toEqual(CROSS_B);
+  });
+
+  it('keeps a vertex another road joined at since, and the other roads own (mapped) vertices', () => {
+    const { objects, history, editing } = setup();
+    const A3: P[] = [[73.801, 18.4990, 0], [73.801, 18.5005, 0], [73.801, 18.5030, 0]];
+    objects.add(road('A', A3), true);
+    objects.add(road('B', CROSS_B), true);
+    const n = drawN(objects, editing);
+    const pB = (objects.getById('B') as RoadObject).coordinates[1];
+    objects.add(road('C', [[pB[0], pB[1], 0], [pB[0] + 0.001, pB[1], 0]]), true);
+    deleteWithHistory(objects, history, n.id);
+    const b = objects.getById('B') as RoadObject;
+    expect(b.coordinates).toHaveLength(3);
+    expect(b.coordinates[1]).toEqual(pB);
+    const a = objects.getById('A') as RoadObject;
+    for (const c of A3) expect(a.coordinates.some(q => q[0] === c[0] && q[1] === c[1])).toBe(true);
+    expect(a.coordinates.length).toBe(A3.length); // only the crossing vertex N added is gone
+  });
+
+  it('a road with no record (drawn before it existed) changes nothing in other roads', () => {
+    const { objects, history, editing } = setup();
+    objects.add(road('A', CROSS_A), true);
+    objects.add(road('B', CROSS_B), true);
+    const n = drawN(objects, editing);
+    objects.update(n.id, { addedNetworkVertices: undefined } as Partial<RoadObject>, true);
+    const bBefore = objects.getById('B')!.coordinates;
+    deleteWithHistory(objects, history, n.id);
+    expect(objects.getById('B')!.coordinates).toEqual(bBefore);
+  });
+
+  it('a deleted flyover gives back its ramp capacity and the vertices together, as one step', () => {
+    const { objects, history, editing } = setup();
+    objects.add(road('A', CROSS_A), true);
+    objects.add(road('B', CROSS_B), true);
+    // Ends mid-way along B: a T-junction vertex goes into B
+    const f = drawN(objects, editing, 'draw_flyover', [[73.7990, 18.5010], [73.8030, 18.5010]]);
+    const added = (f as FlyoverObject).addedNetworkVertices ?? [];
+    expect(added.some(v => v.roadId === 'B')).toBe(true);
+    const steps = history.getUndoStackCount();
+    deleteWithHistory(objects, history, f.id);
+    expect(history.getUndoStackCount()).toBe(steps + 1);
+    for (const id of ['A', 'B']) {
+      const r = objects.getById(id) as RoadObject;
+      expect(r.flyoverImpact).toBeUndefined();
+      if (added.some(v => v.roadId === id)) expect(r.coordinates).toEqual(id === 'A' ? CROSS_A : CROSS_B);
+    }
+    history.undo();
+    expect(objects.getById(f.id)).toBeDefined();
+    for (const v of added) expect((objects.getById(v.roadId) as RoadObject).coordinates.some(c => planDistM(c, v.point) < 0.05)).toBe(true);
   });
 });
 
