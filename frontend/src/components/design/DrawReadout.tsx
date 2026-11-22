@@ -50,6 +50,9 @@ export const DrawReadout: React.FC = () => {
   const warn = data.flags.filter(f => f.severity === 'warn');
   const info = data.flags.filter(f => f.severity === 'info' && f.code !== 'transition-not-modelled');
   const constraint = CONSTRAINT_LABEL[data.constraint];
+  const v = data.vertical;
+  const pct = (x: number | null, signed = false) => (x === null ? '—' : `${signed && x > 0 ? '+' : ''}${x.toFixed(1)} %`);
+  const limit = v ? `${+v.limitPct.toFixed(1)} %` : '';
 
   return createPortal(
     <div
@@ -66,6 +69,33 @@ export const DrawReadout: React.FC = () => {
         <span className="text-slate-400" title="Total length so far">Σ {fmtM(data.totalLengthM)}</span>
         {constraint && <span className="text-cyan-300 font-sans">{constraint}</span>}
       </div>
+      {v && (
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono" data-testid="draw-readout-vertical">
+          {v.kind === 'road' ? (
+            <>
+              <span title="Height of the next point above ground (PageUp / PageDown)">↑ {v.heightM.toFixed(1)} m{v.fromNetwork ? ' (road)' : ''}</span>
+              <span title={`Grade from the last point to the cursor; limit ${limit} (${v.source})`} className={v.gradePct !== null && Math.abs(v.gradePct) > v.limitPct ? 'text-amber-300' : ''}>
+                grade {pct(v.gradePct, true)}
+              </span>
+            </>
+          ) : (
+            <>
+              <span title="Deck height above ground (PageUp / PageDown)">deck {v.heightM.toFixed(1)} m</span>
+              <span title={`Each ramp at ${limit} with its vertical curves (${v.source})`}>ramps {Math.round(v.rampNeededM ?? 0)} m each</span>
+              <span title="Steepest ramp grade the 3D model would draw on the line so far" className={v.over ? 'text-amber-300' : ''}>ramp grade {pct(v.gradePct)}</span>
+            </>
+          )}
+          <span className="text-slate-400 font-sans">limit {limit}</span>
+        </div>
+      )}
+      {v?.over && (
+        <div className="mt-1 text-amber-300" data-testid="draw-readout-grade-flag">
+          ⚠ {v.kind === 'road'
+            ? `Grade over ${limit}${v.steepestPlacedPct !== null && v.steepestPlacedPct > v.limitPct ? ` (steepest so far ${pct(v.steepestPlacedPct)})` : ''} (${v.source}).`
+            : `The line so far (${Math.round(v.lineM ?? 0)} m) is shorter than two ${Math.round(v.rampNeededM ?? 0)} m ramps: the ramps would be ${pct(v.gradePct)}, over ${limit} (${v.source}).`}
+          {' '}Screening only — not a design check or approval.
+        </div>
+      )}
       {typing && (
         <div className="mt-1 font-mono text-amber-200" data-testid="draw-readout-typed">
           {t.field === 'radius' ? 'Radius' : t.field === 'bearing' ? 'Direction' : 'Length'}: {t.text || '…'}{t.field === 'bearing' ? '°' : ' m'}
@@ -79,7 +109,7 @@ export const DrawReadout: React.FC = () => {
         <div key={`i${i}`} className="mt-1 text-slate-400">{f.message}</div>
       ))}
       <div className="mt-1 text-[11px] text-slate-500 font-sans">
-        Shift 15° · Alt+Shift 15° from last · type a length · R radius · Ctrl+click sharp corner · Backspace undo point · Enter / double-click finish
+        Shift 15° · Alt+Shift 15° from last{v ? (v.kind === 'road' ? ' · PgUp/PgDn height (Shift 0.5 m)' : ' · PgUp/PgDn deck height') : ''} · type a length · R radius · Ctrl+click sharp corner · Backspace undo point · Enter / double-click finish
       </div>
     </div>,
     document.body,

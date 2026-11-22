@@ -517,7 +517,7 @@ export class ObjectManager {
       : flyover.coordinates;
     const surfaceRoads = Array.from(this.objects.values()).filter(o => o.type === 'road') as RoadObject[];
     const asBuilt = !opts.edited && isAsBuiltFlyover(obj as any);
-    const feasibility = new BridgeFeasibilityEngine().run(groundCoords, flyover.elevation ?? 6.0, flyover.laneCount ?? 4, surfaceRoads, { asBuilt, roadClass: flyover.roadClass });
+    const feasibility = new BridgeFeasibilityEngine().run(groundCoords, flyover.elevation ?? 6.0, flyover.laneCount ?? 4, surfaceRoads, { asBuilt, roadClass: flyover.roadClass, designSpeedKmh: flyover.alignment?.designSpeedKmh ?? flyover.speedLimit ?? null });
     const roadUpdates: { id: string; updates: Partial<RoadObject> }[] = [];
     for (const impact of feasibility.surfaceRoadImpacts) {
       if (!this.objects.has(impact.roadId)) continue;

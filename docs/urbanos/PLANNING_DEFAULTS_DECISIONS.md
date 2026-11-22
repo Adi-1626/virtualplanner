@@ -91,8 +91,12 @@ phase-3 item (`GEOMETRY_DEFAULTS.spiralsEnabled = false`).
   source, geometry not edited here; `isAsBuiltFlyover`) get every check as `info`. "As-built · information only" is shown,
   nothing fails, no surface-road capacity is changed, and the object is never reshaped. In today's model, existing Pune
   flyovers come in as OSM bridge roads and never enter this check at all. The guard covers any mapped flyover object.
-- **Not changed:** the drawn 3D ramp shape (legacy 40 m, `flyoverHelper.ts`). It is a picture. Grade-driven ramp geometry
-  stays geometry phase 3.
+- **3D ramp shape (branch `p5-geomfin`):** the drawn ramp now follows the same rule. Each ramp is H / g on the grade plus
+  a square-parabola vertical curve at its foot and top, each the IRC:86-2018 Table 9.2 minimum length for the design speed
+  (IRC:SP:23-1993 Table 7 at 100 km/h): max(H/g, Lv) + Lv per end, e.g. 6 m at 4 %, 60 km/h → 150 + 40 = 190 m. One
+  function (`engine/geometry/vertical/flyoverRamp.ts`) feeds the 3D profile and the desk check. A line too short for two
+  ramps keeps its deck height and gets a steeper modelled ramp, which the check reports as a fail with that grade. As-built
+  flyovers keep the legacy 40 m ramp (never reshaped). The sight-distance length of the vertical curves is not worked out.
 
 ## D6 Assumed values
 - Cut-and-cover fallback radius **50 m**, `FALLBACK_AUTO_RADIUS_LABEL = 'assumed, no official figure'`. The radius that
@@ -188,4 +192,4 @@ Tests:
 - IRC:73-2023 (non-urban) is not read; the `irc73-rural` criteria still cite IRC:73-1980 and are no longer a default.
 - IRC:SP:41, IRC:65, IRC:92, IRC:124, IRC:103 are not read; D10 tools must take their values from them before being built.
 - The vertical clearance standard under flyovers is still not read (T3 in TRANSPORT_TOOLS_CS2_RESEARCH.md).
-- Grade-driven 3D ramps, spirals and the SP90-23 5 %/7 % desirable-radius split are geometry phase 3.
+- Spirals and the SP90-23 5 %/7 % desirable-radius split are geometry phase 3 (grade-driven 3D ramps done in `p5-geomfin`).

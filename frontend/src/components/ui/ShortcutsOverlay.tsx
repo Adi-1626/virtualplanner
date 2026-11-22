@@ -28,6 +28,7 @@ const DRAWING: [string, string][] = [
   ['Ctrl + click', 'Add a sharp corner (no curve)'],
   ['Shift (hold)', 'Snap direction to 15° steps'],
   ['Alt + Shift (hold)', 'Snap the turn to 15° from the last segment'],
+  ['PageUp / PageDown', 'Road: raise / lower the next point 1 m (Shift 0.5 m) · Flyover: deck height'],
   ['0-9', 'Type the segment length (m)'],
   ['Tab', 'Switch typed length ↔ direction (°)'],
   ['R, then 0-9', 'Radius at the last point (m)'],

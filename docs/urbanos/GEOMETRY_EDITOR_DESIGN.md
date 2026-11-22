@@ -1,6 +1,6 @@
 # Geometry editor — curved, editable alignments in Design (research + design, 2026-11-21)
 
-Status: **design only, nothing implemented.** Branch `design-geometry` (from `next-phase` c09d91a).
+Status: written as a design (branch `design-geometry`, from `next-phase` c09d91a); phases 1–2 were built later. What changed in branch `p5-geomfin` (grade-driven flyover ramps, elevation while drawing, delete takes back added vertices, utility depth controls) is in §11.
 
 User request (2026-11-21): *"lets add better turning / curving of the items that need them in build mode currently we just draw them via line but we can turn, curve, angle them at any point we want while in build nor after build … realistic and usable, the current one feels using ms paint".*
 
@@ -58,6 +58,7 @@ Labels used here: **[read]** = taken from a source I opened and read by code in 
 - The desk check in the same app says a ramp needs `elevation / 5 %` = 120 m.
 - IRC:SP:90-2010 §6.14 caps grade-separator gradients at **3.5 %** [read] (6 m / 3.5 % ≈ 171 m).
 - So the drawn model, the check and the standard disagree. The 5 % constant cites "IRC:SP-73", which is a two-laning manual rather than the grade-separator manual. Fix it in the vertical phase (§7, phase 3) and do not quietly change existing objects (decision D5).
+- **Resolved (p5-geomfin, §11.1):** the check uses 4 % / 3.3 % (IRC:SP:90-2023 §4.13, D5) and the 3D ramp is built from the same profile; as-built flyovers keep the 40 m ramp.
 
 ---
 
@@ -318,3 +319,67 @@ Shown in the readout, in the panel rows and as a small ⚠ marker on the map at 
 - **D5 Flyover ramps**: move existing and new flyovers to grade-driven ramps (3.5 % → about 171 m for a 6 m deck, longer than today's 40 m), or new ones only?
 - **D6 OSM-imported roads**: leave their geometry locked (recommended), or allow plain vertex moves later?
 - **D7 Shift semantics**: absolute 15° bearings (recommended), with Alt+Shift relative to the previous tangent?
+
+---
+
+## 11. Changes in branch `p5-geomfin` (2026-11-22)
+
+Built on `cbff478`. Every value below is screening, never a design check or approval. Sources are those of
+PLANNING_DEFAULTS_DECISIONS.md (IRC texts are third-party copies, unconfirmed against IRC-issued copies).
+
+### 11.1 Flyover ramps from the deck height and the grade (D5)
+- **One profile** (`engine/geometry/vertical/flyoverRamp.ts`, `flyoverRampProfile` / `flyoverOffsetAt`) feeds the 3D
+  heights (`objects/flyoverHelper.ts applyFlyoverElevationProfile`) and the desk check (`simulation/BridgeFeasibilityEngine.ts`).
+  `maxRampGrade` moved there (re-exported from the engine).
+- **Shape per ramp:** square-parabola vertical curve (0 → g) of length Lv, the grade g, a second curve (g → 0) onto the
+  deck. g = 4 % on urban roads, 3.3 % on a highway (IRC:SP:90-2023 §4.13). Lv = the IRC:86-2018 Table 9.2 minimum length
+  for the design speed (the row at or above it; IRC:SP:23-1993 Table 7 at 100 km/h). Design speed = the alignment's, else
+  the deck speed (= class design speed for new flyovers, D1). Ramp length per end = max(H/g, Lv) + Lv; steepest point = g.
+  Example: 6 m deck, arterial 60 km/h → 150 m + 40 m = 190 m each end (was a fixed 40 m, a 15 % grade).
+- **Too short a line:** the deck height is kept and each ramp is squeezed into half the line (curves scaled with it); the
+  modelled grade is then steeper than g, and the check fails with that grade ("the 3D model squeezes each ramp into N m, a
+  X % grade"). Nothing is hidden or silently flattened.
+- **Check changes:** the ramp-grade check now reads the ramps where the 3D model draws them (on the drawn alignment) instead
+  of the length of mapped approach roads near each end. `rampLengthRequired` includes the vertical curves (190 m for the
+  example), `rampGradeLength` is H/g (150 m), `rampLengthAvailable` is the modelled ramp per end, `rampProfile` the profile.
+  The deck-length check uses the same ramp length (2 × ramp + the assumed 50 m deck, warn only). Inspector line: "Ramp
+  needed: N m each end · Modelled: N m · X %".
+- **As-built flyovers** (`isAsBuiltFlyover`: OSM / municipal / surveyed, geometry not edited) keep the legacy 40 m
+  smoothstep ramp (`model: 'legacy-40m'`) and the information-only screen. An edited one becomes a design.
+- **Stored objects:** the profile used is stored on the object as `rampProfile` (derived). Heights made earlier with the
+  40 m ramp and no stored ground line are read back with the exact legacy formula, then re-profiled. Drawn (non-as-built)
+  flyovers saved before this branch get the grade ramp the next time their profile is applied (load / edit).
+- **Traffic graph:** with long ramps a flyover sits 0–3 m up over a long stretch, so the builder's near-miss rule (a vertex
+  within 6 m and 3 m of a road joins it) made junctions the crossing classifier had kept apart (property test
+  `ramp-foot`). A drawn flyover / double-deck now joins other roads only at its two ends or through the X-crossing check
+  (which honours level decisions) — `TrafficNetworkBuilder isDrawnStructure`.
+- **Not modelled:** sight-distance length of the vertical curves (IRC:SP:23 summit/valley formulas), the clearance under
+  the deck, spirals.
+
+### 11.2 Elevation while drawing (D10 item 7)
+- **Road tool:** PageUp / PageDown raise / lower the next point by 1 m (Shift: 0.5 m), 0–30 m above ground. The height is
+  kept for the following points and goes back to the ground for each new road. A point snapped to a road keeps that
+  road's height (shown as "(road)").
+- **Flyover / double-deck tools:** the same keys set the deck height of the new structure (1–30 m, default 6 m, was fixed
+  6 m); the double-deck's metro deck stays ≥ 6 m above it (12 m at the default). The per-point height does not apply to
+  flyovers: their heights come from the ramp profile (§11.1).
+- **Readout** (`components/design/DrawReadout.tsx`, `drawConstraints.ts roadVerticalReadout / deckVerticalReadout`):
+  road → "↑ h m · grade ±x %" from the last point to the cursor (PI to PI, plan distance) and the steepest placed segment;
+  flyover → "deck h m · ramps N m each · ramp grade x %" on the line drawn so far. A grade over 4 % / 3.3 % shows
+  "⚠ … Screening only — not a design check or approval." Keys are listed in the shortcuts overlay.
+
+### 11.3 Delete takes back added vertices
+`history/HistoryManager.ts deleteWithHistory`: deleting a drawn road / flyover / double-deck removes the vertices its
+crossings and end junctions put into other roads (`addedNetworkVertices`), with `pruneStaleAddedVertices` and its safety
+rules (only vertices we added, still exactly there, not an end, not a section boundary, not used by another object or
+record in the scenario). Same Undo step as the delete (with the flyover's ramp-capacity give-back); Undo restores the
+road and the vertices, Redo removes them again. An object without the record changes nothing in other roads.
+
+### 11.4 Utility depth controls
+A newly drawn utility stored per-vertex depths only, so its PI depth controls were derived (same gap tunnels had before
+`c624274`). It now stores `depthControls` at its PIs (the drawing depth, or the type's typical cover marked as a default)
+with per-vertex depths derived from them (`EditingEngine.finalizeDrawingPoints` → `withUtilityZ(…, { controls })`).
+
+### 11.5 Tests
+`FlyoverRamp.test.ts` (new), `DrawElevation.test.ts` (new), `BridgeFeasibility.test.ts`, `GeometryCommit.test.ts`
+(grade-ramp reshape, delete prunes added vertices), `DrawConstraints.test.ts` (utility depth controls).

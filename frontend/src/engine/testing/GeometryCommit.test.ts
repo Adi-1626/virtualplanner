@@ -1,12 +1,12 @@
 /**
  * Reshape commit pipeline (GEOMETRY_EDITOR_DESIGN.md §3.4, §6, §8 integration, phase 2 agent D): everything downstream of
  * a reshaped alignment stays correct — network joins and crossings, Undo of the object and the roads it split, road
- * sections, tunnel / utility depth controls at PIs with per-vertex depths derived, flyover ground line + legacy 40 m
- * ramps, and level-crossing decisions carried by distance.
+ * sections, tunnel / utility depth controls at PIs with per-vertex depths derived, flyover ground line + grade-driven
+ * ramps (4 % urban, IRC:SP:90-2023 §4.13), and level-crossing decisions carried by distance.
  */
 import { describe, it, expect } from 'vitest';
 import { ObjectManager } from '../objects/ObjectManager';
-import { HistoryManager } from '../history/HistoryManager';
+import { HistoryManager, deleteWithHistory } from '../history/HistoryManager';
 import { EditingEngine } from '../editing/EditingEngine';
 import { TrafficNetworkBuilder } from '../simulation/TrafficNetworkBuilder';
 import { commitGeometry, regenerateGeometry } from '../editing/geometryCommit';
@@ -222,6 +222,90 @@ describe('commitGeometry: crossing vertices left in other roads', () => {
   });
 });
 
+describe('deleting a road / flyover takes back the vertices it put into other roads', () => {
+  const drawN = (objects: ObjectManager, editing: EditingEngine, mode: 'draw_road' | 'draw_flyover' = 'draw_road', pts: [number, number][] = PIS) => {
+    editing.setMode(mode);
+    for (const [lon, lat] of pts) editing.addDrawingPoint([lon, lat, 0]);
+    editing.finalizeDrawing('base');
+    return objects.getAll().find(o => o.id !== 'A' && o.id !== 'B' && o.id !== 'C' && (o.type === 'road' || o.type === 'flyover'))!;
+  };
+
+  it('removes them in the same Undo step; Undo puts back the road and the vertices, Redo removes them again', () => {
+    const { objects, history, editing } = setup();
+    objects.add(road('A', CROSS_A), true);
+    objects.add(road('B', CROSS_B), true);
+    const n = drawN(objects, editing);
+    expect((objects.getById('A') as RoadObject).coordinates).toHaveLength(3);
+    expect((objects.getById('B') as RoadObject).coordinates).toHaveLength(3);
+    const mid = { A: objects.getById('A')!.coordinates, B: objects.getById('B')!.coordinates };
+    const steps = history.getUndoStackCount();
+
+    deleteWithHistory(objects, history, n.id);
+    expect(objects.getById(n.id)).toBeUndefined();
+    expect(objects.getById('A')!.coordinates).toEqual(CROSS_A);
+    expect(objects.getById('B')!.coordinates).toEqual(CROSS_B);
+    expect(history.getUndoStackCount()).toBe(steps + 1);
+
+    history.undo();
+    expect(objects.getById(n.id)).toBeDefined();
+    expect(objects.getById('A')!.coordinates).toEqual(mid.A);
+    expect(objects.getById('B')!.coordinates).toEqual(mid.B);
+    history.redo();
+    expect(objects.getById(n.id)).toBeUndefined();
+    expect(objects.getById('A')!.coordinates).toEqual(CROSS_A);
+    expect(objects.getById('B')!.coordinates).toEqual(CROSS_B);
+  });
+
+  it('keeps a vertex another road joined at since, and the other roads own (mapped) vertices', () => {
+    const { objects, history, editing } = setup();
+    const A3: P[] = [[73.801, 18.4990, 0], [73.801, 18.5005, 0], [73.801, 18.5030, 0]];
+    objects.add(road('A', A3), true);
+    objects.add(road('B', CROSS_B), true);
+    const n = drawN(objects, editing);
+    const pB = (objects.getById('B') as RoadObject).coordinates[1];
+    objects.add(road('C', [[pB[0], pB[1], 0], [pB[0] + 0.001, pB[1], 0]]), true);
+    deleteWithHistory(objects, history, n.id);
+    const b = objects.getById('B') as RoadObject;
+    expect(b.coordinates).toHaveLength(3);
+    expect(b.coordinates[1]).toEqual(pB);
+    const a = objects.getById('A') as RoadObject;
+    for (const c of A3) expect(a.coordinates.some(q => q[0] === c[0] && q[1] === c[1])).toBe(true);
+    expect(a.coordinates.length).toBe(A3.length); // only the crossing vertex N added is gone
+  });
+
+  it('a road with no record (drawn before it existed) changes nothing in other roads', () => {
+    const { objects, history, editing } = setup();
+    objects.add(road('A', CROSS_A), true);
+    objects.add(road('B', CROSS_B), true);
+    const n = drawN(objects, editing);
+    objects.update(n.id, { addedNetworkVertices: undefined } as Partial<RoadObject>, true);
+    const bBefore = objects.getById('B')!.coordinates;
+    deleteWithHistory(objects, history, n.id);
+    expect(objects.getById('B')!.coordinates).toEqual(bBefore);
+  });
+
+  it('a deleted flyover gives back its ramp capacity and the vertices together, as one step', () => {
+    const { objects, history, editing } = setup();
+    objects.add(road('A', CROSS_A), true);
+    objects.add(road('B', CROSS_B), true);
+    // Ends mid-way along B: a T-junction vertex goes into B
+    const f = drawN(objects, editing, 'draw_flyover', [[73.7990, 18.5010], [73.8030, 18.5010]]);
+    const added = (f as FlyoverObject).addedNetworkVertices ?? [];
+    expect(added.some(v => v.roadId === 'B')).toBe(true);
+    const steps = history.getUndoStackCount();
+    deleteWithHistory(objects, history, f.id);
+    expect(history.getUndoStackCount()).toBe(steps + 1);
+    for (const id of ['A', 'B']) {
+      const r = objects.getById(id) as RoadObject;
+      expect(r.flyoverImpact).toBeUndefined();
+      if (added.some(v => v.roadId === id)) expect(r.coordinates).toEqual(id === 'A' ? CROSS_A : CROSS_B);
+    }
+    history.undo();
+    expect(objects.getById(f.id)).toBeDefined();
+    for (const v of added) expect((objects.getById(v.roadId) as RoadObject).coordinates.some(c => planDistM(c, v.point) < 0.05)).toBe(true);
+  });
+});
+
 describe('commitGeometry: level crossing decisions', () => {
   it('carries a decision to a crossing within 2 m of the old point on the same road, and not to a new one', () => {
     const prev: LevelCrossing[] = [{ roadId: 'X', point: [73.8, 18.5, 0], otherZ: 0, decision: 'separate', reason: 'r' }];
@@ -372,8 +456,8 @@ describe('regenerateGeometry: utilities', () => {
   });
 });
 
-describe('commitGeometry: flyovers (legacy 40 m ramps)', () => {
-  it('resets the ground line so the profile follows the new plan, with ramps still 40 m', () => {
+describe('commitGeometry: flyovers (grade-driven ramps)', () => {
+  it('resets the ground line so the profile follows the new plan, with grade-driven ramps (4 % + vertical curves)', () => {
     const { objects, ctx } = setup();
     const a = align([[73.80, 18.50], [73.805, 18.502], [73.81, 18.50]], 0, 'flyover');
     const fly = {
@@ -394,10 +478,19 @@ describe('commitGeometry: flyovers (legacy 40 m ramps)', () => {
     // The plan passes the moved PI's curve, not the old corner
     const oldCorner = [73.805, 18.502];
     expect(Math.min(...f.coordinates.map(c => planDistM(c, oldCorner)))).toBeGreaterThan(20);
-    // Legacy ramp: full deck height from 40 m along, 0.25 m clearance at the foot
+    // Grade ramp: local class, the alignment's 30 km/h design speed → 150 m at 4 % + 15 m vertical curves = 165 m; full
+    // deck from there; 0.25 m clearance at the foot; nowhere steeper than 4 %
     const ch = chainagesOf(f.coordinates);
     expect(f.coordinates[0][2]).toBeCloseTo(0.25, 6);
-    f.coordinates.forEach((c, i) => { if (ch[i] >= 40 && ch[i] <= ch.at(-1)! - 40) expect(c[2]).toBeCloseTo(6, 6); });
+    const rp = (f as { rampProfile?: { rampLengthM: number; designSpeedKmh: number } }).rampProfile!;
+    expect(rp.designSpeedKmh).toBe(a.designSpeedKmh);
+    expect(rp.rampLengthM).toBeCloseTo(165, 6);
+    f.coordinates.forEach((c, i) => { if (ch[i] >= 165 && ch[i] <= ch.at(-1)! - 165) expect(c[2]).toBeCloseTo(6, 6); });
+    expect(f.coordinates.some((c, i) => ch[i] > 40 && ch[i] < 150 && c[2] < 5)).toBe(true); // not the old 40 m ramp
+    for (let i = 1; i < f.coordinates.length; i++) {
+      const run = ch[i] - ch[i - 1];
+      if (run > 0.5) expect(Math.abs(f.coordinates[i][2] - f.coordinates[i - 1][2]) / run).toBeLessThanOrEqual(0.04 + 1e-9);
+    }
     expect((f as { feasibilityResult?: unknown }).feasibilityResult).toBeTruthy();
   });
 

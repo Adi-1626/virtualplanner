@@ -1739,9 +1739,10 @@ const FlyoverFeasibilityReport: React.FC<{ result: FeasibilityResult }> = ({ res
         </div>
         <div className="mt-1 flex gap-3 text-[11px] text-slate-500">
           <span>Length: {result.totalFlyoverLength}m</span>
-          <span>Ramp reqd: {result.rampLengthRequired}m</span>
-          <span>Start avail: {result.rampLengthAvailable.start}m</span>
-          <span>End avail: {result.rampLengthAvailable.end}m</span>
+          <span title="Each ramp at the grade limit, with its vertical curves">Ramp needed: {result.rampLengthRequired}m each end</span>
+          <span title="Ramp length the 3D model draws at each end, and its steepest grade">
+            Modelled: {result.rampLengthAvailable.start}m{result.rampProfile ? ` · ${(result.rampProfile.modelledMaxGrade * 100).toFixed(1)} %` : ''}
+          </span>
         </div>
         <div className="mt-1 text-[10px] text-slate-500" data-testid="flyover-check-scope">{result.scope ?? BRIDGE_SCREEN_SCOPE}</div>
       </button>

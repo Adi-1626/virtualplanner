@@ -129,3 +129,18 @@ Known limits seen while testing:
 - Emoji status icons in the flyover card render as boxes in the headless browser (no emoji font). They are fine on a normal desktop.
 
 Gates on this commit: `tsc -p tsconfig.app.json --noEmit` 0 errors; `oxlint` 0 errors (8 warnings, pre-existing); `vite build` ok; vitest, one file at a time, one worker: BridgeFeasibility (8), DesignTools, EditIsolationFixes, EditingWorkflow, EditRecompute, EditScope, HistoryManager, HonestControls, FlyoverTraffic, NetworkEditIsolation, JunctionEditing, DemandMatrix, ObjectSyncQueue all pass.
+
+## Geometry finish (branch `p5-geomfin`, 2026-11-22)
+
+Details and sources: [GEOMETRY_EDITOR_DESIGN.md §11](GEOMETRY_EDITOR_DESIGN.md), [PLANNING_DEFAULTS_DECISIONS.md D5](PLANNING_DEFAULTS_DECISIONS.md).
+
+| Control | Before | Now |
+|---|---|---|
+| Flyover / double-deck 3D ramps | Fixed 40 m ramp (15 % for a 6 m deck); the desk check assumed the ramps on the approach roads | Ramp length from the deck height and the grade (4 % urban / 3.3 % highway, IRC:SP:90-2023 §4.13) with IRC:86-2018 Table 9.2 vertical curves at the foot and top; the 3D model and the check read one profile; a line too short for two ramps fails the check with the grade the model draws. As-built flyovers keep the 40 m ramp |
+| Flyover desk check (inspector) | "Ramp reqd / Start avail / End avail" from approach roads | "Ramp needed: N m each end · Modelled: N m · X %" |
+| Road tool: PageUp / PageDown (Shift: 0.5 m) | — | Raise / lower the next point (0–30 m above ground); readout "↑ h m · grade ±x %"; over the limit flagged as screening |
+| Flyover / double-deck tools: PageUp / PageDown | Deck always 6 m | Deck height of the new structure (1–30 m); readout shows the ramp each end needs and the ramp grade on the line so far |
+| Delete a drawn road / flyover | Its crossing / T-junction vertices stayed in the other roads | Taken back under the reshape safety rules, in the same Undo step |
+| Utility tool | Depth controls at PIs were derived only | Typed drawing depth (or the type default, marked) stored at each PI; per-vertex depths derived |
+
+Verified by unit tests only in this branch (no browser run): `FlyoverRamp`, `DrawElevation`, `BridgeFeasibility`, `GeometryCommit`, `DrawConstraints`, `TopologyProperty`.

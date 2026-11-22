@@ -59,8 +59,10 @@ It uses the same settings as the app:
 | `URBANOS_DATA_DIR` | Data folder. Fact versions are written to `derived/pune_infra_project_facts/vN/`, the page cache to `updater/cache/`. | `D:\urbanos-data` |
 | `UPDATER_CACHE_DIR` | Optional. Where fetched pages are cached. | default `<data dir>/updater/cache` |
 | `UPDATER_WATCHLIST` | Optional. Another watch-list file. | default `backend/updater/watchlist.json` |
-| `GOOGLE_CSE_KEY`, `GOOGLE_CSE_CX` | Optional Google Custom Search plug-in. Only for existing customers; it stops working on 2027-01-01. | — |
+| `UPDATER_SEED` | Optional. Another official fact list for `seed-baseline`. | default `docs/urbanos/pune_project_facts.json` |
 | `UPDATER_LLM_URL`, `UPDATER_LLM_KEY`, `UPDATER_LLM_MODEL` | Optional LLM extractor (your own OpenAI-compatible endpoint). Off when unset. | — |
+
+The Google Custom Search plug-in (`GOOGLE_CSE_KEY`, `GOOGLE_CSE_CX`) was removed with news discovery on 2026-11-21 (§11); the code no longer reads those variables, so setting them does nothing.
 
 **Try it on a copy of the database first.** Copy `twincity.db` to `twincity.copy.db` and set
 `DATABASE_URL=sqlite:///./twincity.copy.db`.

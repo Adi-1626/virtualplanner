@@ -1,5 +1,7 @@
 import type { FlyoverObject, MetroFlyoverObject } from './types';
 import type { TrafficNetwork } from './trafficTypes';
+import { flyoverOffsetAt, flyoverRampProfile, type FlyoverRampProfile } from '../geometry/vertical/flyoverRamp';
+import { isAsBuiltFlyover } from '../simulation/BridgeFeasibilityEngine';
 
 function getDistanceMeters(lon1: number, lat1: number, lon2: number, lat2: number): number {
   const R = 6371000;
@@ -51,7 +53,7 @@ function samePlan(a: readonly (readonly number[])[], b: readonly (readonly numbe
 /**
  * A flyover whose plan line was regenerated (GEOMETRY_EDITOR_DESIGN.md §3.4): `groundLine` is its new ground-level path.
  * The stored ground coordinates are dropped so applyFlyoverElevationProfile rebuilds them and the ramp/deck profile from
- * the new path (same 40 m legacy ramps; the ramp model is not changed here). Mutates and returns `flyover`.
+ * the new path (grade-driven ramps, flyoverRampProfileOf). Mutates and returns `flyover`.
  */
 export function resetFlyoverGround<T extends { coordinates: unknown; groundCoordinates?: unknown }>(flyover: T, groundLine: readonly (readonly number[])[]): T {
   (flyover as any).coordinates = groundLine.map(c => [c[0], c[1], c[2] || 0]);
@@ -60,10 +62,26 @@ export function resetFlyoverGround<T extends { coordinates: unknown; groundCoord
   return flyover;
 }
 
+/** Design speed for the ramp's vertical curves: the alignment's, else the deck speed (= design speed for new flyovers, D1). */
+function flyoverDesignSpeed(flyover: any): number | null {
+  const a = flyover.alignment?.designSpeedKmh;
+  if (typeof a === 'number' && a > 0) return a;
+  return typeof flyover.speedLimit === 'number' && flyover.speedLimit > 0 ? flyover.speedLimit : null;
+}
+
+/**
+ * The ramp profile this flyover gets on a line of `totalLengthM` (geometry/vertical/flyoverRamp.ts): grade-driven
+ * (4 % urban / 3.3 % highway, IRC:SP:90-2023 §4.13, with IRC:86-2018 Table 9.2 vertical curves) for a design drawn or
+ * edited here; the legacy 40 m ramp for an as-built (mapped) flyover, which is never reshaped (D5).
+ */
+export function flyoverRampProfileOf(flyover: any, totalLengthM: number): FlyoverRampProfile {
+  return flyoverRampProfile(flyover.elevation || 6.0, totalLengthM, {
+    roadClass: flyover.roadClass, designSpeedKmh: flyoverDesignSpeed(flyover), asBuilt: isAsBuiltFlyover(flyover),
+  });
+}
+
 export function applyFlyoverElevationProfile(flyover: any) {
   if (!flyover.coordinates || flyover.coordinates.length < 2) return;
-
-  const elevation = flyover.elevation || 6.0;
 
   // Resample coordinates to have at most 10m spacing
   flyover.coordinates = resampleCoordinates(flyover.coordinates, 10.0);
@@ -82,60 +100,29 @@ export function applyFlyoverElevationProfile(flyover: any) {
     distanceList.push(totalDist);
   }
 
-  // Legacy fixed 40 m ramp (a 15 % grade for the 6 m deck): a picture only. The grade is screened by BridgeFeasibilityEngine
-  // (IRC:SP:90-2023 §4.13: 4 % urban, 3.3 % highway); grade-driven ramp geometry is geometry phase 3
-  // (docs/urbanos/PLANNING_DEFAULTS_DECISIONS.md D5). Existing flyovers are never reshaped.
-  const rampLength = 40.0; // 40 meters default ramp length
-  const actualRampLength = Math.min(rampLength, totalDist / 2);
+  // Ramp shape from the deck height and the decided grade, the same profile BridgeFeasibilityEngine checks
+  // (docs/urbanos/PLANNING_DEFAULTS_DECISIONS.md D5). An as-built flyover keeps the legacy 40 m ramp.
+  const profile = flyoverRampProfileOf(flyover, totalDist);
 
   // Preserve/Reconstruct ground coordinates to avoid double-elevation accumulation
   // Rebuilt when the plan changed: a vertex added (length differs) or moved (a reshape that keeps the vertex count)
   if (!flyover.groundCoordinates || flyover.groundCoordinates.length !== flyover.coordinates.length || !samePlan(flyover.groundCoordinates, flyover.coordinates)) {
     const averageElev = flyover.coordinates.reduce((sum: number, c: any) => sum + (c[2] || 0), 0) / flyover.coordinates.length;
     if (averageElev > 1.0) {
-      flyover.groundCoordinates = flyover.coordinates.map((c: any, i: number) => {
-        const d = distanceList[i];
-        let offset = 0;
-        if (d < actualRampLength) {
-          offset = (d / actualRampLength) * elevation;
-        } else if (d > totalDist - actualRampLength) {
-          const remaining = totalDist - d;
-          offset = (remaining / actualRampLength) * elevation;
-        } else {
-          offset = elevation;
-        }
-        return [c[0], c[1], Math.max(0, c[2] - offset)];
-      });
+      // Heights already carry a ramp profile: take off the one that made them (stored with the object; a flyover from
+      // before it was stored was made with the legacy 40 m ramp)
+      const prev: FlyoverRampProfile = flyover.rampProfile && typeof flyover.rampProfile.modelledRampM === 'number'
+        ? { ...flyover.rampProfile, totalLengthM: totalDist, modelledRampM: Math.min(flyover.rampProfile.modelledRampM, totalDist / 2) }
+        : flyoverRampProfile(flyover.elevation || 6.0, totalDist, { asBuilt: true });
+      flyover.groundCoordinates = flyover.coordinates.map((c: any, i: number) => [c[0], c[1], Math.max(0, (c[2] || 0) - flyoverOffsetAt(prev, distanceList[i]))]);
     } else {
       flyover.groundCoordinates = flyover.coordinates.map((c: any) => [c[0], c[1], c[2] || 0]);
     }
   }
 
   const baseCoords = flyover.groundCoordinates;
-
-  // Apply profile to coordinates.
-  // RAMP_FOOT_CLEARANCE: The ramp starts 0.25m above ground so the base road
-  // surface is always visible beneath the ramp ends (prevents z-fighting with surface road).
-  const RAMP_FOOT_CLEARANCE = 0.25;
-
-  flyover.coordinates = baseCoords.map((c: any, i: number) => {
-    const d = distanceList[i];
-    let offset = 0;
-    if (d < actualRampLength) {
-      const t = d / actualRampLength;
-      // Smooth cubic ease-in for ramp rise: t³ ensures a gradual start
-      const easedT = t * t * (3 - 2 * t); // smoothstep
-      offset = RAMP_FOOT_CLEARANCE + easedT * (elevation - RAMP_FOOT_CLEARANCE);
-    } else if (d > totalDist - actualRampLength) {
-      const remaining = totalDist - d;
-      const t = remaining / actualRampLength;
-      const easedT = t * t * (3 - 2 * t);
-      offset = RAMP_FOOT_CLEARANCE + easedT * (elevation - RAMP_FOOT_CLEARANCE);
-    } else {
-      offset = elevation;
-    }
-    return [c[0], c[1], c[2] + offset];
-  });
+  flyover.rampProfile = profile;
+  flyover.coordinates = baseCoords.map((c: any, i: number) => [c[0], c[1], (c[2] || 0) + flyoverOffsetAt(profile, distanceList[i])]);
 }
 
 export function getFlyoverConnectionStatus(

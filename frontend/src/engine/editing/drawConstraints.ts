@@ -32,6 +32,7 @@ export const SNAP_MIN_M = 0.5;
 export const SNAP_MAX_M = 80;
 /** Auto radius for a `curved` object without criteria (cut-and-cover with no design speed): 50 m, assumed — no official figure (criteria.ts). */
 import { FALLBACK_AUTO_RADIUS_M } from '../geometry/alignment/criteria';
+import { flyoverRampProfile, maxRampGrade } from '../geometry/vertical/flyoverRamp';
 export { FALLBACK_AUTO_RADIUS_M };
 export { FALLBACK_AUTO_RADIUS_LABEL } from '../geometry/alignment/criteria';
 
@@ -332,6 +333,8 @@ export interface DrawReadoutData {
   /** Screening flags for the PI at the corner being drawn (radius checks), from checkAlignment. */
   flags: AlignmentFlag[];
   designSpeedKmh: number | null;
+  /** Elevation while drawing (road: next point height and grade; flyover: deck height and ramp grade). Null for other tools. */
+  vertical: DrawVerticalReadout | null;
 }
 
 /**
@@ -339,7 +342,7 @@ export interface DrawReadoutData {
  */
 export function drawReadout(
   points: readonly (readonly number[])[], radii: readonly DrawRadius[], s: AlignmentSettings, cursor: ResolvedCursor | null, typed: TypedInput,
-  opts: DrawCheckOptions = {},
+  opts: DrawCheckOptions & { vertical?: DrawVerticalInput } = {},
 ): DrawReadoutData {
   const pts = cursor && points.length > 0 ? [...points, cursor.point] : [...points];
   const rr = cursor && points.length > 0 ? [...radii, null] : [...radii];
@@ -347,9 +350,17 @@ export function drawReadout(
   const base: DrawReadoutData = {
     lengthM: cursor?.lengthM ?? null, bearingDeg: cursor?.bearingDeg ?? null, deflectionDeg: cursor?.deflectionDeg ?? null,
     radiusM: null, requestedRadiusM: null, radiusSource: null, clamped: false, totalLengthM: 0, behaviour: s.behaviour,
-    constraint: cursor?.constraint ?? 'none', typed, flags: [], designSpeedKmh: s.designSpeedKmh,
+    constraint: cursor?.constraint ?? 'none', typed, flags: [], designSpeedKmh: s.designSpeedKmh, vertical: null,
   };
-  if (pts.length < 2) return base;
+  const withVertical = (r: DrawReadoutData): DrawReadoutData => {
+    const v = opts.vertical;
+    if (!v) return r;
+    r.vertical = v.kind === 'road'
+      ? roadVerticalReadout(points, cursor && points.length > 0 ? cursor.point : null, v.roadClass, cursor?.constraint === 'network')
+      : deckVerticalReadout(v.deckHeightM, r.totalLengthM, v.roadClass, s.designSpeedKmh);
+    return r;
+  };
+  if (pts.length < 2) return withVertical(base);
   const a = buildDrawAlignment(pts, rr, s, opts);
   const f = filletAlignment(a);
   base.totalLengthM = f.ok ? f.lengthM : 0;
@@ -362,5 +373,84 @@ export function drawReadout(
     base.radiusSource = s.behaviour === 'angled' || req.radiusM === 0 ? 'sharp' : (req.radiusSource ?? 'auto');
     if (f.ok) base.flags = checkAlignment(a, { tbm: opts.tbm }).filter(fl => fl.piIndex === corner || fl.piIndex === undefined);
   }
-  return base;
+  return withVertical(base);
+}
+
+// ---- elevation while drawing (roads: point heights; flyovers: deck height) -------------------------------------------------
+
+/** PageUp / PageDown step, and with Shift. */
+export const DRAW_HEIGHT_STEP_M = 1;
+export const DRAW_HEIGHT_FINE_STEP_M = 0.5;
+/** Road points: ground (0) up to this, m above ground. */
+export const DRAW_HEIGHT_MAX_M = 30;
+/** Flyover deck height range while drawing, m above ground; the default is the deck height new flyovers always had. */
+export const DECK_HEIGHT_MIN_M = 1;
+export const DECK_HEIGHT_MAX_M = 30;
+export const DECK_HEIGHT_DEFAULT_M = 6;
+
+/** Height `current` moved by `delta`, snapped to 0.5 m and kept in [min, max]. */
+export function steppedHeight(current: number, delta: number, min: number, max: number): number {
+  const v = Math.round((current + delta) / DRAW_HEIGHT_FINE_STEP_M) * DRAW_HEIGHT_FINE_STEP_M;
+  return Math.min(max, Math.max(min, +v.toFixed(2)));
+}
+
+export type DrawVerticalInput =
+  | { kind: 'road'; roadClass?: RoadClassification }
+  | { kind: 'deck'; deckHeightM: number; roadClass?: RoadClassification };
+
+export interface DrawVerticalReadout {
+  kind: 'road' | 'deck';
+  /** Road: height of the next point above ground (the cursor). Deck: the flyover's deck height. m. */
+  heightM: number;
+  /** Road: grade from the last point to the cursor. Deck: steepest ramp grade on the line drawn so far. Percent, signed for a road. */
+  gradePct: number | null;
+  /** Road: steepest grade between the points already placed (percent, absolute). */
+  steepestPlacedPct: number | null;
+  limitPct: number;
+  source: string;
+  /** The grade is over the limit (screening). */
+  over: boolean;
+  /** Road: the cursor took its height from the road it snapped to (the PageUp/PageDown height does not apply there). */
+  fromNetwork?: boolean;
+  /** Deck: ramp each end needs at the limit (with vertical curves), and the line drawn so far. m. */
+  rampNeededM?: number;
+  lineM?: number;
+}
+
+const gradeOf = (a: readonly number[], b: readonly number[]): number | null => {
+  const run = distanceM(a, b);
+  return run > 0.5 ? ((b[2] ?? 0) - (a[2] ?? 0)) / run : null;
+};
+
+/**
+ * Road drawing: the cursor's height and the grade of the segment from the last point to it, against the D5 limit
+ * (4 % urban / 3.3 % highway, IRC:SP:90-2023 §4.13; urban = IRC:86-2018 §9.2). Grade between the clicked points (PI to
+ * PI, plan distance). Screening only.
+ */
+export function roadVerticalReadout(points: readonly (readonly number[])[], cursor: readonly number[] | null, roadClass?: RoadClassification, fromNetwork = false): DrawVerticalReadout {
+  const { grade, source } = maxRampGrade(roadClass);
+  const last = points[points.length - 1];
+  const g = last && cursor ? gradeOf(last, cursor) : null;
+  let steepest: number | null = null;
+  for (let i = 1; i < points.length; i++) {
+    const gi = gradeOf(points[i - 1], points[i]);
+    if (gi !== null) steepest = Math.max(steepest ?? 0, Math.abs(gi));
+  }
+  const over = (g !== null && Math.abs(g) > grade + 1e-9) || (steepest !== null && steepest > grade + 1e-9);
+  return {
+    kind: 'road', heightM: cursor ? (cursor[2] ?? 0) : (last?.[2] ?? 0), gradePct: g === null ? null : g * 100,
+    steepestPlacedPct: steepest === null ? null : steepest * 100, limitPct: grade * 100, source, over, fromNetwork,
+  };
+}
+
+/**
+ * Flyover drawing: the deck height and the ramp it needs (the same profile the 3D model and the desk check use,
+ * geometry/vertical/flyoverRamp.ts) against the line drawn so far. Screening only.
+ */
+export function deckVerticalReadout(deckHeightM: number, lineM: number, roadClass?: RoadClassification, designSpeedKmh?: number | null): DrawVerticalReadout {
+  const p = flyoverRampProfile(deckHeightM, lineM, { roadClass, designSpeedKmh });
+  return {
+    kind: 'deck', heightM: deckHeightM, gradePct: lineM > 0 ? p.modelledMaxGrade * 100 : null, steepestPlacedPct: null,
+    limitPct: p.gradeLimit * 100, source: p.gradeSource, over: !p.withinLimit, rampNeededM: p.rampLengthM, lineM,
+  };
 }
