@@ -1,5 +1,5 @@
 import type { RoadClassification, RoadObject } from '../objects/types';
-import { IRC_SP90_2023 } from '../geometry/alignment/criteria';
+import { flyoverRampProfile, maxRampGrade, type FlyoverRampProfile } from '../geometry/vertical/flyoverRamp';
 
 // ─── Result Types ────────────────────────────────────────────────────────────
 
@@ -36,8 +36,14 @@ export interface FeasibilityResult {
   feasible: boolean;
   checks: FeasibilityCheck[];
   surfaceRoadImpacts: SurfaceImpact[];
+  /** Alignment each ramp needs at the grade limit, with its vertical curves (m, rounded up). */
   rampLengthRequired: number;
+  /** Length on the grade alone, H / g (m, rounded up). */
+  rampGradeLength?: number;
+  /** Ramp length the 3D model has at each end (m): the required length, or half the line when it is too short. */
   rampLengthAvailable: { start: number; end: number };
+  /** The ramp profile the 3D model draws (geometry/vertical/flyoverRamp.ts), the same one this check reads. */
+  rampProfile?: FlyoverRampProfile;
   totalFlyoverLength: number;
   /** What kind of check this is. Always a desk screen on mapped geometry, never a feasibility study. */
   scope?: string;
@@ -52,6 +58,8 @@ export interface BridgeScreenOptions {
   asBuilt?: boolean;
   /** Class of the road carried (sets the gradient limit). Absent = urban road. */
   roadClass?: RoadClassification;
+  /** Design speed of the deck (sets the vertical-curve length). Absent = the class design speed (IRC:86-2018 Table 3.1). */
+  designSpeedKmh?: number | null;
 }
 
 export const BRIDGE_SCREEN_SCOPE =
@@ -84,7 +92,7 @@ function isMappedOsm(road: RoadObject): boolean {
  */
 export function isAsBuiltFlyover(obj: { id: string; osmProvenance?: unknown; provenance?: { originalSource?: string; geometryModified?: boolean } }): boolean {
   if (obj.provenance?.geometryModified) return false;
-  if (obj.osmProvenance || obj.id.startsWith('osm_')) return true;
+  if (obj.osmProvenance || (obj.id ?? '').startsWith('osm_')) return true;
   const src = obj.provenance?.originalSource;
   return src === 'OSM' || src === 'municipal' || src === 'surveyed';
 }
@@ -92,19 +100,10 @@ export function isAsBuiltFlyover(obj: { id: string; osmProvenance?: unknown; pro
 // ─── IRC/MORTH Constants ─────────────────────────────────────────────────────
 
 /**
- * Maximum approach (ramp) gradient used by this desk check, by the class of road carried
- * (docs/urbanos/PLANNING_DEFAULTS_DECISIONS.md D5):
- * - urban roads (arterial / collector / local): 4 %, IRC:SP:90-2023 §4.13 ("a gradient of 4 percent should be considered
- *   the maximum as per IRC:86"; IRC:86-2018 §9.2);
- * - highway: 3.3 %, IRC:SP:90-2023 §4.13 Table 4.12 limiting gradient, plain & rolling terrain.
- * The 3.5 % cap of IRC:SP:90-2010 §6.14 is not in the 2023 revision. Screening on new / edited designs; an as-built flyover
- * is shown the limit for information only. The drawn 3D ramp shape (flyoverHelper, legacy 40 m) is a picture, not this check.
+ * Maximum approach (ramp) gradient by the class of road carried (D5: 4 % urban, 3.3 % highway, IRC:SP:90-2023 §4.13).
+ * Defined with the ramp profile (geometry/vertical/flyoverRamp.ts) so the 3D ramp and this check use one rule.
  */
-export function maxRampGrade(roadClass?: RoadClassification): { grade: number; source: string } {
-  return roadClass === 'highway'
-    ? { grade: IRC_SP90_2023.highwayLimitingGradientPct / 100, source: IRC_SP90_2023.highwayGradientSource }
-    : { grade: IRC_SP90_2023.urbanMaxGradientPct / 100, source: IRC_SP90_2023.urbanGradientSource };
-}
+export { maxRampGrade };
 
 /** IRC:6 — Minimum median width to fit a standard pier cap (2.4m cap + 0.3m clearance each side) */
 const MIN_MEDIAN_FOR_PIER_M = 3.0;
@@ -286,36 +285,40 @@ export class BridgeFeasibilityEngine {
 
     const totalLength = bfe_pathLengthMeters(flyoverCoords);
 
-    // ramp length = elevation / max grade (IRC:SP:90-2023 §4.13, by the class of road carried)
-    const { grade: MAX_RAMP_GRADE, source: MAX_RAMP_GRADE_SOURCE } = maxRampGrade(opts.roadClass);
-    const rampLengthRequired = Math.ceil(elevation / MAX_RAMP_GRADE);
+    // Ramp profile: the one the 3D model draws (geometry/vertical/flyoverRamp.ts, objects/flyoverHelper.ts). Each ramp needs
+    // max(H/g, Lv) + Lv of the drawn line: H/g on the grade (IRC:SP:90-2023 §4.13) and half a vertical curve
+    // (IRC:86-2018 Table 9.2) at each end of it. An as-built flyover is drawn with the legacy 40 m ramp and not judged.
+    const design = flyoverRampProfile(elevation, totalLength, { roadClass: opts.roadClass, designSpeedKmh: opts.designSpeedKmh });
+    const model = asBuilt ? flyoverRampProfile(elevation, totalLength, { roadClass: opts.roadClass, designSpeedKmh: opts.designSpeedKmh, asBuilt: true }) : design;
+    const MAX_RAMP_GRADE = design.gradeLimit, MAX_RAMP_GRADE_SOURCE = design.gradeSource;
+    const rampLengthRequired = Math.ceil(design.rampLengthM - 1e-6);
+    const rampGradeLength = Math.ceil(design.gradeLengthM - 1e-6);
+    const curve = Math.round(design.verticalCurveM);
     const pct = `${+(MAX_RAMP_GRADE * 100).toFixed(1)} %`;
+    const modelPct = `${(model.modelledMaxGrade * 100).toFixed(1)} %`;
+    const modelRamp = Math.round(model.modelledRampM);
 
     const startCoord = flyoverCoords[0];
     const endCoord = flyoverCoords[flyoverCoords.length - 1];
 
-    const rampStartAvail = bfe_getRampApproachLength(startCoord, surfaceRoads);
-    const rampEndAvail   = bfe_getRampApproachLength(endCoord, surfaceRoads);
-
     // ── Check 1: Ramp Grade (IRC:SP:90-2023 §4.13; information only on an as-built flyover) ─
 
-    const minRampAvail = Math.min(rampStartAvail, rampEndAvail);
-    const rampFits = minRampAvail >= rampLengthRequired;
-    const rampGradeStatus: FeasibilityStatus = asBuilt ? 'info' : rampFits ? 'pass' : 'fail';
+    const rampGradeStatus: FeasibilityStatus = asBuilt ? 'info' : design.withinLimit ? 'pass' : 'fail';
+    const need = `${rampGradeLength} m on the grade plus ${rampLengthRequired - rampGradeLength} m for the vertical curves = ${rampLengthRequired} m at each end`;
 
     checks.push({
       id: 'ramp_grade',
       name: `Ramp grade ≤ ${pct} (${MAX_RAMP_GRADE_SOURCE})`,
       status: rampGradeStatus,
       message: asBuilt
-        ? `As-built flyover: for information only. A ${elevation} m rise at ${pct} would need ${rampLengthRequired} m of ramp; its as-built gradient is not measured here and it is not judged against the limit.`
-        : rampFits
-          ? `A ${elevation} m rise at ${pct} needs ${rampLengthRequired} m of ramp. The longest mapped road within 60 m of each end is long enough (start ${Math.round(rampStartAvail)} m, end ${Math.round(rampEndAvail)} m).`
-          : `A ${elevation} m rise at ${pct} needs ${rampLengthRequired} m of ramp, but the shortest approach road found is ${Math.round(minRampAvail)} m${minRampAvail === 0 ? ' (no mapped road within 60 m of an end)' : ''}. The ramp would be steeper than ${pct}.`,
-      actual: Math.round(minRampAvail),
+        ? `As-built flyover: for information only. A ${elevation} m rise at ${pct} would need ${need}; the model keeps its legacy ${modelRamp} m ramps, its as-built gradient is not measured here and it is not judged against the limit.`
+        : design.withinLimit
+          ? `A ${elevation} m deck at ${pct} needs ${need}. The ${Math.round(totalLength)} m alignment holds both ramps and the 3D model draws them so (steepest ${modelPct}).`
+          : `A ${elevation} m deck at ${pct} needs ${need} (${2 * rampLengthRequired} m for both), but the alignment is ${Math.round(totalLength)} m. The 3D model squeezes each ramp into ${modelRamp} m, a ${modelPct} grade, steeper than ${pct}. Lengthen the flyover or lower the deck.`,
+      actual: modelRamp,
       required: rampLengthRequired,
-      unit: 'm approach',
-      basis: `Length of mapped roads near each end, at a ${pct} ramp (${MAX_RAMP_GRADE_SOURCE}). Screening only. Not checked: whether that road is straight and wide enough to hold the ramp.`
+      unit: 'm ramp each end',
+      basis: `Ramp profile of the 3D model on the drawn alignment: H / g on the grade (${MAX_RAMP_GRADE_SOURCE}) with a ${curve} m vertical curve at its foot and top (${design.verticalCurveSource}, minimum length; the sight-distance length is not worked out). Screening only. Not checked: whether the road under each ramp is wide enough to hold it.`
     });
 
     // ── Check 2: Minimum Deck Length (50 m, assumed — no official figure: warn, never fail) ───────
@@ -334,12 +337,12 @@ export class BridgeFeasibilityEngine {
       actual: Math.round(totalLength),
       required: minDeckLength,
       unit: 'm total',
-      basis: `Drawn alignment length (measured on the map). Ramps from ${MAX_RAMP_GRADE_SOURCE}; the ${MIN_FLAT_DECK_M} m flat deck is ${MIN_FLAT_DECK_LABEL}.`
+      basis: `Drawn alignment length (measured on the map). Ramps as in the ramp-grade check (${MAX_RAMP_GRADE_SOURCE}, ${design.verticalCurveSource}); the ${MIN_FLAT_DECK_M} m flat deck is ${MIN_FLAT_DECK_LABEL}.`
     });
 
     // ── Check 3: Pier Fit in Median (IRC:6) ───────────────────────────────────
 
-    const underpassingRoads = bfe_findUnderpassingRoads(flyoverCoords, rampLengthRequired, surfaceRoads);
+    const underpassingRoads = bfe_findUnderpassingRoads(flyoverCoords, model.modelledRampM, surfaceRoads);
     // Median widths are only evidence when someone set them: OpenStreetMap does not map median width, so the
     // model's value for an OSM road is a class default, and those roads count as "not known" instead of narrow or wide.
     const narrowMedianRoads: string[] = [];
@@ -445,10 +448,9 @@ export class BridgeFeasibilityEngine {
       checks,
       surfaceRoadImpacts: impacts,
       rampLengthRequired,
-      rampLengthAvailable: {
-        start: Math.round(rampStartAvail),
-        end: Math.round(rampEndAvail)
-      },
+      rampGradeLength,
+      rampLengthAvailable: { start: modelRamp, end: modelRamp },
+      rampProfile: model,
       totalFlyoverLength: Math.round(totalLength),
       scope: BRIDGE_SCREEN_SCOPE,
       notChecked: BRIDGE_SCREEN_NOT_CHECKED,

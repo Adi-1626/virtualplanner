@@ -1,8 +1,8 @@
 /**
  * Reshape commit pipeline (GEOMETRY_EDITOR_DESIGN.md §3.4, §6, §8 integration, phase 2 agent D): everything downstream of
  * a reshaped alignment stays correct — network joins and crossings, Undo of the object and the roads it split, road
- * sections, tunnel / utility depth controls at PIs with per-vertex depths derived, flyover ground line + legacy 40 m
- * ramps, and level-crossing decisions carried by distance.
+ * sections, tunnel / utility depth controls at PIs with per-vertex depths derived, flyover ground line + grade-driven
+ * ramps (4 % urban, IRC:SP:90-2023 §4.13), and level-crossing decisions carried by distance.
  */
 import { describe, it, expect } from 'vitest';
 import { ObjectManager } from '../objects/ObjectManager';
@@ -456,8 +456,8 @@ describe('regenerateGeometry: utilities', () => {
   });
 });
 
-describe('commitGeometry: flyovers (legacy 40 m ramps)', () => {
-  it('resets the ground line so the profile follows the new plan, with ramps still 40 m', () => {
+describe('commitGeometry: flyovers (grade-driven ramps)', () => {
+  it('resets the ground line so the profile follows the new plan, with grade-driven ramps (4 % + vertical curves)', () => {
     const { objects, ctx } = setup();
     const a = align([[73.80, 18.50], [73.805, 18.502], [73.81, 18.50]], 0, 'flyover');
     const fly = {
@@ -478,10 +478,19 @@ describe('commitGeometry: flyovers (legacy 40 m ramps)', () => {
     // The plan passes the moved PI's curve, not the old corner
     const oldCorner = [73.805, 18.502];
     expect(Math.min(...f.coordinates.map(c => planDistM(c, oldCorner)))).toBeGreaterThan(20);
-    // Legacy ramp: full deck height from 40 m along, 0.25 m clearance at the foot
+    // Grade ramp: local class, the alignment's 30 km/h design speed → 150 m at 4 % + 15 m vertical curves = 165 m; full
+    // deck from there; 0.25 m clearance at the foot; nowhere steeper than 4 %
     const ch = chainagesOf(f.coordinates);
     expect(f.coordinates[0][2]).toBeCloseTo(0.25, 6);
-    f.coordinates.forEach((c, i) => { if (ch[i] >= 40 && ch[i] <= ch.at(-1)! - 40) expect(c[2]).toBeCloseTo(6, 6); });
+    const rp = (f as { rampProfile?: { rampLengthM: number; designSpeedKmh: number } }).rampProfile!;
+    expect(rp.designSpeedKmh).toBe(a.designSpeedKmh);
+    expect(rp.rampLengthM).toBeCloseTo(165, 6);
+    f.coordinates.forEach((c, i) => { if (ch[i] >= 165 && ch[i] <= ch.at(-1)! - 165) expect(c[2]).toBeCloseTo(6, 6); });
+    expect(f.coordinates.some((c, i) => ch[i] > 40 && ch[i] < 150 && c[2] < 5)).toBe(true); // not the old 40 m ramp
+    for (let i = 1; i < f.coordinates.length; i++) {
+      const run = ch[i] - ch[i - 1];
+      if (run > 0.5) expect(Math.abs(f.coordinates[i][2] - f.coordinates[i - 1][2]) / run).toBeLessThanOrEqual(0.04 + 1e-9);
+    }
     expect((f as { feasibilityResult?: unknown }).feasibilityResult).toBeTruthy();
   });
 

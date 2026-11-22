@@ -245,6 +245,8 @@ export interface FlyoverObject extends BaseCityObject {
   elevation: number; // base height of deck above terrain in meters (e.g. 6)
   pierSpacing: number; // spacing between support columns in meters (e.g. 30)
   groundCoordinates?: [number, number, number][];
+  /** The ramp profile the 3D heights were made with (geometry/vertical/flyoverRamp.ts, applyFlyoverElevationProfile). Derived. */
+  rampProfile?: import('../geometry/vertical/flyoverRamp').FlyoverRampProfile;
 
   // Populated by BridgeFeasibilityEngine at creation time
   feasibilityResult?: import('../simulation/BridgeFeasibilityEngine').FeasibilityResult;
@@ -331,6 +333,8 @@ export interface MetroFlyoverObject extends BaseCityObject {
   metroElevation: number; // top deck height above ground (e.g. 12)
   pierSpacing: number; // central column spacing (e.g. 30)
   groundCoordinates?: [number, number, number][];
+  /** The ramp profile the 3D heights were made with (geometry/vertical/flyoverRamp.ts, applyFlyoverElevationProfile). Derived. */
+  rampProfile?: import('../geometry/vertical/flyoverRamp').FlyoverRampProfile;
 
   // Populated by BridgeFeasibilityEngine at creation time
   feasibilityResult?: import('../simulation/BridgeFeasibilityEngine').FeasibilityResult;

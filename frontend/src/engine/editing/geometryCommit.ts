@@ -7,7 +7,7 @@
  *   regenerate (densify, heights carried from the old line) → ends re-joined to the network (as when drawing)
  *   → T-junction splits of the roads an end lands on → crossings found again (roads and flyovers; the flyover on its
  *   profile) with earlier level decisions carried by distance → flyover ground line reset so its profile is rebuilt
- *   (legacy 40 m ramps unchanged) and its ramp-merge capacity effects recomputed → road sections remapped by chainage
+ *   (grade-driven ramps, geometry/vertical/flyoverRamp.ts) and its ramp-merge capacity effects recomputed → road sections remapped by chainage
  *   → tunnel / utility depth controls kept at the PIs and per-vertex depths derived from them → one `batch` diff.
  *
  * `regenerateGeometry` is the pure part (no network, no history), used for tunnels, utilities and metro lines as a
@@ -205,7 +205,7 @@ export function commitGeometry(obj: CityObject, alignment: HorizontalAlignment, 
       (next as unknown as RoadObject).sections = markGeometryEdited(remapSectionsByChainage((obj as RoadObject).sections!, (obj as RoadObject).coordinates, coords));
     }
 
-    // 5. Flyover: ramp-merge capacity effects on the surface roads worked out again for the new path (legacy ramps)
+    // 5. Flyover: ramp-merge capacity effects on the surface roads worked out again for the new path (same ramp profile as the 3D model)
     if (isFlyover(obj.type)) {
       const { flyover, roadUpdates } = objects.flyoverFeasibility(asCity(next), { edited: true });
       next = { ...next, ...flyover } as LineObj;

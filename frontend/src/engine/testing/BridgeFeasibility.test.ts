@@ -32,22 +32,22 @@ function mToLonDeg(m: number, lat: number): number {
 }
 
 // Shared coordinate layout:
-// Flyover runs NORTH 400m from BASE_ORIGIN.
+// Flyover runs NORTH 500m from BASE_ORIGIN (two 190 m ramps at 4 % with 20 m vertical-curve halves + a 50 m deck fit).
 // Approach roads START at the flyover endpoints (closestDist = 0 < 60m).
 // Underpassing road passes within 25m of the flyover mid-section lon.
 
 const BASE_LON = 73.74;
 const BASE_LAT = 18.585;
 const FLY_START: [number, number, number] = [BASE_LON, BASE_LAT, 0];
-const FLY_END: [number, number, number]   = [BASE_LON, BASE_LAT + mToLatDeg(400), 0];
-const MID_LAT = BASE_LAT + mToLatDeg(200); // mid-section
+const FLY_END: [number, number, number]   = [BASE_LON, BASE_LAT + mToLatDeg(500), 0];
+const MID_LAT = BASE_LAT + mToLatDeg(250); // mid-section
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('BridgeFeasibilityEngine', () => {
   const engine = new BridgeFeasibilityEngine();
 
-  it('Test 1: PASS - flyover 400m with 500m approach roads (6m elevation)', () => {
+  it('Test 1: PASS - flyover 500m with 500m approach roads (6m elevation)', () => {
     const roadAtStart = makeRoad('r1', 'Start Road', [
       FLY_START,
       [BASE_LON + mToLonDeg(500, BASE_LAT), BASE_LAT, 0],
@@ -59,8 +59,9 @@ describe('BridgeFeasibilityEngine', () => {
 
     const result = engine.run([FLY_START, FLY_END], 6.0, 4, [roadAtStart, roadAtEnd]);
 
-    expect(result.rampLengthRequired).toBe(150); // 6 m at 4 % (urban, IRC:SP:90-2023 §4.13) = 150 m
-    expect(result.totalFlyoverLength).toBeGreaterThanOrEqual(350);
+    expect(result.rampGradeLength).toBe(150); // 6 m at 4 % (urban, IRC:SP:90-2023 §4.13) = 150 m on the grade
+    expect(result.rampLengthRequired).toBe(190); // + 2 × 20 m vertical-curve halves (IRC:86-2018 Table 9.2, 60 km/h: 40 m)
+    expect(result.totalFlyoverLength).toBeGreaterThanOrEqual(450);
 
     const deckCheck = result.checks.find(c => c.id === 'deck_length')!;
     expect(deckCheck.status).toBe('pass');
@@ -71,7 +72,7 @@ describe('BridgeFeasibilityEngine', () => {
     expect(result.feasible).toBe(true);
   });
 
-  it('Test 2: flyover only 80m: deck shorter than 150+150+50 m only WARNS (50 m deck is assumed), missing end approach fails the 4 % ramp', () => {
+  it('Test 2: flyover only 80m: deck shorter than 190+190+50 m only WARNS (50 m deck is assumed); the ramps squeezed into 40 m fail the 4 % grade', () => {
     const shortEnd: [number, number, number] = [BASE_LON, BASE_LAT + mToLatDeg(80), 0];
     const roadAtStart = makeRoad('r3', 'Short Start Road', [
       FLY_START,
@@ -83,7 +84,10 @@ describe('BridgeFeasibilityEngine', () => {
     const deckCheck = result.checks.find(c => c.id === 'deck_length')!;
     expect(deckCheck.status).toBe('warn');
     expect(deckCheck.name).toContain(MIN_FLAT_DECK_LABEL);
-    expect(result.checks.find(c => c.id === 'ramp_grade')!.status).toBe('fail');
+    const ramp = result.checks.find(c => c.id === 'ramp_grade')!;
+    expect(ramp.status).toBe('fail');
+    expect(ramp.message).toMatch(/squeezes each ramp into 40 m/);
+    expect(result.rampProfile!.modelledMaxGrade).toBeGreaterThan(0.04);
     expect(result.feasible).toBe(false);
   });
 
@@ -192,13 +196,19 @@ describe('BridgeFeasibilityEngine', () => {
     expect(maxRampGrade(undefined).grade).toBe(0.04);
     expect(maxRampGrade('highway')).toMatchObject({ grade: 0.033 });
     expect(maxRampGrade('local').source).toContain('IRC:SP:90-2023 §4.13');
+    // The ramps sit on the drawn alignment (as the 3D model draws them): approach roads no longer decide the grade
     const r = engine.run([FLY_START, FLY_END], 6.0, 4, []);
     const ramp = r.checks.find(c => c.id === 'ramp_grade')!;
     expect(ramp.name).toContain('4 %');
     expect(ramp.basis).toContain('IRC:SP:90-2023 §4.13');
-    expect(ramp.status).toBe('fail');
+    expect(ramp.basis).toContain('IRC:86-2018 Table 9.2');
+    expect(ramp.status).toBe('pass');
     const hw = engine.run([FLY_START, FLY_END], 6.0, 4, [], { roadClass: 'highway' });
-    expect(hw.rampLengthRequired).toBe(182); // 6 / 0.033 = 181.8
+    expect(hw.rampGradeLength).toBe(182); // 6 / 0.033 = 181.8
+    expect(hw.rampLengthRequired).toBe(232); // + 50 m (80 km/h vertical curves)
+    // 500 m holds 2 × 232 m of ramp at 3.3 %, but not the assumed 50 m flat deck as well: a warning only
+    expect(hw.checks.find(c => c.id === 'ramp_grade')!.status).toBe('pass');
+    expect(hw.checks.find(c => c.id === 'deck_length')!.status).toBe('warn');
   });
 
   it('D5: an as-built flyover is information only — nothing fails, no surface road is changed', () => {
