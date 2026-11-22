@@ -79,14 +79,14 @@ export const AlignmentPanel: React.FC<{ objectId: string }> = ({ objectId }) => 
             <select data-testid="align-speed" className="bg-slate-900 border border-white/10 rounded px-1 py-0.5" value={a.designSpeedKmh ?? ''}
               onChange={e => ed.setDesignSpeed(e.target.value === '' ? null : Number(e.target.value))}>
               <option value="">not set</option>
-              {[20, 30, 40, 50, 60, 65, 80, 90, 100, 120].map(v => <option key={v} value={v}>{v} km/h</option>)}
+              {[20, 30, 40, 50, 60, 65, 70, 80, 90, 100, 120].map(v => <option key={v} value={v}>{v} km/h</option>)}
             </select>
             <span className="text-slate-500">({a.designSpeedSource === 'user' ? 'set by you' : 'class default'})</span>
           </label>
-          <label className="inline-flex items-center gap-1" title="Superelevation cap used by the radius screen (IRC:86 §10.2.1)">e max
+          <label className="inline-flex items-center gap-1" title="Superelevation cap used by the radius screen: 4 % on urban roads (IRC:86-2018 §8.2.1), 7 % non-urban or flyover deck (IRC:SP:90-2010 §6.13.2)">e max
             <select data-testid="align-emax" className="bg-slate-900 border border-white/10 rounded px-1 py-0.5" value={a.eMax}
               onChange={e => ed.setEMax(Number(e.target.value) === 0.07 ? 0.07 : 0.04)}>
-              <option value={0.04}>4 %</option><option value={0.07}>7 %</option>
+              <option value={0.04}>4 % (urban)</option><option value={0.07}>7 % (non-urban / deck)</option>
             </select>
           </label>
         </div>
@@ -130,7 +130,7 @@ export const AlignmentPanel: React.FC<{ objectId: string }> = ({ objectId }) => 
       {info.map((f, i) => <p key={i} className="text-xs text-slate-400 leading-snug">{f.message}</p>)}
       {!angled && transitions.length > 0 && (
         <p className="text-xs text-slate-500 leading-snug">
-          Transition curves are not modelled yet; at this design speed the curves would need about {transitions.map(r => `${r.transitionNeededM!.toFixed(0)} m (pt ${r.index + 1})`).join(', ')} (IRC:86 §10.5.2). Screening only — not a design check or approval.
+          Transition curves are not modelled yet; at this design speed the curves would need about {transitions.map(r => `${r.transitionNeededM!.toFixed(0)} m (pt ${r.index + 1})`).join(', ')} (IRC:86-2018 §8.5, Table 8.3). Screening only — not a design check or approval.
         </p>
       )}
       {!warn.length && sum?.ok && a.designSpeedKmh !== null && !angled && <p className="text-xs text-slate-500">No radius flag found (screening only, not approval).</p>}

@@ -10,7 +10,7 @@ export const inputCls = 'w-full rounded-lg bg-white/[0.05] border border-white/1
 export const labelCls = 'block text-xs text-slate-400 mb-1';
 export const when = (iso: string | null | undefined) => formatWhen(iso);
 
-export const ACTION_LABEL: Record<string, string> = { create: 'created', update: 'changed', delete: 'deleted', export: 'exported' };
+export const ACTION_LABEL: Record<string, string> = { create: 'created', update: 'changed', delete: 'deleted', export: 'exported', archive: 'archived' };
 export const ENTITY_LABEL: Record<string, string> = {
   project: 'Project', project_link: 'Attachment', decision: 'Decision', project_report: 'Report', scenario: 'Scenario', scenario_change: 'Scenario edit',
   scenario_version: 'Scenario version', run: 'Simulation run', dataset: 'Traffic dataset', count_record: 'Count record', assessment: 'Feasibility assessment',

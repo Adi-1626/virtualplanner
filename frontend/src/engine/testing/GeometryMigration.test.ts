@@ -76,14 +76,15 @@ describe('geometry lock (OSM-imported stays locked)', () => {
 
 describe('defaults (one config, not yet confirmed by the user)', () => {
   it('per type', () => {
-    expect(defaultAlignmentSettings({ type: 'road', roadClass: 'arterial' })).toMatchObject({ behaviour: 'curved', designSpeedKmh: 80, eMax: 0.04, criteria: 'irc86-urban', designSpeedSource: 'class-default' });
-    expect(defaultAlignmentSettings({ type: 'road', roadClass: 'collector' }).designSpeedKmh).toBe(50);
+    // D1 IRC:86-2018 Table 3.1 (plain): expressway 80, arterial 60, collector 40, local 30; D3 e 4 % surface, 7 % deck
+    expect(defaultAlignmentSettings({ type: 'road', roadClass: 'arterial' })).toMatchObject({ behaviour: 'curved', designSpeedKmh: 60, eMax: 0.04, criteria: 'irc86-urban', designSpeedSource: 'class-default' });
+    expect(defaultAlignmentSettings({ type: 'road', roadClass: 'collector' }).designSpeedKmh).toBe(40);
     expect(defaultAlignmentSettings({ type: 'road', roadClass: 'local' }).designSpeedKmh).toBe(30);
-    expect(defaultAlignmentSettings({ type: 'road', roadClass: 'highway' })).toMatchObject({ designSpeedKmh: 80, criteria: 'irc73-rural' });
-    expect(defaultAlignmentSettings({ type: 'flyover', roadClass: 'highway' })).toMatchObject({ designSpeedKmh: 100, eMax: 0.07 });
-    expect(defaultAlignmentSettings({ type: 'metro_flyover', roadClass: 'arterial' })).toMatchObject({ designSpeedKmh: 80, eMax: 0.07 });
-    expect(defaultAlignmentSettings({ type: 'flyover', roadClass: 'collector' }).designSpeedKmh).toBe(60);
-    expect(defaultAlignmentSettings({ type: 'flyover', roadClass: 'local' }).designSpeedKmh).toBe(40);
+    expect(defaultAlignmentSettings({ type: 'road', roadClass: 'highway' })).toMatchObject({ designSpeedKmh: 80, eMax: 0.04, criteria: 'irc86-urban' });
+    expect(defaultAlignmentSettings({ type: 'flyover', roadClass: 'highway' })).toMatchObject({ designSpeedKmh: 80, eMax: 0.07 });
+    expect(defaultAlignmentSettings({ type: 'metro_flyover', roadClass: 'arterial' })).toMatchObject({ designSpeedKmh: 60, eMax: 0.07 });
+    expect(defaultAlignmentSettings({ type: 'flyover', roadClass: 'collector' }).designSpeedKmh).toBe(40);
+    expect(defaultAlignmentSettings({ type: 'flyover', roadClass: 'local' }).designSpeedKmh).toBe(30);
     expect(defaultAlignmentSettings({ type: 'metro_line' }).criteria).toBe('metro-pune-sk-dpr');
     expect(defaultAlignmentSettings({ type: 'underground_alignment', alignmentKind: 'bored_tunnel' }).criteria).toBe('metro-pune-sk-dpr');
     expect(defaultAlignmentSettings({ type: 'underground_alignment', alignmentKind: 'storm_drain' })).toMatchObject({ behaviour: 'angled', criteria: 'none', designSpeedKmh: null });

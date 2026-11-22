@@ -38,7 +38,7 @@ export interface HorizontalAlignment {
   /** null = not set → checks say "no design speed set", never a pass. */
   designSpeedKmh: number | null;
   designSpeedSource: 'class-default' | 'user';
-  /** Superelevation cap used by the screen (IRC:86 §10.2.1). */
+  /** Superelevation cap used by the screen (IRC:86-2018 §8.2.1; IRC:SP:90-2010 §6.13.2 for decks). */
   eMax: 0.04 | 0.07;
   criteria: AlignmentCriteria;
 }
@@ -184,7 +184,7 @@ export type GeometryLockReason = 'osm-import' | 'imported-metro' | 'from-records
 export interface CriterionValue {
   valueM: number;
   basis: 'table' | 'formula' | 'project-value';
-  /** e.g. "IRC:86-1983 Table 10" or "calculated from IRC:73-1980 formula R = V²/127(e+f), f 0.15". */
+  /** e.g. "IRC:86-2018 Table 8.2" or "calculated from IRC:73-1980 formula R = V²/127(e+f), f 0.15". */
   source: string;
 }
 

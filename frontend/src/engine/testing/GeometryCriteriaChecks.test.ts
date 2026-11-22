@@ -1,17 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { checkAlignment, minRadius, requiredTransitionLength, type HorizontalAlignment } from '../geometry/alignment';
 import {
-  IRC86_TABLE10_MIN_RADIUS_M, IRC86_TABLE8_SSD_M, IRC_SP90, METRO_PUNE_SK_DPR, radiusFromFormula, SCREENING_DISCLAIMER, VERTICAL_CURVE_MIN,
+  FALLBACK_AUTO_RADIUS_LABEL, FALLBACK_AUTO_RADIUS_M, IRC86_DESIGN_SPEED_KMH, IRC86_EMAX, IRC86_TABLE10_MIN_RADIUS_M, IRC86_TABLE8_SSD_M, IRC_SP90, IRC_SP90_2023, METRO_PUNE_SK_DPR, radiusFromFormula, SCREENING_DISCLAIMER, VERTICAL_CURVE_MIN,
 } from '../geometry/alignment/criteria';
 import { pisFromXY } from './geometryTestHelpers';
 
-describe('criteria tables (as read in GEOMETRY_EDITOR_DESIGN.md §2.2)', () => {
-  it('IRC:86 Table 10, Table 8, Table 14 / SP:23 Table 7, SP:90, Pune S–K DPR', () => {
-    expect(IRC86_TABLE10_MIN_RADIUS_M).toEqual({ 30: { e7: 30, e4: 40 }, 50: { e7: 90, e4: 105 }, 60: { e7: 130, e4: 150 }, 80: { e7: 230, e4: 265 } });
-    expect(IRC86_TABLE8_SSD_M).toEqual({ 30: 30, 50: 60, 60: 80, 80: 120 });
+describe('criteria tables (IRC:86-2018, PLANNING_DEFAULTS_DECISIONS.md)', () => {
+  it('IRC:86-2018 Tables 3.1, 8.2, 7.1, 9.2 / SP:23 Table 7, SP:90, Pune S–K DPR', () => {
+    expect(IRC86_DESIGN_SPEED_KMH).toEqual({ urbanExpressway: 80, arterial: 60, subArterial: 60, collector: 40, local: 30 });
+    expect(IRC86_TABLE10_MIN_RADIUS_M).toEqual({
+      20: { e7: 15, e4: 20 }, 30: { e7: 30, e4: 40 }, 40: { e7: 60, e4: 70 }, 50: { e7: 90, e4: 105 },
+      60: { e7: 130, e4: 150 }, 70: { e7: 175, e4: 200 }, 80: { e7: 230, e4: 265 },
+    });
+    expect(IRC86_EMAX).toMatchObject({ max: 0.07, urbanDesirable: 0.04, source: 'IRC:86-2018 §8.2.1' });
+    expect(IRC86_TABLE8_SSD_M).toEqual({ 20: 20, 30: 30, 40: 45, 50: 60, 60: 80, 70: 105, 80: 120 });
     expect(Object.fromEntries(Object.entries(VERTICAL_CURVE_MIN).map(([v, r]) => [v, [r.maxGradeChangePct, r.minLengthM]])))
-      .toEqual({ 30: [1.5, 15], 40: [1.2, 20], 50: [1.0, 30], 60: [0.8, 40], 80: [0.6, 50], 100: [0.5, 60] });
+      .toEqual({ 20: [1.5, 15], 30: [1.5, 15], 40: [1.2, 20], 50: [1.0, 30], 60: [0.8, 40], 70: [0.6, 50], 80: [0.6, 50], 100: [0.5, 60] });
+    expect(FALLBACK_AUTO_RADIUS_M).toBe(50);
+    expect(FALLBACK_AUTO_RADIUS_LABEL).toMatch(/assumed, no official figure/);
     expect(IRC_SP90.maxGradientPct).toBe(3.5);
+    expect(IRC_SP90.supersededBy).toBe('IRC:SP:90-2023');
+    expect([IRC_SP90_2023.urbanMaxGradientPct, IRC_SP90_2023.highwayLimitingGradientPct, IRC_SP90_2023.eMaxSmallRadius]).toEqual([4, 3.3, 0.07]);
     expect([METRO_PUNE_SK_DPR.minRadiusLimitingM, METRO_PUNE_SK_DPR.minRadiusPreferentialM, METRO_PUNE_SK_DPR.minRadiusTbmM, METRO_PUNE_SK_DPR.minRadiusAtStationsM])
       .toEqual([120, 225, 200, 1000]);
   });
@@ -20,13 +29,15 @@ describe('criteria tables (as read in GEOMETRY_EDITOR_DESIGN.md §2.2)', () => {
     expect(Math.round(radiusFromFormula(80, 0.07))).toBe(229);
   });
 
-  it('minRadius: table where the speed is in Table 10, else labelled as calculated', () => {
-    expect(minRadius('irc86-urban', 80, 0.07)).toMatchObject({ valueM: 230, basis: 'table', source: 'IRC:86-1983 Table 10' });
+  it('minRadius: table where the speed is in Table 8.2, else labelled as calculated', () => {
+    expect(minRadius('irc86-urban', 80, 0.07)).toMatchObject({ valueM: 230, basis: 'table', source: 'IRC:86-2018 Table 8.2' });
     expect(minRadius('irc86-urban', 80, 0.04)!.valueM).toBe(265);
     expect(minRadius('irc86-urban', 30, 0.04)!.valueM).toBe(40);
-    const r40 = minRadius('irc86-urban', 40, 0.07)!;
-    expect(r40.basis).toBe('formula');
-    expect(r40.source).toMatch(/calculated/);
+    expect(minRadius('irc86-urban', 40, 0.04)).toMatchObject({ valueM: 70, basis: 'table' });
+    expect(minRadius('irc86-urban', 60, 0.04)).toMatchObject({ valueM: 150, basis: 'table' });
+    const r65 = minRadius('irc86-urban', 65, 0.07)!;
+    expect(r65.basis).toBe('formula');
+    expect(r65.source).toMatch(/calculated from IRC:86-2018 §8.3/);
     const hw = minRadius('irc73-rural', 100, 0.07)!;
     expect(Math.round(hw.valueM)).toBe(358);
     expect(hw.basis).toBe('formula');
@@ -35,8 +46,9 @@ describe('criteria tables (as read in GEOMETRY_EDITOR_DESIGN.md §2.2)', () => {
     expect(minRadius('none', 50, 0.04)).toBeNull();
   });
 
-  it('IRC:86 §10.5.2 transition length (80 km/h, R 250 → 85 m)', () => {
+  it('IRC:86 transition length matches IRC:86-2018 Table 8.3 (80 km/h R 250 → 85 m, 60 km/h R 150 → 65 m)', () => {
     expect(Math.round(requiredTransitionLength(80, 250)!.valueM)).toBe(85);
+    expect(Math.round(requiredTransitionLength(60, 150)!.valueM)).toBe(65);
     expect(requiredTransitionLength(80, 0)).toBeNull();
   });
 });
@@ -53,7 +65,7 @@ describe('checkAlignment (screening, never approval)', () => {
     const below = flags.find(f => f.code === 'radius-below-minimum')!;
     expect(below.severity).toBe('warn');
     expect(below.requiredM).toBe(265);
-    expect(below.message).toContain('IRC:86-1983 Table 10');
+    expect(below.message).toContain('IRC:86-2018 Table 8.2');
     expect(below.message).toContain('R 180 m is below 265 m (80 km/h, e 4 %');
     for (const f of flags) {
       expect(f.screening).toBe(true);

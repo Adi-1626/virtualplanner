@@ -1698,13 +1698,14 @@ const statusIcon = (status: FeasibilityCheck['status']) => {
   if (status === 'pass') return '✅';
   if (status === 'warn') return '⚠️';
   if (status === 'unknown') return '❔';
+  if (status === 'info') return 'ℹ️';
   return '❌';
 };
 
 const statusColor = (status: FeasibilityCheck['status']) => {
   if (status === 'pass') return 'text-emerald-400';
   if (status === 'warn') return 'text-amber-400';
-  if (status === 'unknown') return 'text-slate-400';
+  if (status === 'unknown' || status === 'info') return 'text-slate-400';
   return 'text-red-400';
 };
 
@@ -1715,7 +1716,8 @@ const FlyoverFeasibilityReport: React.FC<{ result: FeasibilityResult }> = ({ res
   const failed = result.checks.filter(c => c.status === 'fail').length;
   const open = result.checks.filter(c => c.status === 'warn' || c.status === 'unknown').length;
   const overallColor = failed === 0 ? 'border-slate-500/30 bg-slate-900/40' : 'border-red-500/30 bg-red-950/20';
-  const overallLabel = failed > 0
+  const overallLabel = result.asBuilt ? 'As-built · information only'
+    : failed > 0
     ? `❌ ${failed} blocker${failed > 1 ? 's' : ''}`
     : open > 0 ? `No blocker · ${open} to check` : 'No blocker found';
   const overallTextColor = failed === 0 ? (open > 0 ? 'text-amber-300' : 'text-slate-200') : 'text-red-400';
