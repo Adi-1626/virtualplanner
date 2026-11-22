@@ -10,6 +10,7 @@ import { cardSummary, openActionableCount, startSteps } from '../../lib/planning
 import { StaleBadge } from './common';
 import { StepList } from './GetStarted';
 import { inputCls, labelCls, when, type Act, type ProjectBundle } from './projectData';
+import { projectStudyAreaOptions } from './studyAreaOptions';
 
 export const OverviewTab: React.FC<{ b: ProjectBundle; who: string; act: Act; reload: () => void; goTab: (t: string) => void; onDeleted: () => void }> = ({ b, who, act, reload, goTab, onDeleted }) => {
   const p = b.project;
@@ -102,7 +103,7 @@ const EditDetails: React.FC<{ b: ProjectBundle; who: string; act: Act; onDone: (
   const [areaId, setAreaId] = useState(p.area_id ?? '');
   const [areas, setAreas] = useState<{ id: string; name: string }[] | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { apiGet<{ id: string; name: string }[]>('/api/areas').then(a => setAreas(a.map(x => ({ id: x.id, name: x.name })))).catch(() => setAreas([])); }, []);
+  useEffect(() => { apiGet<{ id: string; name: string }[]>('/api/areas').then(a => setAreas(projectStudyAreaOptions(a))).catch(() => setAreas([])); }, []);
   const changed = name.trim() !== p.name || desc.trim() !== (p.description ?? '').trim() || areaId !== (p.area_id ?? '');
   const save = async () => {
     setBusy(true);
