@@ -5,6 +5,7 @@ import type { EditingMode } from '../../engine/editing/EditingEngine';
 import { TOOLS, TOOL_CATEGORIES, OPEN_TOOLBAR_EVENT, toolsInCategory, type ToolCategory } from '../tools';
 import { AnchoredPopover } from '../ui/AnchoredPopover';
 import { ToolSettings } from './ToolSettings';
+import { settingsPlacement } from './settingsPlacement';
 import { ImportProgressOverlay } from './ImportAreaPanel';
 import { DrawReadout } from './DrawReadout';
 
@@ -26,14 +27,6 @@ const CURVED_MODES: ReadonlySet<string> = new Set(['draw_road', 'draw_flyover', 
  *
  * Mount it in the Design context panel (any width ≥ 232 px); it fills its container's width.
  */
-/**
- * Where a tool's settings open: the Study area tool's settings sit in the column under the palette ('inline'), because
- * drawing an area means clicking anywhere on the map and the floating panel took the first corner click (p5 QA F8);
- * the other tools keep the popover beside the palette; Select has none.
- */
-export function settingsPlacement(mode: EditingMode): 'inline' | 'popover' | 'none' {
-  return mode === 'select' ? 'none' : mode === 'import_osm' ? 'inline' : 'popover';
-}
 
 const ToolPalette: React.FC<{ className?: string }> = ({ className = '' }) => {
   const [activeMode, setActiveMode] = useState<EditingMode>('select');

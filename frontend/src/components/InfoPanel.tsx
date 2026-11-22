@@ -206,7 +206,7 @@ const RoadDetails: React.FC<{ road: RoadObject | FlyoverObject | MetroFlyoverObj
   );
 
   const facts: [string, React.ReactNode][] = [];
-  if (length !== null) facts.push(['Length', <span title={LENGTH_DEFINITION}>{formatDistanceM(length)}</span>]);
+  if (length !== null) facts.push(['Length', <span key="length" title={LENGTH_DEFINITION}>{formatDistanceM(length)}</span>]);
   facts.push(['Lanes', lanesText(road)]);
   facts.push(['Speed limit', `${road.speedLimit} km/h`]);
   facts.push(['Type', CLASS_LABELS[road.roadClass] ?? road.roadClass]);
