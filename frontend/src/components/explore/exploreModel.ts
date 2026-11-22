@@ -177,3 +177,19 @@ export function cityStats(objects: readonly CityObject[]): { roadKm: number; roa
   for (const n of nodes.values()) if (n.roads >= 2 && n.arms >= 3) networkNodes++;
   return { roadKm, roads, buildings, junctions: placedJunctions + networkNodes, placedJunctions, networkNodes, proposals };
 }
+
+/**
+ * One line for Explore about the environment data, counted from the Environment catalogue (GET /api/env-data/catalogue,
+ * status computed from the data files on the server), not a hard-coded sentence (the old one said "most is not imported,
+ * UNKNOWN" after most layers were served).
+ */
+export function envCatalogueSummary(layers: readonly { status: string; name: string }[]): string {
+  if (!layers.length) return 'Environment: no layers listed by the data registry.';
+  const n = (st: string) => layers.filter(l => l.status === st).length;
+  const avail = n('available'), missing = n('missing'), blocked = n('blocked'), rejected = n('rejected');
+  const parts = [`${avail} of ${layers.length} environment layers have data`];
+  if (missing) parts.push(`${missing} expected file${missing === 1 ? '' : 's'} missing`);
+  if (blocked) parts.push(`${blocked} blocked (no permission or no model)`);
+  if (rejected) parts.push(`${rejected} rejected on quality`);
+  return `${parts.join(', ')}. Sources, dates and status of each are in Environment.`;
+}

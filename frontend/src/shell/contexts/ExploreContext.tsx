@@ -10,8 +10,9 @@ import { SelectionDetailsButton } from '../SelectionDetailsButton';
 import { engineInstance } from '../../engine/TwinCityEngine';
 import type { Layer } from '../../engine/layers/LayerManager';
 import { filterObjectsForScenario } from '../../engine/scenarios/scenarioFilter';
-import { cityStats, groupLayers, lineLengthKm, searchObjectGroups, summarise, typeLabel, type SearchGroup } from '../../components/explore/exploreModel';
+import { cityStats, envCatalogueSummary, groupLayers, lineLengthKm, searchObjectGroups, summarise, typeLabel, type SearchGroup } from '../../components/explore/exploreModel';
 import { formatDistanceM } from '../../lib/format';
+import { envDataApi } from '../../lib/envDataApi';
 import { OVERLAY_STYLE, setOverlayVisible, useEnvOverlayStore } from '../../components/environment/constraintOverlay';
 import type { OverlayKey } from '../../components/environment/envCatalogue';
 import { TerrainSection } from '../../components/explore/TerrainSection';
@@ -66,7 +67,7 @@ const LayerTree: React.FC<{ proposals: number }> = ({ proposals }) => {
               note={st.status === 'shown' ? `${st.count ?? 0}` : st.status === 'error' ? 'failed' : undefined} onToggle={() => void setOverlayVisible(k, !on)} />;
           })}
         </ul>
-        <p className="text-meta text-text-3">Other environmental data: see Environment (most is not imported, UNKNOWN).</p>
+        <EnvRegistryLine />
       </section>
       <TerrainSection />
       <MunicipalLayerGroups />
@@ -76,6 +77,19 @@ const LayerTree: React.FC<{ proposals: number }> = ({ proposals }) => {
       </section>
     </div>
   );
+};
+
+/** What the environment data registry holds, read from the server (not a fixed sentence). */
+const EnvRegistryLine: React.FC = () => {
+  const [text, setText] = useState('Checking the environment data registry…');
+  useEffect(() => {
+    let alive = true;
+    envDataApi.catalogue()
+      .then(c => { if (alive) setText(envCatalogueSummary(c.layers)); })
+      .catch(() => { if (alive) setText('Environment data status not available: the backend did not answer. Open Environment to retry.'); });
+    return () => { alive = false; };
+  }, []);
+  return <p className="text-meta text-text-3" data-testid="explore-env-registry">{text}</p>;
 };
 
 /** "Road · 59 loaded pieces · 4.2 km" / "Road · OSM 123". */

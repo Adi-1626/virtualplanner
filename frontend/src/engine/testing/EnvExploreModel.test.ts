@@ -91,3 +91,17 @@ describe('Explore search groups a named road (p5 QA F4)', () => {
     expect(searchObjectGroups(objs, 'way/1001')[0].ids.sort()).toEqual(['a', 'b']);
   });
 });
+
+describe('Explore environment line comes from the registry (p5 QA F6)', () => {
+  it('counts layers by status instead of saying "most is not imported, UNKNOWN"', async () => {
+    const { envCatalogueSummary } = await import('../../components/explore/exploreModel');
+    const s = envCatalogueSummary([
+      { name: 'Air', status: 'available' }, { name: 'Rain', status: 'available' }, { name: 'Soil', status: 'missing' },
+      { name: 'Flood lines', status: 'blocked' }, { name: 'Built-up change', status: 'rejected' },
+    ]);
+    expect(s).toBe('2 of 5 environment layers have data, 1 expected file missing, 1 blocked (no permission or no model), 1 rejected on quality. Sources, dates and status of each are in Environment.');
+    expect(s).not.toMatch(/UNKNOWN/);
+    const src = (await import('node:fs')).readFileSync(require('node:path').resolve(__dirname, '../../shell/contexts/ExploreContext.tsx'), 'utf8');
+    expect(src).not.toMatch(/most is not imported/);
+  });
+});
