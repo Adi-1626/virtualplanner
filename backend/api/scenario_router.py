@@ -22,6 +22,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
+from planning.audit import _entry as _audit_entry, _pending as _audit_pending
 from models.models import (
     CityObjectEntity,
     ScenarioEntity,
@@ -212,6 +213,16 @@ def _dialect_insert(db: Session):
     return insert
 
 
+def _change_row(db: Session, sid: str, oid: str) -> Optional[dict]:
+    """The scenario change row as plain column values (read without loading an entity), or None."""
+    from sqlalchemy import inspect as _inspect, select
+    keys = [c.key for c in _inspect(ScenarioObjectChangeEntity).column_attrs]
+    with db.no_autoflush:
+        r = db.connection().execute(select(*[getattr(ScenarioObjectChangeEntity, k) for k in keys]).where(
+            ScenarioObjectChangeEntity.scenario_id == sid, ScenarioObjectChangeEntity.object_id == oid)).first()
+    return dict(zip(keys, r)) if r else None
+
+
 def _next_seq(db: Session, sid: str) -> int:
     m = db.query(func.max(ScenarioObjectChangeEntity.seq)).filter(ScenarioObjectChangeEntity.scenario_id == sid).scalar()
     return (m or 0) + 1
@@ -287,8 +298,14 @@ def write_changes(sid: str, changes: List[ChangeIn], db: Session = Depends(get_d
         # One atomic upsert per (proposal, object): the client can send two saves of the same object at once (a drawn road
         # that splits a crossed road, then re-joins it), and a read-then-insert let the second one fail with a UNIQUE
         # constraint error and "Save failed" (p5-qa 2026-11-22).
+        before = _change_row(db, sid, c.objectId)
         db.execute(upsert(ScenarioObjectChangeEntity).values(scenario_id=sid, object_id=c.objectId, **vals)
                    .on_conflict_do_update(index_elements=["scenario_id", "object_id"], set_=vals))
+        # A core upsert skips the ORM flush hooks that write the audit log, so log it here the same way they would.
+        after = _change_row(db, sid, c.objectId)
+        changed = [k for k in after if before is not None and before.get(k) != after[k]] if before is not None else None
+        _audit_pending(db).append(_audit_entry(ScenarioObjectChangeEntity, after, "update" if before is not None else "create",
+                                               before, after, changed))
     db.commit()
     return {"status": "success", "count": len(changes)}
 
