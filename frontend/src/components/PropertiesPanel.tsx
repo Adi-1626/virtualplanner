@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { DrawnDimensionsSection } from './design/DrawnDimensionsSection';
 import { SourceBadge } from './ui/SourceBadge';
 import { Trash2, ArrowLeft } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
@@ -110,7 +111,10 @@ export const PropertiesPanel: React.FC = () => {
 
     // Build the updates object
     const updates: Partial<CityObject> = {};
-    if (selectedObj.type === 'building') {
+    if (field === 'superstructure' && (selectedObj.type === 'metro_line' || selectedObj.type === 'metro_flyover')) {
+      // Drawn viaduct type (rendering only)
+      (updates as Partial<MetroLineObject>).superstructure = value === 'u_girder' ? 'u_girder' : 'box_girder';
+    } else if (selectedObj.type === 'building') {
       const b = selectedObj as BuildingObject;
       const bUpdates = updates as Partial<BuildingObject>;
       if (field === 'height') {
@@ -408,6 +412,11 @@ export const PropertiesPanel: React.FC = () => {
             {/* Metro Line Specifics */}
             {selectedObj.type === 'metro_line' && (
               <MetroLineEditor m={selectedObj as MetroLineObject} onUpdate={handleUpdateField} />
+            )}
+
+            {/* Structures: viaduct type and dimensions drawn without a source */}
+            {(selectedObj.type === 'metro_line' || selectedObj.type === 'metro_flyover' || selectedObj.type === 'flyover') && (
+              <DrawnDimensionsSection obj={selectedObj} onUpdate={handleUpdateField} />
             )}
 
             {/* Metro Station Specifics */}

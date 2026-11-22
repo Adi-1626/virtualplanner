@@ -260,8 +260,14 @@ export interface FlyoverObject extends BaseCityObject {
   surfaceRoadIds?: string[];
 }
 
+/** Elevated metro superstructure drawn by the renderer: Pune Metro's precast segmental box girder (official, default) or a
+ * U-girder option whose Pune dimensions are not known (drawn generic, labelled "type not confirmed"). */
+export type MetroSuperstructure = 'box_girder' | 'u_girder';
+
 export interface MetroLineObject extends BaseCityObject {
   type: 'metro_line';
+  /** Viaduct type drawn (absent = box girder). Rendering only; no check depends on it. */
+  superstructure?: MetroSuperstructure;
   /** Editable PI + radius geometry (GEOMETRY_EDITOR_DESIGN.md §3.1). Absent = legacy polyline. When present, `coordinates` is derived from it. */
   alignment?: import('../geometry/alignment/types').HorizontalAlignment;
   coordinates: [number, number, number][]; // Path of elevated rail tracks
@@ -319,6 +325,8 @@ export interface UtilityObject extends BaseCityObject {
 
 export interface MetroFlyoverObject extends BaseCityObject {
   type: 'metro_flyover';
+  /** Metro viaduct type drawn on the top level (absent = box girder). */
+  superstructure?: MetroSuperstructure;
   /** Editable PI + radius geometry (GEOMETRY_EDITOR_DESIGN.md §3.1). Absent = legacy polyline. When present, `coordinates` is derived from it. */
   alignment?: import('../geometry/alignment/types').HorizontalAlignment;
   levelCrossings?: import('../editing/levelCrossings').LevelCrossing[];

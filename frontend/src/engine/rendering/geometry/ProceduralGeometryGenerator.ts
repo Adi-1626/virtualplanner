@@ -9,6 +9,10 @@ import { crossingGaps, piecesBetween, type Gap } from './junctionGaps';
 import { resolveStationHeading } from '../../objects/stationAlignment';
 import { GeometryContext } from './GeometryContext';
 import type { MeshData, MaterialConfig } from '../types';
+import { cumulativeLengths, dashAll, pierStations, pointAt, type PathPt } from './markingPattern';
+import { dim } from '../standards/visualDims';
+import { extrudeProfile } from './extrudeProfile';
+import { boxGirderProfile, jerseyMedianProfile, jerseyParapetProfile, rectProfile, uGirderParts } from '../standards/profiles';
 
 /**
  * Helper to convert WGS84 coordinates to ECEF Cartesian3 coordinates.
@@ -53,6 +57,13 @@ function normalize(v: [number, number, number]): [number, number, number] {
   const len = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
   if (len === 0) return [0, 0, 0];
   return [v[0] / len, v[1] / len, v[2] / len];
+}
+
+/** Direction of travel in ECEF between two [lng, lat] points (for orienting piers and caps across the deck). */
+function ecefTangent(a: readonly number[], b: readonly number[]): [number, number, number] {
+  const pa = wgs84ToCartesian(a[0], a[1], 0);
+  const pb = wgs84ToCartesian(b[0], b[1], 0);
+  return [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
 }
 
 export class ProceduralGeometryGenerator {
@@ -206,6 +217,43 @@ export class ProceduralGeometryGenerator {
     };
 
     return [farMesh, medMesh, closeMesh];
+  }
+
+  /** Ribbons over several paths merged into one buffer (pieces between junctions, or marking dashes). */
+  private ribbonsOver(paths: readonly (readonly number[])[][], left: number, right: number, elevation = 0, thickness = 0): { positions: number[]; indices: number[] } {
+    const positions: number[] = [];
+    const indices: number[] = [];
+    for (const piece of paths) {
+      const r = this.generateRibbon(piece as [number, number, number][], left, right, elevation, thickness);
+      const base = positions.length / 3;
+      for (const v of r.positions) positions.push(v);
+      for (const i of r.indices) indices.push(i + base);
+    }
+    return { positions, indices };
+  }
+
+  /**
+   * One road marking line at a lateral offset: broken (IRC:35 mark/gap) when `mark` is given, else continuous.
+   * Width and pattern come from standards/visualDims.ts.
+   */
+  private markingLine(
+    paths: readonly (readonly number[])[][],
+    offset: number,
+    width: number,
+    color: string,
+    materialId: 'marking_white' | 'marking_yellow',
+    layerId: MeshData['layerId'],
+    pattern?: { mark: number; gap: number },
+    lift = dim('markingLift')
+  ): MeshData {
+    const lines = pattern ? dashAll(paths as unknown as PathPt[][], pattern.mark, pattern.gap) : paths;
+    const r = this.ribbonsOver(lines as unknown as number[][][], offset - width / 2, offset + width / 2, lift, 0);
+    return {
+      positions: new Float64Array(r.positions),
+      indices: new Uint32Array(r.indices),
+      material: { type: pattern ? 'dashed' : 'solid', color, materialId },
+      layerId
+    };
   }
 
   /**
@@ -473,6 +521,10 @@ export class ProceduralGeometryGenerator {
       // Footpaths, kerbs, medians and lane markings stop where other roads meet or
       // cross this one, so junctions are clean asphalt rather than criss-crossed
       const pieces = this.junctionPieces(sectionCoords, road, allObjects);
+      // One-way roads and ramps: IRC:35-2015 §4.8.1 shorter pattern (1.5 m / 3 m); otherwise 3 m / 6 m
+      const laneDash = road.isOneWay
+        ? { mark: dim('rampLineMark'), gap: dim('rampLineGap') }
+        : { mark: dim('laneLineMark'), gap: dim('laneLineGap') };
       const onPieces = (left: number, right: number, elevation = 0, thickness = 0) => {
         const positions: number[] = [];
         const indices: number[] = [];
@@ -495,20 +547,14 @@ export class ProceduralGeometryGenerator {
           layerId: 'asphalt'
         });
 
-        // 1b. Lane Markings for Carriageway A
+        // 1b. Lane lines for Carriageway A: IRC:35-2015 broken white, 150 mm, 3 m mark / 6 m gap (urban)
         const lanesA = section.carriagewayA.lanes;
         if (lanesA > 1) {
           const A_width = offsets.carriageA[1] - offsets.carriageA[0];
           const laneW = A_width / lanesA;
           for (let i = 1; i < lanesA; i++) {
             const offsetMark = offsets.carriageA[0] + i * laneW;
-            const marking = onPieces(offsetMark - 0.06, offsetMark + 0.06, 0.01);
-            meshes.push({
-              positions: new Float64Array(marking.positions),
-              indices: new Uint32Array(marking.indices),
-              material: { type: 'solid', color: '#e2e8f0' },
-              layerId: 'marking'
-            });
+            meshes.push(this.markingLine(pieces, offsetMark, dim('laneLineWidth'), '#e2e8f0', 'marking_white', 'marking', laneDash));
           }
         }
       }
@@ -523,42 +569,38 @@ export class ProceduralGeometryGenerator {
           layerId: 'asphalt'
         });
 
-        // 2b. Lane Markings for Carriageway B
+        // 2b. Lane lines for Carriageway B (as A)
         const lanesB = section.carriagewayB.lanes;
         if (lanesB > 1) {
           const B_width = offsets.carriageB[1] - offsets.carriageB[0];
           const laneW = B_width / lanesB;
           for (let i = 1; i < lanesB; i++) {
             const offsetMark = offsets.carriageB[0] + i * laneW;
-            const marking = onPieces(offsetMark - 0.06, offsetMark + 0.06, 0.01);
-            meshes.push({
-              positions: new Float64Array(marking.positions),
-              indices: new Uint32Array(marking.indices),
-              material: { type: 'solid', color: '#e2e8f0' },
-              layerId: 'marking'
-            });
+            meshes.push(this.markingLine(pieces, offsetMark, dim('laneLineWidth'), '#e2e8f0', 'marking_white', 'marking', laneDash));
           }
         }
       }
 
-      // 2c. Center Divider Yellow Markings (for undivided two-way roads)
+      // 2c. Centre line on undivided two-way roads: IRC:35-2015 §4.6.1 white broken 3 m / 6 m, 150 mm urban
+      // (yellow is for no-overtaking sections only; the earlier US-style double yellow is not an Indian marking)
       if (offsets.carriageB && !section.hasMedian) {
-        const centerOffset = offsets.carriageA[1];
-        const yellowLeft = onPieces(centerOffset - 0.12, centerOffset - 0.04, 0.015);
-        const yellowRight = onPieces(centerOffset + 0.04, centerOffset + 0.12, 0.015);
+        meshes.push(this.markingLine(pieces, offsets.carriageA[1], dim('centreLineWidth'), '#e2e8f0', 'marking_white', 'marking',
+          { mark: dim('centreLineMark'), gap: dim('centreLineGap') }));
+      }
 
-        meshes.push({
-          positions: new Float64Array(yellowLeft.positions),
-          indices: new Uint32Array(yellowLeft.indices),
-          material: { type: 'solid', color: '#eab308' },
-          layerId: 'marking'
-        });
-        meshes.push({
-          positions: new Float64Array(yellowRight.positions),
-          indices: new Uint32Array(yellowRight.indices),
-          material: { type: 'solid', color: '#eab308' },
-          layerId: 'marking'
-        });
+      // 2d. Divided roads, two or more lanes a side: edge lines 150 mm (IRC:35 §4.5.3), 0.1 m off the kerb (CoP-3);
+      // the median-side line yellow (CoP-3 §(3))
+      if (section.hasMedian && offsets.carriageB) {
+        const off = dim('edgeLineOffset') + dim('edgeLineWidth') / 2;
+        const w = dim('edgeLineWidth');
+        if (section.carriagewayA.lanes >= 2) {
+          meshes.push(this.markingLine(pieces, offsets.carriageA[0] + off, w, '#e2e8f0', 'marking_white', 'marking'));
+          meshes.push(this.markingLine(pieces, offsets.carriageA[1] - off, w, '#eab308', 'marking_yellow', 'marking'));
+        }
+        if (section.carriagewayB.lanes >= 2) {
+          meshes.push(this.markingLine(pieces, offsets.carriageB[0] + off, w, '#eab308', 'marking_yellow', 'marking'));
+          meshes.push(this.markingLine(pieces, offsets.carriageB[1] - off, w, '#e2e8f0', 'marking_white', 'marking'));
+        }
       }
 
       // 3. Central Median
@@ -579,9 +621,10 @@ export class ProceduralGeometryGenerator {
         // Skip curbs, footpaths, cycle tracks for tunnels
         if (isTunnel) return;
 
-        // Curb (extruded 0.22m)
+        // Kerb and footpath: 150 mm above the road (PMC USDG §3.1 maximum; IRC:86-2018), was 0.22 m
+        const kerbH = dim('kerbHeight');
         if (elements.curb[1] - elements.curb[0] > 0.05) {
-          const curb = onPieces(elements.curb[0], elements.curb[1], 0.22, 0.22);
+          const curb = onPieces(elements.curb[0], elements.curb[1], kerbH, kerbH);
           meshes.push({
             positions: new Float64Array(curb.positions),
             indices: new Uint32Array(curb.indices),
@@ -590,9 +633,8 @@ export class ProceduralGeometryGenerator {
           });
         }
 
-        // Footpath (extruded 0.22m)
         if (elements.footpath[1] - elements.footpath[0] > 0.05) {
-          const fp = onPieces(elements.footpath[0], elements.footpath[1], 0.22, 0.22);
+          const fp = onPieces(elements.footpath[0], elements.footpath[1], kerbH, kerbH);
           meshes.push({
             positions: new Float64Array(fp.positions),
             indices: new Uint32Array(fp.indices),
@@ -805,98 +847,57 @@ export class ProceduralGeometryGenerator {
     const asphaltWidth = laneCount * laneWidth + dividerWidth;
     const slabWidth = asphaltWidth + 1.2;
 
-    // ─── Color palette (high contrast for engineering clarity) ────────────────
+    // ─── Legend colours (Schematic); Realistic draws the materialId ─────────────
     const COLOR_SLAB       = '#94a3b8'; // light concrete — clearly lighter than asphalt
     const COLOR_ASPHALT    = flyover.roadClass === 'highway' ? '#0a0f1a' : '#111827'; // near-black
-    const COLOR_GIRDER     = '#334155'; // dark charcoal — reads as structural shadow
     const COLOR_BARRIER    = '#94a3b8'; // same as slab — continuous parapet appearance
     const COLOR_DIVIDER    = '#e2e8f0'; // near-white — divider stands out strongly
-    const COLOR_DIVIDER_STRIPE = '#f59e0b'; // amber yellow top stripe
-    const COLOR_UNDERSIDE  = '#c0cad4'; // slightly warm off-white for underside visibility
 
-    // 1. Concrete Deck Slab — with closed bottom face for visible underside
-    const deckSlab = this.generateRibbon(coords, -slabWidth / 2, slabWidth / 2, -0.3, 0.3);
-    meshes.push({
-      positions: new Float64Array(deckSlab.positions),
-      indices: new Uint32Array(deckSlab.indices),
-      material: { type: 'solid', color: COLOR_SLAB },
-      layerId: 'transit_deck'
-    });
-
-    // 1b. Slab underside face — closed bottom so you see the bridge from the side
-    const slabBottom = this.generateRibbon(coords, -slabWidth / 2, slabWidth / 2, -0.3, 0);
-    // Flip the indices to make it face downward
-    const bottomIndicesFlipped = new Uint32Array(slabBottom.indices.length);
-    for (let bi = 0; bi < slabBottom.indices.length; bi += 3) {
-      bottomIndicesFlipped[bi]     = slabBottom.indices[bi + 2];
-      bottomIndicesFlipped[bi + 1] = slabBottom.indices[bi + 1];
-      bottomIndicesFlipped[bi + 2] = slabBottom.indices[bi];
-    }
-    meshes.push({
-      positions: new Float64Array(slabBottom.positions),
-      indices: bottomIndicesFlipped,
-      material: { type: 'solid', color: COLOR_UNDERSIDE },
-      layerId: 'transit_deck'
-    });
-
-    // 2. Asphalt Driving Surface (2cm above slab to prevent z-fighting)
+    // 1. Asphalt driving surface first: traffic tint colours the first deck instance of an object
     const asphalt = this.generateRibbon(coords, -asphaltWidth / 2, asphaltWidth / 2, 0.02, 0);
     meshes.push({
       positions: new Float64Array(asphalt.positions),
       indices: new Uint32Array(asphalt.indices),
-      material: { type: 'solid', color: COLOR_ASPHALT },
+      material: { type: 'solid', color: COLOR_ASPHALT, materialId: 'asphalt_deck' },
       layerId: 'transit_deck'
     });
 
-    // 3. Side Barriers / Parapets (LOD: transit_deck_details)
-    const leftBarrier = this.generateRibbon(coords, -slabWidth / 2, -slabWidth / 2 + 0.4, 0.0, 0.9);
+    // 2. Box-girder deck (single cell, cantilever wings): depth 2.0 m, soffit half the deck width — both ASSUMED
+    // (no sourced figure; visualDims). Replaces the 0.3 m slab and the two "girder" strips.
+    const girderDepth = dim('flyoverGirderDepth');
+    const soffit = slabWidth * dim('flyoverSoffitRatio');
+    const girder = extrudeProfile(coords, boxGirderProfile(slabWidth, girderDepth, soffit), wgs84ToCartesian, 0);
     meshes.push({
-      positions: new Float64Array(leftBarrier.positions),
-      indices: new Uint32Array(leftBarrier.indices),
-      material: { type: 'solid', color: COLOR_BARRIER },
-      layerId: 'transit_deck_details'
+      positions: new Float64Array(girder.positions),
+      indices: new Uint32Array(girder.indices),
+      material: { type: 'solid', color: COLOR_SLAB, materialId: 'concrete_deck' },
+      layerId: 'transit_deck'
     });
 
-    const rightBarrier = this.generateRibbon(coords, slabWidth / 2 - 0.4, slabWidth / 2, 0.0, 0.9);
-    meshes.push({
-      positions: new Float64Array(rightBarrier.positions),
-      indices: new Uint32Array(rightBarrier.indices),
-      material: { type: 'solid', color: COLOR_BARRIER },
-      layerId: 'transit_deck_details'
-    });
+    // 3. Crash barriers / parapets: Jersey safety shape, 1.0 m (height ASSUMED; IRC:5 not read)
+    for (const side of [-1, 1] as const) {
+      const parapet = extrudeProfile(coords, jerseyParapetProfile(side * slabWidth / 2, side), wgs84ToCartesian, 0);
+      meshes.push({
+        positions: new Float64Array(parapet.positions),
+        indices: new Uint32Array(parapet.indices),
+        material: { type: 'solid', color: COLOR_BARRIER, materialId: 'concrete_barrier' },
+        layerId: 'transit_deck_details'
+      });
+    }
 
-    // 4. Central Divider (Jersey barrier style — near white, very visible)
+    // 4. Central divider: Jersey median barrier (no amber stripe: it is not an IRC:35 marking)
     if (flyover.hasDivider && dividerWidth > 0.1) {
-      const divider = this.generateRibbon(coords, -dividerWidth / 2, dividerWidth / 2, 0.04, 0.85);
+      const divider = extrudeProfile(coords, jerseyMedianProfile(), wgs84ToCartesian, 0.02);
       meshes.push({
         positions: new Float64Array(divider.positions),
         indices: new Uint32Array(divider.indices),
-        material: { type: 'solid', color: COLOR_DIVIDER },
-        layerId: 'transit_deck_details'
-      });
-      const dividerStripe = this.generateRibbon(coords, -dividerWidth / 2 + 0.1, dividerWidth / 2 - 0.1, 0.9, 0);
-      meshes.push({
-        positions: new Float64Array(dividerStripe.positions),
-        indices: new Uint32Array(dividerStripe.indices),
-        material: { type: 'solid', color: COLOR_DIVIDER_STRIPE },
+        material: { type: 'solid', color: COLOR_DIVIDER, materialId: 'concrete_barrier' },
         layerId: 'transit_deck_details'
       });
     } else if (!flyover.isOneWay) {
-      // Double yellow center line
-      const lineLeft = this.generateRibbon(coords, -0.12, -0.04, 0.03, 0);
-      meshes.push({
-        positions: new Float64Array(lineLeft.positions),
-        indices: new Uint32Array(lineLeft.indices),
-        material: { type: 'solid', color: '#f59e0b' },
-        layerId: 'transit_deck'
-      });
-      const lineRight = this.generateRibbon(coords, 0.04, 0.12, 0.03, 0);
-      meshes.push({
-        positions: new Float64Array(lineRight.positions),
-        indices: new Uint32Array(lineRight.indices),
-        material: { type: 'solid', color: '#f59e0b' },
-        layerId: 'transit_deck'
-      });
+      // Undivided: IRC:35-2015 §4.6.1 white broken centre line (was a US-style double yellow)
+      meshes.push(this.markingLine([coords], 0, dim('centreLineWidth'), '#e2e8f0', 'marking_white', 'transit_deck',
+        { mark: dim('centreLineMark'), gap: dim('centreLineGap') }, 0.03));
     }
 
     // 5. White lane separator markings
@@ -907,49 +908,24 @@ export class ProceduralGeometryGenerator {
       const startOffset = -asphaltWidth / 2;
       for (let i = 1; i < lanesA; i++) {
         const offset = startOffset + i * laneWidth;
-        const mark = this.generateRibbon(coords, offset - 0.06, offset + 0.06, 0.025, 0);
-        meshes.push({
-          positions: new Float64Array(mark.positions),
-          indices: new Uint32Array(mark.indices),
-          material: { type: 'solid', color: '#e2e8f0' },
-          layerId: 'transit_deck'
-        });
+        // IRC:35-2015 lane line, 150 mm, 3 m / 6 m
+        meshes.push(this.markingLine([coords], offset, dim('laneLineWidth'), '#e2e8f0', 'marking_white', 'transit_deck',
+          { mark: dim('laneLineMark'), gap: dim('laneLineGap') }, 0.03));
       }
     }
     if (lanesB > 1) {
       const startOffset = flyover.hasDivider ? dividerWidth / 2 : 0;
       for (let i = 1; i < lanesB; i++) {
         const offset = startOffset + i * laneWidth;
-        const mark = this.generateRibbon(coords, offset - 0.06, offset + 0.06, 0.025, 0);
-        meshes.push({
-          positions: new Float64Array(mark.positions),
-          indices: new Uint32Array(mark.indices),
-          material: { type: 'solid', color: '#e2e8f0' },
-          layerId: 'transit_deck'
-        });
+        // IRC:35-2015 lane line, 150 mm, 3 m / 6 m
+        meshes.push(this.markingLine([coords], offset, dim('laneLineWidth'), '#e2e8f0', 'marking_white', 'transit_deck',
+          { mark: dim('laneLineMark'), gap: dim('laneLineGap') }, 0.03));
       }
     }
 
-    // 6. Box Girders underneath — dark charcoal for structural shadow contrast
-    // Left girder with closed bottom
-    const leftGirder = this.generateRibbon(coords, -slabWidth * 0.42, -slabWidth * 0.10, -0.95, 0.65);
-    meshes.push({
-      positions: new Float64Array(leftGirder.positions),
-      indices: new Uint32Array(leftGirder.indices),
-      material: { type: 'solid', color: COLOR_GIRDER },
-      layerId: 'transit_deck_details'
-    });
-    const rightGirder = this.generateRibbon(coords, slabWidth * 0.10, slabWidth * 0.42, -0.95, 0.65);
-    meshes.push({
-      positions: new Float64Array(rightGirder.positions),
-      indices: new Uint32Array(rightGirder.indices),
-      material: { type: 'solid', color: COLOR_GIRDER },
-      layerId: 'transit_deck_details'
-    });
-
-    // 7. Support Columns (Pillars) and horizontal Pier Caps
-    const pierSpacing = flyover.pierSpacing || 30;
-    const pillarMeshes = this.generateFlyoverPillars(flyover, slabWidth, pierSpacing);
+    // 7. Piers and pier caps under the girder soffit; span 30 m ASSUMED when the object has none
+    const pierSpacing = flyover.pierSpacing || dim('flyoverSpan');
+    const pillarMeshes = this.generateFlyoverPillars(flyover, slabWidth, pierSpacing, girderDepth, soffit);
     meshes.push(...pillarMeshes);
 
     // 8. Ramp side walls (abutments) — solid concrete side walls down to ground
@@ -966,7 +942,9 @@ export class ProceduralGeometryGenerator {
   private generateFlyoverPillars(
     flyover: FlyoverObject,
     deckSlabWidth: number,
-    spacing: number
+    spacing: number,
+    girderDepth = dim('flyoverGirderDepth'),
+    soffitWidth = deckSlabWidth * dim('flyoverSoffitRatio')
   ): MeshData[] {
     const pillars: MeshData[] = [];
     const coords = flyover.coordinates;
@@ -1025,11 +1003,7 @@ export class ProceduralGeometryGenerator {
       const deckHeight = deckZ - groundZ;
       if (deckHeight >= 3.0) {
         // Calculate tangent vector at this segment for alignment
-        const tangentECEF = [
-          (pEnd[0] - pStart[0]),
-          (pEnd[1] - pStart[1]),
-          (pEnd[2] - pStart[2])
-        ] as [number, number, number];
+        const tangentECEF = ecefTangent(pStart, pEnd); // ECEF direction (was lng/lat degrees, which mis-rotated piers and caps)
 
         // --- 2. Tapered Rectangular Pier (Pillar) ---
         // Scale pillar width relative to deck width to look structurally sound (like metro)
@@ -1038,8 +1012,10 @@ export class ProceduralGeometryGenerator {
         const botWidth = topWidth * 0.8;
         const botLength = 1.2;
 
-        // Height of column: reaches the bottom of the pier cap, which is deckZ - 1.7
-        const pillarHeight = deckHeight - 1.7;
+        // Column up to the pier cap, which sits under the girder soffit (deck top − girder depth − cap depth)
+        const capDepth = dim('pierCapDepth');
+        const capTop = deckZ - girderDepth;
+        const pillarHeight = deckHeight - girderDepth - capDepth;
 
         if (pillarHeight > 0.5) {
           const pillar = this.generateTaperedRectangularPier(
@@ -1056,21 +1032,14 @@ export class ProceduralGeometryGenerator {
           );
           pillars.push(pillar);
 
-          // --- 3. Horizontal Pier Cap (LOD Details) ---
-          // Width = 70% of deck width, length = 1.8m, depth = 0.8m
-          // Placed at the top of the pillar (from deckZ - 1.7 to deckZ - 0.9)
-          const capWidth = deckSlabWidth * 0.7;
-          const capLength = 1.8;
-          const capHeight = 0.8;
-          const capElevation = deckZ - 1.7;
-
+          // --- 3. Pier cap (LOD details): 0.5 m wider than the soffit each side, depth/length ASSUMED (visualDims)
           const cap = this.generateRectangularBox(
             interpLng,
             interpLat,
-            capElevation,
-            capHeight,
-            capWidth,
-            capLength,
+            capTop - capDepth,
+            capDepth,
+            Math.max(topWidth + 0.6, soffitWidth + 1.0),
+            dim('pierCapLength'),
             tangentECEF,
             '#64748b', // Concrete cap grey
             'transit_pillars_details'
@@ -1248,8 +1217,10 @@ export class ProceduralGeometryGenerator {
       const h1 = (p1[2] || 0) - (g1[2] || 0);
       const h2 = (p2[2] || 0) - (g2[2] || 0);
 
-      // Only generate abutments where the deck is close to the ground (< 3.5m)
-      if (h1 >= 3.5 && h2 >= 3.5) continue;
+      // Solid ramp walls where the deck is too low for a pier under the box girder and its cap
+      // (girder depth + cap depth + 0.5 m; all ASSUMED, visualDims) — the RE-wall part of a ramp (IRC:SP:90 §7.2)
+      const wallMax = dim('flyoverGirderDepth') + dim('pierCapDepth') + 0.5;
+      if (h1 >= wallMax && h2 >= wallMax) continue;
 
       // Calculate tangent to get perpendicular left/right vectors
       const c1 = wgs84ToCartesian(p1[0], p1[1], 0);
@@ -1449,104 +1420,56 @@ export class ProceduralGeometryGenerator {
     const roadAsphaltWidth = laneCount * laneWidth + dividerWidth;
     const roadSlabWidth = roadAsphaltWidth + 1.2;
 
-    // ─── Road deck color palette (same high-contrast as solo flyover) ─────────
+    // ─── Legend colours (Schematic: road deck grey, metro deck blue); Realistic draws the materialId ─────────
     const RD_SLAB      = '#94a3b8'; // light concrete
     const RD_ASPHALT   = mf.roadClass === 'highway' ? '#0a0f1a' : '#111827';
     const RD_BARRIER   = '#94a3b8';
     const RD_DIVIDER   = '#e2e8f0';
-    const RD_DIVIDER_S = '#f59e0b';
-    const RD_GIRDER    = '#334155';
-
-    // ─── Metro deck color palette (blue-tinted — instantly distinguishable) ───
     const MT_BEAM      = '#1e3a5f'; // dark navy blue concrete beam
     const MT_SURFACE   = '#0f172a'; // near-black track bed
     const MT_BARRIER   = '#1d4ed8'; // bright blue parapet
     const MT_RAIL      = '#bae6fd'; // steel blue rail
-    const MT_UNDERSIDE = '#1e40af'; // deep blue underside of metro beam
 
     // ==========================================
-    // 1. MIDDLE LEVEL: ROAD DECK
+    // 1. MIDDLE LEVEL: ROAD DECK (box girder, as the road flyover)
     // ==========================================
-    // A. Concrete Deck Slab (light concrete)
-    const roadSlab = this.generateRibbon(coords, -roadSlabWidth / 2, roadSlabWidth / 2, -0.3, 0.3);
-    meshes.push({
-      positions: new Float64Array(roadSlab.positions),
-      indices: new Uint32Array(roadSlab.indices),
-      material: { type: 'solid', color: RD_SLAB },
-      layerId: 'transit_deck'
-    });
-
-    // A2. Road slab underside (visible from below)
-    const roadSlabBot = this.generateRibbon(coords, -roadSlabWidth / 2, roadSlabWidth / 2, -0.3, 0);
-    const rdBotFlipped = new Uint32Array(roadSlabBot.indices.length);
-    for (let bi = 0; bi < roadSlabBot.indices.length; bi += 3) {
-      rdBotFlipped[bi] = roadSlabBot.indices[bi + 2];
-      rdBotFlipped[bi + 1] = roadSlabBot.indices[bi + 1];
-      rdBotFlipped[bi + 2] = roadSlabBot.indices[bi];
-    }
-    meshes.push({
-      positions: new Float64Array(roadSlabBot.positions),
-      indices: rdBotFlipped,
-      material: { type: 'solid', color: '#c0cad4' },
-      layerId: 'transit_deck'
-    });
-
-    // B. Asphalt Surface
     const roadAsphalt = this.generateRibbon(coords, -roadAsphaltWidth / 2, roadAsphaltWidth / 2, 0.02, 0);
     meshes.push({
       positions: new Float64Array(roadAsphalt.positions),
       indices: new Uint32Array(roadAsphalt.indices),
-      material: { type: 'solid', color: RD_ASPHALT },
+      material: { type: 'solid', color: RD_ASPHALT, materialId: 'asphalt_deck' },
       layerId: 'transit_deck'
     });
-
-    // C. Outer Side Barriers (Parapets) (LOD Details)
-    const leftRoadBarrier = this.generateRibbon(coords, -roadSlabWidth / 2, -roadSlabWidth / 2 + 0.4, 0.0, 0.9);
+    const roadGirderDepth = dim('flyoverGirderDepth');
+    const roadSoffit = roadSlabWidth * dim('flyoverSoffitRatio');
+    const roadGirder = extrudeProfile(coords, boxGirderProfile(roadSlabWidth, roadGirderDepth, roadSoffit), wgs84ToCartesian, 0);
     meshes.push({
-      positions: new Float64Array(leftRoadBarrier.positions),
-      indices: new Uint32Array(leftRoadBarrier.indices),
-      material: { type: 'solid', color: RD_BARRIER },
-      layerId: 'transit_deck_details'
+      positions: new Float64Array(roadGirder.positions),
+      indices: new Uint32Array(roadGirder.indices),
+      material: { type: 'solid', color: RD_SLAB, materialId: 'concrete_deck' },
+      layerId: 'transit_deck'
     });
-    const rightRoadBarrier = this.generateRibbon(coords, roadSlabWidth / 2 - 0.4, roadSlabWidth / 2, 0.0, 0.9);
-    meshes.push({
-      positions: new Float64Array(rightRoadBarrier.positions),
-      indices: new Uint32Array(rightRoadBarrier.indices),
-      material: { type: 'solid', color: RD_BARRIER },
-      layerId: 'transit_deck_details'
-    });
-
-    // D. Central Divider
+    for (const side of [-1, 1] as const) {
+      const parapet = extrudeProfile(coords, jerseyParapetProfile(side * roadSlabWidth / 2, side), wgs84ToCartesian, 0);
+      meshes.push({
+        positions: new Float64Array(parapet.positions),
+        indices: new Uint32Array(parapet.indices),
+        material: { type: 'solid', color: RD_BARRIER, materialId: 'concrete_barrier' },
+        layerId: 'transit_deck_details'
+      });
+    }
     if (mf.hasDivider && dividerWidth > 0.1) {
-      const divider = this.generateRibbon(coords, -dividerWidth / 2, dividerWidth / 2, 0.04, 0.85);
+      const divider = extrudeProfile(coords, jerseyMedianProfile(), wgs84ToCartesian, 0.02);
       meshes.push({
         positions: new Float64Array(divider.positions),
         indices: new Uint32Array(divider.indices),
-        material: { type: 'solid', color: RD_DIVIDER },
-        layerId: 'transit_deck_details'
-      });
-      const dividerStripe = this.generateRibbon(coords, -dividerWidth / 2 + 0.1, dividerWidth / 2 - 0.1, 0.9, 0);
-      meshes.push({
-        positions: new Float64Array(dividerStripe.positions),
-        indices: new Uint32Array(dividerStripe.indices),
-        material: { type: 'solid', color: RD_DIVIDER_S },
+        material: { type: 'solid', color: RD_DIVIDER, materialId: 'concrete_barrier' },
         layerId: 'transit_deck_details'
       });
     } else if (!mf.isOneWay) {
-      const lineLeft = this.generateRibbon(coords, -0.12, -0.04, 0.03, 0);
-      meshes.push({
-        positions: new Float64Array(lineLeft.positions),
-        indices: new Uint32Array(lineLeft.indices),
-        material: { type: 'solid', color: '#f59e0b' },
-        layerId: 'transit_deck'
-      });
-      const lineRight = this.generateRibbon(coords, 0.04, 0.12, 0.03, 0);
-      meshes.push({
-        positions: new Float64Array(lineRight.positions),
-        indices: new Uint32Array(lineRight.indices),
-        material: { type: 'solid', color: '#f59e0b' },
-        layerId: 'transit_deck'
-      });
+      // Undivided: IRC:35-2015 §4.6.1 white broken centre line (was a US-style double yellow)
+      meshes.push(this.markingLine([coords], 0, dim('centreLineWidth'), '#e2e8f0', 'marking_white', 'transit_deck',
+        { mark: dim('centreLineMark'), gap: dim('centreLineGap') }, 0.03));
     }
 
     // E. Lane Dividers
@@ -1557,129 +1480,34 @@ export class ProceduralGeometryGenerator {
       const startOffset = -roadAsphaltWidth / 2;
       for (let i = 1; i < lanesA; i++) {
         const offset = startOffset + i * laneWidth;
-        const mark = this.generateRibbon(coords, offset - 0.06, offset + 0.06, 0.025, 0);
-        meshes.push({
-          positions: new Float64Array(mark.positions),
-          indices: new Uint32Array(mark.indices),
-          material: { type: 'solid', color: '#e2e8f0' },
-          layerId: 'transit_deck'
-        });
+        // IRC:35-2015 lane line, 150 mm, 3 m / 6 m
+        meshes.push(this.markingLine([coords], offset, dim('laneLineWidth'), '#e2e8f0', 'marking_white', 'transit_deck',
+          { mark: dim('laneLineMark'), gap: dim('laneLineGap') }, 0.03));
       }
     }
     if (lanesB > 1) {
       const startOffset = mf.hasDivider ? dividerWidth / 2 : 0;
       for (let i = 1; i < lanesB; i++) {
         const offset = startOffset + i * laneWidth;
-        const mark = this.generateRibbon(coords, offset - 0.06, offset + 0.06, 0.025, 0);
-        meshes.push({
-          positions: new Float64Array(mark.positions),
-          indices: new Uint32Array(mark.indices),
-          material: { type: 'solid', color: '#e2e8f0' },
-          layerId: 'transit_deck'
-        });
+        // IRC:35-2015 lane line, 150 mm, 3 m / 6 m
+        meshes.push(this.markingLine([coords], offset, dim('laneLineWidth'), '#e2e8f0', 'marking_white', 'transit_deck',
+          { mark: dim('laneLineMark'), gap: dim('laneLineGap') }, 0.03));
       }
     }
 
-    // F. Twin Road Box Girders Underneath (dark charcoal)
-    const leftRoadGirder = this.generateRibbon(coords, -roadSlabWidth * 0.42, -roadSlabWidth * 0.10, -0.95, 0.65);
-    meshes.push({
-      positions: new Float64Array(leftRoadGirder.positions),
-      indices: new Uint32Array(leftRoadGirder.indices),
-      material: { type: 'solid', color: RD_GIRDER },
-      layerId: 'transit_deck_details'
-    });
-    const rightRoadGirder = this.generateRibbon(coords, roadSlabWidth * 0.10, roadSlabWidth * 0.42, -0.95, 0.65);
-    meshes.push({
-      positions: new Float64Array(rightRoadGirder.positions),
-      indices: new Uint32Array(rightRoadGirder.indices),
-      material: { type: 'solid', color: RD_GIRDER },
-      layerId: 'transit_deck_details'
-    });
-
     // ==========================================
-    // 2. TOP LEVEL: METRO DECK (BLUE-TINTED — DISTINCT FROM ROAD DECK)
+    // 2. TOP LEVEL: METRO VIADUCT
     // ==========================================
-    const metroDeckWidth = 5.0;
-
-    // A. Metro structural beam — dark navy blue
-    const metroSlab = this.generateRibbon(metroCoords, -metroDeckWidth / 2, metroDeckWidth / 2, -0.4, 0.4);
-    meshes.push({
-      positions: new Float64Array(metroSlab.positions),
-      indices: new Uint32Array(metroSlab.indices),
-      material: { type: 'solid', color: MT_BEAM },
-      layerId: 'transit_deck'
-    });
-
-    // A2. Metro beam underside (deep blue — clearly different from road underside)
-    const metroSlabBot = this.generateRibbon(metroCoords, -metroDeckWidth / 2, metroDeckWidth / 2, -0.4, 0);
-    const mtBotFlipped = new Uint32Array(metroSlabBot.indices.length);
-    for (let bi = 0; bi < metroSlabBot.indices.length; bi += 3) {
-      mtBotFlipped[bi] = metroSlabBot.indices[bi + 2];
-      mtBotFlipped[bi + 1] = metroSlabBot.indices[bi + 1];
-      mtBotFlipped[bi + 2] = metroSlabBot.indices[bi];
-    }
-    meshes.push({
-      positions: new Float64Array(metroSlabBot.positions),
-      indices: mtBotFlipped,
-      material: { type: 'solid', color: MT_UNDERSIDE },
-      layerId: 'transit_deck'
-    });
-
-    // B. Near-black track bed surface
-    const metroSurface = this.generateRibbon(metroCoords, -metroDeckWidth / 2 + 0.35, metroDeckWidth / 2 - 0.35, 0.02, 0);
-    meshes.push({
-      positions: new Float64Array(metroSurface.positions),
-      indices: new Uint32Array(metroSurface.indices),
-      material: { type: 'solid', color: MT_SURFACE },
-      layerId: 'transit_deck'
-    });
-
-    // B. Metro Girder Underneath (deep charcoal)
-    const metroGirder = this.generateRibbon(metroCoords, -metroDeckWidth * 0.4, metroDeckWidth * 0.4, -0.9, 0.5);
-    meshes.push({
-      positions: new Float64Array(metroGirder.positions),
-      indices: new Uint32Array(metroGirder.indices),
-      material: { type: 'solid', color: '#0f2744' },
-      layerId: 'transit_deck_details'
-    });
-
-    // C. Steel-blue glowing rails
-    const railLeft = this.generateRibbon(metroCoords, -1.5, -1.3, 0.1, 0.1);
-    meshes.push({
-      positions: new Float64Array(railLeft.positions),
-      indices: new Uint32Array(railLeft.indices),
-      material: { type: 'solid', color: MT_RAIL },
-      layerId: 'transit_rails'
-    });
-    const railRight = this.generateRibbon(metroCoords, 1.3, 1.5, 0.1, 0.1);
-    meshes.push({
-      positions: new Float64Array(railRight.positions),
-      indices: new Uint32Array(railRight.indices),
-      material: { type: 'solid', color: MT_RAIL },
-      layerId: 'transit_rails'
-    });
-
-    // D. Blue Side Barriers — clearly different from road deck grey barriers
-    const leftMetroBarrier = this.generateRibbon(metroCoords, -metroDeckWidth / 2, -metroDeckWidth / 2 + 0.35, 0.0, 0.9);
-    meshes.push({
-      positions: new Float64Array(leftMetroBarrier.positions),
-      indices: new Uint32Array(leftMetroBarrier.indices),
-      material: { type: 'solid', color: MT_BARRIER },
-      layerId: 'transit_deck_details'
-    });
-    const rightMetroBarrier = this.generateRibbon(metroCoords, metroDeckWidth / 2 - 0.35, metroDeckWidth / 2, 0.0, 0.9);
-    meshes.push({
-      positions: new Float64Array(rightMetroBarrier.positions),
-      indices: new Uint32Array(rightMetroBarrier.indices),
-      material: { type: 'solid', color: MT_BARRIER },
-      layerId: 'transit_deck_details'
-    });
-
+    // Pune viaduct ~8.5 m edge to edge, track centres 4.1 m (Phase-2 DPR, official); was a 5.0 m slab
+    const metroParts = this.metroViaductMeshes(metroCoords, dim('metroDeckWidth'), dim('standardGauge'),
+      mf.superstructure ?? 'box_girder',
+      { beam: MT_BEAM, surface: MT_SURFACE, barrier: MT_BARRIER, rail: MT_RAIL });
+    meshes.push(...metroParts);
 
     // ==========================================
     // 3. PILLARS & PIER CAPS (DOUBLE-DECKER SYSTEM)
     // ==========================================
-    const pierSpacing = mf.pierSpacing || 30;
+    const pierSpacing = mf.pierSpacing || dim('flyoverSpan');
 
     // Subsample positions along path based on spacing
     const distanceList: number[] = [0];
@@ -1723,18 +1551,16 @@ export class ProceduralGeometryGenerator {
 
       const metroZ = groundZ + metroElevation;
 
-      const tangentECEF = [
-        (pEnd[0] - pStart[0]),
-        (pEnd[1] - pStart[1]),
-        (pEnd[2] - pStart[2])
-      ] as [number, number, number];
+      const tangentECEF = ecefTangent(pStart, pEnd); // ECEF direction (was lng/lat degrees, which mis-rotated piers and caps)
 
-      // --- 2. Central Structural Pier (reaches top metro deck cap at metroZ - 1.7) ---
+      // --- 2. Central pier up to the metro pier cap (cap under the metro girder soffit) ---
+      const capDepth = dim('pierCapDepth');
+      const metroCapTop = metroZ - dim('metroGirderDepth');
       const topWidth = 2.0;
       const topLength = 1.4;
       const botWidth = 1.6;
       const botLength = 1.2;
-      const pillarHeight = metroElevation - 1.7;
+      const pillarHeight = metroCapTop - capDepth - groundZ;
 
       if (pillarHeight > 0.5) {
         const pillar = this.generateTaperedRectangularPier(
@@ -1751,36 +1577,15 @@ export class ProceduralGeometryGenerator {
         );
         meshes.push(pillar);
 
-        // --- 3. Upper Pier Cap (supporting Metro Deck) (LOD Details) ---
-        const upperCap = this.generateRectangularBox(
-          interpLng,
-          interpLat,
-          metroZ - 1.7,
-          0.8,
-          4.0,
-          1.8,
-          tangentECEF,
-          '#64748b',
-          'transit_pillars_details'
-        );
-        meshes.push(upperCap);
+        // --- 3. Upper pier cap under the metro box girder (LOD details; depth/length ASSUMED) ---
+        meshes.push(this.generateRectangularBox(interpLng, interpLat, metroCapTop - capDepth, capDepth,
+          dim('metroGirderSoffit') + 1.0, dim('pierCapLength'), tangentECEF, '#64748b', 'transit_pillars_details'));
 
-        // --- 4. Lower Pier Cap (supporting Middle Road Deck) (LOD Details) ---
+        // --- 4. Lower cap (cross-head) under the road deck soffit ---
         const roadDeckHeight = deckZ - groundZ;
-        if (roadDeckHeight >= 3.0) {
-          const lowerCapWidth = roadSlabWidth * 0.7;
-          const lowerCap = this.generateRectangularBox(
-            interpLng,
-            interpLat,
-            deckZ - 1.7,
-            0.8,
-            lowerCapWidth,
-            1.8,
-            tangentECEF,
-            '#64748b',
-            'transit_pillars_details'
-          );
-          meshes.push(lowerCap);
+        if (roadDeckHeight >= roadGirderDepth + capDepth + 0.5) {
+          meshes.push(this.generateRectangularBox(interpLng, interpLat, deckZ - roadGirderDepth - capDepth, capDepth,
+            Math.max(roadSoffit + 1.0, topWidth + 0.6), dim('pierCapLength'), tangentECEF, '#64748b', 'transit_pillars_details'));
         }
       }
 
@@ -1800,42 +1605,124 @@ export class ProceduralGeometryGenerator {
     // makes the inspector's elevation edit move every line (it used to be ignored when vertices carried a height).
     const coords = metro.coordinates.map(c => [c[0], c[1], 0] as [number, number, number]);
     const elevation = Number.isFinite(metro.elevation) ? metro.elevation : 12;
-    const deckWidth = Math.max(3, metro.deckWidth || 8);
+    const deckWidth = Math.max(3, metro.deckWidth || dim('metroDeckWidth'));
     const gauge = metro.trackGauge || 1.435;
     const tracks = metro.trackCount === 1 ? 1 : 2;
-    // Two tracks share the deck, centres up to 4 m apart (the deck width caps it)
-    const centreOffset = tracks === 1 ? [0] : [-Math.min(2, deckWidth / 4), Math.min(2, deckWidth / 4)];
+    const superstructure = metro.superstructure ?? 'box_girder';
+    const deckCoords = coords.map(c => [c[0], c[1], elevation] as [number, number, number]);
 
-    // 1. Track bed deck (deckWidth wide)
-    const deck = this.generateRibbon(coords, -deckWidth / 2, deckWidth / 2, elevation, 0.4);
-    meshes.push({
-      positions: new Float64Array(deck.positions),
-      indices: new Uint32Array(deck.indices),
-      material: { type: 'solid', color: '#1e293b' },
-      layerId: 'transit_deck'
-    });
+    // 1. Viaduct: box girder (Pune Metro precast segmental box girder, official) or the U-girder option (type not confirmed)
+    meshes.push(...this.metroViaductMeshes(deckCoords, deckWidth, gauge, superstructure,
+      { beam: '#1e293b', surface: '#1e293b', barrier: '#1e293b', rail: '#a5f3fc' }, tracks));
 
-    // 2. Two rails per track at the track gauge
-    for (const c of centreOffset) {
-      for (const side of [-1, 1]) {
-        const r = c + side * gauge / 2;
-        const rail = this.generateRibbon(coords, r - 0.1, r + 0.1, elevation + 0.1, 0.1);
-        meshes.push({
-          positions: new Float64Array(rail.positions),
-          indices: new Uint32Array(rail.indices),
-          material: { type: 'solid', color: '#a5f3fc' },
-          layerId: 'transit_rails'
-        });
-      }
-    }
-
-    // 3. Support pillars (only for an elevated line; an underground one has none)
+    // 2. Piers (only for an elevated line; an underground one has none): single circular pier, flared head, pier cap
+    // and a 1.0 m Jersey ring (Phase-2 DPR §5.7.1.2); spans 28 m default (DPR range 13–34 m) unless the line sets one
     if (elevation > 1.5) {
-      const pierSpacing = metro.pierSpacing || 30;
-      meshes.push(...this.generatePillarsAlongCenterline(coords, undefined, elevation, pierSpacing, 'transit_pillars'));
+      const span = metro.pierSpacing || dim('metroSpan');
+      meshes.push(...this.metroPiers(coords, elevation, span, superstructure === 'u_girder' ? 1.9 : dim('metroGirderDepth')));
     }
 
     return meshes;
+  }
+
+  /**
+   * Metro viaduct superstructure along `deckCoords` (z = top of deck): girder(s), parapets, track plinths and rails.
+   * Track centres 4.1 m (official) capped by the deck width; parapet height, girder depth and soffit ASSUMED (visualDims).
+   */
+  private metroViaductMeshes(
+    deckCoords: [number, number, number][],
+    width: number,
+    gauge: number,
+    type: 'box_girder' | 'u_girder',
+    colors: { beam: string; surface: string; barrier: string; rail: string },
+    tracks = 2
+  ): MeshData[] {
+    const meshes: MeshData[] = [];
+    const half = Math.min(dim('metroTrackCentres') / 2, Math.max(0, width / 2 - 1.3));
+    const centres = tracks === 1 ? [0] : [-half, half];
+    const push = (r: { positions: number[]; indices: number[] }, color: string, materialId: MaterialConfig['materialId'], layerId: MeshData['layerId']) =>
+      meshes.push({ positions: new Float64Array(r.positions), indices: new Uint32Array(r.indices), material: { type: 'solid', color, materialId }, layerId });
+
+    if (type === 'u_girder') {
+      // Generic trough per track: Pune U-girder dimensions are UNKNOWN (inspector: "type not confirmed")
+      for (const c of centres) for (const part of uGirderParts(c)) push(extrudeProfile(deckCoords, part, wgs84ToCartesian, 0), colors.beam, 'concrete_deck', 'transit_deck');
+    } else {
+      push(extrudeProfile(deckCoords, boxGirderProfile(width, dim('metroGirderDepth'), dim('metroGirderSoffit')), wgs84ToCartesian, 0),
+        colors.beam, 'concrete_deck', 'transit_deck');
+      const ph = dim('metroParapetHeight');
+      for (const side of [-1, 1]) {
+        const x0 = side * (width / 2 - 0.2), x1 = side * width / 2;
+        push(extrudeProfile(deckCoords, rectProfile(Math.min(x0, x1), Math.max(x0, x1), 0, ph), wgs84ToCartesian, 0),
+          colors.barrier, 'concrete_barrier', 'transit_deck_details');
+      }
+    }
+    // Ballastless track: a plinth under each rail (0.6 × 0.25 m, assumed) and the rail (0.1 × 0.15 m) at the gauge
+    const floor = type === 'u_girder' ? -1.6 : 0;
+    for (const c of centres) {
+      for (const sgn of [-1, 1]) {
+        const r = c + sgn * gauge / 2;
+        push(extrudeProfile(deckCoords, rectProfile(r - 0.3, r + 0.3, floor, floor + 0.25), wgs84ToCartesian, 0, false),
+          colors.surface, 'track_plinth', 'transit_deck_details');
+        push(extrudeProfile(deckCoords, rectProfile(r - 0.05, r + 0.05, floor + 0.25, floor + 0.4), wgs84ToCartesian, 0, false),
+          colors.rail, 'steel_rail', 'transit_rails');
+      }
+    }
+    return meshes;
+  }
+
+  /** Circular metro piers with flared heads, pier caps and Jersey rings at `span` spacing along a ground path. */
+  private metroPiers(coords: [number, number, number][], deckZ: number, span: number, girderDepth: number): MeshData[] {
+    const out: MeshData[] = [];
+    const cum = cumulativeLengths(coords);
+    const r = dim('metroPierDiameter') / 2;
+    const capDepth = dim('pierCapDepth');
+    const flare = 1.5; // flared head height (assumed); widens to the cap
+    const capTop = deckZ - girderDepth;
+    const shaftTop = capTop - capDepth - flare;
+    if (shaftTop < 0.5) return out;
+    for (const s of pierStations(cum[cum.length - 1], span)) {
+      const { pt, seg } = pointAt(coords, cum, s);
+      const t = ecefTangent(coords[seg], coords[seg + 1] ?? coords[seg]);
+      out.push(this.generateFrustum(pt[0], pt[1], 0, shaftTop, r, r, 'transit_pillars', '#64748b', 'concrete_pier', false));
+      out.push(this.generateFrustum(pt[0], pt[1], shaftTop, flare, r, r * 1.6, 'transit_pillars', '#64748b', 'concrete_pier', true));
+      out.push(this.generateRectangularBox(pt[0], pt[1], capTop - capDepth, capDepth, dim('metroGirderSoffit') + 0.6, dim('pierCapLength'), t, '#64748b', 'transit_pillars_details'));
+      const ring = r + dim('metroPierBarrierGap');
+      out.push(this.generateFrustum(pt[0], pt[1], 0, dim('metroPierBarrierHeight'), ring + 0.4, ring + 0.15, 'transit_pillars_details', '#94a3b8', 'concrete_barrier', true));
+    }
+    return out;
+  }
+
+  /** Closed-top frustum (r0 at the base, r1 at the top), 16 sides, for piers, flared heads and barrier rings. */
+  private generateFrustum(
+    lng: number, lat: number, base: number, height: number, r0: number, r1: number,
+    layerId: MeshData['layerId'], color: string, materialId: MaterialConfig['materialId'], capTop: boolean
+  ): MeshData {
+    const seg = 16;
+    const positions: number[] = [];
+    const indices: number[] = [];
+    const b = wgs84ToCartesian(lng, lat, base);
+    const up = normalize(b);
+    let arb: [number, number, number] = [0, 0, 1];
+    if (Math.abs(up[2]) > 0.9) arb = [1, 0, 0];
+    const e1 = normalize(cross(up, arb));
+    const e2 = normalize(cross(up, e1));
+    for (const [h, rr] of [[0, r0], [height, r1]] as const) {
+      for (let i = 0; i < seg; i++) {
+        const th = (i / seg) * Math.PI * 2;
+        const x = Math.cos(th) * rr, y = Math.sin(th) * rr;
+        positions.push(b[0] + e1[0] * x + e2[0] * y + up[0] * h, b[1] + e1[1] * x + e2[1] * y + up[1] * h, b[2] + e1[2] * x + e2[2] * y + up[2] * h);
+      }
+    }
+    for (let i = 0; i < seg; i++) {
+      const n = (i + 1) % seg;
+      indices.push(i, n, n + seg, i, n + seg, i + seg);
+    }
+    if (capTop) {
+      const c = positions.length / 3;
+      positions.push(b[0] + up[0] * height, b[1] + up[1] * height, b[2] + up[2] * height);
+      for (let i = 0; i < seg; i++) indices.push(c, seg + i, seg + ((i + 1) % seg));
+    }
+    return { positions: new Float64Array(positions), indices: new Uint32Array(indices), material: { type: 'solid', color, materialId }, layerId };
   }
 
   /**
