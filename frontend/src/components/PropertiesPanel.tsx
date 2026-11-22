@@ -1320,10 +1320,12 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
   const vcRatio = engineInstance.simulations.getRoadCongestion(r.id, r as any);
   const currentSpeed = engineInstance.simulations.getRoadSpeed(r.id, r as any);
 
-  let congestionState = 'Free Flow';
-  if (vcRatio > 0.8) congestionState = 'Severe';
-  else if (vcRatio > 0.4) congestionState = 'Heavy';
-  else if (vcRatio > 0.1) congestionState = 'Moderate';
+  // Without a running traffic simulation the counters are 0 by default, not a result: say so instead of "Free Flow" (p5-qa)
+  const simLive = engineInstance.simulations.isRunning('traffic');
+  let congestionState = simLive ? 'Free Flow' : 'Not simulated';
+  if (simLive && vcRatio > 0.8) congestionState = 'Severe';
+  else if (simLive && vcRatio > 0.4) congestionState = 'Heavy';
+  else if (simLive && vcRatio > 0.1) congestionState = 'Moderate';
 
   return (
     <div className="space-y-3.5">
@@ -1551,7 +1553,7 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
         <div className="bg-slate-950/50 p-3 rounded-lg border border-white/5 space-y-2.5 mt-3">
           <div className="text-sm text-slate-400 uppercase font-semibold border-b border-white/5 pb-1.5 flex justify-between items-center">
             <span>Diagnostics & Simulation</span>
-            <span className="text-xs text-indigo-400 font-mono">Real-time</span>
+            <span className="text-xs text-indigo-400 font-mono">{simLive ? 'Live simulation' : 'No simulation running'}</span>
           </div>
 
           {/* Connection Status */}
@@ -1598,24 +1600,26 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
             </div>
             <div>
               <span className="text-slate-500">Active Vehicles:</span>
-              <span className="text-indigo-400 font-bold block mt-0.5 font-mono">{activeVehicles}</span>
+              <span className="text-indigo-400 font-bold block mt-0.5 font-mono">{simLive ? activeVehicles : '—'}</span>
             </div>
             <div>
               <span className="text-slate-500">V/C Ratio:</span>
               <span className={`${vcRatio > 0.8 ? 'text-red-400' : vcRatio > 0.4 ? 'text-orange-400' : vcRatio > 0.1 ? 'text-yellow-400' : 'text-emerald-400'} font-semibold block mt-0.5 font-mono`}>
-                {vcRatio.toFixed(2)}
+                {simLive ? vcRatio.toFixed(2) : '—'}
               </span>
             </div>
             <div>
               <span className="text-slate-500">Avg Speed:</span>
-              <span className="text-slate-200 font-semibold block mt-0.5">{currentSpeed} km/h</span>
+              <span className="text-slate-200 font-semibold block mt-0.5">{simLive ? `${currentSpeed} km/h` : '—'}</span>
             </div>
           </div>
 
           <div className="flex flex-col gap-1 border-t border-white/5 pt-2">
             <span className="text-xs text-slate-400 uppercase font-semibold">Congestion State</span>
             <span className={`text-xs font-semibold px-2 py-0.5 rounded-md border w-fit ${
-              congestionState === 'Severe'
+              congestionState === 'Not simulated'
+                ? 'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                : congestionState === 'Severe'
                 ? 'bg-red-500/10 text-red-400 border-red-500/20'
                 : congestionState === 'Heavy'
                 ? 'bg-orange-500/10 text-orange-400 border-orange-500/20'

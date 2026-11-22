@@ -11,6 +11,7 @@ import type {
   JunctionObject, UtilityObject, ZoneObject, GatewayObject,
 } from '../engine/objects/types';
 import { isUserBuilt, TYPE_LABELS } from '../engine/objects/builtBy';
+import { isSampleObject } from '../engine/objects/sampleObjects';
 import { filterObjectsForScenario } from '../engine/scenarios/scenarioFilter';
 import { isDrivable } from '../engine/simulation/StudyAreaExplorer';
 import { lineLength } from './drawnWorks';
@@ -91,7 +92,7 @@ const DrawnWorksList: React.FC<{ version: number; onClose: () => void }> = ({ ve
                           <span className="flex-1 min-w-0">
                             <span className="block text-sm text-slate-100 truncate">{o.name || TYPE_LABELS[o.type]}</span>
                             <span className="block text-xs text-slate-500">
-                              {TYPE_LABELS[o.type]}{len !== null ? ` · ${formatDistanceM(len)}` : ''}
+                              {TYPE_LABELS[o.type]}{len !== null ? ` · ${formatDistanceM(len)}` : ''}{isSampleObject(o) ? ' · sample (fictional, not drawn by you)' : ''}
                             </span>
                           </span>
                           <ChevronRight size={16} className="text-slate-500 shrink-0" />
@@ -148,7 +149,7 @@ const ObjectDetails: React.FC<{ obj: CityObject; version: number }> = ({ obj, ve
         title={obj.name || TYPE_LABELS[obj.type]}
         subtitle={`${TYPE_LABELS[obj.type]}${obj.scenarioId !== 'base' ? ' · in this proposal' : ''}`}
         onBack={back}
-        backLabel="All projects"
+        backLabel="All drawn works"
       />
       <PanelBody>
         <div className="space-y-2">

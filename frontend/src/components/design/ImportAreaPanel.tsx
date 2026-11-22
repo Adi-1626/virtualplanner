@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Database, Loade
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { INFRASTRUCTURE_CATEGORIES, type InfrastructureCategory, type StudyAreaImportProgress, type StudyAreaImportReport } from '../../engine/editing/studyAreaImport';
 import type { StudyAreaSummary } from '../../engine/editing/studyAreaSummary';
+import { formatWhen } from '../../lib/formatWhen';
 import type { LocalOsmStatus } from '../../engine/editing/LocalOsmIndex';
 import type { Area } from '../../engine/objects/types';
 import { STUDY_AREA_ROADS_PREFIX } from '../../engine/simulation/osmCoverage';
@@ -26,7 +27,7 @@ const SourceLine: React.FC<{ status: OsmStatus | null | 'offline' }> = ({ status
   if (status.available) {
     return (
       <p className="text-meta text-text-3 flex items-center gap-1" data-testid="study-source" title={`Local index built from ${status.source ?? 'an OSM extract'}; © OpenStreetMap contributors, ODbL. Outside its region (${status.bbox?.join(', ')}) the live Overpass API is used.`}>
-        <Database size={12} aria-hidden className="text-measured" /> OpenStreetMap, local index{status.dataTimestamp ? ` · data ${String(status.dataTimestamp).slice(0, 16)}` : ''}
+        <Database size={12} aria-hidden className="text-measured" /> OpenStreetMap, local index{status.dataTimestamp ? ` · data ${formatWhen(String(status.dataTimestamp))}` : ''}
       </p>
     );
   }
@@ -62,7 +63,7 @@ export const StudyAreaSummaryCard: React.FC<{ area: Area; summary: StudyAreaSumm
         <dt className="text-text-2">Buildings</dt>
         <dd className="text-text-1" data-testid="study-sum-buildings">{summary.buildings.toLocaleString()}</dd>
         <dt className="text-text-2">Metro</dt>
-        <dd className="text-text-1" data-testid="study-sum-metro">{summary.metroKm || summary.metroStations ? `${n(summary.metroKm)} km · ${summary.metroStations} stations` : <span className="text-text-3">none mapped</span>}</dd>
+        <dd className="text-text-1" data-testid="study-sum-metro">{summary.metroKm || summary.metroStations ? `${n(summary.metroKm)} km · ${summary.metroStations} ${summary.metroStations === 1 ? 'station' : 'stations'}` : <span className="text-text-3">none mapped</span>}</dd>
         {summary.lanesTaggedPct !== null && <><dt className="text-text-2">Lanes, speed</dt>
           <dd className="text-text-1 flex items-center gap-1.5 flex-wrap" data-testid="study-sum-tagged">
             <span>tagged on {summary.lanesTaggedPct}% / {summary.maxspeedTaggedPct}% of road length</span>
@@ -230,7 +231,7 @@ export const ImportAreaPanel: React.FC = () => {
       {pointCount > 0 && !busy && (
         <div className="flex flex-col gap-1.5" data-testid="study-drawing">
           <span className="text-meta text-text-2">
-            {redrawingId ? 'Editing boundary · ' : ''}{pointCount} {pointCount === 1 ? 'point' : 'points'}{pointCount < 3 ? ` · ${3 - pointCount} more needed` : ' · double-click or Load data'}
+            {redrawingId ? 'Editing boundary · ' : ''}{pointCount} {pointCount === 1 ? 'point' : 'points'}{shape === 'rectangle' ? (pointCount < 2 ? ' · click the opposite corner' : '') : pointCount < 3 ? ` · ${3 - pointCount} more needed` : ' · double-click or Load data'}
           </span>
           <div className="flex gap-1">
             <button type="button" className="uos-btn uos-btn-sm flex-1 justify-center" data-testid="study-load" disabled={pointCount < 3}
