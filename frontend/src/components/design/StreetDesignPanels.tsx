@@ -284,7 +284,7 @@ export const BusPriorityPanel: React.FC<{ road: RoadObject }> = ({ road }) => {
   const block = blockXs ?? busPriorityBlockReason(road, draft);
   const apply = (spec: Omit<BusPrioritySpec, 'appliedAt'> | null) => {
     const r = commitBusPriority(engineInstance.objects, engineInstance.history, road, spec);
-    if (!r.ok) (window as any).showToast?.(r.reason, 'error');
+    if ('reason' in r) (window as any).showToast?.(r.reason, 'error');
     else (window as any).showToast?.(spec ? `${spec.kind === 'brt' ? 'BRT' : 'Bus lane'} on ${road.name || 'the road'}: Simulate's network loses one general lane per direction given to buses (Undo reverts it).` : 'Bus lane removed (Undo reverts it).', 'info');
   };
   return (
