@@ -207,7 +207,7 @@ export function commitGeometry(obj: CityObject, alignment: HorizontalAlignment, 
 
     // 5. Flyover: ramp-merge capacity effects on the surface roads worked out again for the new path (legacy ramps)
     if (isFlyover(obj.type)) {
-      const { flyover, roadUpdates } = objects.flyoverFeasibility(asCity(next));
+      const { flyover, roadUpdates } = objects.flyoverFeasibility(asCity(next), { edited: true });
       next = { ...next, ...flyover } as LineObj;
       const touched = new Set(roadUpdates.map(u => u.id));
       for (const u of roadUpdates) {

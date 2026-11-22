@@ -55,7 +55,7 @@ def test_stricter_rule_wins_and_both_cited():
     ids = {x["id"] for x in r["rows"]}
     assert {"C1", "C2", "C2b-H", "C2b-V"} <= ids                        # all cited
     assert r["v_ids"] == ["C2b-V"] and r["h_ids"] == ["C1"]
-    assert [c["id"] for c in r["compare"]] == ["C20"]                    # international: comparison only
+    assert [c["id"] for c in r["compare"]] == ["C2c", "C20"]             # unconfirmed CPHEEO §12.2(c) + international: comparison only
     assert r["order"]["order"] == "a_above_b"
     r2 = C.requirement(CFG, "sewer", "water", None, None)               # flipped pair: sewer must be BELOW
     assert r2["order"]["order"] == "a_below_b"
@@ -466,3 +466,15 @@ def test_run_with_z_model_objects_keeps_wording_rules(client):
     txt = json.dumps(run).lower()
     for w in FORBIDDEN:
         assert w not in txt.replace("not an engineering assessment or approval", ""), w
+
+
+def test_water_sewer_cpheeo_values_confirmed_in_official_mohua_copy():
+    """D7: CPHEEO §12.9.1 3.0 m H and §12.9.2 0.5 m V (water above) are normative and cite the official MoHUA restatement;
+    the 1.0 m of §12.2(c), seen only in a third-party copy, is comparison-only and marked unconfirmed."""
+    rows = {r["id"]: r for r in C.RULES}
+    assert rows["C1"]["value_m"] == 3.0 and rows["C1"]["dim"] == "H" and rows["C1"]["type"] == "normative"
+    assert rows["C2"]["value_m"] == 0.5 and rows["C2"]["dim"] == "V" and rows["C2"]["order"] == "a_above_b"
+    assert "MoHUA" in rows["C1"]["confirmed_in"] and "MoHUA" in rows["C2"]["confirmed_in"]
+    assert rows["C2c"]["compare_only"] and "UNCONFIRMED" in rows["C2c"]["source"]
+    r = C.requirement(CFG, "water", "sewer", None, None)
+    assert any(x.get("confirmed_in") for x in r["rows"] if x["id"] == "C1")

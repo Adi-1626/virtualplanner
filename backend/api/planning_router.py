@@ -255,11 +255,14 @@ def patch_project(pid: str, body: ProjectPatch, db: Session = Depends(get_db)):
 
 @router.delete("/projects/{pid}")
 def delete_project(pid: str, removed_by: str = Query(min_length=1), confirm_name: str = Query(default=""), db: Session = Depends(get_db)):
-    """Deletes a project that has no recorded decision: its links (the linked records are kept), its proposal elements and
-    its own conflict-check runs and findings. Decisions are append-only, so a project with a decision is kept (409).
-    Other projects' runs keep their findings against this project's elements and show as stale. Subsurface datasets
-    imported for the project are kept (city data) and detached. Audited: one entry per deleted link / element, one
-    summary entry for the runs and findings, and the project delete."""
+    """Deletes a project that has no recorded decision: its links (the linked records are kept) and its proposal elements.
+    Its conflict-check runs and findings are ARCHIVED with it, not destroyed (docs/urbanos/PLANNING_DEFAULTS_DECISIONS.md
+    D8): runs and findings are immutable machine output, so the rows are kept, an `archive` audit entry records them, and
+    every active view (project conflicts, projects summary, reports, CSV export) leaves out findings of a deleted project
+    and other projects' findings against its elements. They stay readable at GET /api/coordination/archived-findings.
+    Decisions are append-only, so a project with a decision is kept (409). Subsurface datasets imported for the project
+    are kept (city data) and detached. Audited: one entry per deleted link / element, archive entries for the findings
+    (this project's, and per other project the findings against this one), and the project delete."""
     from coordination.models import CoordinationConflictEntity, CoordinationRunEntity, ProposalElementEntity, SubsurfaceDatasetEntity
     p = _get_project(db, pid)
     if confirm_name.strip() != p.name.strip():
@@ -269,13 +272,20 @@ def delete_project(pid: str, removed_by: str = Query(min_length=1), confirm_name
     who = removed_by.strip()
     with audit.acting_as(who):
         run_ids = [r for (r,) in db.query(CoordinationRunEntity.id).filter(CoordinationRunEntity.project_id == pid)]
-        n_findings = (db.query(CoordinationConflictEntity).filter(CoordinationConflictEntity.run_id.in_(run_ids))
-                      .delete(synchronize_session=False)) if run_ids else 0
-        n_runs = db.query(CoordinationRunEntity).filter(CoordinationRunEntity.project_id == pid).delete(synchronize_session=False)
+        n_runs = len(run_ids)
+        n_findings = (db.query(CoordinationConflictEntity).filter(CoordinationConflictEntity.run_id.in_(run_ids)).count()) if run_ids else 0
         if n_runs:
-            audit.record(db, action="delete", entity_type="coordination_run", entity_id=pid, actor=who,
-                         label=f"{n_runs} conflict-check run(s) and {n_findings} finding(s) of the deleted project",
+            audit.record(db, action="archive", entity_type="coordination_run", entity_id=pid, actor=who,
+                         label=f"{n_runs} conflict-check run(s) and {n_findings} finding(s) archived with the deleted project",
                          parent_type="project", parent_id=pid)
+        elsewhere: dict[str, int] = {}
+        for (other,) in db.query(CoordinationConflictEntity.project_a_id).filter(CoordinationConflictEntity.project_b_id == pid,
+                                                                                   CoordinationConflictEntity.project_a_id != pid):
+            elsewhere[other] = elsewhere.get(other, 0) + 1
+        for other, n in sorted(elsewhere.items()):
+            audit.record(db, action="archive", entity_type="coordination_conflict", entity_id=pid, actor=who,
+                         label=f"{n} finding(s) against the deleted project {p.name[:80]} archived from active views",
+                         parent_type="project", parent_id=other)
         n_el = 0
         for e in db.query(ProposalElementEntity).filter(ProposalElementEntity.project_id == pid).all():
             db.delete(e)
@@ -287,7 +297,9 @@ def delete_project(pid: str, removed_by: str = Query(min_length=1), confirm_name
         db.delete(p)
         db.commit()
     return {"status": "deleted", "id": pid, "elements": n_el, "runs": n_runs, "findings": n_findings,
-            "note": "Linked records (alternatives, runs, datasets, assessments) are unchanged. The audit log keeps the history."}
+            "findings_archived_elsewhere": sum(elsewhere.values()), "findings_archived": True,
+            "note": "Conflict-check findings are archived with the project (audit log; not in active views). "
+                    "Linked records (alternatives, runs, datasets, assessments) are unchanged."}
 
 
 @router.post("/projects/{pid}/links", status_code=201)

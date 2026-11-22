@@ -147,7 +147,7 @@ const DeleteProject: React.FC<{ b: ProjectBundle; who: string; onDeleted: () => 
     setBusy(true); setErr(null);
     try {
       const r = await planningApi.remove(p.id, who, typed);
-      (window as any).showToast?.(`Project “${p.name}” deleted (${r.elements} element${r.elements === 1 ? '' : 's'}, ${r.runs} conflict check${r.runs === 1 ? '' : 's'}).`, 'success');
+      (window as any).showToast?.(`Project “${p.name}” deleted (${r.elements} element${r.elements === 1 ? '' : 's'}, ${r.runs} conflict check${r.runs === 1 ? '' : 's'} archived).`, 'success');
       onDeleted();
     } catch (e) { setErr((e as Error).message); setBusy(false); }
   };
@@ -157,9 +157,8 @@ const DeleteProject: React.FC<{ b: ProjectBundle; who: string; onDeleted: () => 
         <Button size="sm" variant="ghost" icon={Trash2} className="text-rose-300 hover:text-rose-200" disabled={!who} onClick={() => setOpen(true)} data-testid="delete-project">Delete this project…</Button>
       ) : (
         <div className="space-y-1.5 rounded-lg border border-rose-400/30 bg-rose-500/[0.06] px-2.5 py-2" data-testid="delete-confirm">
-          <p className="text-xs text-slate-200">Deletes the project, its {b.elements.length} proposal element{b.elements.length === 1 ? '' : 's'}, its attachments
-            {runs ? ` and its ${runs} conflict check${runs === 1 ? '' : 's'} with their findings` : ''}. The alternatives, runs, datasets and screenings it links to are kept.
-            Other projects keep their own findings against it (shown as “a deleted project”). Activity keeps the history.</p>
+          <p className="text-xs text-slate-200">Deletes the project, its {b.elements.length} proposal element{b.elements.length === 1 ? '' : 's'} and its attachments. The alternatives, runs, datasets and screenings it links to are kept.{' '}
+            {runs ? `Its ${runs} conflict check${runs === 1 ? '' : 's'} and their findings are archived with it` : 'Its findings are archived with it'}, and so are other projects’ findings against it: kept in Activity, no longer in active lists or reports.</p>
           <label className={labelCls} htmlFor="pd-name">Type the project name to confirm: <b className="text-slate-200">{p.name}</b></label>
           <input id="pd-name" className={inputCls} value={typed} onChange={e => setTyped(e.target.value)} data-testid="delete-name" autoComplete="off" />
           {err && <Notice tone="bad">{err}</Notice>}

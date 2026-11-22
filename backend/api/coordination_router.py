@@ -501,11 +501,24 @@ def get_run(rid: str, db: Session = Depends(get_db)):
     return _run_dict(db, r, with_conflicts=True)
 
 
+def _live_project_ids(db: Session) -> set[str]:
+    from planning.models import PlanningProjectEntity
+    return {pid for (pid,) in db.query(PlanningProjectEntity.id)}
+
+
 def _latest_runs(db: Session) -> dict[str, CoordinationRunEntity]:
+    """Latest conflict-check run per LIVE project. Runs of a deleted project are archived with it (D8), never active."""
+    live = _live_project_ids(db)
     out: dict[str, CoordinationRunEntity] = {}
     for r in db.query(CoordinationRunEntity).order_by(CoordinationRunEntity.created_at):
-        out[r.project_id] = r
+        if r.project_id in live:
+            out[r.project_id] = r
     return out
+
+
+def _active_findings(rows: list, live: set[str]) -> list:
+    """Leaves out findings archived with a deleted project: those it raised and those against its elements (D8)."""
+    return [c for c in rows if c.project_a_id in live and (c.project_b_id is None or c.project_b_id in live)]
 
 
 def _dedupe_findings(rows: list, latest: dict) -> tuple[list, dict, int]:
@@ -543,7 +556,7 @@ def project_conflicts(pid: str, include_clear: bool = False, db: Session = Depen
     run_ids = [r.id for r in latest.values()]
     q = db.query(CoordinationConflictEntity).filter(CoordinationConflictEntity.run_id.in_(run_ids),
                                                     or_(CoordinationConflictEntity.project_a_id == pid, CoordinationConflictEntity.project_b_id == pid))
-    rows, overlay, merged = _dedupe_findings(q.all(), latest)
+    rows, overlay, merged = _dedupe_findings(_active_findings(q.all(), _live_project_ids(db)), latest)
     if not include_clear:
         rows = [c for c in rows if c.conflict_class != "no_conflict_within_available_data" or _load(c.permission_triggers_json, [])]
     cache: dict = {}
@@ -565,6 +578,19 @@ def project_conflicts(pid: str, include_clear: bool = False, db: Session = Depen
             "note": "Findings never edit either project. 'No conflict within available data' is not proof of no conflict."}
 
 
+@router.get("/archived-findings")
+def archived_findings(project_id: str, db: Session = Depends(get_db)):
+    """Findings archived with a deleted project (D8): the ones it raised and other projects' findings against its elements.
+    Read-only; never shown in active views. 409 while the project still exists (its findings are active, see /conflicts)."""
+    if project_id in _live_project_ids(db):
+        raise HTTPException(409, "The project exists; its findings are active (GET /projects/{pid}/conflicts).")
+    rows = (db.query(CoordinationConflictEntity)
+            .filter(or_(CoordinationConflictEntity.project_a_id == project_id, CoordinationConflictEntity.project_b_id == project_id))
+            .order_by(CoordinationConflictEntity.created_at).all())
+    return {"project_id": project_id, "archived": True, "findings": [_conflict_dict(c) for c in rows],
+            "note": "Archived with the deleted project: kept for the record, not in active views. Findings never edited either project."}
+
+
 ACTIONABLE_CLASSES = ("conflict", "potential_conflict")
 
 
@@ -583,8 +609,9 @@ def projects_summary(db: Session = Depends(get_db)):
     n_el = dict(db.query(ProposalElementEntity.project_id, func.count(ProposalElementEntity.id)).group_by(ProposalElementEntity.project_id).all())
     areas = {a.id: a.name for a in db.query(AreaEntity)}
     latest = _latest_runs(db)
+    live = _live_project_ids(db)
     rows = db.query(CoordinationConflictEntity).filter(CoordinationConflictEntity.run_id.in_([r.id for r in latest.values()])).all() if latest else []
-    rows, overlay, _ = _dedupe_findings(rows, latest)
+    rows, overlay, _ = _dedupe_findings(_active_findings(rows, live), latest)
     involved: set[str] = set(latest)
     open_n: dict[str, int] = {}
     shown_n: dict[str, int] = {}
@@ -612,7 +639,8 @@ def projects_summary(db: Session = Depends(get_db)):
         traffic_runs.setdefault(pid_, set()).update({eid} if t == "run" else runs_by_scn.get(eid, set()))
     for (pa, pb) in db.query(CoordinationConflictEntity.project_a_id, CoordinationConflictEntity.project_b_id) \
             .filter(CoordinationConflictEntity.run_id.in_([r.id for r in latest.values()]), CoordinationConflictEntity.project_b_id.isnot(None)).distinct():
-        involved.update({pa, pb})
+        if pa in live and pb in live:
+            involved.update({pa, pb})
     cache: dict = {}
     out = []
     for p in projects:

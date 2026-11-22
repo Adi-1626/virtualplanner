@@ -24,10 +24,13 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-CONFIG_VERSION = "screening-rules 2026-11-15 (UNDERGROUND_RESEARCH §3)"
+CONFIG_VERSION = "screening-rules 2026-11-22 (UNDERGROUND_RESEARCH §3; PLANNING_DEFAULTS_DECISIONS D7)"
 
 N, G, R, I, NN = "normative", "draft_guideline", "rule_of_thumb", "international", "no_norm"
 CPHEEO_W = "CPHEEO Manual on Water Supply & Treatment Systems, Part A (Mar 2024)"
+# C1/C2 values confirmed in an official MoHUA copy: "Advisory on Water Quality in Distribution Systems" (MoHUA, Feb 2026)
+# §1.3 Separation norms, which restates §12.9.1/§12.9.2 (mohua.gov.in/static/uploads/2026/03/1f50bd8f27197b40e6e472b5b86f4b8a.pdf).
+MOHUA_ADV = "MoHUA Advisory on Water Quality in Distribution Systems (Feb 2026) §1.3"
 IRC98 = "IRC:98-2024 DRAFT (Accommodation of Utility Services on Roads in Urban Areas; IRC:98-2011 is the published edition)"
 IS1255 = "IS 1255:1983 Installation and maintenance of power cables up to 33 kV"
 T4S = "PNGRB CGD T4S Regulations (consolidated 23-12-2024)"
@@ -37,9 +40,14 @@ DPR = "Maha-Metro Swargate–Katraj Revised Final DPR (21-12-2022)"
 RULES: list[dict[str, Any]] = [
     # water ↔ sewer / storm drain
     {"id": "C1", "a": "water", "b": "sewer,storm", "dim": "H", "value_m": 3.0, "type": N, "source": CPHEEO_W, "clause": "§12.9.1",
+     "confirmed_in": MOHUA_ADV,
      "note": "Parallel water main and sewer/drain at least 3 m apart, else lined and MS-encased."},
     {"id": "C2", "a": "water", "b": "sewer,storm", "dim": "V", "value_m": 0.5, "order": "a_above_b", "type": N, "source": CPHEEO_W, "clause": "§12.9.2",
+     "confirmed_in": MOHUA_ADV,
      "note": "Where crossing: bottom of water main at least 0.5 m above top of sewer, for 3 m each side."},
+    {"id": "C2c", "a": "water", "b": "sewer,storm", "dim": "V", "value_m": 1.0, "order": "a_above_b", "type": G, "compare_only": True,
+     "source": CPHEEO_W + " [UNCONFIRMED: read only in a third-party chapter copy, civilapps.in]", "clause": "§12.2(c)",
+     "note": "Listed among the requirements of an ideal distribution system: 'All distribution pipes should be laid at least one metre above the sewer lines.' Comparison only."},
     {"id": "C2b-H", "a": "water", "b": "sewer,storm", "dim": "H", "value_m": 2.0, "type": G, "source": IRC98, "clause": "§3.2.3",
      "note": "2–3 m apart."},
     {"id": "C2b-V", "a": "water", "b": "sewer,storm", "dim": "V", "value_m": 1.0, "order": "a_above_b", "type": G, "source": IRC98, "clause": "§3.3.3",
@@ -219,7 +227,7 @@ def requirement(cfg: dict, a_cls: str, b_cls: str, a_dia: float | None, b_dia: f
 
 def _cite(r: dict) -> dict:
     return {"id": r["id"], "dim": r["dim"], "value_m": r["value_m"], "type": r["type"], "source": r["source"], "clause": r["clause"],
-            "note": r.get("note", "")}
+            "note": r.get("note", ""), **({"confirmed_in": r["confirmed_in"]} if r.get("confirmed_in") else {})}
 
 
 def rules_table(cfg: dict | None = None) -> list[dict]:

@@ -310,7 +310,7 @@ export interface PIRow {
   clamped: boolean;
   tangentM: number;
   arcM: number;
-  /** Transition length the curve would need (IRC:86 §10.5.2), shown because spirals are not modelled yet. */
+  /** Transition length the curve would need (IRC:86-2018 §8.5), shown because spirals are not modelled yet. */
   transitionNeededM: number | null;
   flags: AlignmentFlag[];
 }

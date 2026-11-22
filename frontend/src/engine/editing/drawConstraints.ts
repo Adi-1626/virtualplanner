@@ -30,8 +30,10 @@ export const DUPLICATE_PX = 4;
 /** Bounds on the pixel tolerance, in metres, so it never vanishes nor grabs a whole block. */
 export const SNAP_MIN_M = 0.5;
 export const SNAP_MAX_M = 80;
-/** Auto radius for a `curved` object without criteria (cut-and-cover with no design speed): a gentle default. */
-export const FALLBACK_AUTO_RADIUS_M = 50;
+/** Auto radius for a `curved` object without criteria (cut-and-cover with no design speed): 50 m, assumed — no official figure (criteria.ts). */
+import { FALLBACK_AUTO_RADIUS_M } from '../geometry/alignment/criteria';
+export { FALLBACK_AUTO_RADIUS_M };
+export { FALLBACK_AUTO_RADIUS_LABEL } from '../geometry/alignment/criteria';
 
 const D2R = Math.PI / 180;
 const KY = 110574;

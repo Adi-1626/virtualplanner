@@ -239,6 +239,8 @@ Check before adopting the letter keys: they must not fire when focus is in an in
 ---
 
 ## 5. Decisions the user must make
+> **Decided 2026-11-22** (T1, T2, T4): see PLANNING_DEFAULTS_DECISIONS.md — IRC:86-2018 speeds (posted = design for new roads), 2.0 m footpaths (Pune USDG, official PMC copy), costs later from Maharashtra PWD SSR 2022-23.
+
 - **T1 Design speeds: IRC:86-2018 or 1983?** IRC:86-2018 Table 3.1 (plain): expressway 80, arterial 60, sub-arterial 60, collector 40, local 30 km/h. The geometry plan (D1) used 1983 values (arterial 80, collector 50). Recommendation: switch the geometry defaults to 2018 and keep `highway` at 80 (urban expressway) unless the user wants rural IRC:73 for highways. Also: should the class speed limits in `ROAD_CLASS_DEFAULTS` (arterial 70, collector 50, local 40) follow?
 - **T2 Footpath defaults**: raise arterial/local defaults from 1.5 m to the IRC:86-2018 1.8 m minimum (2.0 m clear per Pune USDG), for new roads only? Existing objects untouched.
 - **T3 Elevation model**: one Road tool with levels (CS2 style; Flyover becomes a preset) or keep Flyover as its own tool and add levels only for cut/tunnel? And which vertical clearance to check over roads (no Indian clearance value read in this session; needs IRC:54 or IRC:SP:90 clearance clause).

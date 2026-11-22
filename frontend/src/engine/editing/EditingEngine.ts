@@ -67,15 +67,20 @@ function boxesOverlap(c: readonly (readonly number[])[], minX: number, minY: num
 }
 
 /**
- * Design defaults per road class for a drawn road or flyover (HYPOTHETICAL until edited on the object). Collector used
- * to fall through to the local defaults, so choosing it changed nothing. Width and capacity are derived from the lanes
- * and footpaths by ObjectManager.syncRoadProperties.
+ * Design defaults per road class for a drawn road or flyover (HYPOTHETICAL until edited on the object). Width and
+ * capacity are derived from the lanes and footpaths by ObjectManager.syncRoadProperties.
+ * Defaults for NEW roads / flyovers by class (docs/urbanos/PLANNING_DEFAULTS_DECISIONS.md). Existing objects keep their values.
+ * - footpathWidth: 2.0 m clear walking zone — Pune Urban Street Design Guidelines (PMC, 2016) §3.1 Footpath, p. 7:
+ *   "clear and unobstructed minimum walking zone of 2m"; above the IRC:86-2018 Table 5.1 1.8 m residential minimum (commercial 2.5 m, high-intensity 4.0 m are flagged,
+ *   not defaulted). Highway (urban expressway) has none.
+ * - speedLimit / flyoverSpeed: the IRC:86-2018 Table 3.1 design speed (plain terrain). §3.3: the posted speed may be
+ *   lower than the design speed, never higher, so the default posted speed equals it (the user lowers it per road).
  */
 export const ROAD_CLASS_DEFAULTS: Record<RoadClassification, { laneCount: number; dividerWidth: number; footpathWidth: number; speedLimit: number; flyoverSpeed: number }> = {
-  highway: { laneCount: 6, dividerWidth: 3, footpathWidth: 0, speedLimit: 100, flyoverSpeed: 100 },
-  arterial: { laneCount: 4, dividerWidth: 2, footpathWidth: 1.5, speedLimit: 70, flyoverSpeed: 80 },
-  collector: { laneCount: 2, dividerWidth: 0, footpathWidth: 2, speedLimit: 50, flyoverSpeed: 60 },
-  local: { laneCount: 2, dividerWidth: 0, footpathWidth: 1.5, speedLimit: 40, flyoverSpeed: 40 },
+  highway: { laneCount: 6, dividerWidth: 3, footpathWidth: 0, speedLimit: 80, flyoverSpeed: 80 },
+  arterial: { laneCount: 4, dividerWidth: 2, footpathWidth: 2.0, speedLimit: 60, flyoverSpeed: 60 },
+  collector: { laneCount: 2, dividerWidth: 0, footpathWidth: 2.0, speedLimit: 40, flyoverSpeed: 40 },
+  local: { laneCount: 2, dividerWidth: 0, footpathWidth: 2.0, speedLimit: 30, flyoverSpeed: 30 },
 };
 
 /** Readable default name of a new object ("Road 4kq2"); the user renames it in the inspector. */

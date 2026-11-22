@@ -82,8 +82,9 @@ export function applyFlyoverElevationProfile(flyover: any) {
     distanceList.push(totalDist);
   }
 
-  // Legacy fixed 40 m ramp (a 15 % grade for the 6 m deck). Kept for every flyover until the grade-driven ramp model
-  // (decision D5, IRC:SP:90-2010 §6.14 3.5 %) is chosen: GEOMETRY_EDITOR_DESIGN.md §1.5, phase 3.
+  // Legacy fixed 40 m ramp (a 15 % grade for the 6 m deck): a picture only. The grade is screened by BridgeFeasibilityEngine
+  // (IRC:SP:90-2023 §4.13: 4 % urban, 3.3 % highway); grade-driven ramp geometry is geometry phase 3
+  // (docs/urbanos/PLANNING_DEFAULTS_DECISIONS.md D5). Existing flyovers are never reshaped.
   const rampLength = 40.0; // 40 meters default ramp length
   const actualRampLength = Math.min(rampLength, totalDist / 2);
 

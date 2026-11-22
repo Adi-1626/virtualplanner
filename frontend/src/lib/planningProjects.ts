@@ -504,6 +504,7 @@ export function activityText(e: { entity_type: string; action: string; label: st
   if (e.entity_type === 'coordination_conflict' && e.action === 'create') return `Finding recorded by a conflict check — ${e.label.replace(/_/g, ' ')}`;
   if (e.entity_type === 'coordination_run' && e.action === 'create') return 'Conflict check run';
   if (e.entity_type === 'coordination_run' && e.action === 'delete') return `Conflict-check results deleted — ${e.label}`;
+  if (e.action === 'archive' && (e.entity_type === 'coordination_run' || e.entity_type === 'coordination_conflict')) return `Findings archived — ${e.label}`;
   if (e.entity_type === 'project' && e.action === 'update') {
     const parts = [f.includes('status') && 'status', f.includes('preferred_scenario_id') && 'preferred alternative',
       f.includes('name') && 'name', f.includes('description') && 'purpose', f.some(x => x === 'area_id' || x.endsWith('_lon') || x.endsWith('_lat')) && 'study area']
@@ -516,7 +517,7 @@ export function activityText(e: { entity_type: string; action: string; label: st
     scenario_version: 'Alternative version', run: 'Simulation run', dataset: 'Traffic dataset', assessment: 'Feasibility screening', review: 'Review',
     document: 'Investigation document', proposal_element: 'Proposal element', subsurface_dataset: 'Subsurface dataset', clearance_rule: 'Clearance rule',
   };
-  const ACTION: Record<string, string> = { create: 'added', update: 'changed', delete: 'removed', export: 'exported' };
+  const ACTION: Record<string, string> = { create: 'added', update: 'changed', delete: 'removed', export: 'exported', archive: 'archived' };
   const ent = ENTITY[e.entity_type] ?? e.entity_type.replace(/_/g, ' ');
   const act = e.entity_type === 'project' && e.action === 'create' ? 'created' : (ACTION[e.action] ?? e.action);
   return `${ent} ${act}${e.label ? ` — ${e.label}` : ''}${f.length && e.action === 'update' ? ` (${f.map(x => x.replace(/_/g, ' ')).join(', ')})` : ''}`;

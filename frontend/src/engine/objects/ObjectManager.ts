@@ -27,7 +27,7 @@ function contentKey(o: CityObject): string {
   });
 }
 const ownerOf = (o: CityObject) => o.scenarioId ?? BASE_SCENARIO_ID;
-import { BridgeFeasibilityEngine } from '../simulation/BridgeFeasibilityEngine';
+import { BridgeFeasibilityEngine, isAsBuiltFlyover } from '../simulation/BridgeFeasibilityEngine';
 
 /** Objects per save request, and requests in flight at once, when saving many objects. */
 const SAVE_CHUNK = 1000;
@@ -506,15 +506,18 @@ export class ObjectManager {
    * Bridge feasibility checks of a flyover (on its ground-level path, before its elevation profile) against the
    * surface roads, and the capacity reduction each impacted surface road takes (ramp merge): the flyover with its
    * `feasibilityResult` and `surfaceRoadIds`, and for each impacted road the fields to update. Nothing is changed.
+   * An as-built flyover (isAsBuiltFlyover) gets an information-only screen and no road updates, unless `edited` (a
+   * geometry edit makes it a design, screened like a new one).
    */
-  public flyoverFeasibility(obj: CityObject): { flyover: Partial<CityObject>; roadUpdates: { id: string; updates: Partial<RoadObject> }[] } {
+  public flyoverFeasibility(obj: CityObject, opts: { edited?: boolean } = {}): { flyover: Partial<CityObject>; roadUpdates: { id: string; updates: Partial<RoadObject> }[] } {
     const flyover = { ...obj } as any;
     if (!flyover.groundCoordinates) applyFlyoverElevationProfile(flyover);
     const groundCoords: [number, number, number][] = flyover.groundCoordinates && flyover.groundCoordinates.length > 1
       ? flyover.groundCoordinates
       : flyover.coordinates;
     const surfaceRoads = Array.from(this.objects.values()).filter(o => o.type === 'road') as RoadObject[];
-    const feasibility = new BridgeFeasibilityEngine().run(groundCoords, flyover.elevation ?? 6.0, flyover.laneCount ?? 4, surfaceRoads);
+    const asBuilt = !opts.edited && isAsBuiltFlyover(obj as any);
+    const feasibility = new BridgeFeasibilityEngine().run(groundCoords, flyover.elevation ?? 6.0, flyover.laneCount ?? 4, surfaceRoads, { asBuilt, roadClass: flyover.roadClass });
     const roadUpdates: { id: string; updates: Partial<RoadObject> }[] = [];
     for (const impact of feasibility.surfaceRoadImpacts) {
       if (!this.objects.has(impact.roadId)) continue;

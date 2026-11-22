@@ -162,7 +162,7 @@ def test_edit_name_purpose_and_study_area(client):
     assert any(e["action"] == "update" and "name" in (e["changed_fields"] or []) and e["actor"] == "Planner T" for e in ev)
 
 
-def test_delete_project_removes_its_rows_keeps_linked_records_and_refuses_with_a_decision(client):
+def test_delete_project_archives_findings_keeps_linked_records_and_refuses_with_a_decision(client):
     a, b = _project(client, "SYNTHETIC delete me"), _project(client, "SYNTHETIC neighbour")
     sid = _scenario(client)
     _link(client, a, sid)
@@ -174,13 +174,22 @@ def test_delete_project_removes_its_rows_keeps_linked_records_and_refuses_with_a
     assert client.delete(f"/api/planning/projects/{a}?removed_by=Planner%20T&confirm_name=wrong").status_code == 422
     r = client.delete(f"/api/planning/projects/{a}", params={"removed_by": "Planner T", "confirm_name": "SYNTHETIC delete me"})
     assert r.status_code == 200, r.text
-    assert r.json()["elements"] == 1 and r.json()["runs"] == 1
+    assert r.json()["elements"] == 1 and r.json()["runs"] == 1 and r.json()["findings_archived"] is True
+    assert r.json()["findings"] >= 1 and r.json()["findings_archived_elsewhere"] >= 1
     assert client.get(f"/api/planning/projects/{a}").status_code == 404
     assert any(s["id"] == sid for s in client.get("/api/planning/linkable").json()["scenario"])  # the alternative itself is kept
     assert all(p["id"] != a for p in client.get("/api/coordination/projects-summary").json()["projects"])
-    # B keeps its own finding against the deleted project's element, and its run is now stale
-    issues = client.get(f"/api/coordination/projects/{b}/conflicts").json()["issues"]
-    assert any(i["element_a_id"] == eb["id"] and i["other_project"] == a for i in issues)
+    # D8: findings against the deleted project are archived — gone from B's active list (and so from reports / CSV),
+    # kept and readable as archived; B's run is now stale
+    issues = client.get(f"/api/coordination/projects/{b}/conflicts", params={"include_clear": True}).json()["issues"]
+    assert not any(a in (i["raised_by_project"], i["other_project"]) for i in issues)
+    summary_b = next(p for p in client.get("/api/coordination/projects-summary").json()["projects"] if p["id"] == b)
+    assert summary_b["open_conflicts"] in (0, None)
+    arch = client.get("/api/coordination/archived-findings", params={"project_id": a}).json()
+    assert arch["archived"] is True
+    assert any(f["element_a_id"] == eb["id"] and f["project_b_id"] == a for f in arch["findings"])   # B's finding against A
+    assert any(f["project_a_id"] == a for f in arch["findings"])                                    # A's own findings
+    assert client.get("/api/coordination/archived-findings", params={"project_id": b}).status_code == 409
     st = client.get(f"/api/coordination/stale/coordination_run/{run_b['id']}").json()
     assert st["stale"] is True
     # a project with a recorded decision is kept
@@ -191,6 +200,10 @@ def test_delete_project_removes_its_rows_keeps_linked_records_and_refuses_with_a
     # the audit log keeps the history of the deleted project
     ev = client.get("/api/planning/audit", params={"entity_type": "project", "entity_id": a}).json()
     assert any(e["action"] == "delete" for e in ev)
+    ev_runs = client.get("/api/planning/audit", params={"entity_type": "coordination_run", "entity_id": a}).json()
+    assert any(e["action"] == "archive" for e in ev_runs)
+    ev_b = client.get("/api/planning/audit", params={"entity_type": "coordination_conflict", "entity_id": a}).json()
+    assert any(e["action"] == "archive" and e["parent_id"] == b for e in ev_b)
 
 
 def test_project_timeline_hides_finding_inserts_but_counts_them(client):

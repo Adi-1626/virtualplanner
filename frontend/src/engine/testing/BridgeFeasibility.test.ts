@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { BridgeFeasibilityEngine, bfe_pathLengthMeters } from '../simulation/BridgeFeasibilityEngine';
+import { BridgeFeasibilityEngine, bfe_pathLengthMeters, isAsBuiltFlyover, maxRampGrade, MIN_FLAT_DECK_LABEL } from '../simulation/BridgeFeasibilityEngine';
 import type { RoadObject } from '../objects/types';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ describe('BridgeFeasibilityEngine', () => {
 
     const result = engine.run([FLY_START, FLY_END], 6.0, 4, [roadAtStart, roadAtEnd]);
 
-    expect(result.rampLengthRequired).toBe(120);
+    expect(result.rampLengthRequired).toBe(150); // 6 m at 4 % (urban, IRC:SP:90-2023 §4.13) = 150 m
     expect(result.totalFlyoverLength).toBeGreaterThanOrEqual(350);
 
     const deckCheck = result.checks.find(c => c.id === 'deck_length')!;
@@ -71,7 +71,7 @@ describe('BridgeFeasibilityEngine', () => {
     expect(result.feasible).toBe(true);
   });
 
-  it('Test 2: FAIL - flyover only 80m, too short for 120m+120m+50m requirement', () => {
+  it('Test 2: flyover only 80m: deck shorter than 150+150+50 m only WARNS (50 m deck is assumed), missing end approach fails the 4 % ramp', () => {
     const shortEnd: [number, number, number] = [BASE_LON, BASE_LAT + mToLatDeg(80), 0];
     const roadAtStart = makeRoad('r3', 'Short Start Road', [
       FLY_START,
@@ -81,7 +81,9 @@ describe('BridgeFeasibilityEngine', () => {
     const result = engine.run([FLY_START, shortEnd], 6.0, 4, [roadAtStart]);
 
     const deckCheck = result.checks.find(c => c.id === 'deck_length')!;
-    expect(deckCheck.status).toBe('fail');
+    expect(deckCheck.status).toBe('warn');
+    expect(deckCheck.name).toContain(MIN_FLAT_DECK_LABEL);
+    expect(result.checks.find(c => c.id === 'ramp_grade')!.status).toBe('fail');
     expect(result.feasible).toBe(false);
   });
 
@@ -183,5 +185,40 @@ describe('BridgeFeasibilityEngine', () => {
     const len = bfe_pathLengthMeters(coords);
     expect(len).toBeGreaterThan(900);
     expect(len).toBeLessThan(1100);
+  });
+
+  it('D5: ramp grade from IRC:SP:90-2023 §4.13 — 4 % on urban roads, 3.3 % on a highway (the 2010 3.5 % cap is gone)', () => {
+    expect(maxRampGrade('arterial')).toMatchObject({ grade: 0.04 });
+    expect(maxRampGrade(undefined).grade).toBe(0.04);
+    expect(maxRampGrade('highway')).toMatchObject({ grade: 0.033 });
+    expect(maxRampGrade('local').source).toContain('IRC:SP:90-2023 §4.13');
+    const r = engine.run([FLY_START, FLY_END], 6.0, 4, []);
+    const ramp = r.checks.find(c => c.id === 'ramp_grade')!;
+    expect(ramp.name).toContain('4 %');
+    expect(ramp.basis).toContain('IRC:SP:90-2023 §4.13');
+    expect(ramp.status).toBe('fail');
+    const hw = engine.run([FLY_START, FLY_END], 6.0, 4, [], { roadClass: 'highway' });
+    expect(hw.rampLengthRequired).toBe(182); // 6 / 0.033 = 181.8
+  });
+
+  it('D5: an as-built flyover is information only — nothing fails, no surface road is changed', () => {
+    const under = makeRoad('u', 'Under', [[BASE_LON - mToLonDeg(25, MID_LAT), MID_LAT, 0], [BASE_LON + mToLonDeg(25, MID_LAT), MID_LAT, 0]], { dividerWidth: 1 });
+    const shortEnd: [number, number, number] = [BASE_LON, BASE_LAT + mToLatDeg(80), 0];
+    const r = engine.run([FLY_START, shortEnd], 6.0, 4, [under], { asBuilt: true });
+    expect(r.asBuilt).toBe(true);
+    expect(r.checks.some(c => c.status === 'fail' || c.status === 'warn')).toBe(false);
+    expect(r.checks.find(c => c.id === 'ramp_grade')!.status).toBe('info');
+    expect(r.checks.find(c => c.id === 'ramp_grade')!.message).toMatch(/information only/);
+    expect(r.surfaceRoadImpacts).toEqual([]);
+    expect(r.feasible).toBe(true);
+  });
+
+  it('D5: as-built = mapped (OSM / municipal / surveyed) and not geometry-edited; drawn designs are not', () => {
+    expect(isAsBuiltFlyover({ id: 'osm_123' })).toBe(true);
+    expect(isAsBuiltFlyover({ id: 'f1', osmProvenance: { osmId: 1 } })).toBe(true);
+    expect(isAsBuiltFlyover({ id: 'f2', provenance: { originalSource: 'municipal' } })).toBe(true);
+    expect(isAsBuiltFlyover({ id: 'f3', provenance: { originalSource: 'OSM', geometryModified: true } })).toBe(false);
+    expect(isAsBuiltFlyover({ id: 'abc123' })).toBe(false);
+    expect(isAsBuiltFlyover({ id: 'f4', provenance: { originalSource: 'manual' } })).toBe(false);
   });
 });

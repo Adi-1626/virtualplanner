@@ -1,20 +1,31 @@
 /**
- * Default alignment settings per object type — ONE place to change them (GEOMETRY_EDITOR_DESIGN.md §5, decisions D1–D4, D6).
- * These are the proposed defaults; the user has NOT confirmed them yet (2026-11-21).
+ * Default alignment settings per object type — ONE place to change them (GEOMETRY_EDITOR_DESIGN.md §5).
+ * Decided 2026-11-22 from the governing standards: docs/urbanos/PLANNING_DEFAULTS_DECISIONS.md (D1 design speeds, D3
+ * superelevation, D4 no spirals). Defaults apply to NEW alignments only; a stored alignment keeps its own settings.
  */
 import type { RoadClassification } from '../../objects/types';
 import type { AlignmentDefaultsInput, AlignmentSettings, DefaultAlignmentSettingsFn } from './types';
 
 export const GEOMETRY_DEFAULTS = {
-  /** D1: surface road design speed by class (km/h): IRC:86-1983 Table 1 urban arterial 80 / collector 50 / local 30; highway 80. */
-  roadDesignSpeedKmh: { highway: 80, arterial: 80, collector: 50, local: 30 } as Record<RoadClassification, number>,
-  /** D1: flyover / double-deck design speed by class (km/h) — the app's existing ROAD_CLASS_DEFAULTS.flyoverSpeed. */
-  flyoverDesignSpeedKmh: { highway: 100, arterial: 80, collector: 60, local: 40 } as Record<RoadClassification, number>,
-  /** D2: superelevation cap used by the screen on surface roads (IRC:86 §10.2.1 "desirably 4 %" on urban sections). */
+  /**
+   * D1: surface road design speed by class (km/h), IRC:86-2018 Table 3.1 plain terrain: highway = urban expressway 80,
+   * arterial 60 (sub-arterial is also 60), collector 40, local 30.
+   */
+  roadDesignSpeedKmh: { highway: 80, arterial: 60, collector: 40, local: 30 } as Record<RoadClassification, number>,
+  /**
+   * D1: flyover / double-deck design speed by class (km/h) = the class design speed: IRC:SP:90-2023 §4.9 Table 4.3 gives
+   * urban grade-separator design speeds as IRC:86-2018 Table 3.1. A different value is set per object by the user.
+   */
+  flyoverDesignSpeedKmh: { highway: 80, arterial: 60, collector: 40, local: 30 } as Record<RoadClassification, number>,
+  /** D3: superelevation cap on surface roads: 4 %, IRC:86-2018 §8.2.1 (urban sections with frequent intersections). 7 % is the non-urban option. */
   eMaxSurface: 0.04 as const,
-  /** D2: superelevation cap on flyover decks (IRC:SP:90-2010 §6.13.2, 7 %). */
+  /**
+   * D3: superelevation used for the minimum-radius screen on flyover decks: 7 %. IRC:SP:90-2023 §4.12.2: 7 % where the
+   * radius is below the desirable minimum (the case this screen tests), 5 % at or above it on urban sections, 4 % on urban
+   * sections with frequent intersections (a deck has none along it). IRC:SP:90-2010 §6.13.2 also capped at 7 %.
+   */
   eMaxFlyoverDeck: 0.07 as const,
-  /** D3: no spirals in phase 1 — curves are circular; the screen only reports the transition length a curve would need. */
+  /** D4: no spirals in this phase — curves are circular; the screen reports the transition length a curve would need. */
   spiralsEnabled: false,
   /** D4: utilities, utility trunks and storm drains bend at sharp angle points only (no public Indian minimum radius found). */
   utilityBehaviour: 'angled' as const,
@@ -26,8 +37,11 @@ export const GEOMETRY_DEFAULTS = {
   autoFillet: true,
 } as const;
 
-/** Criteria set for a road-like object of this class: highway → IRC:73 formula, else IRC:86 urban. */
-const roadCriteria = (cls: RoadClassification) => (cls === 'highway' ? 'irc73-rural' : 'irc86-urban') as AlignmentSettings['criteria'];
+/**
+ * Criteria set for a road-like object: IRC:86-2018 urban for every class (the `highway` class in this Pune model is an
+ * urban expressway, Table 3.1). The rural IRC:73 criteria stay in the engine for objects that already carry them.
+ */
+const roadCriteria = (_cls: RoadClassification) => 'irc86-urban' as AlignmentSettings['criteria'];
 
 export const defaultAlignmentSettings: DefaultAlignmentSettingsFn = (input: AlignmentDefaultsInput): AlignmentSettings => {
   const D = GEOMETRY_DEFAULTS;

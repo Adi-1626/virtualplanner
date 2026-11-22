@@ -2,7 +2,7 @@
  * Horizontal alignment screening flags (GEOMETRY_EDITOR_DESIGN.md §4.3). Every flag is SCREENING: it names its source and
  * never reads as compliance; the best state is "no flag found". No design speed / no criteria → "not checked", never a pass.
  */
-import { minRadius, METRO_PUNE_SK_DPR, requiredTransitionLength, SCREENING_DISCLAIMER } from './criteria';
+import { FALLBACK_AUTO_RADIUS_LABEL, FALLBACK_AUTO_RADIUS_M, minRadius, METRO_PUNE_SK_DPR, requiredTransitionLength, SCREENING_DISCLAIMER } from './criteria';
 import { filletAlignment } from './fillet';
 import type { AlignmentFlag, CheckAlignmentFn, CheckOptions, HorizontalAlignment } from './types';
 
@@ -28,7 +28,7 @@ export const checkAlignment: CheckAlignmentFn = (a: HorizontalAlignment, opts: C
   const anyBend = fr.pis.some(p => Math.abs(p.deflectionRad) > 0);
   if (anyBend && a.behaviour === 'curved') {
     if (a.criteria === 'none')
-      out.push(flag({ code: 'not-checked-no-criteria', severity: 'info', source: 'none', text: 'Curves not checked: no design criteria set for this object.' }));
+      out.push(flag({ code: 'not-checked-no-criteria', severity: 'info', source: 'none', text: `Curves not checked: no design criteria set for this object. New curves get a ${FALLBACK_AUTO_RADIUS_M} m radius as a drawing aid (${FALLBACK_AUTO_RADIUS_LABEL}).` }));
     else if (!metro && !(V && V > 0))
       out.push(flag({ code: 'not-checked-no-design-speed', severity: 'info', source: 'none', text: 'Curves not checked: no design speed set.' }));
   }
@@ -69,8 +69,8 @@ export const checkAlignment: CheckAlignmentFn = (a: HorizontalAlignment, opts: C
         out.push(flag({ code: 'radius-below-minimum', severity: 'warn', piIndex: p.index, source: min.source, radiusM: R, requiredM: min.valueM,
           text: `R ${r0(R)} is below ${r0(min.valueM)} (${V} km/h, e ${Math.round(a.eMax * 100)} %, ${min.source}) at point ${n}.` }));
       const ls = requiredTransitionLength(V!, R);
-      out.push(flag({ code: 'transition-not-modelled', severity: 'info', piIndex: p.index, source: ls?.source ?? 'IRC:86-1983 §10.1', requiredM: ls?.valueM,
-        text: `Transition not modelled at point ${n} (IRC:86 §10.1 expects spiral transitions)${ls ? `; it would need about ${r0(ls.valueM)} at ${V} km/h (${ls.source})` : ''}.` }));
+      out.push(flag({ code: 'transition-not-modelled', severity: 'info', piIndex: p.index, source: ls?.source ?? 'IRC:86-2018 §8.1', requiredM: ls?.valueM,
+        text: `Transition not modelled at point ${n} (IRC:86-2018 §8.1 expects spiral transitions)${ls ? `; it would need about ${r0(ls.valueM)} at ${V} km/h (${ls.source})` : ''}.` }));
     }
   }
 
