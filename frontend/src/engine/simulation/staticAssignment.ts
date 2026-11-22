@@ -6,6 +6,9 @@ import { indoHcmSaturationFlow } from './signalTiming';
 import { RESTRICTED_ENTRY_S, isAccessRestricted } from './accessRestriction';
 import { compileJunctionEdits, armGreenRatio, connectedEntryLanes, turnBansFor, cycleOf, type JunctionEditSpec, type CompiledJunction, type TurnBans } from './junctionControl';
 import { STARTUP_LOST_S } from './signalTiming';
+import { nodeKey } from './junctionGroups';
+import { entryCapacityPcu } from '../streetDesign/roundabout';
+import type { RoundaboutEffect } from '../streetDesign/network';
 
 /**
  * Area-wide static traffic assignment (deterministic user equilibrium).
@@ -124,6 +127,16 @@ function hasMedian(road: DrivableObject | undefined): boolean {
   return sec ? !!sec.hasMedian && (sec.medianWidth ?? 0) > 0 : !!road.hasDivider && (road.dividerWidth ?? 0) > 0;
 }
 
+/** A signalised mid-block crossing applies to a link passing within this distance of it (m). */
+const MIDBLOCK_MATCH_M = 5;
+function pointSegM(p: readonly number[], a: readonly number[], b: readonly number[]) {
+  const kx = M_PER_DEG_LAT * Math.cos(p[1] * Math.PI / 180);
+  const ax = (a[0] - p[0]) * kx, ay = (a[1] - p[1]) * M_PER_DEG_LAT, bx = (b[0] - p[0]) * kx, by = (b[1] - p[1]) * M_PER_DEG_LAT;
+  const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+  const t = L2 < 1e-12 ? 0 : Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L2));
+  return Math.hypot(ax + t * dx, ay + t * dy);
+}
+
 export const bprTime = (t0: number, x: number, c: number) => t0 * (1 + BPR_ALPHA * Math.pow(Math.max(0, x) / Math.max(1, c), BPR_BETA));
 
 /** The area's links as an assignment network, with free-flow times and capacities. */
@@ -152,8 +165,23 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
   const editedAt = new Map<string, CompiledJunction>();
   // An edit that keeps the engine's own control (asRun) leaves the signals as they were
   for (const c of compiled) if (!c.controlAsRun) for (const n of c.nodeIds) editedAt.set(n, c);
+  // Roundabouts drawn in Design (streetDesign/roundabout.ts) replace the junction's control: no signal (mapped or edited),
+  // IRC:65 Table 9.1 entry capacity on its approaches (riding on the arm roads as streetEffects)
+  const rbAt = new Map<string, RoundaboutEffect>();
+  for (const e of edges) {
+    const fx = (roads.get(e.roadId) as { streetEffects?: { roundabouts?: RoundaboutEffect[] } } | undefined)?.streetEffects?.roundabouts;
+    if (!fx?.length) continue;
+    for (const n of [e.fromNodeId, e.toNodeId]) {
+      const c = area.network.nodes.get(n)?.coordinates;
+      if (!c) continue;
+      const k = nodeKey(c);
+      const rb = fx.find(r => r.nodeKeys.includes(k));
+      if (rb) rbAt.set(n, rb);
+    }
+  }
+  for (const n of rbAt.keys()) editedAt.delete(n);
   const signalised = new Set<string>();
-  for (const [id, s] of arms) if (!editedAt.has(id) && s.size >= 3 && signalNear(id)) signalised.add(id);
+  for (const [id, s] of arms) if (!editedAt.has(id) && !rbAt.has(id) && s.size >= 3 && signalNear(id)) signalised.add(id);
   // Approaches per signalised node: links ending there whose start is not itself signalised (not an internal link of the junction)
   const approaches = new Map<string, number>();
   for (const e of edges) if (signalised.has(e.toNodeId) && !signalised.has(e.fromNodeId)) approaches.set(e.toNodeId, (approaches.get(e.toNodeId) ?? 0) + 1);
@@ -191,6 +219,20 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
       gC = Math.max(0.1, (ASSIGN_CYCLE_S - n * ASSIGN_LOST_PER_PHASE_S) / ASSIGN_CYCLE_S / n);
       stopLinePcu = indoHcmSaturationFlow(lanes * LANE_WIDTH_M) * gC;
       sigDelay = ASSIGN_CYCLE_S * (1 - gC) ** 2 / 2;
+    }
+    // Roundabout entry (IRC:65 Table 9.1, Qc assumed): capacity per entry lane x entry lanes (no more than the approach has)
+    const rb = rbAt.get(e.toNodeId);
+    if (rb && !rbAt.has(e.fromNodeId)) {
+      const perLane = entryCapacityPcu(rb.icdM, rb.qcPcu);
+      if (perLane != null) stopLinePcu = Math.min(stopLinePcu ?? Infinity, perLane * Math.max(1, Math.min(lanes, rb.entryLanes)));
+    }
+    // Signalised mid-block crossings on this road (streetDesign/crossings.ts): a two-phase signal where the link passes the crossing
+    const mid = (road as { streetEffects?: { midblockSignals?: { point: [number, number]; gC: number; cycleS: number }[] } } | undefined)?.streetEffects?.midblockSignals;
+    if (mid?.length) for (const m of mid) {
+      if (!e.coordinates.some((c, i) => i > 0 && pointSegM(m.point, e.coordinates[i - 1], c) < MIDBLOCK_MATCH_M)) continue;
+      stopLinePcu = Math.min(stopLinePcu ?? Infinity, indoHcmSaturationFlow(lanes * LANE_WIDTH_M) * m.gC);
+      gC = Math.min(gC ?? 1, m.gC);
+      sigDelay += m.cycleS * (1 - m.gC) ** 2 / 2;
     }
     const t0 = e.length / (speed / 3.6) + sigDelay;
     return { index, id: e.id, segmentKey: segKey(e.id), roadId: e.roadId, from: idx(e.fromNodeId), to: idx(e.toNodeId), lengthM: e.length, lanes,
