@@ -15,7 +15,7 @@ import { findRoadEndGaps, insertRoadVertex, markGeometryEdited, type RoadEndGap 
 import { addedVerticesOf, mergeAdded, verticesInsertedBy } from './addedVertices';
 import { classifyOsmWay, findNonDrivableOsmRoads, type NonDrivableRoad } from './osmDrivability';
 import { STUDY_AREA_ROADS_PREFIX } from '../simulation/osmCoverage';
-import { middleOf, nearestStreetName, newObjectName, ROAD_CLASS_NAME, type NamedLine } from './objectNames';
+import { middleOf, nearestStreetName, newObjectName, osmUnnamedRoadName, ROAD_CLASS_NAME, type NamedLine } from './objectNames';
 import { BASE_SCENARIO_ID } from '../scenarios/ScenarioManager';
 import { filterObjectsForScenario } from '../scenarios/scenarioFilter';
 import { connectEnds, withTouchingEndHeights, AUTO_CONNECT_M } from './autoConnect';
@@ -1723,7 +1723,7 @@ export class EditingEngine {
       const roadObj = {
         id,
         type: 'road' as const,
-        name: tags.name || `${highwayType.charAt(0).toUpperCase() + highwayType.slice(1)} Road`,
+        name: tags.name || osmUnnamedRoadName(highwayType),
         layerId: 'roads',
         scenarioId,
         coordinates,

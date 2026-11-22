@@ -1,3 +1,4 @@
+import { readableRoadName } from '../editing/objectNames';
 /**
  * Backend rows ↔ city objects (POST/GET /api/objects). A row carries the fixed columns (id, type, name, layerId,
  * scenarioId, coordinates) and everything else of the object in `properties`, so nested fields such as a line's
@@ -24,10 +25,12 @@ export function objectToRow(obj: CityObject): ObjectRow {
 /** The object a loaded row stands for (startup load). Stored timestamps win; a row without them gets "now". */
 export function objectFromRow(row: ObjectRow): CityObject {
   const now = new Date().toISOString();
+  const tags = (row.properties as { osmProvenance?: { originalTags?: Record<string, string> } } | undefined)?.osmProvenance?.originalTags;
   return {
     id: row.id,
     type: row.type,
-    name: row.name,
+    // Older imports stored "Secondary_link Road" for an unnamed way; show it in plain words (the row is not rewritten)
+    name: row.type === 'road' && tags ? readableRoadName(row.name, tags) : row.name,
     layerId: row.layerId,
     scenarioId: row.scenarioId,
     coordinates: row.coordinates,

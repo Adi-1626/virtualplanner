@@ -64,3 +64,40 @@ export function newObjectName(kind: string, near: string | null, taken: Readonly
   }
   for (let i = 1; ; i++) if (!taken.has(`${base} ${i}`)) return `${base} ${i}`;
 }
+
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** Name of an OSM way with no `name` tag, from its highway class in plain words: "Secondary link road (unnamed)". */
+export function osmUnnamedRoadName(highway: string | undefined): string {
+  const h = (highway || 'road').replace(/_/g, ' ').trim();
+  return h === 'road' ? 'Road (unnamed)' : `${cap(h)} road (unnamed)`;
+}
+
+/** The placeholder older imports stored for an unnamed way ("Secondary_link Road", "Residential Road"). */
+const LEGACY_PLACEHOLDER = /^([a-z]+(?:_[a-z]+)*) road$/i;
+
+/**
+ * Plain-language name for a road loaded from an older database: a legacy placeholder of an OSM way with no name tag
+ * becomes "Secondary link road (unnamed)". A real name, or a name the user typed, is returned unchanged.
+ */
+export function readableRoadName(name: string | undefined, tags: Record<string, string> | undefined): string | undefined {
+  if (!name || tags?.name) return name;
+  const m = LEGACY_PLACEHOLDER.exec(name.trim());
+  if (!m) return name;
+  const highway = tags?.highway;
+  // Only rewrite what the importer generated: the class in the name must be the way's own highway tag
+  if (highway && highway.toLowerCase() !== m[1].toLowerCase()) return name;
+  return osmUnnamedRoadName(m[1].toLowerCase());
+}
+
+/** What the snap marker says, in plain words. */
+export function snapDescription(kind: 'junction' | 'start' | 'end' | 'vertex' | 't_junction', objectName: string | undefined, typeLabel: string): string {
+  const what = objectName || typeLabel;
+  switch (kind) {
+    case 'junction': return objectName ? `Snap to junction: ${objectName}` : 'Snap to junction';
+    case 'start': return `Snap to the start of ${what}`;
+    case 'end': return `Snap to the end of ${what}`;
+    case 'vertex': return `Snap to a point on ${what}`;
+    case 't_junction': return `Join ${what} here (new T-junction)`;
+  }
+}

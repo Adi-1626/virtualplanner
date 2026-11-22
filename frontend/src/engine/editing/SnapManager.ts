@@ -1,4 +1,6 @@
 import type { RoadObject, FlyoverObject, MetroFlyoverObject } from '../objects/types';
+import { snapDescription } from './objectNames';
+import { TYPE_LABELS } from '../objects/builtBy';
 import { ObjectManager } from '../objects/ObjectManager';
 
 export interface SnapResult {
@@ -77,7 +79,7 @@ export class SnapManager {
             targetType: 'junction',
             targetName: obj.name || 'Junction',
             elevation: jCoords[2] || 0,
-            description: `Snap to ${obj.name || 'Junction'}`
+            description: snapDescription('junction', obj.name && obj.name !== 'Junction' ? obj.name : undefined, 'junction')
           };
         }
       }
@@ -114,7 +116,7 @@ export class SnapManager {
           isStart: true,
           isEnd: false,
           elevation: baseElevation,
-          description: `Snap to ${linearObj.name || linearObj.type} Start`
+          description: snapDescription('start', linearObj.name, TYPE_LABELS[linearObj.type].toLowerCase())
         };
       }
 
@@ -132,7 +134,7 @@ export class SnapManager {
           isStart: false,
           isEnd: true,
           elevation: baseElevation,
-          description: `Snap to ${linearObj.name || linearObj.type} End`
+          description: snapDescription('end', linearObj.name, TYPE_LABELS[linearObj.type].toLowerCase())
         };
       }
 
@@ -150,7 +152,7 @@ export class SnapManager {
             targetName: linearObj.name,
             segmentIndex: i,
             elevation: baseElevation,
-            description: `Snap to ${linearObj.name || linearObj.type} Vertex #${i}`
+            description: snapDescription('vertex', linearObj.name, TYPE_LABELS[linearObj.type].toLowerCase())
           };
         }
       }
@@ -200,7 +202,7 @@ export class SnapManager {
             targetName: linearObj.name,
             segmentIndex: s,
             elevation: interpolatedAlt,
-            description: `T-Junction with ${linearObj.name || linearObj.type}`
+            description: snapDescription('t_junction', linearObj.name, TYPE_LABELS[linearObj.type].toLowerCase())
           };
         }
       }

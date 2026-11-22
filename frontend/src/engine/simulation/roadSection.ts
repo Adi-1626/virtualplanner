@@ -20,7 +20,8 @@ import { impliedRoadClass } from './networkCorrections';
 export const SECTION_MAX_M = 900;
 /** A placeholder name the importer gives an unnamed way from its OSM class ("Secondary_link Road", "Residential Road"). */
 export const isGenericRoadName = (name: string | undefined) =>
-  !name || /^(unnamed|residential|service|primary|secondary|tertiary|trunk|motorway|living_street|unclassified|road|track)(_link)? road$/i.test(name.trim());
+  !name || /^(unnamed|residential|service|primary|secondary|tertiary|trunk|motorway|living[_ ]street|unclassified|road|track)([_ ]link)? road( \(unnamed\))?$/i.test(name.trim())
+  || /^road \(unnamed\)$/i.test(name.trim());
 /** Another carriageway of the same road this close (m) runs alongside the section. */
 const ALONGSIDE_M = 45;
 
