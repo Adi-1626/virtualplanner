@@ -46,7 +46,7 @@ from . import geometry as G
 from . import screening_config as C
 from datasets.public_text import redact_paths
 
-ENGINE = "underground-screening 1.0 (2026-11-15)"
+ENGINE = "underground-screening 1.1 (2026-11-22: pier foundations of drawn flyovers, double-decks and proposed elevated metro)"
 STATUSES = ("potential_conflict", "requires_investigation", "insufficient_data", "verified")
 SEVERITY = {s: i for i, s in enumerate(STATUSES)}
 STATUS_LABEL = {
@@ -76,13 +76,16 @@ CHECK_NOT = "not checked"
 KIND_LABEL = {"water": "Water main", "sewer": "Sewer", "storm": "Storm drain", "power": "Power cable", "gas": "Gas main",
               "telecom": "Telecom duct", "utility": "Utility", "tunnel": "Tunnel", "metro_tunnel": "Metro tunnel",
               "metro_station": "Metro station", "metro_viaduct": "Elevated metro (piers)", "metro": "Metro line (level unknown)",
-              "building": "Building", "watercourse": "Nalla / river"}
+              "building": "Building", "watercourse": "Nalla / river",
+              "pier_foundation": "Pier foundations (flyover / elevated metro)"}
 ALIGNMENT_CLASS = {"bored_tunnel": "tunnel", "underground_metro": "metro_tunnel", "cut_and_cover": "tunnel",
                    "utility_trunk": "utility", "storm_drain": "storm"}
 ALIGNMENT_LABEL = {"bored_tunnel": "Bored tunnel", "underground_metro": "Underground metro", "cut_and_cover": "Cut-and-cover box",
                    "utility_trunk": "Utility trunk", "storm_drain": "Storm drain"}
 UTILITY_CLASS = {"water": "water", "electricity": "power", "sewage": "sewer", "gas": "gas", "fiber": "telecom"}
 METRO_CLASSES = ("metro_tunnel", "metro_station", "metro_viaduct", "metro")
+# Design object types the screening reads: underground works, metro, and the decks whose piers go into the ground
+SCREENED_TYPES = ("underground_alignment", "utility", "metro_line", "metro_station", "flyover", "metro_flyover")
 BURIED = ("water", "sewer", "storm", "power", "gas", "telecom", "utility", "tunnel", "metro_tunnel")
 NETWORKS = {"water": "water supply", "power": "electricity", "gas": "gas (CGD)", "telecom": "telecom", "sewer": "sewer", "storm": "storm drain"}
 CERT_RANK = {"measured": 0, "estimated": 1, "hypothetical": 2, "unknown": 3}
@@ -381,6 +384,63 @@ def lifecycle_side(lc: Optional[str]) -> Optional[str]:
     return "proposed" if lc in ("proposed", "conceptual") else "existing"
 
 
+# Piers of a drawn flyover / double-deck / elevated metro as built (BUILD_PROPAGATION.md): one point per pier, placed as the
+# 3D view places them (ProceduralGeometryGenerator: first pier half a spacing in, then every `pierSpacing` m, only where the
+# deck is at least 3 m above the ground; an elevated metro has piers along its whole length). Pile-cap size and pile depth
+# are not designed in UrbanOS: the footprint width and the foundation depth are UNKNOWN, never assumed.
+PIER_MIN_DECK_M = 3.0
+PIER_TYPES = ("flyover", "metro_flyover")
+
+
+def pier_points(coords: list, ground: Optional[list], spacing: float, min_deck_m: Optional[float]) -> list[tuple[float, float]]:
+    """(lon, lat) of each pier along a deck. `ground` is the per-vertex ground [lon, lat, z] the deck heights are measured
+    from (absent: heights are above ground already); `min_deck_m` None = a pier at every station (elevated metro)."""
+    pts = [(float(c[0]), float(c[1]), float(c[2]) if len(c) > 2 and c[2] is not None else 0.0)
+           for c in coords if isinstance(c, (list, tuple)) and len(c) >= 2]
+    if len(pts) < 2:
+        return []
+    g = None
+    if isinstance(ground, list) and len(ground) == len(pts):
+        try:
+            g = [float(x[2]) if isinstance(x, (list, tuple)) and len(x) > 2 and x[2] is not None else 0.0 for x in ground]
+        except (TypeError, ValueError):
+            g = None
+    line = G.project_geojson({"type": "LineString", "coordinates": [[x, y] for x, y, _ in pts]})
+    xy = list(line.coords)
+    cum = [0.0]
+    for a, b in zip(xy, xy[1:]):
+        cum.append(cum[-1] + math.dist(a, b))
+    total = cum[-1]
+    spacing = spacing if spacing and spacing > 1 else 30.0
+    out, m = [], spacing / 2
+    while m < total:
+        i = max(0, min(len(cum) - 2, next((k for k in range(len(cum) - 1) if cum[k + 1] >= m), len(cum) - 2)))
+        t = 0.0 if cum[i + 1] == cum[i] else (m - cum[i]) / (cum[i + 1] - cum[i])
+        z = pts[i][2] + t * (pts[i + 1][2] - pts[i][2])
+        gz = (g[i] + t * (g[i + 1] - g[i])) if g else 0.0
+        if min_deck_m is None or z - gz >= min_deck_m:
+            out.append((pts[i][0] + t * (pts[i + 1][0] - pts[i][0]), pts[i][1] + t * (pts[i + 1][1] - pts[i][1])))
+        m += spacing
+    return out
+
+
+def pier_asset(obj: dict, status: str, layer: str, ds: dict, lc: Optional[str]) -> Optional["Asset"]:
+    t, p = obj.get("type"), obj.get("properties") or {}
+    elevated_metro = t == "metro_line"
+    piers = pier_points(obj.get("coordinates") or [], p.get("groundCoordinates"), _num(p.get("pierSpacing")) or 30.0,
+                        None if elevated_metro else PIER_MIN_DECK_M)
+    if not piers:
+        return None
+    geom = G.project_geojson({"type": "MultiPoint", "coordinates": [list(x) for x in piers]})
+    what = {"flyover": "Flyover", "metro_flyover": "Double-deck (road + metro)", "metro_line": "Elevated metro"}.get(t, "Structure")
+    return Asset(str(obj.get("id")), obj.get("name") or "", layer, status, "pier_foundation", geom, None,
+                 [(0.0, 0.0, None)], "design" if status == "proposed" else "UNKNOWN", "unknown", ds,
+                 kind_label=f"{what} pier foundations ({len(piers)} piers; pile cap size and pile depth UNKNOWN)" + _lc_suffix(lc),
+                 method="piled",
+                 meta={"design_type": t, "pier_count": len(piers), "pier_spacing_m": _num(p.get("pierSpacing")) or 30.0,
+                       "lifecycle": lc or status, "osm_ref": osm_ref(obj.get("id"), p)})
+
+
 def design_asset(obj: dict, status: str) -> Optional[Asset]:
     """An object as stored by Design ({id, type, name, scenarioId, coordinates, properties}) -> Asset, or None when it is
     not an underground / metro object or its geometry is unusable. `status` is the side it is screened on (proposed /
@@ -429,6 +489,11 @@ def design_asset(obj: dict, status: str) -> Optional[Asset]:
                      meta={"design_type": t, "utility_type": p.get("utilityType"), "lifecycle": lc or status, "evidence": z["evidence"],
                            "z_model": z["model"], "z_ref": z["zref"], "default_vertices": z["defaults"], "default_flags": z["flags"],
                            "evidence_note": z["evidence_note"]})
+    if t in PIER_TYPES and len(pts) >= 2:
+        return pier_asset(obj, status, layer, ds, lc)
+    if t == "metro_line" and len(pts) >= 2 and status == "proposed" and not metro_line_is_tunnel(p):
+        # A proposed elevated metro is screened as what goes into the ground: its pier foundations
+        return pier_asset(obj, status, layer, ds, lc)
     if t == "metro_line" and len(pts) >= 2 and status == "existing":
         line = G.project_geojson({"type": "LineString", "coordinates": pts})
         w = _num(p.get("deckWidth"))
@@ -1205,7 +1270,7 @@ def objects_from_db(db, scenario_id: str) -> list[dict]:
     """Underground / metro objects visible in the alternative: baseline objects (minus the alternative's deletes, with its
     modifications) + the alternative's own objects."""
     from models.models import CityObjectEntity, ScenarioObjectChangeEntity
-    types = ("underground_alignment", "utility", "metro_line", "metro_station")
+    types = SCREENED_TYPES
     out: dict[str, dict] = {}
     for e in db.query(CityObjectEntity).filter(CityObjectEntity.type.in_(types), CityObjectEntity.scenario_id.in_(["base", scenario_id])):
         out[e.id] = {"id": e.id, "type": e.type, "name": e.name, "scenarioId": e.scenario_id,
@@ -1226,7 +1291,7 @@ _VOLATILE_KEYS = {"createdAt", "updatedAt", "layerId", "visible", "selected", "h
 def inputs_hash(objects: list[dict], scenario_id: str, config_overrides: Optional[dict] = None) -> str:
     """What a run screened: the alternative, its underground / metro objects (geometry, properties; timestamps and display
     state ignored) and any rule overrides. Same objects → same hash, whether sent by the UI or read from the database."""
-    types = ("underground_alignment", "utility", "metro_line", "metro_station")
+    types = SCREENED_TYPES
     canon = sorted(
         ({"id": o.get("id"), "type": o.get("type"), "name": o.get("name"), "scenarioId": o.get("scenarioId") or "base",
           "coordinates": o.get("coordinates"),
@@ -1337,10 +1402,14 @@ def screen(db, scenario_id: str, objects: Optional[list[dict]] = None, focus_ids
     lap("pairs")
     for p in targets:
         gaps: list[str] = []
-        cf, entry = cover_check(p, cfg)
-        checklists[p.id].append(entry)
-        if cf:
-            findings.append(cf)
+        if p.cls == "pier_foundation":
+            checklists[p.id].append({"check": "Cover and depth", "result": CHECK_NOT,
+                                     "detail": "Pier foundations: pile cap size and pile depth are not designed here (UNKNOWN)."})
+        else:
+            cf, entry = cover_check(p, cfg)
+            checklists[p.id].append(entry)
+            if cf:
+                findings.append(cf)
         for fn in ((lambda: buildings_check(p, blds, bld_tree, bld_meta, cfg)), (lambda: watercourse_check(p, wcs, wc_tree, wc_meta, cfg))):
             f, entry = fn()
             checklists[p.id].append(entry)

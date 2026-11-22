@@ -19,6 +19,8 @@ export const CLASS_TEXT: Record<ConflictClass, { label: string; color: string; h
  * every drawn alignment / utility is.
  */
 export function screenedAsProposed(o: { type: string; scenarioId?: string; status?: string; lifecycle?: string }, activeScenarioId: string): boolean {
+  // A flyover / double-deck drawn in this proposal is screened by its pier foundations (coordination/screening.pier_asset)
+  if (o.type === 'flyover' || o.type === 'metro_flyover') return activeScenarioId !== 'base' && (o.scenarioId ?? 'base') === activeScenarioId;
   if (o.type !== 'underground_alignment' && o.type !== 'utility') return false;
   const lc = o.type === 'utility' ? o.status : o.lifecycle;
   if (lc === 'proposed' || lc === 'conceptual') return true;
@@ -137,7 +139,9 @@ export function highlightTargets(f: ScreeningFinding, geometries: ScreeningRun['
 }
 
 /** Whether a Design object changed after the run (then the result is out of date). */
-export function isStale(runAt: string, objects: readonly { updatedAt?: string }[]): boolean {
+export function isStale(runAt: string, objects: readonly { updatedAt?: string }[], countAtRun?: number): boolean {
+  // A deleted object leaves no newer timestamp behind: the number of objects the check was sent tells it (BUILD_PROPAGATION.md)
+  if (countAtRun !== undefined && countAtRun !== objects.length) return true;
   const t = new Date(runAt).getTime();
   return objects.some(o => o.updatedAt !== undefined && new Date(o.updatedAt).getTime() > t);
 }

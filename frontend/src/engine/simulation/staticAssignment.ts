@@ -117,6 +117,13 @@ const distM = (a: readonly number[], b: readonly number[]) =>
   Math.hypot((a[0] - b[0]) * M_PER_DEG_LAT * Math.cos(a[1] * Math.PI / 180), (a[1] - b[1]) * M_PER_DEG_LAT);
 const segKey = (id: string) => id.replace(/_(fwd|bwd)$/, '');
 
+/** A two-way carriageway with a median: the road's (first) section profile, else its divider flag. */
+function hasMedian(road: DrivableObject | undefined): boolean {
+  if (!road) return false;
+  const sec = road.type === 'road' ? road.sections?.[0] : undefined;
+  return sec ? !!sec.hasMedian && (sec.medianWidth ?? 0) > 0 : !!road.hasDivider && (road.dividerWidth ?? 0) > 0;
+}
+
 export const bprTime = (t0: number, x: number, c: number) => t0 * (1 + BPR_ALPHA * Math.pow(Math.max(0, x) / Math.max(1, c), BPR_BETA));
 
 /** The area's links as an assignment network, with free-flow times and capacities. */
@@ -154,11 +161,15 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
   const links: AssignLink[] = edges.map((e, index) => {
     const road = roads.get(e.roadId);
     const lanes = Math.max(1, e.lanes || 1);
-    const oneWay = road?.type === 'road' ? !!road.isOneWay : true;
+    // Every drivable object carries its own one-way flag: a two-way flyover / double-deck deck is two directions of one
+    // structure, not two one-way streets (before, every deck was read as a one-way street: IRC:106 '2-oneway', about a
+    // third above the divided-road value; docs/urbanos/BUILD_PROPAGATION.md)
+    const oneWay = road ? !!road.isOneWay : true;
     const hw = road?.type === 'road' ? road.osmProvenance?.originalTags?.highway ?? '' : '';
-    // One-way main roads are taken to be carriageways of divided roads (OSM maps those as two one-way ways); one-way minor roads as one-way streets (assumption)
-    const divided = oneWay && /^(motorway|trunk|primary|secondary)/.test(hw);
-    const midblockPcu = midblockCapacityPcu(road, lanes, !oneWay, divided);
+    // One-way main roads are taken to be carriageways of divided roads (OSM maps those as two one-way ways); one-way minor roads as one-way streets (assumption).
+    // A two-way road or deck with a median (a drawn arterial, a divided cross-section template, a deck with a divider) is a divided carriageway pair.
+    const divided = oneWay ? /^(motorway|trunk|primary|secondary)/.test(hw) : hasMedian(road);
+    const midblockPcu = midblockCapacityPcu(road, lanes, !oneWay && !divided, divided);
     const speed = Math.max(10, e.speedLimit || 30);
     let stopLinePcu: number | null = null, gC: number | null = null, sigDelay = 0;
     const edited = editedAt.get(e.toNodeId);

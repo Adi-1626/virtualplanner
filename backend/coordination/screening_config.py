@@ -5,7 +5,7 @@ Aligned with /workspace/work/underground-research/UNDERGROUND_RESEARCH.md §3 (c
 Row fields
   id          research check id (C1, C2b, ...) or a local id for rows without one
   a, b        asset-type pair (comma lists; '*' = any). Classes: water, sewer, storm, power, gas, telecom, utility,
-              tunnel, metro_tunnel, building, metro (any Metro structure)
+              tunnel, metro_tunnel, building, metro (any Metro structure), pier_foundation (drawn deck piers)
   dim         'H' horizontal clear distance | 'V' vertical clear distance | '3D' clear distance in any direction
   value_m     metres, edge to edge (diameter_factor: value = factor x the larger outer diameter)
   order       'a_above_b' / 'a_below_b' when the source also says which one must be on top (e.g. water above sewer)
@@ -24,7 +24,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-CONFIG_VERSION = "screening-rules 2026-11-22 (UNDERGROUND_RESEARCH §3; PLANNING_DEFAULTS_DECISIONS D7)"
+CONFIG_VERSION = "screening-rules 2026-11-22b (UNDERGROUND_RESEARCH §3; PLANNING_DEFAULTS_DECISIONS D7; PF1 pier foundations)"
 
 N, G, R, I, NN = "normative", "draft_guideline", "rule_of_thumb", "international", "no_norm"
 CPHEEO_W = "CPHEEO Manual on Water Supply & Treatment Systems, Part A (Mar 2024)"
@@ -77,6 +77,13 @@ RULES: list[dict[str, Any]] = [
      "source": "No Indian numeric norm found", "clause": "—", "on_breach": "specialist",
      "note": "Referral distance (1 x tunnel diameter), NOT a clearance: anything closer goes to a specialist assessment; only a "
              "physical intersection is a Potential conflict."},
+    # pier foundations of a drawn flyover / double-deck / elevated metro (BUILD_PROPAGATION.md): pile caps and piles are not
+    # designed here and no Indian numeric clearance between a pile foundation and a buried service was found → referral only
+    {"id": "PF1", "a": "pier_foundation", "b": "*", "dim": "H", "value_m": 0.0, "type": NN,
+     "source": "No Indian numeric norm found (UNDERGROUND_RESEARCH C19: no Indian numeric clearance between a buried asset and a foundation)",
+     "clause": "—", "on_breach": "specialist",
+     "note": "Referral, NOT a clearance: a buried asset within the unknown pile-cap allowance and the data uncertainty of a pier "
+             "goes to a specialist (foundation / diversion) assessment; pile cap size and pile depth are UNKNOWN."},
     # anything else: no code value found
     {"id": "U0", "a": "*", "b": "*", "dim": "3D", "value_m": 0.3, "type": R, "source": "No code value found for this pair",
      "clause": "—", "note": "0.3 m maintenance separation, provisional (the IS 1255 / T4S figure for other pairs)."},
