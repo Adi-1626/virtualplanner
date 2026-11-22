@@ -860,7 +860,7 @@ export class TwinCityEngine {
         const obj = this.objects.getById(entityId);
         if (obj) {
           // View mode is about what the user built; the imported map is background
-          if (!this.isPlanningMode && !isUserBuilt(obj)) {
+          if (!this.isPlanningMode && !isUserBuilt(obj) && !isSampleObject(obj)) {
             this.selection.selectSingle(null);
             if (!this.viewModeHintShown) {
               this.viewModeHintShown = true;
@@ -1907,12 +1907,8 @@ export class TwinCityEngine {
         console.log(`Loaded ${data.length} objects from FastAPI database.`);
         console.log('[STARTUP] ObjectManager load START');
         this.objects.clear();
-        let hasBuildings = false;
-        let hasZones = false;
 
         data.forEach((obj: any) => {
-          if (obj.type === 'building') hasBuildings = true;
-          if (obj.type === 'zone') hasZones = true;
           const unpacked = objectFromRow(obj);
           if (unpacked.type === 'road') {
             this.objects.syncRoadProperties(unpacked as any);
@@ -1930,10 +1926,8 @@ export class TwinCityEngine {
         }
         console.log('[STARTUP] ObjectManager load END');
 
-        if (!hasBuildings || !hasZones) {
-          console.log('Database missing buildings or zones. Seeding realistic Pune/Hinjewadi demand...');
-          this.seedPuneHinjewadiDemand();
-        }
+        // No invented demand is seeded when the database has no buildings or zones: demand comes from
+        // imported study areas and what the user draws (the old Hinjewadi seed was fictional).
 
         this.objects.notify();
         return;
@@ -2064,8 +2058,6 @@ export class TwinCityEngine {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     });
-
-    this.seedPuneHinjewadiDemand();
   }
 
   public getTrafficNetwork() {
@@ -2271,145 +2263,6 @@ export class TwinCityEngine {
       this.triggerWorkerRebuild(false);
       this.demandRebuildTimeout = null;
     }, 300);
-  }
-
-  private seedPuneHinjewadiDemand() {
-    // 1. Seed Zones
-    const zonesData = [
-      { id: 'zone_wakad', name: 'Wakad', pop: 85000, emp: 15000, mix: { residential: 65, commercial: 25, industrial: 5, educational: 5 }, poly: [[73.745, 18.590, 0], [73.765, 18.590, 0], [73.765, 18.608, 0], [73.745, 18.608, 0], [73.745, 18.590, 0]], gateways: ['g_wakad'] },
-      { id: 'zone_hinjewadi_p1', name: 'Hinjewadi Phase 1', pop: 30000, emp: 120000, mix: { residential: 20, commercial: 75, industrial: 0, educational: 5 }, poly: [[73.725, 18.580, 0], [73.745, 18.580, 0], [73.745, 18.595, 0], [73.725, 18.595, 0], [73.725, 18.580, 0]], gateways: [] },
-      { id: 'zone_hinjewadi_p2', name: 'Hinjewadi Phase 2', pop: 15000, emp: 90000, mix: { residential: 10, commercial: 85, industrial: 5, educational: 0 }, poly: [[73.700, 18.572, 0], [73.720, 18.572, 0], [73.720, 18.590, 0], [73.700, 18.590, 0], [73.700, 18.572, 0]], gateways: [] },
-      { id: 'zone_hinjewadi_p3', name: 'Hinjewadi Phase 3', pop: 8000, emp: 50000, mix: { residential: 5, commercial: 90, industrial: 5, educational: 0 }, poly: [[73.670, 18.563, 0], [73.695, 18.563, 0], [73.695, 18.582, 0], [73.670, 18.582, 0], [73.670, 18.563, 0]], gateways: [] },
-      { id: 'zone_baner', name: 'Baner', pop: 60000, emp: 25000, mix: { residential: 60, commercial: 30, industrial: 0, educational: 10 }, poly: [[73.768, 18.542, 0], [73.792, 18.542, 0], [73.792, 18.562, 0], [73.768, 18.562, 0], [73.768, 18.542, 0]], gateways: ['g_nh48_south', 'g_baner_east'] },
-      { id: 'zone_balewadi', name: 'Balewadi', pop: 45000, emp: 18000, mix: { residential: 65, commercial: 25, industrial: 0, educational: 10 }, poly: [[73.758, 18.562, 0], [73.785, 18.562, 0], [73.785, 18.582, 0], [73.758, 18.582, 0], [73.758, 18.562, 0]], gateways: ['g_balewadi_stadium'] },
-      { id: 'zone_aundh', name: 'Aundh', pop: 70000, emp: 30000, mix: { residential: 55, commercial: 35, industrial: 0, educational: 10 }, poly: [[73.790, 18.562, 0], [73.815, 18.562, 0], [73.815, 18.582, 0], [73.790, 18.582, 0], [73.790, 18.562, 0]], gateways: [] },
-      { id: 'zone_pcmc', name: 'PCMC External', pop: 110000, emp: 80000, mix: { residential: 45, commercial: 30, industrial: 20, educational: 5 }, poly: [[73.742, 18.608, 0], [73.778, 18.608, 0], [73.778, 18.630, 0], [73.742, 18.630, 0], [73.742, 18.608, 0]], gateways: ['g_pcmc_north'] }
-    ];
-
-    zonesData.forEach(z => {
-      this.objects.add({
-        id: z.id,
-        type: 'zone',
-        name: z.name,
-        layerId: 'demand_zones',
-        scenarioId: 'base',
-        coordinates: z.poly as [number, number, number][],
-        totalPopulation: z.pop,
-        totalEmployment: z.emp,
-        landUseMix: z.mix,
-        gateways: z.gateways,
-        provenance: {
-          source: 'estimated',
-          confidence: 0.75,
-          updatedAt: new Date().toISOString()
-        },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-    });
-
-    // 2. Seed Gateways
-    const gatewaysData = [
-      { id: 'g_wakad', name: 'Wakad NH48 Gateway', coords: [73.765, 18.605, 0] },
-      { id: 'g_nh48_south', name: 'NH48 Highway Gateway (South)', coords: [73.766, 18.548, 0] },
-      { id: 'g_baner_east', name: 'Baner Road East Gateway', coords: [73.785, 18.552, 0] },
-      { id: 'g_balewadi_stadium', name: 'Balewadi Stadium Road Gateway', coords: [73.775, 18.568, 0] },
-      { id: 'g_pcmc_north', name: 'PCMC Road Gateway (North)', coords: [73.755, 18.618, 0] }
-    ];
-
-    gatewaysData.forEach(g => {
-      this.objects.add({
-        id: g.id,
-        type: 'gateway',
-        name: g.name,
-        layerId: 'gateways',
-        scenarioId: 'base',
-        coordinates: [g.coords as [number, number, number]],
-        connectedNodeId: '',
-        inboundFlows: { AM_Peak: 600, PM_Peak: 300, Midday: 250, Night: 80 },
-        outboundFlows: { AM_Peak: 300, PM_Peak: 600, Midday: 250, Night: 80 },
-        modeSplit: { car: 0.35, twoWheeler: 0.45, bus: 0.15, metro: 0.0, walking: 0.0, other: 0.05 },
-        provenance: {
-          source: 'estimated',
-          confidence: 0.8,
-          updatedAt: new Date().toISOString()
-        },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-    });
-
-    // 3. Seed Buildings inside Hinjewadi
-    const buildingsData = [
-      { id: 'b_it_infosys', name: 'Infosys Hinjawadi Campus', cat: 'office', usage: 'commercial', pop: 0, emp: 2500, ht: 40, fl: 10, center: [73.735, 18.587] },
-      { id: 'b_it_wipro', name: 'Wipro Phase 1 Tech Center', cat: 'office', usage: 'commercial', pop: 0, emp: 1800, ht: 35, fl: 8, center: [73.732, 18.588] },
-      { id: 'b_it_tcs', name: 'TCS Sahyadri Park', cat: 'office', usage: 'commercial', pop: 0, emp: 4000, ht: 50, fl: 12, center: [73.682, 18.573] },
-      { id: 'b_it_cognizant', name: 'Cognizant Phase 2 Campus', cat: 'office', usage: 'commercial', pop: 0, emp: 2000, ht: 30, fl: 7, center: [73.715, 18.578] },
-      { id: 'b_res_blueridge', name: 'Blue Ridge Apartments Block A', cat: 'residential', usage: 'residential', pop: 1200, emp: 50, ht: 60, fl: 18, center: [73.739, 18.590] },
-      { id: 'b_res_megapolis', name: 'Megapolis Splendour Complex', cat: 'residential', usage: 'residential', pop: 1500, emp: 40, ht: 55, fl: 16, center: [73.673, 18.575] },
-      { id: 'b_res_liferepublic', name: 'Life Republic Residential Tower', cat: 'residential', usage: 'residential', pop: 900, emp: 30, ht: 55, fl: 16, center: [73.718, 18.604] },
-      { id: 'b_ret_grandmall', name: 'Grand High Street Mall', cat: 'retail', usage: 'commercial', pop: 0, emp: 300, ht: 15, fl: 3, center: [73.738, 18.592] },
-      { id: 'b_ret_dmart', name: 'Hinjawadi D-Mart', cat: 'retail', usage: 'commercial', pop: 0, emp: 150, ht: 10, fl: 2, center: [73.745, 18.593] },
-      { id: 'b_it_techm', name: 'Tech Mahindra Phase 3 Office', cat: 'office', usage: 'commercial', pop: 0, emp: 1800, ht: 40, fl: 10, center: [73.686, 18.571] },
-      { id: 'b_ret_xion', name: 'Xion Mall Hinjawadi', cat: 'retail', usage: 'commercial', pop: 0, emp: 250, ht: 15, fl: 3, center: [73.751, 18.592] },
-      { id: 'b_it_quadron', name: 'Quadron Business Park', cat: 'office', usage: 'commercial', pop: 0, emp: 3000, ht: 45, fl: 11, center: [73.703, 18.578] },
-      { id: 'b_edu_school', name: 'Blue Ridge Public School', cat: 'school', usage: 'commercial', pop: 0, emp: 80, ht: 15, fl: 3, center: [73.742, 18.589] },
-      { id: 'b_hosp_hinj', name: 'Hinjawadi Lifecare Hospital', cat: 'hospital', usage: 'commercial', pop: 0, emp: 120, ht: 25, fl: 5, center: [73.741, 18.591] }
-    ];
-
-    buildingsData.forEach(b => {
-      const c = b.center;
-      const footprint = [
-        [c[0] - 0.0003, c[1] - 0.0003, 0],
-        [c[0] + 0.0003, c[1] - 0.0003, 0],
-        [c[0] + 0.0003, c[1] + 0.0003, 0],
-        [c[0] - 0.0003, c[1] + 0.0003, 0],
-        [c[0] - 0.0003, c[1] - 0.0003, 0]
-      ] as [number, number, number][];
-
-      this.objects.add({
-        id: b.id,
-        type: 'building',
-        name: b.name,
-        layerId: 'buildings',
-        scenarioId: 'base',
-        coordinates: footprint,
-        usageType: b.usage as any,
-        height: b.ht,
-        floors: b.fl,
-        population: b.pop || 0,
-        parkingSpaces: Math.round(b.emp * 0.15 + b.pop * 0.2),
-        waterDemand: (b.pop * 150) || (b.emp * 45),
-        electricityDemand: (b.pop * 6) || (b.emp * 12),
-        constructionYear: 2019,
-        category: b.cat as any,
-        state: 'existing',
-        residents: b.pop || undefined,
-        employees: b.emp || undefined,
-        visitorsPerDay: b.cat === 'retail' ? 1000 : 50,
-        source: 'surveyed',
-        isManuallyEdited: false,
-        activityProfile: {
-          peakArrivalStart: b.cat === 'office' ? '08:30' : b.cat === 'retail' ? '12:00' : '17:30',
-          peakArrivalEnd: b.cat === 'office' ? '10:00' : b.cat === 'retail' ? '14:00' : '19:30',
-          peakDepartureStart: b.cat === 'office' ? '17:30' : b.cat === 'retail' ? '20:00' : '08:30',
-          peakDepartureEnd: b.cat === 'office' ? '19:30' : b.cat === 'retail' ? '21:30' : '10:00',
-          modeSplit: {
-            car: 30,
-            twoWheeler: 40,
-            bus: 15,
-            metro: 0,
-            walk: 10,
-            other: 5
-          }
-        },
-        accessPoints: {
-          vehicleEntrance: c as [number, number, number]
-        },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-    });
   }
 }
 

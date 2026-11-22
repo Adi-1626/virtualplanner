@@ -11,7 +11,7 @@ import type {
   JunctionObject, UtilityObject, ZoneObject, GatewayObject,
 } from '../engine/objects/types';
 import { isUserBuilt, TYPE_LABELS } from '../engine/objects/builtBy';
-import { isSampleObject } from '../engine/objects/sampleObjects';
+import { isSampleObject, SAMPLE_LABEL } from '../engine/objects/sampleObjects';
 import { filterObjectsForScenario } from '../engine/scenarios/scenarioFilter';
 import { isDrivable } from '../engine/simulation/StudyAreaExplorer';
 import { lineLength } from './drawnWorks';
@@ -49,6 +49,11 @@ const GROUPS: { title: string; icon: LucideIcon; types: CityObject['type'][] }[]
 const DrawnWorksList: React.FC<{ version: number; onClose: () => void }> = ({ version, onClose }) => {
   const built = useMemo(
     () => filterObjectsForScenario(engineInstance.objects.getAll(), engineInstance.scenarios.getActiveScenarioId()).filter(isUserBuilt),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [version]
+  );
+  const samples = useMemo(
+    () => filterObjectsForScenario(engineInstance.objects.getAll(), engineInstance.scenarios.getActiveScenarioId()).filter(isSampleObject),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [version]
   );
@@ -92,7 +97,7 @@ const DrawnWorksList: React.FC<{ version: number; onClose: () => void }> = ({ ve
                           <span className="flex-1 min-w-0">
                             <span className="block text-sm text-slate-100 truncate">{o.name || TYPE_LABELS[o.type]}</span>
                             <span className="block text-xs text-slate-500">
-                              {TYPE_LABELS[o.type]}{len !== null ? ` · ${formatDistanceM(len)}` : ''}{isSampleObject(o) ? ' · sample (fictional, not drawn by you)' : ''}
+                              {TYPE_LABELS[o.type]}{len !== null ? ` · ${formatDistanceM(len)}` : ''}
                             </span>
                           </span>
                           <ChevronRight size={16} className="text-slate-500 shrink-0" />
@@ -104,6 +109,26 @@ const DrawnWorksList: React.FC<{ version: number; onClose: () => void }> = ({ ve
               </Section>
             );
           })
+        )}
+        {samples.length > 0 && (
+          <Section title={SAMPLE_LABEL} aside={String(samples.length)}>
+            <p className="text-xs text-slate-400 leading-relaxed mb-2" data-testid="sample-objects-note">
+              Demo objects the app added, with invented values. They are not part of Pune, you did not draw them, and they are left out of demand, Simulate and screening. Delete them if you do not need them.
+            </p>
+            <ul className="rounded-xl bg-white/[0.04] border border-white/5 divide-y divide-white/5 overflow-hidden">
+              {samples.map(o => (
+                <li key={o.id}>
+                  <button onClick={() => open(o.id)} className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-white/5 cursor-pointer transition">
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm text-slate-300 truncate">{o.name || TYPE_LABELS[o.type]}</span>
+                      <span className="block text-xs text-slate-500">{TYPE_LABELS[o.type]} · {SAMPLE_LABEL.toLowerCase()}</span>
+                    </span>
+                    <ChevronRight size={16} className="text-slate-500 shrink-0" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Section>
         )}
         <p className="text-xs text-slate-500 leading-relaxed">
           Imported OpenStreetMap roads and buildings are the base map, so clicking them does nothing here. Use Simulate to study traffic on any road.
