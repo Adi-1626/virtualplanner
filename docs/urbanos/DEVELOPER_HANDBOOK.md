@@ -482,7 +482,6 @@ Verified in the code at `ba7a003` unless marked.
 - `city_objects` and `areas` writes are not audited; `areas` grows one row per study-area box.
 - Unused dependencies: `@tanstack/react-query`, `geoalchemy2`, `psycopg2-binary`.
 - `OverpassClient.ts` still calls `fetch` directly (deliberate offline fallback).
-- `DATA_FRESHNESS_SERVICE.md` §2 still lists `GOOGLE_CSE_KEY`/`GOOGLE_CSE_CX`; the code no longer reads them (news discovery removed 2026-11-21).
 - Explore caps buildings in view; the full storm-drain file is indexed only through `infra_index` (REPORTED, PHASE2_FINAL_REPORT §10).
 
 **Open decisions** (carried from [CURRENT_STATUS_AND_ROADMAP §8](CURRENT_STATUS_AND_ROADMAP.md)): licence treatment for OpenCity/IMD/AutoDCR; accounts (Bhuvan, GSI Bhukosh, data.gov.in, OpenAQ, Copernicus Data Space); DEM v2 rejection; traffic counts source and calibration approach; Phase B cleanup.
