@@ -1010,6 +1010,8 @@ export class SimulationMode {
         const c = this.state.comparison;
         this.invalidateComparison(c.result || c.running ? 'Mapped signals changed. Run the comparison again.' : null);
         this.setState({ signals: { status: 'ready', count: points.length } });
+        // The network the stored baseline ran on may be the one with these signals (after a page reload)
+        this.maybeRestoreBaseline();
       })
       .catch(() => {
         if (load !== this.signalLoad) return;
@@ -1440,6 +1442,7 @@ export class SimulationMode {
         comparison: { ...this.state.comparison, showingProposal: this.showsProposal(this.state.comparison.baseline) } });
       this.clearAnalysisStopNotice();
       this.redrawOverlay();
+      this.maybeRestoreBaseline();
       // Start was pressed while this was running: the live view can start now
       if (this.pendingStart && this.state.traffic.status === 'preparing') { this.setTraffic({ status: 'idle' }); this.startTraffic(); }
       return output;
@@ -1531,7 +1534,8 @@ export class SimulationMode {
       if (!rec || rec.v !== BASELINE_STORE_VERSION || rec.studyKey !== studyKey) return false;
       // Nothing else happened meanwhile (a baseline saved, a run started, another road selected)
       const now = this.state.comparison;
-      if (generation !== this.comparisonGeneration || now.baseline || now.running || this.studyKey() !== studyKey) return false;
+      // (a change meanwhile, such as the mapped signals arriving, tries again; a baseline saved meanwhile does not)
+      if (generation !== this.comparisonGeneration || now.baseline || now.running || this.studyKey() !== studyKey) { if (!now.baseline) this.restoreTried.delete(key); return false; }
       // The existing city it ran on has changed since: not restored (a comparison against it would not be like with like)
       // (tried again on the next change of the network: the mapped signals or roads may still be loading after a reload)
       if ((this.getContext().scenarioId ?? 'current') === rec.baseline.scenarioId && this.currentNetworkKey() !== rec.baseline.networkKey) { this.restoreTried.delete(key); return false; }
