@@ -860,7 +860,9 @@ export class SimulationMode {
       } else if (shown.output && shown.seedKey !== undefined && shown.seedKey !== seedKeyOf(area.seedRoadIds)) {
         // Another road's result: never shown under this road's name while its own analysis runs (p11 user test: Baba
         // Bhide Bridge showed Satara Road's 9 km/h and 163% with "the network changed since this result")
-        this.setState({ analysis: { ...EMPTY_ANALYSIS, status: shown.status === 'running' ? 'running' : 'idle' } });
+        // The run that was computing (if any) was cancelled above: 'idle', so maybeAutoStart starts this road's own run
+        // (a copied 'running' left the analysis stuck at 0 %, p11 browser check)
+        this.setState({ analysis: { ...EMPTY_ANALYSIS, status: 'idle' } });
       } else {
         const outdated = !!shown.output && shown.key !== key;
         if (shown.output && !!shown.outdated !== outdated) this.setState({ analysis: { ...shown, outdated } });

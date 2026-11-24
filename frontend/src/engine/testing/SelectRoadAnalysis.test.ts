@@ -53,4 +53,32 @@ describe('Simulate: selecting a second road', () => {
     expect(back.outdated).toBeFalsy();
     mode.dispose();
   }, 120000);
+
+  it('selecting another road while the first road\'s analysis is computing starts the new road\'s own run (never stuck at "running")', async () => {
+    const om = new ObjectManager();
+    om.addMultiple(structuredClone(fx.roads), true);
+    const mode = new SimulationMode(() => om.getAll().filter(o => o.type === 'road') as DrivableObject[], null, null, () => ({ buildings: [] }),
+      () => Promise.reject(new Error('no counts')), null, null);
+    mode.analysisSeeds = [42];
+    mode.enter();
+    mode.setRange(700);
+    mode.selectRoad(DECK, false);
+    expect(await mode.runAnalysis()).toBeTruthy();
+    // Make the first road's result stale and have its re-run computing, then pick another road
+    mode.selectRoad(SECOND, false);
+    mode.selectRoad(DECK, false);
+    const pending = mode.runAnalysis();
+    for (let i = 0; i < 200 && mode.getState().analysis.status !== 'running'; i++) await new Promise(r => setTimeout(r, 10));
+    om.update(SECOND, { name: 'Renamed' } as any, true); // a network change, so the kept first result is not reused
+    mode.networkChanged();
+    await new Promise(r => setTimeout(r, 400));
+    mode.selectRoad(SECOND, false);
+    await pending;
+    expect(mode.getState().analysis.output).toBeNull();
+    // Started on its own (maybeAutoStart), not left waiting at 'running' with no run behind it
+    for (let i = 0; i < 1200 && mode.getState().analysis.status !== 'ready'; i++) await new Promise(r => setTimeout(r, 50));
+    expect(mode.getState().analysis.status).toBe('ready');
+    expect(mode.getState().analysis.seedKey).toBe(seedKeyOf([SECOND]));
+    mode.dispose();
+  }, 120000);
 });
