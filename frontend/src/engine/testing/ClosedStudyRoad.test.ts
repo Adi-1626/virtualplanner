@@ -113,3 +113,12 @@ describe('Where traffic moved: the closed road', () => {
     expect(c.rerouting.find(x => x.roadName === 'Dandekar Bridge')!.closed).toBeUndefined();
   });
 });
+
+describe('Study header: the closed road', () => {
+  it('says the road is closed instead of giving the joining roads\' length as its own (Baba Bhide Bridge "100 m", 90 m long)', async () => {
+    const { studySubtitle } = await import('../../components/simulate/format');
+    const section = { lengthM: 100, carriageways: 1 } as any;
+    expect(studySubtitle({ section, closedRoads: [{ id: 'b', name: 'Baba Bhide Bridge' }], rangeMeters: 2000 })).toBe('closed in this proposal · area 2 km around it');
+    expect(studySubtitle({ section, closedRoads: [], rangeMeters: 2000 })).toBe('100 m · area 2 km around it');
+  });
+});

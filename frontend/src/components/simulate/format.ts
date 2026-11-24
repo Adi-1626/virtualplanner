@@ -1,4 +1,6 @@
 import type { Delta } from '../../engine/simulation/ScenarioComparison';
+import type { SimulationModeState } from '../../engine/simulation/SimulationMode';
+import { formatDistanceM } from '../../lib/format';
 
 const fmt = (n: number) => Math.round(n).toLocaleString();
 
@@ -16,3 +18,14 @@ export const fmtDeltaValue = (d: Delta, v: number | null) => {
 /** A load error in words a planner can act on: the browser's "Failed to fetch" means the server could not be reached. */
 export const readableLoadError = (error: string | null | undefined) =>
   /failed to fetch|networkerror|network request failed|load failed|err_connection|could not be reached/i.test(error ?? '') ? 'the server could not be reached.' : (error ?? '');
+
+/**
+ * The study's subtitle: its length and the area around it. A road the proposal closed has no length of its own here;
+ * the section on show is the roads that joined it, so "100 m" under "Baba Bhide Bridge" (90 m) was another road's
+ * length (p11 closure test).
+ */
+export function studySubtitle(sim: Pick<SimulationModeState, 'section' | 'closedRoads' | 'rangeMeters'>): string {
+  const area = `area ${formatDistanceM(sim.rangeMeters)} around it`;
+  if (sim.closedRoads.length) return `closed in this proposal · ${area}`;
+  return `${sim.section ? `${formatDistanceM(sim.section.lengthM)}${sim.section.carriageways === 2 ? ', both carriageways' : ''} · ` : ''}${area}`;
+}
