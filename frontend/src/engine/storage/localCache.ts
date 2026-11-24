@@ -9,8 +9,9 @@
  */
 
 const DB_NAME = 'twincity-cache';
-const DB_VERSION = 2;
-export const CACHE_STORES = ['osm-signals', 'osm-road-tiles', 'osm-deleted'] as const;
+const DB_VERSION = 3;
+// sim-baselines: the saved existing-city baseline of a Simulate study, kept across a page reload (SimulationMode)
+export const CACHE_STORES = ['osm-signals', 'osm-road-tiles', 'osm-deleted', 'sim-baselines'] as const;
 export type CacheStore = (typeof CACHE_STORES)[number];
 
 let opening: Promise<IDBDatabase | null> | null = null;

@@ -175,7 +175,41 @@ export interface TrafficComparisonState {
    * baseline's (the city as edited in Build), so the panel labels it a proposal.
    */
   showingProposal: boolean;
+  /** The baseline on show was saved in an earlier session and restored (when it was saved, ISO time); absent otherwise. */
+  restoredAt?: string | null;
 }
+
+/**
+ * A saved baseline as kept across a page reload (IndexedDB store 'sim-baselines', key: the studied roads): the run,
+ * its frozen demand and inputs, and the name, lanes and direction of every road as they were (what the comparison
+ * reads of the existing city's roads). Restored only for the same roads, range and direction, and never onto an
+ * existing city whose network changed since.
+ */
+export interface StoredBaseline {
+  v: 1;
+  savedAt: string;
+  studyKey: string;
+  contextKey: string;
+  seedRoadIds: string[];
+  baseline: TrafficRunSnapshot;
+  plan: DemandPlan;
+  roads: DrivableObject[];
+}
+export interface BaselineStore {
+  get(key: string): Promise<StoredBaseline | undefined>;
+  put(key: string, value: StoredBaseline): Promise<void>;
+}
+export const BASELINE_STORE_VERSION = 1;
+const idbBaselineStore: BaselineStore = {
+  get: async key => (await cacheGetMany<StoredBaseline>('sim-baselines', [key]))[0],
+  put: (key, value) => cachePutMany('sim-baselines', [[key, value]]),
+};
+/** What the comparison reads of a baseline road (ScenarioComparison: names, lane signature): kept small for storage. */
+export const compactRoad = (r: DrivableObject): DrivableObject => {
+  const sec = 'sections' in r ? r.sections?.[0] : undefined;
+  return { id: r.id, type: r.type, name: r.name, laneCount: r.laneCount, isOneWay: r.isOneWay,
+    ...(sec ? { sections: [{ carriagewayA: { lanes: sec.carriagewayA?.lanes }, ...(sec.carriagewayB ? { carriagewayB: { lanes: sec.carriagewayB.lanes } } : {}) }] } : {}) } as unknown as DrivableObject;
+};
 
 /** Key of a set of studied roads (order-free). */
 export const seedKeyOf = (ids: readonly string[]) => [...ids].sort().join('|');
@@ -859,6 +893,8 @@ export class SimulationMode {
       // Back on the baseline's roads, range and direction: a "study changed" notice no longer applies
       const c = this.state.comparison;
       if (c.baseline && c.staleReason && STUDY_REASONS.has(c.staleReason) && this.baselineStudyKey === this.studyKey()) this.setState({ comparison: { ...c, staleReason: null } });
+      // A baseline saved for this study before a page reload comes back
+      this.maybeRestoreBaseline();
       // A kept result for another network or demand stays on show until its re-run lands: say so.
       // An undo back to the shown result's network (before its re-run landed) makes it current again: clear the flag.
       const shown = this.state.analysis, key = this.analysisKey();
@@ -1465,6 +1501,48 @@ export class SimulationMode {
   // ── Existing city against a proposal ────────────────────────────────────
 
   private baselineRoads: Map<string, DrivableObject> | null = null;
+  private baselineStore: BaselineStore = idbBaselineStore;
+  /** Storage for saved baselines (IndexedDB by default; tests give their own). */
+  public setBaselineStore(store: BaselineStore) { this.baselineStore = store; }
+  /** The restore attempt in progress (for tests and the panel), or null. */
+  public baselineRestore: Promise<boolean> | null = null;
+  private restoreTried = new Set<string>();
+
+  private saveBaseline(baseline: TrafficRunSnapshot, plan: DemandPlan) {
+    const seedRoadIds = [...this.state.seedRoadIds];
+    const rec: StoredBaseline = { v: BASELINE_STORE_VERSION, savedAt: new Date().toISOString(), studyKey: this.baselineStudyKey, contextKey: this.baselineContextKey, seedRoadIds,
+      baseline, plan, roads: [...(this.baselineRoads?.values() ?? [])].map(compactRoad) };
+    this.restoreTried.add(seedKeyOf(seedRoadIds));
+    void this.baselineStore.put(seedKeyOf(seedRoadIds), rec).catch(() => {});
+  }
+
+  /**
+   * Restores a baseline saved for this study in an earlier session (after a page reload): same roads, range and
+   * direction; on the scenario it ran on only when that network is unchanged. Tried once per study per session.
+   */
+  private maybeRestoreBaseline() {
+    const c = this.state.comparison;
+    const key = seedKeyOf(this.state.seedRoadIds);
+    if (c.baseline || c.running || !this.state.seedRoadIds.length || this.restoreTried.has(key)) return;
+    this.restoreTried.add(key);
+    const generation = this.comparisonGeneration, studyKey = this.studyKey();
+    this.baselineRestore = (async () => {
+      const rec = await this.baselineStore.get(key).catch(() => undefined);
+      if (!rec || rec.v !== BASELINE_STORE_VERSION || rec.studyKey !== studyKey) return false;
+      // Nothing else happened meanwhile (a baseline saved, a run started, another road selected)
+      const now = this.state.comparison;
+      if (generation !== this.comparisonGeneration || now.baseline || now.running || this.studyKey() !== studyKey) return false;
+      // The existing city it ran on has changed since: not restored (a comparison against it would not be like with like)
+      // (tried again on the next change of the network: the mapped signals or roads may still be loading after a reload)
+      if ((this.getContext().scenarioId ?? 'current') === rec.baseline.scenarioId && this.currentNetworkKey() !== rec.baseline.networkKey) { this.restoreTried.delete(key); return false; }
+      this.baselinePlan = rec.plan;
+      this.baselineRoads = new Map(rec.roads.map(r => [r.id, r]));
+      this.baselineContextKey = rec.contextKey;
+      this.baselineStudyKey = rec.studyKey;
+      this.setState({ comparison: { baseline: rec.baseline, current: null, result: null, staleReason: null, running: false, progress: 1, demandChanged: false, showingProposal: this.showsProposal(rec.baseline), restoredAt: rec.savedAt } });
+      return true;
+    })();
+  }
 
   private snapshotOf(output: AnalysisOutput, plan: DemandPlan, measureS: number): TrafficRunSnapshot {
     const traffic = this.state.traffic, context = this.getContext();
@@ -1658,7 +1736,8 @@ export class SimulationMode {
       this.baselineRoads = new Map(structuredClone(this.getRoads()).map(r => [r.id, r]));
       this.baselineContextKey = contextKey;
       this.baselineStudyKey = studyKey;
-      this.setState({ comparison: { baseline, current: null, result: null, staleReason: null, running: false, progress: 1, demandChanged: false, showingProposal: this.showsProposal(baseline) } });
+      this.setState({ comparison: { baseline, current: null, result: null, staleReason: null, running: false, progress: 1, demandChanged: false, showingProposal: this.showsProposal(baseline), restoredAt: null } });
+      this.saveBaseline(baseline, this.baselinePlan);
       return baseline;
     } catch (err) {
       if (generation === this.comparisonGeneration) this.setState({ comparison: { ...this.state.comparison, current: null, staleReason: err instanceof Error ? err.message : String(err), running: false } });

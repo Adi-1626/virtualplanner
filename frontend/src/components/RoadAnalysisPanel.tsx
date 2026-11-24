@@ -311,6 +311,13 @@ const VERDICT: Record<Verdict, { label: string; tone: Tone; icon: typeof Trendin
   no_change: { label: 'No clear change', tone: 'neutral', icon: Minus },
 };
 
+/** The note under a baseline restored after a page reload. */
+export function restoredBaselineText(savedAt: string): string {
+  const d = new Date(savedAt);
+  const when = Number.isNaN(d.getTime()) ? 'an earlier session' : d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return `Baseline saved ${when}, restored from this browser: the same trips, hour and seeds. Save again to replace it.`;
+}
+
 /** Existing city against a proposal on the same frozen demand, hour and seeds. */
 export const ScenarioTest: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   const mode = engineInstance.simMode;
@@ -344,6 +351,7 @@ export const ScenarioTest: React.FC<{ sim: SimulationModeState }> = ({ sim }) =>
           })}
         </ol>
         {baseline && <p className="text-[11px] text-slate-500">Baseline: {hourLabel(baseline.hour)}, {fmt(baseline.demandVph)} veh/h of demand · {mode.analysisSeeds.length} seeds on both</p>}
+        {baseline && sim.comparison.restoredAt && <p className="text-[11px] text-slate-400" data-testid="baseline-restored">{restoredBaselineText(sim.comparison.restoredAt)}</p>}
         <div className="flex gap-2 flex-wrap">
           <Button size="sm" icon={running && !baseline ? Loader2 : Flag} spin={running && !baseline} disabled={busy} onClick={() => void mode.captureBaseline()}>{baselineSaveLabel(scen, !!baseline)}</Button>
           <Button size="sm" variant="primary" icon={running && baseline ? Loader2 : GitCompareArrows} spin={running && !!baseline} disabled={busy || !baseline} onClick={() => void mode.runComparison()}>Compare</Button>
