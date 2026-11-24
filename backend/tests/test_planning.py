@@ -318,3 +318,20 @@ def test_migration_on_a_copy_of_the_project_database(tmp_path):
     with pytest.raises(sqlite3.DatabaseError):
         con.execute("DELETE FROM audit_log")
     con.close()
+
+
+def test_report_leads_with_the_latest_comparison_and_lists_earlier_runs_as_superseded(client):
+    """p11 user test: section 5 printed every run oldest first, so a stale "Mixed" (an older drawing of the alternative)
+    led the section and the current "Better" was pages later."""
+    import time
+    pid = _full_project(client)
+    sid = next(l["entity_id"] for l in client.get(f"/api/planning/projects/{pid}").json()["links"] if l["entity_type"] == "scenario")
+    time.sleep(1.1)
+    newer = {**COMPARISON, "verdict": {**COMPARISON["verdict"], "overall": "mixed", "summary": "SYNTHETIC newer run."}}
+    latest = client.post("/api/runs", json={"scenarioId": sid, "inputs": {"hour": 9, "seeds": [42]}, "results": {"totalVph": 1180, "comparison": newer}}).json()
+    t = _docx_text(client.get(f"/api/planning/projects/{pid}/report", params={"format": "docx"}).content)
+    i_latest = t.index(f"proposal run {latest['id']}")
+    assert "Latest comparison for scenario" in t and "2 runs recorded" in t
+    assert t.index("SYNTHETIC newer run.") > i_latest
+    assert "Less delay on the study road." not in t  # the earlier run's full summary is not printed again
+    assert "superseded by the latest run" in t and t.index("superseded by the latest run") > i_latest

@@ -192,11 +192,21 @@ def build_model(db: Session, p: PlanningProjectEntity, now: datetime.datetime | 
     for sid, runs in runs_by_scn.items():
         if sid == p.baseline_id:
             continue
-        for r in runs:
+        # Newest first: the latest comparison is the one to read; earlier runs (an older drawing of the alternative, an
+        # older engine) are listed in one line each as superseded. Before p11 every run was printed in full, oldest first,
+        # so a stale "Mixed" from before a fix led the section while the current result was on a later page.
+        paired = [r for r in sorted(runs, key=lambda r: r.created_at or datetime.datetime.min, reverse=True)
+                  if any(b.created_at and r.created_at and b.created_at <= r.created_at for b in base_runs)]
+        for i, r in enumerate(paired):
             prior = [b for b in base_runs if b.created_at and r.created_at and b.created_at <= r.created_at]
-            if not prior:
-                continue
             b = prior[-1]
+            if i > 0:
+                cv = ((_j(r.results_json, {}) or {}).get("comparison") or {})
+                verdict = (cv.get("verdict") or {}).get("overall") if isinstance(cv, dict) else None
+                b5.append(Block("bullets", items=[f"Earlier run {r.id} ({r.created_at:%Y-%m-%d %H:%M} UTC) vs baseline run {b.id}: "
+                                                  f"{VERDICT_LABEL.get(verdict, verdict or 'no comparison recorded')}; superseded by the latest run {paired[0].id} above."]))
+                pairs += 1
+                continue
             ra, rb = _j(b.inputs_json, {}), _j(r.inputs_json, {})
             diffs = assumption_differences(ra, rb)
             fair = b.baseline_fingerprint == r.baseline_fingerprint and not any(d["fairnessCritical"] for d in diffs)
@@ -207,7 +217,7 @@ def build_model(db: Session, p: PlanningProjectEntity, now: datetime.datetime | 
                     va, vb = resa.get(k), resb.get(k)
                     dlt = _num(vb - va) if isinstance(va, (int, float)) and isinstance(vb, (int, float)) else "-"
                     rows.append([f"{name} ({unit})", _num(va), _num(vb), dlt, "model output"])
-            b5.append(Block("para", text=f"Baseline run {b.id} vs proposal run {r.id} (scenario {sid}): {'FAIR comparison' if fair else 'NOT a fair comparison'}"))
+            b5.append(Block("para", text=f"Latest comparison for scenario {sid}{f' ({len(paired)} runs recorded; earlier ones listed below)' if len(paired) > 1 else ''}: baseline run {b.id} vs proposal run {r.id}: {'FAIR comparison' if fair else 'NOT a fair comparison'}"))
             b5.append(Block("table", header=["Metric", "Baseline", "Proposal", "Difference", "Label"], rows=rows or [["(no result summary recorded)", "-", "-", "-", "-"]]))
             if diffs:
                 b5.append(Block("bullets", items=[f"Input differs: {d['field']}: {_short(d['a'], 40)} vs {_short(d['b'], 40)}{' (fairness-critical)' if d['fairnessCritical'] else ''}" for d in diffs]))
