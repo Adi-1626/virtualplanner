@@ -18,6 +18,7 @@ import { cordonOf, EDGE_FLOW_PER_LANE_VPH } from '../simulation/AreaDemand';
 import { VEHICLE_TYPES } from '../simulation/TrafficMicroSim';
 import { hourFactor, COUNT_HOURS } from '../simulation/timeOfDay';
 import type { TimePeriod } from '../objects/demandTypes';
+import type { SupplyParams } from '../simulation/supplyParams';
 
 /**
  * Opt-in harness for docs/OVERHAUL.md §24 (validation against observations): VAL24=1.
@@ -42,6 +43,8 @@ import type { TimePeriod } from '../objects/demandTypes';
  *                        Patel & Dhamaniya, TRR 2675(11), 2021, doi:10.1177/03611981211018694 (two-wheeler 0.22, three-wheeler 0.62,
  *                        bus/truck 5.0, car 1.0), swapped into this process's assignment and simulator tables (all links, not signals only)
  *   VAL24_HYPO_EDGE      multiply the edge (cordon) flow per lane of every road class by this factor (AreaDemand EDGE_FLOW_PER_LANE_VPH)
+ *   VAL24_SUPPLY         p13: JSON file {name, params} of a tuned (estimated) supply set (supplyParams.ts) for the assignment-only sweep;
+ *                        recorded under `supply` (docs/urbanos/VALIDATION_P13.md: the official-count check of a tuned set)
  *
  * Runs with `hours` (assignment-only sweep) also report, per hour, the section's assigned speed and, with `ways`, the assigned
  * volume of each way group and its distance to the nearest cordon point (where edge demand enters), plus the plan's components.
@@ -110,6 +113,7 @@ describe.skipIf(!process.env.VAL24)('network-wide validation against observation
       hypo.edgeFlowFactor = Number(process.env.VAL24_HYPO_EDGE);
       for (const k of Object.keys(EDGE_FLOW_PER_LANE_VPH)) EDGE_FLOW_PER_LANE_VPH[k] *= hypo.edgeFlowFactor;
     }
+    const supplySet = process.env.VAL24_SUPPLY ? JSON.parse(fs.readFileSync(process.env.VAL24_SUPPLY, 'utf8')) as { name: string; params: SupplyParams } : null;
     const history = new HistoryManager(om);
     const localOsm = new LocalOsmIndex();
     const editing = new EditingEngine(om, history, () => null, localOsm);
@@ -167,7 +171,7 @@ describe.skipIf(!process.env.VAL24)('network-wide validation against observation
       await sleep(800);
       await settle();
       const st = mode.getState();
-      const row: Record<string, unknown> = { id: run.id, hypothetical: Object.keys(hypo).length ? hypo : null, hour: run.hour, settled: ok, seeds: mode.analysisSeeds, osmRoads: st.osmRoads, signals: st.signals, areaSegments: st.area?.segments.length, sectionName: st.section?.name };
+      const row: Record<string, unknown> = { id: run.id, supply: supplySet?.name ?? null, hypothetical: Object.keys(hypo).length ? hypo : null, hour: run.hour, settled: ok, seeds: mode.analysisSeeds, osmRoads: st.osmRoads, signals: st.signals, areaSegments: st.area?.segments.length, sectionName: st.section?.name };
       const roadsMap = new Map((mode as unknown as { getRoads: () => DrivableObject[] }).getRoads().map(r => [r.id, r]));
       if (run.hours && st.area) {
         // Assignment-only sweep over hours: network-wide (area) speed from the user-equilibrium assignment
@@ -177,8 +181,9 @@ describe.skipIf(!process.env.VAL24)('network-wide validation against observation
         for (const h of run.hours) {
           const plan = mode.studyPlan(area, h < 12 ? 'AM_Peak' : 'PM_Peak')!;
           const f = hourFactor(profile, h, COUNT_HOURS[h < 12 ? 'AM' : 'PM'], st.timeOfDay.day);
-          const trips = snapDemandPlan(plan, area.network, 250, segs).map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * f }));
-          const a = assignTraffic(area, roadsMap, trips, { signalPoints: mode.mappedSignalPoints() ?? undefined });
+          const ds = supplySet?.params.demandScale ?? 1;
+          const trips = snapDemandPlan(plan, area.network, 250, segs).map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * f * ds }));
+          const a = assignTraffic(area, roadsMap, trips, { signalPoints: mode.mappedSignalPoints() ?? undefined, supply: supplySet?.params });
           const byClass: Record<string, { vkm: number; vh: number; vh0: number; km: number }> = {};
           let vkm = 0, vh = 0, vh0 = 0;
           a.links.forEach((l, i) => {

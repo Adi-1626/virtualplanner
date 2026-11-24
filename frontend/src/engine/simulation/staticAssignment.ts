@@ -1,7 +1,8 @@
 import type { StudyArea, DrivableObject } from './StudyAreaExplorer';
 import type { MicroDemandTrip, VehicleKind } from './TrafficMicroSim';
 import { VEHICLE_TYPES } from './TrafficMicroSim';
-import { midblockCapacityPcu } from './roadParameters';
+import { midblockCapacityPcu, ircCategory } from './roadParameters';
+import { DEFAULT_SUPPLY, type SupplyParams } from './supplyParams';
 import { indoHcmSaturationFlow } from './signalTiming';
 import { RESTRICTED_ENTRY_S, isAccessRestricted } from './accessRestriction';
 import { compileJunctionEdits, armGreenRatio, connectedEntryLanes, turnBansFor, cycleOf, type JunctionEditSpec, type CompiledJunction, type TurnBans } from './junctionControl';
@@ -113,6 +114,8 @@ export interface AssignmentOptions {
   targetGap?: number;
   /** Stop after this long (ms) and report the gap reached. */
   maxMs?: number;
+  /** p13 tuned (estimated) supply parameters; absent = the defaults (DEFAULT_SUPPLY), the pre-p13 behaviour. */
+  supply?: Readonly<SupplyParams> | null;
 }
 
 const M_PER_DEG_LAT = 111320;
@@ -137,10 +140,10 @@ function pointSegM(p: readonly number[], a: readonly number[], b: readonly numbe
   return Math.hypot(ax + t * dx, ay + t * dy);
 }
 
-export const bprTime = (t0: number, x: number, c: number) => t0 * (1 + BPR_ALPHA * Math.pow(Math.max(0, x) / Math.max(1, c), BPR_BETA));
+export const bprTime = (t0: number, x: number, c: number, alpha = BPR_ALPHA, beta = BPR_BETA) => t0 * (1 + alpha * Math.pow(Math.max(0, x) / Math.max(1, c), beta));
 
 /** The area's links as an assignment network, with free-flow times and capacities. */
-export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, signalPoints?: readonly (readonly [number, number])[], junctionEdits?: readonly JunctionEditSpec[]) {
+export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, signalPoints?: readonly (readonly [number, number])[], junctionEdits?: readonly JunctionEditSpec[], supply: Readonly<SupplyParams> = DEFAULT_SUPPLY) {
   const included = new Set(area.segments.map(s => s.key));
   const edges = [...area.network.edges.values()].filter(e => included.has(segKey(e.id)));
   const nodeIndex = new Map<string, number>();
@@ -197,8 +200,8 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
     // One-way main roads are taken to be carriageways of divided roads (OSM maps those as two one-way ways); one-way minor roads as one-way streets (assumption).
     // A two-way road or deck with a median (a drawn arterial, a divided cross-section template, a deck with a divider) is a divided carriageway pair.
     const divided = oneWay ? /^(motorway|trunk|primary|secondary)/.test(hw) : hasMedian(road);
-    const midblockPcu = midblockCapacityPcu(road, lanes, !oneWay && !divided, divided);
-    const speed = Math.max(10, e.speedLimit || 30);
+    const midblockPcu = midblockCapacityPcu(road, lanes, !oneWay && !divided, divided) * supply.capacityFactor;
+    const speed = Math.max(10, (e.speedLimit || 30) * supply.speedFactor[ircCategory(road)]);
     let stopLinePcu: number | null = null, gC: number | null = null, sigDelay = 0;
     const edited = editedAt.get(e.toNodeId);
     if (edited) {
@@ -211,14 +214,15 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
         const cyc = cycleOf(plan);
         const phasesServing = plan.phases.filter(p => p.arms.includes(arm)).length;
         gC = Math.max(0.02, Math.min(1, ratio + phasesServing * (plan.amberS - STARTUP_LOST_S) / cyc));
-        stopLinePcu = indoHcmSaturationFlow(connectedEntryLanes(edited.spec, arm, lanes) * LANE_WIDTH_M) * gC;
+        stopLinePcu = indoHcmSaturationFlow(connectedEntryLanes(edited.spec, arm, lanes) * LANE_WIDTH_M) * gC * supply.signalSatFactor;
         sigDelay = cyc * (1 - gC) ** 2 / 2;
       }
     } else if (signalised.has(e.toNodeId) && !signalised.has(e.fromNodeId)) {
       const n = Math.min(4, Math.max(2, approaches.get(e.toNodeId) ?? 2));
-      gC = Math.max(0.1, (ASSIGN_CYCLE_S - n * ASSIGN_LOST_PER_PHASE_S) / ASSIGN_CYCLE_S / n);
-      stopLinePcu = indoHcmSaturationFlow(lanes * LANE_WIDTH_M) * gC;
-      sigDelay = ASSIGN_CYCLE_S * (1 - gC) ** 2 / 2;
+      const cyc = supply.cycleS;
+      gC = Math.max(0.1, (cyc - n * ASSIGN_LOST_PER_PHASE_S) / cyc / n);
+      stopLinePcu = indoHcmSaturationFlow(lanes * LANE_WIDTH_M) * gC * supply.signalSatFactor;
+      sigDelay = cyc * (1 - gC) ** 2 / 2;
     }
     // Roundabout entry (IRC:65 Table 9.1, Qc assumed): capacity per entry lane x entry lanes (no more than the approach has)
     const rb = rbAt.get(e.toNodeId);
@@ -274,7 +278,9 @@ class Heap {
  */
 export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, trips: readonly MicroDemandTrip[], o: AssignmentOptions = {}): AssignmentResult {
   const t0 = Date.now();
-  const net = buildAssignmentNetwork(area, roads, o.signalPoints, o.junctionEdits);
+  const supply = o.supply ?? DEFAULT_SUPPLY;
+  const net = buildAssignmentNetwork(area, roads, o.signalPoints, o.junctionEdits, supply);
+  const alpha = supply.bprAlpha, beta = supply.bprBeta;
   const { links, outStart, outLinks, nodes } = net;
   const L = links.length, N = nodes.length;
   // OD pairs (by node), vehicles and PCU, kinds kept for the corridor demand
@@ -371,7 +377,7 @@ export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, Drivab
     }
     return chosen;
   };
-  const setCosts = (flow: Float64Array) => { for (let i = 0; i < L; i++) cost[i] = bprTime(base[i], flow[i], cap[i]); };
+  const setCosts = (flow: Float64Array) => { for (let i = 0; i < L; i++) cost[i] = bprTime(base[i], flow[i], cap[i], alpha, beta); };
 
   // Initial all-or-nothing on free-flow costs
   setCosts(x);
@@ -394,7 +400,7 @@ export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, Drivab
     for (let s = 0; s < 24; s++) {
       const m = (lo + hi) / 2;
       let g = 0;
-      for (let i = 0; i < L; i++) { const d = y[i] - x[i]; if (d !== 0) g += d * bprTime(base[i], x[i] + m * d, cap[i]); }
+      for (let i = 0; i < L; i++) { const d = y[i] - x[i]; if (d !== 0) g += d * bprTime(base[i], x[i] + m * d, cap[i], alpha, beta); }
       if (g > 0) hi = m; else lo = m;
     }
     const lambda = (lo + hi) / 2;

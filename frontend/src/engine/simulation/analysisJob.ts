@@ -4,6 +4,7 @@ import { snapDemandPlan, type DemandPlan } from './StudyDemand';
 import { countChecks, sectionDirections, readCorridorRun, areaContext, combineAnalysis, type RoadAnalysisResult, type CountCheck, type CorridorRun } from './RoadAnalysis';
 import type { RoadSection } from './roadSection';
 import type { CountJunction } from '../calibration/observedCounts';
+import type { SupplyParams } from './supplyParams';
 import { assignTraffic, subareaDemand } from './staticAssignment';
 import { summarizeEmissions, araiAreaEstimate, type EmissionAccumulator } from '../emissions/emissions';
 import type { VehicleKind } from './TrafficMicroSim';
@@ -30,6 +31,8 @@ export interface AnalysisJob {
   corridor: StudyArea;
   roads: ReadonlyMap<string, DrivableObject>;
   options: Omit<MicroSimOptions, 'demandTrips' | 'linkCostFactors' | 'watchRoadIds' | 'watchSegmentKeys' | 'seed'> & { seed?: number };
+  /** p13 tuned (estimated) supply set for the area assignment (supplyParams.ts); absent: the defaults. The micro-simulation's own speeds are not tuned. */
+  supply?: SupplyParams | null;
   plan: DemandPlan;
   section: RoadSection;
   hourFactor: number;
@@ -70,15 +73,16 @@ export async function runAnalysisJob(job: AnalysisJob, onProgress?: (share: numb
   if (cancelled?.()) throw new Error('cancelled');
   const t0 = Date.now();
   const segs = new Set(job.area.segments.map(s => s.key));
-  const trips = snapDemandPlan(job.plan, job.area.network, 250, segs).map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * job.hourFactor }));
-  const assignment = assignTraffic(job.area, job.roads, trips, { signalPoints: job.options.signalPoints, junctionEdits: job.options.junctionEdits });
+  const ds = job.supply?.demandScale ?? 1;
+  const trips = snapDemandPlan(job.plan, job.area.network, 250, segs).map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * job.hourFactor * ds }));
+  const assignment = assignTraffic(job.area, job.roads, trips, { signalPoints: job.options.signalPoints, junctionEdits: job.options.junctionEdits, supply: job.supply ?? undefined });
   const assignmentMs = Date.now() - t0;
   await new Promise<void>(r => setTimeout(r, 0));
   if (cancelled?.()) throw new Error('cancelled');
   onProgress?.(0.15);
 
   const dirs = sectionDirections(job.area, job.section, job.roads);
-  const demandVph = job.plan.provenance.vehiclesPerHour * job.hourFactor;
+  const demandVph = job.plan.provenance.vehiclesPerHour * job.hourFactor * ds;
   const ctx = areaContext(assignment, job.area, job.roads, job.section, dirs, demandVph);
   const corridorPlan = corridorPlanOf(job, assignment);
   const corridorSegs = new Set(job.corridor.segments.map(s => s.key));
