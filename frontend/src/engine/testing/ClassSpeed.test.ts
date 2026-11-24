@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { flyoverFieldUpdates, roadFieldUpdates, classSpeedUpdates } from '../editing/roadEdits';
 import { applyUrbanSpeeds } from '../simulation/roadParameters';
 import { alignmentDesignSpeed } from '../geometry/alignment/defaults';
+import { editableOf, summarise } from '../editing/AlignmentEditor';
+import { flyoverRampProfileOf } from '../objects/flyoverHelper';
 import type { DrivableObject } from '../simulation/StudyAreaExplorer';
 
 /**
@@ -49,5 +51,30 @@ describe('class change carries the class speeds along', () => {
     expect(u).toMatchObject({ roadClass: 'collector', speedLimit: 40, alignment: { designSpeedKmh: 40 } });
     expect(classSpeedUpdates({ ...r, osmProvenance: { osmId: 1 } }, 'arterial')).toEqual({});
     expect(classSpeedUpdates(r, 'local')).toEqual({});
+  });
+});
+
+/**
+ * The alignment checks read the current class's design speed too (p11 user test, Katraj flyover): the radius flags and
+ * the ramp's vertical curves used the class-default design speed stored when the flyover was drawn as local (30 km/h),
+ * after it was made arterial (60 km/h).
+ */
+describe('alignment checks use the current class default design speed', () => {
+  // A 100 m curve: fine at 30 km/h (IRC:86 Table 8.2 needs 30 m at e 7 %), below the 130 m needed at 60 km/h
+  const bent = (extra: Record<string, unknown>) => flyover({ coordinates: [[73.8587, 18.4547, 6], [73.8597, 18.4547, 6], [73.8597, 18.4537, 6]],
+    alignment: { ...align(30), pis: [{ lon: 73.8587, lat: 18.4547, radiusM: 0 }, { lon: 73.8597, lat: 18.4547, radiusM: 100, radiusSource: 'user' }, { lon: 73.8597, lat: 18.4537, radiusM: 0 }] }, ...extra });
+  const radiusFlags = (o: any) => { const e = editableOf(o); if (e.kind !== 'editable') throw new Error(e.kind); return { v: e.state.alignment.designSpeedKmh, flags: summarise(e.state).flags.filter(f => f.code === 'radius-below-minimum').map(f => f.requiredM) }; };
+  it('arterial flyover with the stored local default (30): checked at 60 km/h, 100 m flagged against 130 m', () => {
+    expect(radiusFlags(bent({ roadClass: 'local' }))).toEqual({ v: 30, flags: [] });
+    expect(radiusFlags(bent({ roadClass: 'arterial', speedLimit: 50 }))).toEqual({ v: 60, flags: [130] });
+  });
+  it('a design speed the user set is kept', () => {
+    const o = bent({ roadClass: 'arterial' });
+    o.alignment.designSpeedSource = 'user';
+    expect(radiusFlags(o)).toEqual({ v: 30, flags: [] });
+  });
+  it('the ramp profile reads the current class default too', () => {
+    expect(flyoverRampProfileOf(bent({ roadClass: 'arterial' }), 600).designSpeedKmh).toBe(60);
+    expect(flyoverRampProfileOf(bent({ roadClass: 'local' }), 600).designSpeedKmh).toBe(30);
   });
 });

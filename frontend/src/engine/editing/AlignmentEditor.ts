@@ -25,6 +25,7 @@ import type {
   HorizontalAlignment,
 } from '../geometry/alignment/index';
 import { chainages, toLonLat, toXY } from '../underground/alignmentGeometry';
+import { alignmentDesignSpeed } from '../geometry/alignment/defaults';
 import { autoRadiusM, densifyWithZ } from './drawConstraints';
 import type { CityObject } from '../objects/types';
 
@@ -84,6 +85,12 @@ export function editableOf(obj: CityObject | null | undefined): Editable {
 
   if (o.alignment && Array.isArray(o.alignment.pis) && o.alignment.pis.length >= 2) {
     const alignment = structuredClone(o.alignment) as HorizontalAlignment;
+    // A design speed left at its class default follows the object's current class (as Simulate reads it): a flyover
+    // drawn as local and made arterial was screened at 30 km/h radii (p11 user test, Katraj flyover)
+    if (alignment.designSpeedSource !== 'user') {
+      const v = alignmentDesignSpeed(o as any);
+      if (typeof v === 'number' && v !== alignment.designSpeedKmh) { alignment.designSpeedKmh = v; alignment.designSpeedSource = 'class-default'; }
+    }
     let depthControls: DepthEntryLike[] | undefined;
     if (key) {
       if (Array.isArray(o.depthControls) && o.depthControls.length === alignment.pis.length) depthControls = structuredClone(o.depthControls);

@@ -28,6 +28,7 @@ function contentKey(o: CityObject): string {
 }
 const ownerOf = (o: CityObject) => o.scenarioId ?? BASE_SCENARIO_ID;
 import { BridgeFeasibilityEngine, isAsBuiltFlyover } from '../simulation/BridgeFeasibilityEngine';
+import { alignmentDesignSpeed } from '../geometry/alignment/defaults';
 
 /** Objects per save request, and requests in flight at once, when saving many objects. */
 const SAVE_CHUNK = 1000;
@@ -538,7 +539,7 @@ export class ObjectManager {
       return { id: m.id, name: m.name || 'Metro line', coordinates: m.coordinates, level: Math.max(m.elevation || 0, ...zs),
         levelSource: osm ? 'osm_assumed' as const : 'drawn' as const, deckWidthM: osm ? undefined : m.deckWidth };
     });
-    const feasibility = new BridgeFeasibilityEngine().run(groundCoords, flyover.elevation ?? 6.0, flyover.laneCount ?? 4, surfaceRoads, { asBuilt, roadClass: flyover.roadClass, designSpeedKmh: flyover.alignment?.designSpeedKmh ?? flyover.speedLimit ?? null, metroLines, deckWidthM: flyover.width });
+    const feasibility = new BridgeFeasibilityEngine().run(groundCoords, flyover.elevation ?? 6.0, flyover.laneCount ?? 4, surfaceRoads, { asBuilt, roadClass: flyover.roadClass, designSpeedKmh: (flyover.alignment ? alignmentDesignSpeed(flyover as any) : null) ?? flyover.speedLimit ?? null, metroLines, deckWidthM: flyover.width });
     const roadUpdates: { id: string; updates: Partial<RoadObject> }[] = [];
     for (const impact of feasibility.surfaceRoadImpacts) {
       if (!this.objects.has(impact.roadId)) continue;

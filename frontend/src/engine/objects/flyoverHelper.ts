@@ -2,6 +2,7 @@ import type { FlyoverObject, MetroFlyoverObject } from './types';
 import type { TrafficNetwork } from './trafficTypes';
 import { flyoverOffsetAt, flyoverRampProfile, type FlyoverRampProfile } from '../geometry/vertical/flyoverRamp';
 import { isAsBuiltFlyover } from '../simulation/BridgeFeasibilityEngine';
+import { alignmentDesignSpeed } from '../geometry/alignment/defaults';
 
 function getDistanceMeters(lon1: number, lat1: number, lon2: number, lat2: number): number {
   const R = 6371000;
@@ -64,7 +65,8 @@ export function resetFlyoverGround<T extends { coordinates: unknown; groundCoord
 
 /** Design speed for the ramp's vertical curves: the alignment's, else the deck speed (= design speed for new flyovers, D1). */
 function flyoverDesignSpeed(flyover: any): number | null {
-  const a = flyover.alignment?.designSpeedKmh;
+  // A class-default design speed is the current class's (alignmentDesignSpeed), not the one stored when it was drawn
+  const a = flyover.alignment ? alignmentDesignSpeed(flyover) : null;
   if (typeof a === 'number' && a > 0) return a;
   return typeof flyover.speedLimit === 'number' && flyover.speedLimit > 0 ? flyover.speedLimit : null;
 }
