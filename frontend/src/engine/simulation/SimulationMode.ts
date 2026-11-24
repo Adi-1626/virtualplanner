@@ -881,7 +881,13 @@ export class SimulationMode {
     // Editing the network after saving the baseline is the intended step: only a comparison already on show (or
     // running) is out of date. "Run the comparison again" before any comparison had run read as an error.
     const c = this.state.comparison;
+    // A comparison on show is parked with the network it tested: an undo back to that network (Cancel → "Undo them and
+    // return" in the round trip) brings it back instead of reading "the network changed" (P12 browser test)
+    const park = c.result && c.current && c.baseline && !c.running
+      ? { networkKey: c.current.networkKey, scenarioId: c.current.scenarioId, studyKey: this.studyKey(), baseline: c.baseline, current: c.current, result: c.result, staleReason: c.staleReason }
+      : this.parkedComparison;
     this.invalidateComparison(c.result || c.running ? 'The network changed since this comparison. Press Compare to test the proposal as it is now.' : null);
+    this.parkedComparison = park;
     this.revision++;
     if (!this.state.active || this.state.seedRoadIds.length === 0) return;
     this.cancelPendingRecompute();
@@ -1002,6 +1008,8 @@ export class SimulationMode {
       if (c.baseline && c.staleReason && STUDY_REASONS.has(c.staleReason) && this.baselineStudyKey === this.studyKey()) this.setState({ comparison: { ...c, staleReason: null } });
       // A baseline saved for this study before a page reload comes back
       this.maybeRestoreBaseline();
+      // A comparison cleared by an edit that was then undone comes back
+      this.maybeRestoreParkedComparison();
       // A kept result for another network or demand stays on show until its re-run lands: say so.
       // An undo back to the shown result's network (before its re-run landed) makes it current again: clear the flag.
       const shown = this.state.analysis, key = this.analysisKey();
@@ -1331,7 +1339,24 @@ export class SimulationMode {
     return demandContextKey(this.getContext());
   }
 
+  /** The comparison a network edit cleared, with the network it tested (see networkChanged). Any other invalidation drops it. */
+  private parkedComparison: { networkKey: string; scenarioId: string; studyKey: string; baseline: TrafficRunSnapshot; current: TrafficRunSnapshot; result: ComparisonResult; staleReason: string | null } | null = null;
+
+  /**
+   * Brings back the comparison a network edit cleared once the network is again the one it tested (same proposal, same
+   * study, same baseline, nothing running): its result is still exact, the runs are deterministic.
+   */
+  private maybeRestoreParkedComparison() {
+    const p = this.parkedComparison, c = this.state.comparison;
+    if (!p || c.result || c.running) return;
+    if (c.baseline !== p.baseline || this.studyKey() !== p.studyKey || (this.getContext().scenarioId ?? 'current') !== p.scenarioId) return;
+    if (this.currentNetworkKey() !== p.networkKey) return;
+    this.parkedComparison = null;
+    this.setState({ comparison: { ...c, current: p.current, result: p.result, staleReason: p.staleReason, progress: 1 } });
+  }
+
   private invalidateComparison(reason: string | null) {
+    this.parkedComparison = null;
     this.invalidateCalibration(reason ?? 'The network changed. Measure again.');
     this.comparisonGeneration++;
     if (!this.state.comparison.baseline && !this.state.comparison.running) return;

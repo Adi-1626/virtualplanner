@@ -1,4 +1,5 @@
 import type { RoadAnalysisResult, Bottleneck, BindingSegment, DirectionFlow } from './RoadAnalysis';
+import { stopLineWords } from './stopLineWords';
 import type { AnalysisOutput } from './analysisJob';
 import type { DrivableObject } from './StudyAreaExplorer';
 import { comparisonTables, byRoad as roadAggregates, type ComparisonTables } from './comparisonTables';
@@ -181,7 +182,7 @@ export function laneInsights(before: readonly DirectionFlow[], after: readonly D
     if (kind === 'unchanged_elsewhere') text = `${capital(d.label)} capacity is still ${fmtN(capacityAfter)} PCU/h: it is set by ${lim}. The edited ${editedPhrase} ${edited.length === 1 ? "isn't" : "aren't"} the constraint.`;
     else if (kind === 'unchanged') text = `${capital(d.label)} mid-block capacity did not change (${fmtN(capacityAfter)} PCU/h).`;
     else text = `${capital(d.label)} mid-block capacity ${kind === 'raised' ? 'rises' : 'falls'} from ${fmtN(capacityBefore)} to ${fmtN(capacityAfter)} PCU/h${binding && !bindingEdited ? `, now set by ${lim}, which was not edited` : ''}.`;
-    if (signalLimited) text += ` The signal at its end (${fmtN(d.stopLinePcu ?? 0)} PCU/h at the stop line) limits it more than the road does.`;
+    if (signalLimited) text += ` ${capital(stopLineWords(d))} passes ${fmtN(d.stopLinePcu ?? 0)} PCU/h at the stop line and limits it more than the road does.`;
     if (newBottlenecksNearby.length) text += ` A new over-capacity stretch appears nearby: ${newBottlenecksNearby.map(x => `${x.roadName} (${Math.round(x.vc * 100)}%)`).join(', ')}; the queue may have moved there.`;
     text += ' Model output (IRC:106 capacity of the narrowest stretch, estimated demand).';
     out.push({ direction: d.label, editedRoadIds, edited, lanesBefore: b.lanesRange, lanesAfter: d.lanesRange, capacityBefore, capacityAfter, capacityChanged, binding, bindingSegments: d.bindingSegments ?? [],

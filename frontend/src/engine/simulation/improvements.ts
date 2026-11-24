@@ -1,4 +1,5 @@
 import type { RoadAnalysisResult } from './RoadAnalysis';
+import { stopLineWords } from './stopLineWords';
 
 /**
  * Improvements worth testing, each traced to a finding of the analysis
@@ -67,8 +68,7 @@ export function improvementsFor(r: RoadAnalysisResult, sectionRoadIds: string[],
     const sl = signalCap.stopLine;
     const at: [number, number, number] | null = sl ? [sl.at[0], sl.at[1], 0] : sl === null ? null : (() => { const e = signalCap.paths.at(-1)?.at(-1); return e ? [e[0], e[1], 0] as [number, number, number] : null; })();
     const kind = sl?.kind ?? 'signal';
-    const where = sl?.source === 'assignment' ? 'on its way' : 'at its end';
-    const what = kind === 'roundabout' ? `the roundabout entry ${where}` : kind === 'crossing' ? 'the signalised crossing on it' : `the signal ${where}`;
+    const what = stopLineWords(signalCap);
     out.push({ kind: 'signal', title: kind === 'roundabout' ? 'Give its roundabout entry more room' : kind === 'crossing' ? 'Give the crossing on it a shorter cycle' : 'Give its approach more green time',
       evidence: `${capital(signalCap.label)} the traffic routed along it is ${Math.round(100 * signalCap.vc)}% of what ${what} passes (${signalCap.capacityPcu.toLocaleString()} PCU/h).`,
       figure: { value: `${Math.round(100 * signalCap.vc)}%`, label: `of what ${kind === 'roundabout' ? 'the roundabout entry' : kind === 'crossing' ? 'the crossing' : 'the signal'} passes, ${signalCap.label}` },

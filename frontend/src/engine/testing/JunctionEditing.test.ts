@@ -477,6 +477,33 @@ describe('junction editor draft and comparison card', () => {
     expect(out.source).toBe('default');
     expect(out.draft).toMatchObject({ control: 'signal', asRun: true });
   });
+  it('comparison card: an approach the signal held on a piece inside the junction gets that piece\'s green share, not "—%" (P12)', () => {
+    const spec = defaultEdit(j);
+    const c = compileJunctionEdits(fxNet, [spec])[0]!;
+    const internalFrom = new Map<string, string[]>();
+    for (const id of c.internalEdges) { const e = fxNet.edges.get(id)!; (internalFrom.get(e.fromNodeId) ?? internalFrom.set(e.fromNodeId, []).get(e.fromNodeId)!).push(id); }
+    // An approach whose own stretch runs on to a piece inside the junction
+    const pick = spec.arms.filter(a => a.kind === 'in').map(a => {
+      const own = [...c.approachOfEdge].filter(([, x]) => x === a.id).map(([id]) => id);
+      const inside = own.flatMap(id => internalFrom.get(fxNet.edges.get(id)!.toNodeId) ?? []);
+      return { arm: a.id, own, inside };
+    }).find(x => x.own.length && x.inside.length)!;
+    expect(pick).toBeDefined();
+    const res = (g: number) => ({ linkDelay: new Map([
+      ...pick.own.map(id => [id, { delayS: 30, vph: 400, gC: null }] as const),
+      [pick.inside[0], { delayS: 5, vph: 400, gC: g }] as const,
+    ]) }) as never;
+    const d = junctionApproachDeltas(fxNet, spec, res(0.3), res(0.45))!;
+    const a = d.approaches.find(x => x.armId === pick.arm)!;
+    expect(a.before.gC).toBeCloseTo(0.3);
+    expect(a.after.gC).toBeCloseTo(0.45);
+    // Its own stop line's green, when it has one, wins
+    const own = (g: number) => ({ linkDelay: new Map([...pick.own.map(id => [id, { delayS: 30, vph: 400, gC: g }] as const), [pick.inside[0], { delayS: 5, vph: 400, gC: 0.9 }] as const]) }) as never;
+    expect(junctionApproachDeltas(fxNet, spec, own(0.2), own(0.25))!.approaches.find(x => x.armId === pick.arm)!.before.gC).toBeCloseTo(0.2);
+    // No signal anywhere: still unknown
+    const none = ({ linkDelay: new Map(pick.own.map(id => [id, { delayS: 30, vph: 400, gC: null }] as const)) }) as never;
+    expect(junctionApproachDeltas(fxNet, spec, none, none)!.approaches.find(x => x.armId === pick.arm)!.before.gC).toBeNull();
+  });
   it('changing the control, a green, amber, a phase or the major approaches makes the plan the user\'s own; a ban or lane change keeps the engine\'s control', () => {
     const d = startingDraft(j, null, null).draft;
     expect(setGreen(d, 0, d.signal!.phases[0].greenS)).toBe(d);

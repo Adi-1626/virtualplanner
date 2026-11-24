@@ -94,7 +94,35 @@ Browser history: one same-URL entry (`history.state.uosRoundTrip = <leg id>`) is
 See the Esc and Back rows above. Popovers (`AnchoredPopover`) already close on Esc in the capture phase and mark the
 key handled, so the global shortcuts skip it; the round-trip bar's questions and tapped tooltips now do the same.
 
-## 6. (reserved)
+## 6. Why the Sinhagad Road widening reads differently from P11 (S3)
+
+P11 (`SIM_USER_TEST_P11.md` S3) said the widening was limited by "the signal at its end (3,267 PCU/h)" in both
+directions and gave **Better**; the P12 browser re-test gave **Mixed** with "the signal at its end (1,836 PCU/h)".
+**Not a regression of the stop-line change.** The P12 stop-line work only records *where* the limiting stop line stands
+(`AssignLink.stopLine`, `DirectionFlow.stopLine`); the PCU/h values come from the same formulas as P11 (the engine's
+assignment and simulation code is unchanged between `p11-sim` and `p12-flow` apart from that). The two numbers come
+from two different sources and two different tests:
+
+| | P11 S3 | P12 re-test |
+|---|---|---|
+| Change | both carriageways 3 → 4 lanes (`osm_1157871403` + pair) | only the south-west carriageway (`osm_199637816`) 3 → 4 lanes |
+| Study | 2.28 km, both carriageways | NE 1.10 km (`osm_1157871405`, `osm_1157871403`), SW 2.51 km (`osm_199637816`) |
+| Demand in the area | 30,193 veh/h, all through traffic | 38,780 veh/h planned, 13,245 trips (demand key `fb6242db`) |
+| Stop line shown | 3,267 PCU/h in **both** directions | SW: 1,836 PCU/h (after; 1,570 before) |
+| Where it comes from | the assignment's *assumed* split: Indo-HCM S(4 × 3.5 m = 14 m) = 7,000 PCU/h × g/C 0.467 (120 s cycle, 2 phases, 4 s lost each) = 3,267. The corridor runs did not end at a signal in either direction, so `combineAnalysis` fell back to it (the identical figure in both directions is the sign) | the run's **own** Webster plan at the signal where the SW direction ends: Sinhagad Road × Late Narayanrao Kondiba Jagtap Path (Anandnagar/Karve Nagar, 73.82759 E, 18.48326 N). 7,000 × g/C 0.262 = 1,836 after; 5,355 (10.5 m) × 0.293 = 1,570 before |
+
+So the tighter figure is the real green the simulated signal gives that approach, and it is right that it caps a
+4-lane carriageway well below its 5,143 PCU/h mid-block capacity: widening one carriageway into a signal that gives it
+a quarter of the cycle moves the queue to the junction, so time on the road goes up (+11 %) while the area total
+improves: Mixed. The NE direction's stop line (2,499 PCU/h, assignment) stands part-way along `osm_1157871403` at
+Dattawadi (73.83817 E, 18.49592 N), not at its end.
+
+**What was wrong, and fixed:** the words. The lane-change insight and the diagnosis said "the signal at its end" for
+every stop line, including an assignment stop line in the middle of a carriageway and an assumed green split.
+`stopLineWords()` (`engine/simulation/stopLineWords.ts`) now says where it stands (at its end / part-way along it / on
+it for a crossing), what it is (signal, roundabout entry, signalised crossing) and whether its green is the run's plan
+or "assumed green split"; used by the lane-change insight, the diagnosis reasons and the signal suggestion. Test:
+`RoadAnalysisPanelPieces.test.ts` "stop line words…".
 
 ## 7. Validation banner
 

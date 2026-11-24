@@ -48,9 +48,37 @@ export function junctionApproachDeltas(net: TrafficNetwork, spec: JunctionEditSp
     if (Math.abs(d) < 2 || Math.abs(d) < 0.1 * Math.max(b, 1)) return 'same';
     return d < 0 ? 'better' : 'worse';
   };
+  // Green share where the signal held the approach on a piece inside the junction, not on its own stop line (the
+  // simulator joins short pieces into its junctions): walk inside from where the approach enters, nearest first, as
+  // lastRunControl does, and take the first green found. Without this the card showed "—%" for such an approach (P12).
+  const internalFrom = new Map<string, string[]>();
+  for (const id of c.internalEdges) { const e = net.edges.get(id); if (e) (internalFrom.get(e.fromNodeId) ?? internalFrom.set(e.fromNodeId, []).get(e.fromNodeId)!).push(id); }
+  const insideGreen = (ids: readonly string[], r: RoadAnalysisResult): number | null => {
+    let frontier = ids.map(id => net.edges.get(id)?.toNodeId).filter((n): n is string => !!n);
+    const seen = new Set(frontier);
+    for (let depth = 0; frontier.length && depth < 8; depth++) {
+      const next: string[] = [];
+      let g: number | null = null;
+      for (const n of frontier) for (const id of internalFrom.get(n) ?? []) {
+        const gc = r.linkDelay?.get(id)?.gC ?? null;
+        if (gc !== null) g = Math.max(g ?? 0, gc);
+        const to = net.edges.get(id)?.toNodeId;
+        if (to && !seen.has(to)) { seen.add(to); next.push(to); }
+      }
+      if (g !== null) return g;
+      frontier = next;
+    }
+    return null;
+  };
+  const withInside = (sd: ApproachSide, armId: string, ids: readonly string[], r: RoadAnalysisResult): ApproachSide => {
+    if (sd.gC !== null) return sd;
+    const own = [...c.approachOfEdge].filter(([, a]) => a === armId).map(([id]) => id);
+    const g = insideGreen(own.length ? own : ids, r);
+    return g === null ? sd : { ...sd, gC: g };
+  };
   const approaches = spec.arms.filter(a => a.kind === 'in').map(a => {
     const ids = linksOf(a.id);
-    const b = side(ids, before), x = side(ids, after);
+    const b = withInside(side(ids, before), a.id, ids, before), x = withInside(side(ids, after), a.id, ids, after);
     return { armId: a.id, label: a.label, before: b, after: x, delayChangeS: b.delayS !== null && x.delayS !== null ? x.delayS - b.delayS : null, verdict: verdict(b.delayS, x.delayS) };
   });
   const agg = (k: 'before' | 'after'): ApproachSide => {

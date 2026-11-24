@@ -7,6 +7,8 @@ import {
 } from '../../components/RoadAnalysisPieces';
 import { explainedDirection, causeLine } from '../../components/roadAnalysisView';
 import { improvementsFor } from '../simulation/improvements';
+import { stopLineWords } from '../simulation/stopLineWords';
+import { laneInsights } from '../simulation/ScenarioComparison';
 import { Disclosure } from '../../components/ui/viz';
 
 /** A Sangamwadi-like result: two directions, some delay eastbound, overloaded neighbourhood. */
@@ -186,7 +188,7 @@ describe('road analysis panel pieces', () => {
     // The assignment's tightest signal part-way along: there, and the words say "on its way"
     const mid = find(dir({ label: 'northbound', vc: 1.05, capacityBasis: 'signal', stopLinePcu: 1500, capacityPcu: 1500, paths, stopLine: { kind: 'signal', at: [73.8607, 18.5307], source: 'assignment' } }));
     expect(mid?.action?.at).toEqual([73.8607, 18.5307, 0]);
-    expect(mid?.evidence).toContain('the signal on its way');
+    expect(mid?.evidence).toContain('the signal part-way along it (assumed green split)');
     // A roundabout entry is not a green time; a signalised crossing has no junction to open
     const rb = find(dir({ vc: 1.2, capacityBasis: 'signal', stopLinePcu: 900, capacityPcu: 900, paths, stopLine: { kind: 'roundabout', at: [73.861, 18.531], source: 'assignment' } }), 'Give its roundabout entry more room');
     expect(rb?.action).toMatchObject({ at: [73.861, 18.531, 0], junction: true });
@@ -196,6 +198,20 @@ describe('road analysis panel pieces', () => {
     const none = find(dir({ vc: 1.2, capacityBasis: 'signal', stopLinePcu: 900, capacityPcu: 900, paths, stopLine: null }));
     expect(none).toBeDefined();
     expect(none?.action).toBeUndefined();
+  });
+  it('stop line words say where the limiting stop line stands and whose timing it is (P12 S3: an assignment stop line mid-carriageway read "the signal at its end")', () => {
+    const paths: [number, number, number][][] = [[[73.8354, 18.4935, 0], [73.8436, 18.4997, 0]]];
+    expect(stopLineWords({ paths, stopLine: { kind: 'signal', at: [73.82759, 18.48326], source: 'run' } })).toBe('the signal at its end');
+    expect(stopLineWords({ paths, stopLine: { kind: 'signal', at: [73.8436, 18.4997], source: 'assignment' } })).toBe('the signal at its end (assumed green split)');
+    expect(stopLineWords({ paths, stopLine: { kind: 'signal', at: [73.83817, 18.49592], source: 'assignment' } })).toBe('the signal part-way along it (assumed green split)');
+    expect(stopLineWords({ paths, stopLine: { kind: 'roundabout', at: [73.83817, 18.49592], source: 'assignment' } })).toBe('the roundabout entry part-way along it');
+    expect(stopLineWords({ paths, stopLine: { kind: 'crossing', at: [73.83817, 18.49592], source: 'assignment' } })).toBe('the signalised crossing on it (assumed green split)');
+    // Results saved before stopLine existed keep the old words
+    expect(stopLineWords({ paths })).toBe('the signal at its end');
+    const before = [dir({ label: 'towards the north-east', midblockPcu: 3857, capacityBasis: 'signal', stopLinePcu: 2499, roadIds: ['osm_1157871403'], bearingDeg: 45, lanesRange: [3, 3] })];
+    const after = [dir({ label: 'towards the north-east', midblockPcu: 5143, capacityBasis: 'signal', stopLinePcu: 3332, roadIds: ['osm_1157871403'], bearingDeg: 45, lanesRange: [4, 4], paths, stopLine: { kind: 'signal', at: [73.83817, 18.49592], source: 'assignment' } })];
+    const ins = laneInsights(before, after, { before: new Map([['osm_1157871403', { coordinates: [] } as never]]), after: new Map([['osm_1157871403', { coordinates: [] } as never]]) }, []);
+    expect(ins[0].text).toContain('The signal part-way along it (assumed green split) passes 3,332 PCU/h at the stop line and limits it more than the road does.');
   });
   it('a flowing road whose routed traffic mostly did not get through is not "No pressing problem" (browser workflow 2026-11-09, Sangamwadi: 886 of 1,954 veh/h)', () => {
     const flowing = { status: 'flowing' as const, statusBySeed: ['flowing', 'flowing', 'flowing'] as RoadAnalysisResult['statusBySeed'], cause: { kind: 'mixed' as const, text: 't', chain: null }, headline: 'Eastbound traffic moves freely: 45 km/h against a free-flow 50 km/h (level of service A).' };

@@ -241,6 +241,10 @@ describe('Simulate after a lane edit of either scope: outdated, re-run, undo res
     expect(mode.getState().analysis.output).toBe(out0);
     expect(mode.getState().analysis.outdated).toBeFalsy();
     expect(mode.getState().analysis.status).toBe('ready');
+    // The comparison tested the edited network: off the undone one, with the reason
+    const tested = cmp.result!;
+    expect(mode.getState().comparison.result).toBeNull();
+    expect(mode.getState().comparison.staleReason).toMatch(/network changed/);
 
     history.redo();
     mode.networkChanged();
@@ -248,6 +252,21 @@ describe('Simulate after a lane edit of either scope: outdated, re-run, undo res
     expect(mode.getState().analysis.key).toBe(key1);
     expect(mode.getState().analysis.output).toBe(out1);
     expect(mode.getState().analysis.outdated).toBeFalsy();
+    // Back on the network it tested (P12: Cancel → "Undo them and return"): the same comparison is on show again, not "network changed"
+    expect(mode.getState().comparison.result).toBe(tested);
+    expect(mode.getState().comparison.current).toBe(cmp.current);
+    expect(mode.getState().comparison.staleReason).toBeNull();
+    // Another change drops it again; a study change forgets it for good
+    history.undo();
+    mode.networkChanged();
+    await settle();
+    expect(mode.getState().comparison.result).toBeNull();
+    mode.setRange(RANGE_M + 500);
+    mode.setRange(RANGE_M);
+    history.redo();
+    mode.networkChanged();
+    await settle();
+    expect(mode.getState().comparison.result).toBeNull();
     mode.dispose();
   }, 180000);
 

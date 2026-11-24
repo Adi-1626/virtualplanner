@@ -10,6 +10,7 @@ import { speedLos } from './roadParameters';
 import { indoHcmSaturationFlow } from './signalTiming';
 import { selectLink, type AssignmentResult } from './staticAssignment';
 import { isAccessRestricted } from './accessRestriction';
+import { stopLineWords } from './stopLineWords';
 
 /**
  * What is happening on one road section, and why (docs/OVERHAUL.md §3-§5).
@@ -994,7 +995,7 @@ export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { 
     }
     for (const x of directions) {
       const narrow = x.lanesRange[0] !== x.lanesRange[1] ? `, its narrowest stretch: ${x.lanes} lane${x.lanes === 1 ? '' : 's'} on ${fmt(x.narrowestM)} of ${fmt(x.lengthM)} m` : '';
-      const cap = `${fmt(x.capacityPcu)} PCU/h ${x.capacityBasis === 'signal' ? 'at the signal at its end' : `mid-block (IRC:106)${narrow}`}`;
+      const cap = `${fmt(x.capacityPcu)} PCU/h ${x.capacityBasis === 'signal' ? `at ${stopLineWords(x)}` : `mid-block (IRC:106)${narrow}`}`;
       reasons.push(`${capital(x.label)}: ${fmt(x.demandVph)} veh/h routed along it (${Math.round(100 * x.vc)}% of capacity, ${cap}); ${fmt(x.vph)} veh/h got through in the simulation${n > 1 ? ` (${fmt(x.vphRange[0])}–${fmt(x.vphRange[1])} over ${n} runs)` : ''}.`);
     }
     if (overloadedRuns) reasons.push(loadMsg!);
