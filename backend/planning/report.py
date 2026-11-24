@@ -39,8 +39,10 @@ SECTION_TITLES = [
     "Decision record", "Assumptions and unknowns", "Audit trail summary",
 ]
 KIND_LABEL = {"measured": "Measured", "estimated": "Estimated", "manual": "Manual"}
-RESULT_LABEL = {"totalVph": ("Network flow", "veh/h"), "meanTravelTimeS": ("Mean travel time", "s"),
-                "meanDelayS": ("Mean delay", "s"), "completedTrips": ("Completed trips", "trips")}
+# What Simulate records in a run (SimulationMode runRecorder): totalVph is the traffic through the studied road(s), the
+# rest are the simulated neighbourhood's (p11: "Network flow" read as a network total)
+RESULT_LABEL = {"totalVph": ("Traffic through the studied road", "veh/h"), "meanTravelTimeS": ("Mean trip time in the neighbourhood", "s"),
+                "meanDelayS": ("Mean delay per trip in the neighbourhood", "s"), "completedTrips": ("Trips completed in the neighbourhood", "trips")}
 
 
 def _iso(d: datetime.datetime | None) -> str:
