@@ -122,3 +122,11 @@ describe('Study header: the closed road', () => {
     expect(studySubtitle({ section, closedRoads: [], rangeMeters: 2000 })).toBe('100 m · area 2 km around it');
   });
 });
+
+describe('Comparison report: the closed road', () => {
+  it('is named, not given by its id (report titled "osm_53759174: existing city vs Baba Bhide Bridge closure")', async () => {
+    const { studyRoadNames } = await import('../../components/simulate/format');
+    expect(studyRoadNames({ seedRoadIds: ['osm_53759174'], closedRoads: [{ id: 'osm_53759174', name: 'Baba Bhide Bridge' }] }, [{ id: 'x', name: 'Other' }])).toEqual(['Baba Bhide Bridge']);
+    expect(studyRoadNames({ seedRoadIds: ['a', 'b'], closedRoads: [] }, [{ id: 'a', name: 'Satara Road' }, { id: 'b', name: 'Satara Road' }])).toEqual(['Satara Road']);
+  });
+});

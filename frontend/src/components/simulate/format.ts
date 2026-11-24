@@ -29,3 +29,15 @@ export function studySubtitle(sim: Pick<SimulationModeState, 'section' | 'closed
   if (sim.closedRoads.length) return `closed in this proposal · ${area}`;
   return `${sim.section ? `${formatDistanceM(sim.section.lengthM)}${sim.section.carriageways === 2 ? ', both carriageways' : ''} · ` : ''}${area}`;
 }
+
+/**
+ * The studied roads by name, for reports and file names. A road the proposal closed is not in the network any more:
+ * its name comes from the study (the closure report was titled "osm_53759174: existing city vs Baba Bhide Bridge
+ * closure" and saved as osm-53759174-…, p11 closure test).
+ */
+export function studyRoadNames(sim: Pick<SimulationModeState, 'seedRoadIds' | 'closedRoads'>, objects: readonly { id: string; name?: string }[]): string[] {
+  const want = new Set(sim.seedRoadIds);
+  const roads = new Map(objects.filter(o => want.has(o.id)).map(o => [o.id, o.name ?? '']));
+  const closed = new Map(sim.closedRoads.map(c => [c.id, c.name]));
+  return [...new Set(sim.seedRoadIds.map(id => roads.get(id) || closed.get(id) || 'Unnamed road'))];
+}

@@ -2,13 +2,13 @@ import { engineInstance } from '../../engine/TwinCityEngine';
 import type { SimulationModeState } from '../../engine/simulation/SimulationMode';
 import { comparisonReportData, comparisonReportFiles, saveLastComparisonReport, type ComparisonReportData } from '../../engine/report/comparisonReport';
 import { TRAFFIC_VALIDATION, TRAFFIC_VALIDATION_SUMMARY } from '../ui/badges/trafficValidation';
+import { studyRoadNames } from './format';
 
 /** The report data of the comparison on show (null without one). */
 export function reportDataOf(sim: SimulationModeState): ComparisonReportData | null {
   const c = sim.comparison;
   if (!c.result || !c.current || !c.baseline) return null;
-  const roads = new Map((engineInstance.objects.getAll() as { id: string; name?: string }[]).filter(o => sim.seedRoadIds.includes(o.id)).map(o => [o.id, o.name ?? '']));
-  const names = [...new Set(sim.seedRoadIds.map(id => roads.get(id) || id))];
+  const names = studyRoadNames(sim, engineInstance.objects.getAll() as { id: string; name?: string }[]);
   const demand = c.baseline.analysis.result.evidence.demand;
   const scen = engineInstance.scenarios.get(c.current.scenarioId) ?? null;
   const proposal = scen ? (scen.isBase ? 'Base (existing city, edited)' : scen.name) : c.current.scenarioId;
