@@ -467,13 +467,16 @@ button.uos-row:hover { background: var(--surface-2); }
 /* ---- Map key (docs/urbanos/SIM_FLOW_P12.md §8): bottom right of the map, above Cesium's credits and fullscreen button
    and the bottom drawer's tab strip; it never covers the panels (it lives in the map stage). ---- */
 .uos-legend {
-  position: absolute; z-index: 25; right: var(--sp-3); bottom: 36px; width: 264px; max-width: calc(100% - 2 * var(--sp-3));
+  position: absolute; z-index: 25; right: var(--sp-3); bottom: 46px; width: 264px; max-width: calc(100% - 2 * var(--sp-3));
   border-radius: var(--r-lg); border: 1px solid var(--border); background: rgba(2, 6, 23, .92); box-shadow: var(--shadow-float);
   backdrop-filter: blur(8px); font-size: 11px; color: var(--text-2); display: flex; flex-direction: column;
 }
 .uos-legend[data-open=false] { width: auto; }
-.uos-shell:has(.uos-drawer) .uos-legend { bottom: calc(40px + 36px); }
-.uos-shell:has(.uos-drawer.is-open) .uos-legend { bottom: calc(var(--drawer-h) + 36px); }
+.uos-shell:has(.uos-drawer) .uos-legend { bottom: calc(40px + 46px); }
+/* Above the drawing tool's hint (bottom centre of the map, ~80 px tall) while a tool is drawing: on a map narrowed by the
+   panels the two met (P12 browser check, Design → Junction at 1440 px) */
+.uos-shell:has([data-testid=drawing-hud]) .uos-legend { bottom: 112px; }
+.uos-shell:has(.uos-drawer.is-open) .uos-legend { bottom: calc(var(--drawer-h) + 46px); }
 .uos-legend-head { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-weight: 600; color: var(--text-1); cursor: pointer; min-height: 30px; }
 .uos-legend-body { padding: 4px 10px 10px; overflow-y: auto; max-height: min(52vh, 460px); display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); }
 .uos-legend .uos-legend-body { max-height: min(44vh, 400px, calc(100dvh - var(--topbar-h, 52px) - 220px)); }

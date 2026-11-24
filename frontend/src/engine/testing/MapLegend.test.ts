@@ -197,3 +197,19 @@ describe('the junction tool group of the key', () => {
     expect(junctionToolLegend({ drawn: 0, selected: false, placing: true })!.items.map(i => i.id)).toEqual(['invalid']);
   });
 });
+
+describe('map key placement (P12 browser check)', () => {
+  const css = fs.readFileSync(path.resolve(__dirname, '../../index.css'), 'utf8');
+  const bottomOf = (selector: string) => {
+    const m = css.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{[^}]*?bottom:\\s*([^;]+);`));
+    return m ? m[1].trim() : null;
+  };
+  it('sits clear of Cesium\'s fullscreen button (12 px from the bottom, 29 px tall) and above the drawing tool\'s hint', () => {
+    // At 36 px the key's lower edge ran 5 px into the fullscreen button
+    expect(parseInt(bottomOf('.uos-legend') ?? '0', 10)).toBeGreaterThanOrEqual(45);
+    // While a drawing tool is active its hint sits bottom centre (16 px up, ~80 px tall); the key goes above it
+    expect(parseInt(bottomOf('.uos-shell:has([data-testid=drawing-hud]) .uos-legend') ?? '0', 10)).toBeGreaterThanOrEqual(104);
+    // An open drawer still wins (its rule comes after the hint's)
+    expect(css.indexOf('.uos-shell:has(.uos-drawer.is-open) .uos-legend')).toBeGreaterThan(css.indexOf('.uos-shell:has([data-testid=drawing-hud]) .uos-legend'));
+  });
+});
