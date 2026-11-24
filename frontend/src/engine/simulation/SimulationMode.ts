@@ -887,13 +887,18 @@ export class SimulationMode {
   /** Runs the analysis once a road has been picked and its area is fully mapped (the live view only starts on request). */
   private maybeAutoStart() {
     if (!this.state.area || this.osmLoad || this.signalLoad || this.recomputeTimer) return; // roads or signals still arriving
-    if (this.state.analysis.status === 'running') return;
+    // A run in flight (or one waiting for its counts or time profile) finishes on its own. A 'running' status with
+    // no run behind it (its run was cancelled by an area, scenario or road change) must not block this road's run:
+    // it left Simulate at "Analysing… 22 %" for good (p11 browser check, scenario switch then road click)
+    if (this.state.analysis.status === 'running' && (this.analysisRun || this.analysisStarting > 0)) return;
     // A kept result for the same network, demand and hour is not re-run (e.g. after closing and reopening Simulate)
     if (this.state.analysis.output && this.state.analysis.key === this.analysisKey()) { this.analysisStale = false; this.redrawOverlay(); return; }
     if (this.state.analysis.status !== 'ready' || this.analysisStale) { this.analysisStale = false; this.scheduleAnalysis(); }
   }
   /** The area, network or demand changed since the last analysis. */
   private analysisStale = true;
+  /** runAnalysis calls waiting for counts or the time profile before their job starts. */
+  private analysisStarting = 0;
 
   /** The last few finished results by analysis key, so Undo/Redo of an edit shows its result again without a re-run. */
   private keptResults = new Map<string, { networkKey: string | null; analysis: RoadAnalysisState }>();
@@ -1305,13 +1310,22 @@ export class SimulationMode {
     const area = this.state.area, section = this.state.section;
     this.cancelAnalysis();
     if (!area || !section) return null;
-    await this.ensureCountData().catch(() => {});
-    if (this.state.timeOfDay.status !== 'ready') {
-      // The hour's demand factor comes from the profile: load it first (its arrival schedules a re-run; this run is it)
-      await this.ensureTimeProfile();
+    this.analysisStarting++;
+    try {
+      await this.ensureCountData().catch(() => {});
+      if (this.state.timeOfDay.status !== 'ready') {
+        // The hour's demand factor comes from the profile: load it first (its arrival schedules a re-run; this run is it)
+        await this.ensureTimeProfile();
+      }
+    } finally {
+      this.analysisStarting--;
     }
-    // The road or area changed while this waited: this run would compute the old one under the new key
-    if (this.state.area !== area || this.state.section !== section) return null;
+    // The road or area changed while this waited: this run would compute the old one under the new key. The change's
+    // own start was held back while this waited (maybeAutoStart): start the run for what is selected now
+    if (this.state.area !== area || this.state.section !== section) {
+      if (!this.analysisRun && this.analysisStarting === 0) this.maybeAutoStart();
+      return null;
+    }
     // This run reads the clock, profile and demand as they are now: a re-run scheduled while it waited
     // (e.g. by the profile arriving during the count load) would only cancel it and repeat it
     if (this.analysisTimer) { clearTimeout(this.analysisTimer); this.analysisTimer = null; }

@@ -81,4 +81,30 @@ describe('Simulate: selecting a second road', () => {
     expect(mode.getState().analysis.seedKey).toBe(seedKeyOf([SECOND]));
     mode.dispose();
   }, 120000);
+
+  it('a network change while a run waits for its counts (as on a scenario switch) does not leave the analysis at "running" with no run behind it', async () => {
+    const om = new ObjectManager();
+    om.addMultiple(structuredClone(fx.roads), true);
+    // Counts that take a while to fail, as a slow /api fetch: every run waits on them before its job starts
+    const slowCounts = () => new Promise<never>((_, rej) => setTimeout(() => rej(new Error('no counts')), 600));
+    const mode = new SimulationMode(() => om.getAll().filter(o => o.type === 'road') as DrivableObject[], null, null, () => ({ buildings: [] }), slowCounts, null, null);
+    mode.analysisSeeds = [42];
+    mode.enter();
+    mode.setRange(700);
+    mode.selectRoad(DECK, false);
+    expect(await mode.runAnalysis()).toBeTruthy();
+    const edit = (name: string) => { om.update(SECOND, { name } as any, true); mode.networkChanged(); };
+    edit('A');
+    // The automatic re-run starts and computes
+    for (let i = 0; i < 400 && !(mode.getState().analysis.status === 'running' && mode.getState().analysis.progress > 0); i++) await new Promise(r => setTimeout(r, 10));
+    expect(mode.getState().analysis.status).toBe('running');
+    // A second start (e.g. the panel's) cancels it and waits for counts; meanwhile the network changes again
+    const second = mode.runAnalysis();
+    edit('B');
+    expect(await second).toBeNull();
+    for (let i = 0; i < 1200 && mode.getState().analysis.status !== 'ready'; i++) await new Promise(r => setTimeout(r, 50));
+    expect(mode.getState().analysis.status).toBe('ready');
+    expect(mode.getState().analysis.outdated).toBeFalsy();
+    mode.dispose();
+  }, 120000);
 });
