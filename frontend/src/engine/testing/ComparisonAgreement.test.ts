@@ -87,3 +87,23 @@ describe('scenario comparison: the two runs must use the same demand, hour and s
     expect(checkRunInputs(inputs, { ...inputs, measureS: 600 }, true).mismatches).toEqual(['duration']);
   });
 });
+
+describe('scenario comparison: new bottlenecks', () => {
+  const bn = (name: string, seg: string, vc: number, at: [number, number]) => ({ label: name, roadName: name, coordinates: [at[0], at[1], 0], vc, delayVehH: 5, segmentKeys: [seg], atJunction: false, noAlternativeShare: 0 });
+  const withArea = (o: any, vc: [string, number][], bottlenecks: any[]) => { o.result.areaVc = new Map(vc); o.result.areaBottlenecks = bottlenecks; return o; };
+  it('a stretch already over capacity in the existing city is not new, even when it was not in its worst-6 list', () => {
+    // p11 Katraj flyover: Keshavrao Jedhe Path at 276% in both runs, ranked into the proposal's list only
+    const before = withArea(output([100, 100, 100], 20), [['kj_seg_6', 2.76]], []);
+    const after = withArea(output([80, 80, 85], 24), [['kj_seg_6', 2.76]], [bn('Keshavrao Jedhe Path', 'kj_seg_6', 2.76, [73.857, 18.479])]);
+    const c = compareAnalyses(before, after, { before: new Map(), after: new Map() }, { before: 1000, after: 1000 });
+    expect(c.newBottlenecks).toEqual([]);
+    expect(c.verdict.overall).toBe('better');
+  });
+  it('a stretch that goes over capacity only in the proposal is new and rules out "better"', () => {
+    const before = withArea(output([100, 100, 100], 20), [['x_seg_1', 0.8]], []);
+    const after = withArea(output([80, 80, 85], 24), [['x_seg_1', 1.3]], [bn('Lake Town Road', 'x_seg_1', 1.3, [73.86, 18.45])]);
+    const c = compareAnalyses(before, after, { before: new Map(), after: new Map() }, { before: 1000, after: 1000 });
+    expect(c.newBottlenecks.map(b => b.roadName)).toEqual(['Lake Town Road']);
+    expect(c.verdict.overall).not.toBe('better');
+  });
+});

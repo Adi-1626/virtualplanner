@@ -270,7 +270,11 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
   new Set([...a.areaVc.keys(), ...b.areaVc.keys()]).forEach(k => segmentChange.set(k, (b.areaVc.get(k) ?? 0) - (a.areaVc.get(k) ?? 0)));
   const M = 111320;
   const near = (p: readonly number[], q: readonly number[]) => Math.hypot((p[0] - q[0]) * M * Math.cos(p[1] * Math.PI / 180), (p[1] - q[1]) * M) < 250;
-  const newBottlenecks = b.areaBottlenecks.filter(x => x.vc > 1 && !a.areaBottlenecks.some(y => near(x.coordinates, y.coordinates)));
+  // New = over capacity now and not before. The lists are the 6 worst of each run (RoadAnalysis), so "not in the existing
+  // city's list" is not "not over capacity there": p11 user test, a stretch 2.7 km away at the same 276% in both runs was
+  // reported as a new bottleneck because the flyover moved it up the ranking, and the verdict fell to Mixed.
+  const wasOver = (x: Bottleneck) => x.segmentKeys.some(k => (a.areaVc.get(k) ?? 0) > 1);
+  const newBottlenecks = b.areaBottlenecks.filter(x => x.vc > 1 && !a.areaBottlenecks.some(y => near(x.coordinates, y.coordinates)) && !wasOver(x));
 
   const sv = verdictOf(section), nv = verdictOf(network), av = verdictOf(area);
   const harm = newBottlenecks.length > 0 || av === 'worse' || av === 'mixed';

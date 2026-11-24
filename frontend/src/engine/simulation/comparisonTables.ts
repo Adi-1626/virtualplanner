@@ -93,8 +93,10 @@ export function comparisonTables(a: RoadAnalysisResult, b: RoadAnalysisResult, r
 
   // Junctions matched by id, else within 30 m (an edit can renumber the simulated node)
   const used = new Set<JunctionUse>();
-  const junctions: JunctionRow[] = a.junctions.map(j => {
-    const k = b.junctions.find(x => !used.has(x) && x.id === j.id) ?? b.junctions.find(x => !used.has(x) && near(x.coordinates, j.coordinates, 30));
+  // An analysis without a junction list (older runs, tests) has no junction rows, not a crash
+  const ja = a.junctions ?? [], jb = b.junctions ?? [];
+  const junctions: JunctionRow[] = ja.map(j => {
+    const k = jb.find(x => !used.has(x) && x.id === j.id) ?? jb.find(x => !used.has(x) && near(x.coordinates, j.coordinates, 30));
     if (k) used.add(k);
     return {
       label: j.label, coordinates: j.coordinates, signalised: k?.signalised ?? j.signalised,
@@ -103,7 +105,7 @@ export function comparisonTables(a: RoadAnalysisResult, b: RoadAnalysisResult, r
       ...(k ? {} : { only: 'before' as const }),
     };
   });
-  for (const k of b.junctions) if (!used.has(k)) junctions.push({ label: k.label, coordinates: k.coordinates, signalised: k.signalised, delayBefore: null, delayAfter: k.delayS, losBefore: null, losAfter: k.los, queueBefore: null, queueAfter: k.maxQueueM, vehBefore: null, vehAfter: k.vehicles, only: 'after' });
+  for (const k of jb) if (!used.has(k)) junctions.push({ label: k.label, coordinates: k.coordinates, signalised: k.signalised, delayBefore: null, delayAfter: k.delayS, losBefore: null, losAfter: k.los, queueBefore: null, queueAfter: k.maxQueueM, vehBefore: null, vehAfter: k.vehicles, only: 'after' });
   junctions.sort((p, q) => Math.max(losRank(q.losBefore), losRank(q.losAfter)) - Math.max(losRank(p.losBefore), losRank(p.losAfter))
     || Math.abs((q.delayAfter ?? 0) - (q.delayBefore ?? 0)) - Math.abs((p.delayAfter ?? 0) - (p.delayBefore ?? 0)));
 
