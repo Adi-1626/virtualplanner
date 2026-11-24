@@ -1,5 +1,6 @@
 import type { DrivableObject } from './StudyAreaExplorer';
 import { roadKeys } from './roadSection';
+import { alignmentDesignSpeed } from '../geometry/alignment/defaults';
 
 /**
  * Free-flow speeds and mid-block capacities for urban roads in Pune.
@@ -109,7 +110,7 @@ export function urbanSpeeds(roads: readonly DrivableObject[]): { speeds: Map<str
       // A road drawn in Build: the speed the user set, never above the geometric design speed of its alignment (the
       // design speed is the highest speed the curves were checked for: IRC:86-2018 §3; the shape editor sets it)
       const own = r.speedLimit || 40;
-      const design = r.alignment?.designSpeedKmh;
+      const design = alignmentDesignSpeed(r as any);
       speeds.set(r.id, { kmh: design && design > 0 && design < own ? design : own, basis: 'user' }); report.user++; continue;
     }
     const own = tagged.get(r.id);

@@ -1,6 +1,25 @@
 import type { CityObject, RoadObject, RoadSectionProfile } from '../objects/types';
 import type { HistoryDiff } from '../history/HistoryManager';
 import { carriagewayRun, SECTION_MAX_M, type CarriagewayPiece } from '../simulation/roadSection';
+import { GEOMETRY_DEFAULTS } from '../geometry/alignment/defaults';
+import type { RoadClassification } from '../objects/types';
+
+/**
+ * The speed fields a change of class brings with it, for a road or flyover drawn here (an OSM road's speed comes from
+ * its tags). A design speed still at its class default follows the new class (IRC:86-2018 Table 3.1), and so does a
+ * speed limit still at the old class's default; a value the user set stays. Before, a flyover drawn as `local` and then
+ * changed to arterial kept 30 km/h and ran at 30 km/h in Simulate (p11 user test, Katraj flyover).
+ */
+export function classSpeedUpdates(obj: { type: string; roadClass?: RoadClassification; speedLimit?: number; alignment?: any; osmProvenance?: unknown }, next: RoadClassification): Record<string, unknown> {
+  const prev = obj.roadClass ?? 'local';
+  if (prev === next || obj.osmProvenance) return {};
+  const table = obj.type === 'road' ? GEOMETRY_DEFAULTS.roadDesignSpeedKmh : GEOMETRY_DEFAULTS.flyoverDesignSpeedKmh;
+  const out: Record<string, unknown> = {};
+  if (typeof obj.speedLimit !== 'number' || obj.speedLimit === table[prev]) out.speedLimit = table[next];
+  const a = obj.alignment;
+  if (a && a.designSpeedSource !== 'user' && typeof a.designSpeedKmh === 'number') out.alignment = { ...a, designSpeedKmh: table[next], designSpeedSource: 'class-default' };
+  return out;
+}
 
 /**
  * The changes a Build properties edit of one field makes to a road (moved here
@@ -14,7 +33,8 @@ export function roadFieldUpdates(r: RoadObject, field: string, value: any, synth
   // cross-section from its top-level fields, so changing the speed limit or class of a one-way road added a
   // footpath on its right and widened it by 1.5 m (docs/OVERHAUL.md §27)
   if (field === 'speedLimit' || field === 'trafficCapacity') return { [field]: Number(value) };
-  if (field === 'roadClass' || field === 'name') return { [field]: value };
+  if (field === 'roadClass') return { roadClass: value, ...classSpeedUpdates(r, value) } as Partial<RoadObject>;
+  if (field === 'name') return { [field]: value };
   const rUpdates: Partial<RoadObject> = {};
 
   let sections = r.sections ? JSON.parse(JSON.stringify(r.sections)) : synthesize(r);
@@ -322,7 +342,10 @@ export function flyoverFieldUpdates(obj: CityObject, field: string, value: any):
     fUpdates.speedLimit = Number(value);
   } else if (field === 'isOneWay') {
     fUpdates.isOneWay = Boolean(value);
-  } else if (field === 'roadClass' || field === 'name') {
+  } else if (field === 'roadClass') {
+    fUpdates.roadClass = value;
+    Object.assign(fUpdates, classSpeedUpdates(f, value));
+  } else if (field === 'name') {
     (fUpdates as any)[field] = value;
   }
   return fUpdates;

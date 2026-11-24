@@ -66,3 +66,17 @@ export const defaultAlignmentSettings: DefaultAlignmentSettingsFn = (input: Alig
       return { behaviour: D.utilityBehaviour, designSpeedKmh: null, designSpeedSource: 'class-default', eMax: D.eMaxSurface, criteria: 'none' };
   }
 };
+
+/**
+ * The design speed an object's alignment stands for: the value the user set, or, while it is still the class default,
+ * the default of the object's current class (a class changed after drawing, or before classSpeedUpdates existed, left a
+ * stale class default behind: a flyover drawn as local and made arterial ran at 30 km/h, p11 user test).
+ */
+export function alignmentDesignSpeed(obj: { type?: string; roadClass?: RoadClassification; alignment?: { designSpeedKmh: number | null; designSpeedSource?: string } | null; osmProvenance?: unknown }): number | null {
+  const a = obj.alignment;
+  if (!a || typeof a.designSpeedKmh !== 'number') return a?.designSpeedKmh ?? null;
+  if (a.designSpeedSource === 'user' || obj.osmProvenance || !obj.roadClass) return a.designSpeedKmh;
+  if (obj.type === 'road') return GEOMETRY_DEFAULTS.roadDesignSpeedKmh[obj.roadClass] ?? a.designSpeedKmh;
+  if (obj.type === 'flyover' || obj.type === 'metro_flyover') return GEOMETRY_DEFAULTS.flyoverDesignSpeedKmh[obj.roadClass] ?? a.designSpeedKmh;
+  return a.designSpeedKmh;
+}
