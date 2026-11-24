@@ -51,6 +51,9 @@ describe('Simulate: the studied road deleted in the proposal', () => {
     expect(c.section.every(d => d.good === null)).toBe(true);
     expect(c.verdict.summary).toContain(`${name} is closed in this proposal`);
     expect(c.laneInsights).toEqual([]);
+    // Roads that gain are roads of the proposal (here the bridge's other carriageway, which keeps the name, may be one)
+    const proposalNames = new Set(om.getAll().filter(o => o.type === 'road').map(o => o.name));
+    for (const w of c.winners) expect(proposalNames.has(w.roadName), w.roadName).toBe(true);
     // Its traffic shows up on other roads
     if (process.env.CLOSED_LOG) console.log(JSON.stringify({ rer: c.rerouting, summary: c.verdict.summary, area: c.area, net: c.network }));
     // Where its traffic went: in this 700 m fixture the bridge is the only crossing, so part of it has no route at all.

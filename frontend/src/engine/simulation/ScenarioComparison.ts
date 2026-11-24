@@ -291,7 +291,8 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
   // Where traffic left and where it went, up to four roads each: by size alone, a closure listed eight roads that lost
   // traffic near it and none of the other bridges that took it (p11 user test, Baba Bhide Bridge)
   const rerouting = pickRerouting(changes);
-  const winners = changes.filter(r => r.vcBefore > 0.6 && r.vcAfter < r.vcBefore - 0.1).sort((x, y) => (x.vcAfter - x.vcBefore) - (y.vcAfter - y.vcBefore)).slice(0, 5);
+  // A road the proposal removed is not one that "gains": it carries nothing because it is gone (closure proposals)
+  const winners = changes.filter(r => rb.has(r.roadName) && r.vcBefore > 0.6 && r.vcAfter < r.vcBefore - 0.1).sort((x, y) => (x.vcAfter - x.vcBefore) - (y.vcAfter - y.vcBefore)).slice(0, 5);
   const losers = changes.filter(r => r.vcAfter > 0.6 && r.vcAfter > r.vcBefore + 0.1).sort((x, y) => (y.vcAfter - y.vcBefore) - (x.vcAfter - x.vcBefore)).slice(0, 5);
   const segmentChange = new Map<string, number>();
   new Set([...a.areaVc.keys(), ...b.areaVc.keys()]).forEach(k => segmentChange.set(k, (b.areaVc.get(k) ?? 0) - (a.areaVc.get(k) ?? 0)));
