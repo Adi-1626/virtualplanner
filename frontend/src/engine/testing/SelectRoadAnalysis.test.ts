@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import type { RoadObject } from '../objects/types';
 import { ObjectManager } from '../objects/ObjectManager';
+import { roadFieldUpdates } from '../editing/roadEdits';
 import type { DrivableObject } from '../simulation/StudyAreaExplorer';
 import { SimulationMode, seedKeyOf } from '../simulation/SimulationMode';
 
@@ -105,6 +106,33 @@ describe('Simulate: selecting a second road', () => {
     for (let i = 0; i < 1200 && mode.getState().analysis.status !== 'ready'; i++) await new Promise(r => setTimeout(r, 50));
     expect(mode.getState().analysis.status).toBe('ready');
     expect(mode.getState().analysis.outdated).toBeFalsy();
+    mode.dispose();
+  }, 120000);
+
+  it('another road\'s result is not badged "Proposal" against a baseline saved for the first road', async () => {
+    const om = new ObjectManager();
+    om.addMultiple(structuredClone(fx.roads), true);
+    const mode = new SimulationMode(() => om.getAll().filter(o => o.type === 'road') as DrivableObject[], null, null, () => ({ buildings: [] }),
+      () => Promise.reject(new Error('no counts')), null, null);
+    mode.analysisSeeds = [42];
+    mode.enter();
+    mode.setRange(700);
+    mode.selectRoad(DECK, false);
+    await mode.runAnalysis();
+    expect(await mode.captureBaseline(60)).toBeTruthy();
+    expect(mode.getState().comparison.showingProposal).toBe(false);
+    // A network edit after the baseline: the re-run is the proposal
+    const deck = om.getById(DECK) as RoadObject;
+    om.update(DECK, roadFieldUpdates(deck, 'lanesForward', 3, r => om.synthesizeDefaultSections(r)), true);
+    mode.networkChanged();
+    await new Promise(r => setTimeout(r, 400));
+    await mode.runAnalysis();
+    expect(mode.getState().comparison.showingProposal).toBe(true);
+    // Another road (study changed): not the baseline's study, so not a proposal result
+    mode.selectRoad(SECOND, false);
+    await mode.runAnalysis();
+    expect(mode.getState().analysis.status).toBe('ready');
+    expect(mode.getState().comparison.showingProposal).toBe(false);
     mode.dispose();
   }, 120000);
 });

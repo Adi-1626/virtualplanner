@@ -1519,7 +1519,10 @@ export class SimulationMode {
 
   /** Whether the analysis on show ran on a network other than the baseline's. */
   private showsProposal(baseline: TrafficRunSnapshot | null) {
-    return !!baseline && this.analysisNetworkKey !== null && this.analysisNetworkKey !== baseline.networkKey;
+    // Only for the study the baseline was saved on: another road's area has its own mapped signals, so its network key
+    // differs from that baseline's although nothing was edited (p11: Baba Bhide Bridge in the existing city was badged
+    // "Proposal" after Satara Road's baseline)
+    return !!baseline && this.analysisNetworkKey !== null && this.analysisNetworkKey !== baseline.networkKey && this.baselineStudyKey === this.studyKey();
   }
 
   /**
