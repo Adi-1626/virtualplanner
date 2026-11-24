@@ -136,6 +136,8 @@ describe.skipIf(!process.env.VAL24)('network-wide validation against observation
       ctx,
     );
     om.onChange((types: Set<string>) => { if (types.has('road') || types.size === 0 || types.has('junction')) mode.networkChanged(); });
+    // p10: the city-wide estimated traffic as edge flows is off in the app (worse on the hold-out); VAL24_ESTIMATED=1 turns it on here
+    if (process.env.VAL24_ESTIMATED) mode.useEstimatedTraffic = true;
     if (process.env.VAL24_SEEDS) mode.analysisSeeds = process.env.VAL24_SEEDS.split(',').map(Number);
     mode.enter();
     if (process.env.VAL24_HYPO_SCALE) { hypo.demandScale = Number(process.env.VAL24_HYPO_SCALE); mode.setDemandSettings({ hypotheticalScale: hypo.demandScale }); }
@@ -143,7 +145,7 @@ describe.skipIf(!process.env.VAL24)('network-wide validation against observation
     const settle = async () => {
       for (let i = 0; i < 600; i++) {
         const s = mode.getState();
-        if (s.osmRoads.status !== 'loading' && s.signals.status !== 'loading' && s.timeOfDay.status === 'ready' && s.edgeFlows.status !== 'loading' && s.area && s.section && s.screenlines) return true;
+        if (s.osmRoads.status !== 'loading' && s.signals.status !== 'loading' && s.timeOfDay.status === 'ready' && s.edgeFlows.status !== 'loading' && s.estimatedTraffic.status !== 'loading' && s.area && s.section && s.screenlines) return true;
         await sleep(200);
       }
       return false;

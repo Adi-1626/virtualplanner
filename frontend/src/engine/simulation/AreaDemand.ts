@@ -2,6 +2,7 @@ import { apiGet } from '../../lib/api';
 import type { TrafficNetwork } from '../objects/trafficTypes';
 import { isAreaCutEnd, type StudyArea, type DrivableObject } from './StudyAreaExplorer';
 import type { VehicleKind } from './TrafficMicroSim';
+import { estimatedLinkFlow, type EstimatedTrafficModel } from './EstimatedTraffic';
 import { VEHICLE_TYPES } from './TrafficMicroSim';
 import { roadKeys } from './roadSection';
 import { activityEndpoints, type DemandPlan, type SimulationContext, type DemandComponents, type ActivityEndpoint } from './StudyDemand';
@@ -51,7 +52,8 @@ export const DEMAND_SOURCES = [
   'Trip generation: PCMC motorised trips per person 0.87/day, peak-hour share 7.8%, PCMC mode split and occupancy (CMP 2018 Tables 6-7, p. E-5; CMP 2008 Table 4.7).',
   'Trip length: mean motorised trip lengths 7.54 km two-wheeler, 4.68 km auto, 8.54 km car, 6.25 km bus (CMP 2018 Table 9, overall study area). Their spread (Erlang, shape 2) is an assumption.',
   'Calibrated window edge flows (docs/urbanos/TRAFFIC_CALIBRATION_P9.md): used only when a file is installed in backend/data/calibrated_flows. None is shipped: on the 8 hold-out counts the window flows (unfitted or fitted to the 7 calibration counts) did worse than the class-typical flows below.',
-  'Edge flows on arterials: 500 veh/h per lane per direction, the low end of the counted approaches at five west-Pune junctions (NICMAR 2025 / Kureshi 2026). Collector 300 veh/h per lane is an assumption and trunk roads use the arterial value; local streets carry no through traffic.',
+  'City-wide estimated traffic (docs/urbanos/TRAFFIC_ESTIMATED_P10.md; label: estimated, project-level, not for decisions): each main road\'s estimated weekday volume by hour and direction, from road type, lanes, CMP-2024 zone activity and distance to the old city, fitted to real counts (calibration split). Tried as edge flows and NOT used: on the hold-out sites it did worse than the class-typical flows below.',
+  'Edge flows on arterials (without the estimated traffic): 500 veh/h per lane per direction, the low end of the counted approaches at five west-Pune junctions (NICMAR 2025 / Kureshi 2026). Collector 300 veh/h per lane is an assumption and trunk roads use the arterial value; local streets carry no through traffic.',
   'Through traffic: edge-to-edge trips balanced to the edge flows (Furness), weighted by distance across the area and three times more likely to stay on the road they came in on (assumption).',
   'Vehicle mix of edge and through traffic: Gunjan Chowk classified counts (Thakur et al. 2017).',
   'Buildings: residents and jobs as imported (OpenStreetMap buildings: floors x 12 people by category). OSM rarely tags workplaces, so jobs are under-counted; trips with no destination inside the area leave it.',
@@ -69,8 +71,8 @@ export interface CordonPoint {
   /** Class-typical peak-hour flow entering / leaving here (veh/h). */
   inVph: number;
   outVph: number;
-  /** Where the flows come from: the calibrated window, or the class-typical flow per lane. */
-  flowSource?: 'calibrated' | 'class';
+  /** Where the flows come from: the calibrated window, the city-wide estimated traffic (estimated, not measured), or the class-typical flow per lane. */
+  flowSource?: 'calibrated' | 'estimated' | 'class';
 }
 
 /**
@@ -122,15 +124,28 @@ const distM = (a: readonly number[], b: readonly number[]) =>
   Math.hypot((a[0] - b[0]) * M_PER_DEG_LAT * Math.cos(a[1] * Math.PI / 180), (a[1] - b[1]) * M_PER_DEG_LAT);
 
 /** Where roads cross the area's edge, with their lanes and class-typical flows. */
-export function cordonOf(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, calibrated?: { flows: CalibratedEdgeFlows | null; period: string }): CordonPoint[] {
+export function cordonOf(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, calibrated?: { flows: CalibratedEdgeFlows | null; period: string },
+  estimated?: { model: EstimatedTrafficModel | null; hour: number }): CordonPoint[] {
   const net = area.network;
+  // City-wide estimated flow on one directed link at the period's reference hour (null without the model)
+  const est = (e: { roadId: string; fromNodeId: string; toNodeId: string }, at: readonly number[]): number | null => {
+    const road = roads.get(e.roadId);
+    // Local streets keep no through traffic (as the class-typical flows): their estimated volume is access traffic, which
+    // the area's own buildings make; edge-to-edge trips on them would be counted twice
+    if (!estimated?.model || !road || edgeFlowPerLane(road) <= 0) return null;
+    const a = net.nodes.get(e.fromNodeId)?.coordinates, b = net.nodes.get(e.toNodeId)?.coordinates;
+    if (!a || !b) return null;
+    // Only part of a road's traffic crosses the area: the rest starts or ends inside it, where central Pune has no land use
+    // in the project; the share (areaEdgeScale) is fitted on the calibration crossings (TRAFFIC_ESTIMATED_P10.md §4)
+    return estimatedLinkFlow(estimated.model, road, at, [b[0] - a[0], b[1] - a[1]], estimated.hour) * (estimated.model.areaEdgeScale ?? 1);
+  };
   const included = new Set(area.segments.map(s => s.key));
   const out: CordonPoint[] = [];
   const seen = new Set<string>(), cut = new Set<string>();
   for (const b of area.boundary) {
     const node = net.nodes.get(b.nodeId);
     if (!node) continue;
-    let inLanes = 0, outLanes = 0, inVph = 0, outVph = 0, usedCalibrated = false;
+    let inLanes = 0, outLanes = 0, inVph = 0, outVph = 0, usedCalibrated = false, usedEstimated = false;
     let best: { roadId: string; rank: number } | null = null;
     const rank: Record<string, number> = { highway: 4, arterial: 3, collector: 2, local: 1 };
     const visit = (ids: string[], dir: 'in' | 'out') => {
@@ -140,8 +155,10 @@ export function cordonOf(area: StudyArea, roads: ReadonlyMap<string, DrivableObj
         const cls = roads.get(e.roadId)?.roadClass ?? 'local';
         const lanes = Math.max(1, e.lanes || 1);
         const cal = calibrated ? calibratedLinkFlow(calibrated.flows, calibrated.period, id, node.coordinates) : null;
-        const vph = cal ?? lanes * edgeFlowPerLane(roads.get(e.roadId));
+        const es = cal === null ? est(e, node.coordinates) : null;
+        const vph = cal ?? es ?? lanes * edgeFlowPerLane(roads.get(e.roadId));
         if (cal !== null) usedCalibrated = true;
+        if (es !== null) usedEstimated = true;
         if (dir === 'in') { inLanes += lanes; inVph += vph; } else { outLanes += lanes; outVph += vph; }
         const r = rank[cls] ?? 1;
         if (!best || r > best.rank) best = { roadId: e.roadId, rank: r };
@@ -154,7 +171,7 @@ export function cordonOf(area: StudyArea, roads: ReadonlyMap<string, DrivableObj
     const road = roads.get((best as { roadId: string }).roadId);
     seen.add(b.nodeId);
     out.push({ nodeId: b.nodeId, coordinates: [...node.coordinates] as [number, number, number], roadId: (best as { roadId: string }).roadId,
-      roadClass: road?.roadClass ?? 'local', roadName: road?.name || 'Unnamed road', inLanes, outLanes, inVph, outVph, flowSource: usedCalibrated ? 'calibrated' : 'class' });
+      roadClass: road?.roadClass ?? 'local', roadName: road?.name || 'Unnamed road', inLanes, outLanes, inVph, outVph, flowSource: usedCalibrated ? 'calibrated' : usedEstimated ? 'estimated' : 'class' });
   }
   // Roads cut where they cross a mapped area's boundary ("Map Selected Area") go on outside it:
   // traffic enters and leaves there too, by the road's own lanes
@@ -177,8 +194,10 @@ export function cordonOf(area: StudyArea, roads: ReadonlyMap<string, DrivableObj
       const lanes = Math.max(1, e.lanes || 1);
       // The cut road's own link carries the window's flow across the cut (in: this link; out: this link)
       const cal = calibrated ? calibratedLinkFlow(calibrated.flows, calibrated.period, e.id, node.coordinates) : null;
-      const vph = cal ?? lanes * edgeFlowPerLane(road);
+      const es = cal === null ? est(e, node.coordinates) : null;
+      const vph = cal ?? es ?? lanes * edgeFlowPerLane(road);
       if (cal !== null) p.flowSource = 'calibrated';
+      else if (es !== null && p.flowSource !== 'calibrated') p.flowSource = 'estimated';
       if (dir === 'in') { p.inLanes += lanes; p.inVph += vph; } else { p.outLanes += lanes; p.outVph += vph; }
     }
   }
@@ -288,6 +307,8 @@ export interface AreaDemandOptions {
   accessM?: number;
   /** Calibrated window edge flows (null/undefined: class-typical flows per lane everywhere). */
   calibratedEdgeFlows?: CalibratedEdgeFlows | null;
+  /** City-wide estimated traffic (EstimatedTraffic.ts): edge flows road by road where no calibrated window covers the link. */
+  estimatedTraffic?: EstimatedTrafficModel | null;
 }
 
 /**
@@ -322,8 +343,12 @@ export function compileAreaDemand(context: SimulationContext, area: StudyArea, r
   const b = area.bounds;
   const padLat = 250 / M_PER_DEG_LAT, padLng = padLat / Math.cos((b.minLat + b.maxLat) / 2 * Math.PI / 180);
   const { origins, destinations } = activityEndpoints(context, { minLng: b.minLng - padLng, maxLng: b.maxLng + padLng, minLat: b.minLat - padLat, maxLat: b.maxLat + padLat });
-  const cordon = cordonOf(area, roads, options.calibratedEdgeFlows ? { flows: options.calibratedEdgeFlows, period } : undefined);
+  // Edge flows of the estimated traffic are taken at the period's reference hour (09:00 / 19:00, timeOfDay.COUNT_HOURS); the
+  // hour factor then scales the plan to the clock hour with the same Pune profile the dataset uses
+  const cordon = cordonOf(area, roads, options.calibratedEdgeFlows ? { flows: options.calibratedEdgeFlows, period } : undefined,
+    options.estimatedTraffic ? { model: options.estimatedTraffic, hour: period === 'PM_Peak' ? 19 : 9 } : undefined);
   const calibratedPoints = cordon.filter(c => c.flowSource === 'calibrated').length;
+  const estimatedPoints = cordon.filter(c => c.flowSource === 'estimated').length;
   if (!cordon.length && !origins.length && !destinations.length) return null;
   // Directed reachability on the area's roads: an edge trip is only sent where it can actually drive
   const fwd = new Map<string, string[]>(), bwd = new Map<string, string[]>();
@@ -480,7 +505,7 @@ export function compileAreaDemand(context: SimulationContext, area: StudyArea, r
         source: 'project-estimate',
         label: 'Estimated peak-hour demand: trips of the area\'s buildings only, through traffic switched off. The project holds no buildings or zones with activity here, so there are no trips: 0 veh/h. Switch through traffic back on to see the traffic crossing the area.',
         period, vehiclesPerHour: 0, pairCount: 0,
-        components: { ...components, cordonPoints: cordon.length, calibratedCordonPoints: calibratedPoints, throughIncluded: false },
+        components: { ...components, cordonPoints: cordon.length, calibratedCordonPoints: calibratedPoints, estimatedCordonPoints: estimatedPoints, throughIncluded: false },
       },
     };
   }
@@ -492,9 +517,11 @@ export function compileAreaDemand(context: SimulationContext, area: StudyArea, r
       source: 'project-estimate',
       label: `Estimated peak-hour demand: trips of the area's buildings (CMP 2018 Pune rates and trip lengths) plus traffic crossing the edge ${calibratedPoints
         ? `at flows from the central-Pune window calibrated to ${options.calibratedEdgeFlows!.periods[period as 'AM_Peak' | 'PM_Peak']?.calibrationSites.length ?? 0} 2008 counts (${calibratedPoints} of ${cordon.length} edge roads; the rest at class-typical flows)`
-        : 'on main roads at counted Pune arterial flows'}. ${parts.join(', ')} veh/h. Not measured on these roads.`,
+        : estimatedPoints
+          ? `at the city-wide estimated flows (${options.estimatedTraffic!.id}, ${options.estimatedTraffic!.label}; ${estimatedPoints} of ${cordon.length} edge roads), calibrated to estimated data`
+          : 'on main roads at counted Pune arterial flows'}. ${parts.join(', ')} veh/h. Not measured on these roads.`,
       period, vehiclesPerHour: total, pairCount: trips.length,
-      components: { ...components, cordonPoints: cordon.length, calibratedCordonPoints: calibratedPoints, throughIncluded: options.through !== false },
+      components: { ...components, cordonPoints: cordon.length, calibratedCordonPoints: calibratedPoints, estimatedCordonPoints: estimatedPoints, throughIncluded: options.through !== false },
     },
   };
 }

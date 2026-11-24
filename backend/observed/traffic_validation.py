@@ -2,8 +2,9 @@
 Recorded traffic-model validation results (TAG M3.1) and the summary computed from them.
 
 Mirror of frontend/src/components/ui/badges/trafficValidation.ts (tests/test_traffic_validation.py checks that both
-hold the same per-site numbers). Source: the app's own per-site runs on branch p9-calibration, shipped configuration
-(no calibrated window edge flows), docs/urbanos/TRAFFIC_CALIBRATION_P9.md. Recorded results, not live values; the
+hold the same per-site numbers). Source: the app's own per-site runs, shipped configuration (class-typical edge flows),
+docs/urbanos/TRAFFIC_CALIBRATION_P9.md, re-run unchanged on p10-estimated (docs/urbanos/TRAFFIC_ESTIMATED_P10.md, where
+edge flows calibrated to the ESTIMATED city-wide traffic were tried and not shipped: worse on the hold-out). Recorded results, not live values; the
 criteria are TAG's and are never loosened to change the verdict.
 """
 
@@ -36,6 +37,7 @@ COUNT_RESULTS = [
 RIVER_SCREENLINE = {"crossings": 9, "model": 54505, "count": 73824}
 # Speed tests (docs/ENGINEERING_VALIDATION.md §5.0, code c916854): 4/21, 27/120, 2/9 within 15%, all below 85%
 SPEEDS_FAIL = True
+EDGE_FLOW_BASIS = "class-typical edge flows; edge flows calibrated to estimated data (pune_estimated_traffic_v1) tried, not used: worse on hold-out"
 
 
 def geh(m: float, c: float) -> float:
@@ -63,4 +65,4 @@ def summary() -> str:
     e = river_error()
     verdict = "FAILS validation" if fails() else "meets the recorded criteria"
     return (f"Model {verdict} (TAG M3.1: {w} of {n} counts within GEH 5, calibration {wc}/{nc}, hold-out {wh}/{nh}; "
-            f"river screen line {'−' if e < 0 else '+'}{abs(e) * 100:.1f}%). Compare options, not forecasts.")
+            f"river screen line {'−' if e < 0 else '+'}{abs(e) * 100:.1f}%; {EDGE_FLOW_BASIS}). Compare options, not forecasts.")

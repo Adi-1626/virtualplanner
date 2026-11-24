@@ -78,6 +78,8 @@ backend/data/*
 !backend/data/observed_screenlines/
 # Observations used to validate (not calibrate) the model, docs/OVERHAUL.md §24: curated, cited source data
 !backend/data/observed_validation/
+# City-wide ESTIMATED traffic model (label: estimated, project-level, not for decisions), docs/urbanos/TRAFFIC_ESTIMATED_P10.md
+!backend/data/estimated_traffic/
 
 # local diagnosis harnesses
 *.scratch.*

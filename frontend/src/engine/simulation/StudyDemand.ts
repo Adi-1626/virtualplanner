@@ -43,6 +43,8 @@ export interface DemandComponents {
   cordonPoints?: number;
   /** Edge roads whose flow came from the calibrated window (AreaDemand.CalibratedEdgeFlows). */
   calibratedCordonPoints?: number;
+  /** Edge roads whose flows come from the city-wide estimated traffic (estimated, not measured). */
+  estimatedCordonPoints?: number;
   throughIncluded?: boolean;
 }
 /** A place that makes or attracts trips: its vehicles per hour by class. */

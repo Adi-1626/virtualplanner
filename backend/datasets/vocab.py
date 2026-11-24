@@ -45,6 +45,7 @@ THEMES = {
     "traffic_speeds": "Traffic speeds / travel times",
     "traffic_validation": "Independent traffic validation observations",
     "travel_demand": "Travel demand (OD / household survey)",
+    "estimated_traffic": "Estimated traffic volumes (project-level estimates, not measured)",
     "diurnal_profile": "Hour-of-day traffic profile",
     "network_corrections": "Local network corrections",
     "population": "Population",

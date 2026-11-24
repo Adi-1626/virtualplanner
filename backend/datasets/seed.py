@@ -155,6 +155,18 @@ EXISTING = [
           crs="n/a (OSM way ids)", format="json", size_bytes=23018, data_class="inferred", suitability="screening",
           licence_text="ODbL 1.0 applies to the OSM ids/derived network", licence_url=ODBL_URL),
      [dict(path="data/network_corrections/pune_west_v1.json", sha256="5f60da2ea709250cf813680c2a8bf2833525d7f7d6b31adcef7236f3e18466e5", size_bytes=23018, format="json", role="derived")]),
+    (dict(id="pune_estimated_traffic_v1", title="Pune city-wide ESTIMATED traffic v1 — estimated (project-level, not for decisions)", theme="estimated_traffic", source_id="repo_compilations",
+          max_age_days=365,
+          description="backend/data/estimated_traffic/pune_estimated_traffic_v1.json: weekday volume by hour, direction and class for every OSM road in PMC/PCMC, "
+                      "from road type, lanes, CMP-2024 zone population + employment and distance to the old city, fitted to real counts (calibration split) "
+                      "and checked on held-out counts. Built by urbanos-data/estimated/traffic-v1/scripts/build_estimated_traffic.py (docs/urbanos/TRAFFIC_ESTIMATED_P10.md).",
+          limitations="ESTIMATED, not measured: rough (hold-out median error about 26% on daily volume). Zone locations geocoded from names; growth 4.5%/yr assumed; "
+                      "never mixed into the observed counts or screen lines. Tried as study-area edge flows and not used (worse on the hold-out sites). "
+                      "Real counts replace it when available."),
+     dict(version_label="v1 (2026-11-24)", observation_start="2018", observation_end="2026", published_date="2026-11-24",
+          sha256="82dde504982b86a6f65a86e345a6c1adbac1a26346d2c2982e228f4c400a8acc", crs="EPSG:4326 (OSM way ids, 0.005 deg activity grid)", resolution="per OSM way, hourly",
+          format="json", size_bytes=59312, data_class="estimated", suitability="screening", licence_text="Compilation; source terms apply (CMP/DPR reports, OSM ODbL)", licence_url=ODBL_URL),
+     [dict(path="data/estimated_traffic/pune_estimated_traffic_v1.json", sha256="82dde504982b86a6f65a86e345a6c1adbac1a26346d2c2982e228f4c400a8acc", size_bytes=59312, format="json", role="derived")]),
     (dict(id="cesium_ion_imagery", title="Base-map imagery (Cesium ion, streamed)", theme="base_map_imagery", source_id="cesium_ion",
           description="Streamed imagery tiles for the 3D globe. Not stored. In this sandbox the imagery request returns 401 (URBANOS_OVERVIEW §5).",
           limitations="Visualisation only; never analysis data."),
@@ -245,7 +257,7 @@ FEATURES = [
      traffic_validation.summary(),   # computed from the recorded per-site results (observed/traffic_validation.py)
      [("road_network", "osm_local_index", S, True, "network"), ("network_corrections", None, S, False, "local fixes"),
       ("diurnal_profile", None, S, True, "hour factors"), ("travel_demand", None, S, True, "observed OD (zones are SYNTHETIC)"),
-      ("traffic_counts", None, S, True, "calibration counts")]),
+      ("traffic_counts", None, S, True, "calibration counts"), ("estimated_traffic", None, S, False, "estimated city-wide volumes (loaded; not used for edge flows: worse on hold-out)")]),
     ("traffic.validation", "simulate", "Traffic", "Validation against independent observations", "partial",
      "Validation data exists but the model fails it (TAG M3.1).",
      [("traffic_validation", None, S, True, ""), ("traffic_speeds", None, S, False, "speed time series")]),

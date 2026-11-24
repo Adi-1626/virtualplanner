@@ -5,7 +5,7 @@ from database.connection import engine, Base
 from api.router import router
 from api.sim_router import router as sim_router
 from api.osm_router import router as osm_router
-from api.observed_router import router as observed_router, diurnal_router, corrections_router, screenline_router, calibrated_flows_router
+from api.observed_router import router as observed_router, diurnal_router, corrections_router, screenline_router, calibrated_flows_router, estimated_traffic_router
 from api.scenario_router import router as scenario_router
 from database.migrations import migrate
 from seed import ensure_base_scenario
@@ -73,6 +73,7 @@ app.include_router(diurnal_router, prefix="/api")
 app.include_router(corrections_router, prefix="/api")
 app.include_router(screenline_router, prefix="/api")
 app.include_router(calibrated_flows_router, prefix="/api")
+app.include_router(estimated_traffic_router, prefix="/api")
 app.include_router(traffic_data_router, prefix="/api")
 app.include_router(feasibility_router, prefix="/api")
 app.include_router(planning_router, prefix="/api")

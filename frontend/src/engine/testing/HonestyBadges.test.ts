@@ -40,8 +40,9 @@ describe('trust', () => {
   });
   it('the summary carries the recorded numbers and no row passes', () => {
     const html = renderToStaticMarkup(createElement(ValidationSummary));
-    // p9-calibration per-site runs (docs/urbanos/TRAFFIC_CALIBRATION_P9.md): all, calibration and hold-out shown separately
-    for (const s of ['2 / 15', '1 / 7', '1 / 8', '−26.2%', '4 / 21', '27 / 120', '2 / 9', 'TAG M3.1', 'hold-out']) expect(html).toContain(s);
+    // shipped per-site runs (p9, re-run on p10-estimated): all, calibration and hold-out shown separately, and the same
+    // runs against the estimated 2026 volumes, labelled estimated
+    for (const s of ['2 / 15', '1 / 7', '1 / 8', '−26.2%', '0 / 4', '−38.7%', 'estimated, not counts', '4 / 21', '27 / 120', '2 / 9', 'TAG M3.1', 'hold-out']) expect(html).toContain(s);
     expect(TRAFFIC_VALIDATION.rows.every(r => r.status === 'FAIL')).toBe(true);
     expect(html).not.toContain('PASS');
   });
@@ -49,9 +50,10 @@ describe('trust', () => {
     expect(TAG_CRITERIA).toEqual({ gehShare: 0.85, geh: 5, flowShare: 0.85, screenline: 0.05 });
     expect([COUNTS_ALL.withinGeh5, COUNTS_ALL.n, COUNTS_CALIBRATION.withinGeh5, COUNTS_CALIBRATION.n, COUNTS_HOLDOUT.withinGeh5, COUNTS_HOLDOUT.n]).toEqual([2, 15, 1, 7, 1, 8]);
     expect(COUNTS_ALL.meanGeh).toBeCloseTo(31.5, 1);
+    expect(COUNTS_HOLDOUT.meanGeh).toBeCloseTo(32.8, 1);
     expect(COUNT_RESULTS.filter(r => r.role === 'holdout').map(r => r.id).sort()).toEqual(['cmp08_mhatre', 'cmp08_rangehill_rub', 'cmp08_sambhaji', 'cmp08_tilak', 'cmp08_yerwada_ambedkar', 'gunjan17_09', 'gunjan17_14', 'gunjan17_19']);
     expect(TRAFFIC_VALIDATION.verdict).toBe('fails_validation');
-    expect(TRAFFIC_VALIDATION_SUMMARY).toBe('2 of 15 count sites within GEH 5 (calibration 1/7, hold-out 1/8); river screen line −26.2%');
+    expect(TRAFFIC_VALIDATION_SUMMARY).toBe('2 of 15 count sites within GEH 5 (calibration 1/7, hold-out 1/8); river screen line −26.2%. Edge flows: class-typical flows per lane; edge flows calibrated to estimated data (pune_estimated_traffic_v1: estimated, project-level, not for decisions) were tried and are not used, being worse on the hold-out sites');
   });
   it('the top-bar pill says the model fails validation', () => {
     expect(renderToStaticMarkup(createElement(ModelTrustPill))).toContain('Traffic model fails validation');

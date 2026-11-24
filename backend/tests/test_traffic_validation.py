@@ -9,9 +9,11 @@ TS = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "src", "com
 
 def test_summary_is_computed_and_still_fails():
     assert (tv.GEH_LIMIT, tv.GEH_SHARE, tv.SCREENLINE_LIMIT) == (5, 0.85, 0.05)
+    # shipped configuration (class-typical edge flows), re-run on p10-estimated: identical to p9
     assert tv.within() == (2, 15) and tv.within("calibration") == (1, 7) and tv.within("holdout") == (1, 8)
     s = tv.summary()
     assert s.startswith("Model FAILS validation") and "2 of 15" in s and "hold-out 1/8" in s and "−26.2%" in s
+    assert "estimated data" in s and "not used" in s
 
 
 def test_backend_and_frontend_hold_the_same_results():

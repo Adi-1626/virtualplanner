@@ -36,6 +36,7 @@ import type { RoadObject } from '../objects/types';
 import { fitPlan, measureFlows, compareRows, summarize, junctionsIn, zoneFor, junctionChecks, observedFlows, type CalibrationRow, type JunctionCheck, type SimSetup } from '../calibration/calibration';
 import { gehAgainst } from '../calibration/ipf';
 import type { GehSummary } from '../calibration/geh';
+import { fetchEstimatedTraffic, type EstimatedTrafficModel } from './EstimatedTraffic';
 import { fetchDiurnalProfile, hourFactor, COUNT_HOURS, type DiurnalProfile, type DayType } from './timeOfDay';
 import { compileAreaDemand, fetchCalibratedEdgeFlows, type CalibratedEdgeFlows } from './AreaDemand';
 import { roadSection, type RoadSection } from './roadSection';
@@ -314,6 +315,8 @@ export interface SimulationModeState {
   screenlines: ScreenlineFile | null;
   /** Calibrated central-Pune edge flows (docs/urbanos/TRAFFIC_CALIBRATION_P9.md): loading, ready (used for areas inside the window) or none (class-typical flows everywhere). */
   edgeFlows: { status: 'loading' | 'ready' | 'none'; id: string | null };
+  /** City-wide estimated traffic (EstimatedTraffic.ts): loading, ready (main-road edge flows road by road) or none (class-typical flows). */
+  estimatedTraffic: { status: 'loading' | 'ready' | 'none'; id: string | null; label: string | null };
   /** Demand estimated from calibration counts (ODME, docs/ODME_AND_EMISSIONS.md): opt-in; the estimate never replaces the baseline demand. */
   odme: OdmeState;
 }
@@ -415,6 +418,7 @@ export class SimulationMode {
     notice: null,
     screenlines: null,
     edgeFlows: { status: 'loading', id: null },
+    estimatedTraffic: { status: 'loading', id: null, label: null },
   };
   private analysisRun: RunningAnalysis | null = null;
   private analysisTimer: ReturnType<typeof setTimeout> | null = null;
@@ -489,6 +493,13 @@ export class SimulationMode {
       this.setState({ edgeFlows: { status: 'ready', id: flows.id } });
       if (this.state.area && this.useCalibratedEdgeFlows) { this.analysisStale = true; this.scheduleAnalysis(); }
     }).catch(() => this.setState({ edgeFlows: { status: 'none', id: null } }));
+    // City-wide estimated traffic (estimated, project-level, not for decisions): loaded where installed; used for main-road
+    // edge flows only when useEstimatedTraffic is on (off by default: worse on the hold-out sites, TRAFFIC_ESTIMATED_P10.md §5)
+    fetchEstimatedTraffic().then(model => {
+      this.estimatedTraffic = model;
+      this.setState({ estimatedTraffic: { status: 'ready', id: model.id, label: model.label } });
+      if (this.state.area && this.useEstimatedTraffic) { this.analysisStale = true; this.scheduleAnalysis(); }
+    }).catch(() => this.setState({ estimatedTraffic: { status: 'none', id: null, label: null } }));
     // Roads for the simulation: the project's roads with the correction layer (and the OSM
     // one-way implications) applied on top; the stored roads are never changed
     this.getRoads = () => {
@@ -1133,6 +1144,13 @@ export class SimulationMode {
   private calibratedEdgeFlows: CalibratedEdgeFlows | null = null;
   /** Use the calibrated window edge flows where they cover the area (default). Off only to cut the window itself from the prior (WindowCalibration harness). */
   public useCalibratedEdgeFlows = true;
+  private estimatedTraffic: EstimatedTrafficModel | null = null;
+  /**
+   * Use the city-wide estimated traffic for main-road edge flows. OFF: tried in p10 (docs/urbanos/TRAFFIC_ESTIMATED_P10.md
+   * §5) and worse on the hold-out sites than the class-typical flows, so not shipped. The dataset stays loaded (estimated,
+   * project-level, not for decisions); the validation harness turns this on with VAL24_ESTIMATED=1 to re-check it.
+   */
+  public useEstimatedTraffic = false;
 
   /**
    * The OD demand the area runs on: the counts-calibrated plan when applied,
@@ -1147,10 +1165,10 @@ export class SimulationMode {
     if (this.calibratedPlan) plan = this.calibratedPlan;
     else {
       const period = landUse;
-      const key = contentKey({ ctx: demandContextKey({ ...this.getContext(), period }), rev: this.revision, seeds: area.seedRoadIds, range: area.rangeMeters, dir: area.direction, through: settings.through, corr: this.correctionsEnabled, edge: this.useCalibratedEdgeFlows ? this.calibratedEdgeFlows?.id ?? null : null });
+      const key = contentKey({ ctx: demandContextKey({ ...this.getContext(), period }), rev: this.revision, seeds: area.seedRoadIds, range: area.rangeMeters, dir: area.direction, through: settings.through, corr: this.correctionsEnabled, edge: this.useCalibratedEdgeFlows ? this.calibratedEdgeFlows?.id ?? null : null, est: this.useEstimatedTraffic ? this.estimatedTraffic?.id ?? null : null });
       if (this.planCache?.key !== key) {
         const ctx = { ...this.getContext(), period };
-        this.planCache = { key, plan: compileAreaDemand(ctx, area, new Map(this.getRoads().map(r => [r.id, r])), { through: settings.through, calibratedEdgeFlows: this.useCalibratedEdgeFlows ? this.calibratedEdgeFlows : null }) };
+        this.planCache = { key, plan: compileAreaDemand(ctx, area, new Map(this.getRoads().map(r => [r.id, r])), { through: settings.through, calibratedEdgeFlows: this.useCalibratedEdgeFlows ? this.calibratedEdgeFlows : null, estimatedTraffic: this.useEstimatedTraffic ? this.estimatedTraffic : null }) };
       }
       plan = this.planCache.plan;
     }

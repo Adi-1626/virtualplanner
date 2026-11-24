@@ -4,7 +4,8 @@
  * https://assets.publishing.service.gov.uk/media/6a033d074fb0713aa63ea802/tag-m3-1-highway-assignment-modelling.pdf).
  *
  * Counts and the river screen line: the app's own per-site runs (each site in its own 2 km study area at its own
- * hour, assigned volume, motor vehicles), branch p9-calibration, docs/urbanos/TRAFFIC_CALIBRATION_P9.md §4. The
+ * hour, assigned volume, motor vehicles), docs/urbanos/TRAFFIC_CALIBRATION_P9.md §4, re-run on branch p10-estimated
+ * (docs/urbanos/TRAFFIC_ESTIMATED_P10.md §5), which also scores them against the ESTIMATED 2026 volumes. The
  * sites are split once into CALIBRATION (may be fitted) and HOLD-OUT (never fitted) in
  * backend/data/observed_validation/pune_network_validation_v1.json; both are shown separately (TAG M3.1 §3.3).
  * Speeds: docs/ENGINEERING_VALIDATION.md §5.0 (code c916854), not re-run in p9.
@@ -44,8 +45,9 @@ export const geh = (m: number, c: number) => Math.sqrt(2 * (m - c) ** 2 / Math.m
 export const flowOk = (m: number, c: number) => Math.abs(m - c) <= (c < 700 ? 100 : c <= 2700 ? 0.15 * c : 400);
 
 /**
- * Per-site results, p9-calibration, shipped configuration (no calibrated window edge flows: class-typical edge
- * flows per lane). Counts: CMP 2008 (motor vehicles, cycles and carts removed; another hour of the same site moved
+ * Per-site results, shipped configuration (class-typical edge flows per lane; re-run on p10-estimated with the estimated
+ * traffic switched off: identical to p9). The city-wide ESTIMATED traffic as edge flows was tried and is not shipped:
+ * 0/15 within GEH 5, hold-out 0/8 (mean GEH 36.9), river +51.5% (docs/urbanos/TRAFFIC_ESTIMATED_P10.md §5). Counts: CMP 2008 (motor vehicles, cycles and carts removed; another hour of the same site moved
  * with the Pune hourly profile; Sambhaji's model is its non-two-wheeler volume as the count excludes two-wheelers)
  * and Gunjan Chowk 2017.
  */
@@ -70,6 +72,27 @@ export const COUNT_RESULTS: CountSiteResult[] = [
 /** River screen line (CMP 2008 screen line 2, 9 crossings, each at its own hour, motor vehicles). Sambhaji at its total model volume. */
 export const RIVER_SCREENLINE = { crossings: 9, model: 54505, count: 73824 };
 
+/**
+ * The same runs against the ESTIMATED 2026 volumes of the same crossings (urbanos-data/estimated/traffic-v1/anchors.csv:
+ * count-derived 2026 daily x the Pune hourly share at the run's hour). Estimated, not measured: shown beside the official
+ * counts, never instead of them. Roles are the estimated dataset's own calibration / hold-out split.
+ */
+export const ESTIMATED_BASIS_RESULTS: { id: string; role: 'calibration' | 'holdout'; hour: number; target: number; model: number }[] = [
+  { id: 'cmp08_shivaji', role: 'calibration', hour: 18, target: 7503, model: 2393 },
+  { id: 'cmp08_mhatre', role: 'holdout', hour: 18, target: 9152, model: 4741 },
+  { id: 'cmp08_shinde', role: 'calibration', hour: 18, target: 5662, model: 2071 },
+  { id: 'cmp08_tilak', role: 'holdout', hour: 10, target: 5440, model: 1701 },
+  { id: 'cmp08_smjoshi', role: 'calibration', hour: 11, target: 5875, model: 1973 },
+  { id: 'cmp08_sambhaji', role: 'holdout', hour: 11, target: 5707, model: 4045 },
+  { id: 'cmp08_rajaram', role: 'calibration', hour: 10, target: 7743, model: 7093 },
+  { id: 'cmp08_sangam', role: 'calibration', hour: 19, target: 20166, model: 11000 },
+  { id: 'cmp08_yerwada_ambedkar', role: 'holdout', hour: 18, target: 21694, model: 19487 },
+  { id: 'cmp08_sancheti_rob', role: 'calibration', hour: 19, target: 16025, model: 5728 }
+];
+export const ESTIMATED_RIVER = { crossings: 9, model: 54504, target: 88942 };
+/** Where the edge flows of the shipped model come from (said on the banner). */
+export const EDGE_FLOW_BASIS = 'Edge flows: class-typical flows per lane; edge flows calibrated to estimated data (pune_estimated_traffic_v1: estimated, project-level, not for decisions) were tried and are not used, being worse on the hold-out sites';
+
 export interface CountSummary { n: number; withinGeh5: number; flowOk: number; meanGeh: number }
 export function summarizeCounts(rows: readonly CountSiteResult[]): CountSummary {
   const g = rows.map(r => geh(r.model, r.count));
@@ -85,6 +108,8 @@ export const COUNTS_ALL = summarizeCounts(COUNT_RESULTS);
 export const COUNTS_CALIBRATION = summarizeCounts(COUNT_RESULTS.filter(r => r.role === 'calibration'));
 export const COUNTS_HOLDOUT = summarizeCounts(COUNT_RESULTS.filter(r => r.role === 'holdout'));
 export const RIVER_SCREENLINE_ERROR = RIVER_SCREENLINE.model / RIVER_SCREENLINE.count - 1;
+export const ESTIMATED_HOLDOUT = summarizeCounts(ESTIMATED_BASIS_RESULTS.filter(r => r.role === 'holdout').map(r => ({ ...r, name: r.id, count: r.target })));
+export const ESTIMATED_RIVER_ERROR = ESTIMATED_RIVER.model / ESTIMATED_RIVER.target - 1;
 
 const gehRow = (label: string, s: CountSummary): ValidationRow => ({
   test: label, required: '> 85% of sites', result: `${s.withinGeh5} / ${s.n} (mean GEH ${s.meanGeh.toFixed(1)})`,
@@ -98,6 +123,10 @@ const rows: ValidationRow[] = [
   { test: 'Counts, flow criterion', required: '> 85% of sites', result: `${COUNTS_ALL.flowOk} / ${COUNTS_ALL.n}`, status: pass(COUNTS_ALL.flowOk / COUNTS_ALL.n > TAG_CRITERIA.flowShare) },
   { test: `River screen line (${RIVER_SCREENLINE.crossings} crossings)`, required: 'within 5%',
     result: `${fmtInt(RIVER_SCREENLINE.model)} vs ${fmtInt(RIVER_SCREENLINE.count)} (${fmtPct(RIVER_SCREENLINE_ERROR)})`, status: pass(Math.abs(RIVER_SCREENLINE_ERROR) <= TAG_CRITERIA.screenline) },
+  // Against the ESTIMATED 2026 volumes (not counts): shown so the estimated calibration is checked on its own terms too
+  gehRow(`Estimated 2026 volumes, GEH < 5, hold-out crossings (${ESTIMATED_HOLDOUT.n}; estimated, not counts)`, ESTIMATED_HOLDOUT),
+  { test: `River screen line vs estimated 2026 volumes (${ESTIMATED_RIVER.crossings} crossings; estimated, not counts)`, required: 'within 5%',
+    result: `${fmtInt(ESTIMATED_RIVER.model)} vs ${fmtInt(ESTIMATED_RIVER.target)} (${fmtPct(ESTIMATED_RIVER_ERROR)})`, status: pass(Math.abs(ESTIMATED_RIVER_ERROR) <= TAG_CRITERIA.screenline) },
   // Speeds: recorded in docs/ENGINEERING_VALIDATION.md §5.0 (c916854); the p9 changes do not touch the speed runs' inputs
   { test: 'Section speeds within 15% (micro-sim)', required: '> 85% of 21', result: '4 / 21 (MAPE 38%, bias −18%)', status: 'FAIL' },
   { test: 'Corridor-hour speeds within 15%', required: '> 85% of 120', result: '27 / 120 (MAPE 54%, bias +40%)', status: 'FAIL' },
@@ -109,15 +138,16 @@ export const TRAFFIC_VALIDATION = {
   standard: 'TAG M3.1',
   standardTitle: 'UK DfT TAG unit M3.1, Highway Assignment Modelling (May 2026)',
   standardUrl: 'https://assets.publishing.service.gov.uk/media/6a033d074fb0713aa63ea802/tag-m3-1-highway-assignment-modelling.pdf',
-  source: 'docs/urbanos/TRAFFIC_CALIBRATION_P9.md (counts, screen line); docs/ENGINEERING_VALIDATION.md §5.0 (speeds)',
-  codeRef: 'p9-calibration (counts); c916854 (speeds)',
+  source: 'docs/urbanos/TRAFFIC_CALIBRATION_P9.md, re-run in docs/urbanos/TRAFFIC_ESTIMATED_P10.md (counts, screen line, estimated basis); docs/ENGINEERING_VALIDATION.md §5.0 (speeds)',
+  codeRef: 'p9-calibration, re-run on p10-estimated (counts); c916854 (speeds)',
+  edgeFlows: EDGE_FLOW_BASIS,
   rows,
   meaning: 'Numbers are estimated: use them to compare options on the same inputs, not as forecasts of Pune traffic.',
 };
 
 /** One-line summary for banners: sites within GEH 5 (all, then calibration and hold-out separately) and the river screen line. */
 export const TRAFFIC_VALIDATION_SUMMARY =
-  `${COUNTS_ALL.withinGeh5} of ${COUNTS_ALL.n} count sites within GEH 5 (calibration ${COUNTS_CALIBRATION.withinGeh5}/${COUNTS_CALIBRATION.n}, hold-out ${COUNTS_HOLDOUT.withinGeh5}/${COUNTS_HOLDOUT.n}); river screen line ${fmtPct(RIVER_SCREENLINE_ERROR)}`;
+  `${COUNTS_ALL.withinGeh5} of ${COUNTS_ALL.n} count sites within GEH 5 (calibration ${COUNTS_CALIBRATION.withinGeh5}/${COUNTS_CALIBRATION.n}, hold-out ${COUNTS_HOLDOUT.withinGeh5}/${COUNTS_HOLDOUT.n}); river screen line ${fmtPct(RIVER_SCREENLINE_ERROR)}. ${EDGE_FLOW_BASIS}`;
 
 /** The river screen line in words, for longer explanations. */
 export const RIVER_SCREENLINE_TEXT =

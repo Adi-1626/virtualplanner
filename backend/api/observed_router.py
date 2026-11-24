@@ -10,12 +10,25 @@ from observed.diurnal import profile as diurnal
 from observed import network_corrections
 from observed import screenlines
 from observed import calibrated_flows
+from observed import estimated_traffic
 
 router = APIRouter(prefix="/observed-counts", tags=["observed counts"])
 diurnal_router = APIRouter(prefix="/diurnal-profile", tags=["observed counts"])
 corrections_router = APIRouter(prefix="/network-corrections", tags=["network corrections"])
 screenline_router = APIRouter(prefix="/observed-screenlines", tags=["observed counts"])
 calibrated_flows_router = APIRouter(prefix="/calibrated-flows", tags=["observed counts"])
+estimated_traffic_router = APIRouter(prefix="/estimated-traffic", tags=["estimated traffic"])
+
+
+@estimated_traffic_router.get("/{file_id}")
+def get_estimated_traffic(file_id: str):
+    """City-wide ESTIMATED traffic model (label: estimated, project-level, not for decisions)."""
+    try:
+        return estimated_traffic.load(file_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"No estimated-traffic file {file_id!r}")
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=f"Invalid estimated-traffic file {file_id!r}: {exc}")
 
 
 @calibrated_flows_router.get("/{file_id}")
