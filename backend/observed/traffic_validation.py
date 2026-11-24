@@ -3,7 +3,7 @@ Recorded traffic-model validation results (TAG M3.1) and the summary computed fr
 
 Mirror of frontend/src/components/ui/badges/trafficValidation.ts (tests/test_traffic_validation.py checks that both
 hold the same per-site numbers). Source: the app's own per-site runs, shipped configuration (class-typical edge flows),
-docs/urbanos/TRAFFIC_CALIBRATION_P9.md, re-run unchanged on p10-estimated (docs/urbanos/TRAFFIC_ESTIMATED_P10.md, where
+docs/urbanos/TRAFFIC_CALIBRATION_P9.md, re-run on p10-estimated (docs/urbanos/TRAFFIC_ESTIMATED_P10.md) and on p11-sim with the p11 engine (docs/urbanos/SIM_USER_TEST_P11.md §2, where
 edge flows calibrated to the ESTIMATED city-wide traffic were tried and not shipped: worse on the hold-out). Recorded results, not live values; the
 criteria are TAG's and are never loosened to change the verdict.
 """
@@ -18,26 +18,26 @@ SCREENLINE_LIMIT = 0.05
 
 # (id, role, count, model): motor vehicles per hour, both directions, at the counted hour
 COUNT_RESULTS = [
-    ("cmp08_shivaji", "calibration", 7245, 2393),
-    ("cmp08_shinde", "calibration", 4636, 2071),
-    ("cmp08_smjoshi", "calibration", 4036, 1973),
-    ("cmp08_rajaram", "calibration", 7050, 7093),
-    ("cmp08_sangam", "calibration", 15640, 11000),
-    ("cmp08_wadia_rob", "calibration", 4454, 3721),
-    ("cmp08_sancheti_rob", "calibration", 6255, 5728),
-    ("cmp08_mhatre", "holdout", 9753, 4741),
-    ("cmp08_tilak", "holdout", 2070, 1701),
-    ("cmp08_sambhaji", "holdout", 4251, 1942),
-    ("cmp08_yerwada_ambedkar", "holdout", 19143, 19487),
-    ("cmp08_rangehill_rub", "holdout", 1611, 2782),
-    ("gunjan17_09", "holdout", 10034, 5735),
-    ("gunjan17_14", "holdout", 6581, 4043),
-    ("gunjan17_19", "holdout", 9460, 5735),
+    ("cmp08_shivaji", "calibration", 7245, 2444),
+    ("cmp08_shinde", "calibration", 4636, 1631),
+    ("cmp08_smjoshi", "calibration", 4036, 2080),
+    ("cmp08_rajaram", "calibration", 7050, 7304),
+    ("cmp08_sangam", "calibration", 15640, 10907),
+    ("cmp08_wadia_rob", "calibration", 4454, 3078),
+    ("cmp08_sancheti_rob", "calibration", 6255, 5720),
+    ("cmp08_mhatre", "holdout", 9753, 5013),
+    ("cmp08_tilak", "holdout", 2070, 1799),
+    ("cmp08_sambhaji", "holdout", 4251, 2006),
+    ("cmp08_yerwada_ambedkar", "holdout", 19143, 18890),
+    ("cmp08_rangehill_rub", "holdout", 1611, 2752),
+    ("gunjan17_09", "holdout", 10034, 5804),
+    ("gunjan17_14", "holdout", 6581, 4084),
+    ("gunjan17_19", "holdout", 9460, 5804),
 ]
-RIVER_SCREENLINE = {"crossings": 9, "model": 54505, "count": 73824}
+RIVER_SCREENLINE = {"crossings": 9, "model": 54247, "count": 73824}
 # Speed tests (docs/ENGINEERING_VALIDATION.md §5.0, code c916854): 4/21, 27/120, 2/9 within 15%, all below 85%
 SPEEDS_FAIL = True
-EDGE_FLOW_BASIS = "class-typical edge flows; edge flows calibrated to estimated data (pune_estimated_traffic_v1) tried, not used: worse on hold-out"
+EDGE_FLOW_BASIS = "class-typical edge flows; edge flows calibrated to estimated data (pune_estimated_traffic_v1) tried, not used: worse on hold-out; area demand from estimated zone land use matched to estimated volumes (p11) tried, not used: worse on the hold-out river screen line"
 
 
 def geh(m: float, c: float) -> float:

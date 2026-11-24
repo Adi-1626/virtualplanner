@@ -245,6 +245,15 @@ const SIGNAL_KERB_M = 1.2;
 const SIGNAL_MATCH_M = 35;
 /** A piece this short (m) between a signalised junction and another controlled one may lie inside one mapped signal box (applySignalBoxes; junctionGroups joins pieces up to 30 m). */
 const BOX_PIECE_M = 30;
+/**
+ * Mid-block signals (p11): a mapped OSM traffic signal that is not within SIGNAL_MATCH_M of a junction of three or more
+ * arms is a pedestrian crossing signal along the road. Vehicles on every link passing within MIDBLOCK_MATCH_M of it stop
+ * there on red. The timing is not mapped: an ESTIMATED pedestrian phase of MIDBLOCK_RED_S in a MIDBLOCK_CYCLE_S cycle
+ * (IRC:103-2012 crossing time for ~2 lanes each way at 1.2 m/s plus clearance), one offset per signal for both directions.
+ */
+const MIDBLOCK_MATCH_M = 12;
+export const MIDBLOCK_CYCLE_S = 90;
+export const MIDBLOCK_RED_S = 20;
 
 /** Assumed saturation flow per lane by road class (veh/h), used to estimate demand at the area edge. */
 export const LANE_CAPACITY_VPH: Record<string, number> = { highway: 1800, arterial: 1400, collector: 1000, local: 600 };
@@ -567,6 +576,8 @@ interface Vehicle {
   holdNext?: number;
   /** Has stood GRIDLOCK_S at the front of a queue (counted once as a gridlock event). */
   gridlocked?: boolean;
+  /** Where on its link this vehicle holds for a red mid-block signal this step (null: none). */
+  midStop?: number | null;
 }
 
 interface Control {
@@ -863,6 +874,7 @@ export class TrafficMicroSim {
     if (options.signalPoints?.length) this.applySignalBoxes(options.signalPoints, roads, options.junctionEdits);
     this.applyJunctionEdits(net, options.junctionEdits, cost);
     this.applyRoundabouts(net, roads);
+    if (options.signalPoints?.length) this.placeMidBlockSignals(options.signalPoints);
     this.signalLinks = this.links.filter(l => this.controls.get(l.to)?.kind === 'signal').map(l => l.index);
     this.buildSourcesAndSinks(net, included, roads);
     const watch = new Set(options.watchRoadIds ?? []);
@@ -1284,6 +1296,48 @@ export class TrafficMicroSim {
   /** A junction's signal offset (share of its cycle): drawn per junction, so an edit elsewhere does not shift it. */
   private signalOffsetUnit(nodeId: string) {
     return streamRng(this.seed, `signal:${nodeId}`)();
+  }
+
+  /** Mid-block signals by link index, sorted along the link (placeMidBlockSignals). */
+  private midSignals = new Map<number, { s: number; offset: number }[]>();
+  /** Mapped signals run as mid-block pedestrian signals (not at a junction). */
+  public midBlockSignalCount = 0;
+  private placeMidBlockSignals(points: readonly (readonly [number, number])[]) {
+    this.midSignals.clear();
+    this.midBlockSignalCount = 0;
+    // Nodes of the junctions that have their own control (three or more arms)
+    const junctionPts: (readonly number[])[] = [];
+    for (const id of this.controls.keys()) for (const m of this.junctionMembers.get(id) ?? [id]) { const c = this.areaNodes.get(m)?.coordinates; if (c) junctionPts.push(c); }
+    for (const [lng, lat] of points) {
+      const kx = mPerDegLng(lat);
+      if (junctionPts.some(c => Math.hypot((c[0] - lng) * kx, (c[1] - lat) * M_PER_DEG_LAT) < SIGNAL_MATCH_M)) continue;
+      const offset = streamRng(this.seed, `midblock:${lng.toFixed(6)},${lat.toFixed(6)}`)();
+      let used = false;
+      for (const l of this.links) {
+        // Closest point of the link's polyline (local metres)
+        let best = Infinity, bestS = 0;
+        for (let k = 0; k < l.pts.length - 1; k++) {
+          const a = l.pts[k], b = l.pts[k + 1];
+          const ax = (a[0] - lng) * kx, ay = (a[1] - lat) * M_PER_DEG_LAT, bx = (b[0] - lng) * kx, by = (b[1] - lat) * M_PER_DEG_LAT;
+          const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+          const u = len2 > 0 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len2)) : 0;
+          const d = Math.hypot(ax + u * dx, ay + u * dy);
+          if (d < best) { best = d; bestS = l.cum[k] + u * (l.cum[k + 1] - l.cum[k]); }
+        }
+        // At the very start of a link the signal belongs to the link arriving there (it holds traffic before the node)
+        if (best > MIDBLOCK_MATCH_M || bestS < 5 || l.length < 15) continue;
+        const list = this.midSignals.get(l.index) ?? [];
+        list.push({ s: Math.min(bestS, l.length - 2), offset });
+        this.midSignals.set(l.index, list.sort((x, y) => x.s - y.s));
+        used = true;
+      }
+      if (used) this.midBlockSignalCount++;
+    }
+  }
+  /** A mid-block signal's state now: red for its pedestrian phase, amber the SIGNAL_AMBER_S before it. */
+  private midState(offset: number): 'green' | 'amber' | 'red' {
+    const ph = (((this.t / MIDBLOCK_CYCLE_S + offset) % 1) + 1) % 1 * MIDBLOCK_CYCLE_S;
+    return ph < MIDBLOCK_RED_S ? 'red' : ph >= MIDBLOCK_CYCLE_S - SIGNAL_AMBER_S ? 'amber' : 'green';
   }
 
   /**
@@ -2762,6 +2816,24 @@ export class TrafficMicroSim {
             gap = last ? last.pos - last.type.lengthM - (c.entry - c.length + veh.pos - c.start) : dist + 200;
             vLead = last ? last.v : veh.v;
           }
+          // Mid-block signal ahead on this link: stop on red, and on amber when it can stop comfortably. A vehicle that can
+          // no longer stop even braking hard (twice its comfortable rate) goes on (it was already committed on amber).
+          veh.midStop = null;
+          const mids = this.midSignals.get(link.index);
+          if (mids) for (const m of mids) {
+            const dm = m.s - veh.pos;
+            if (dm <= 0) continue;
+            const st = this.midState(m.offset);
+            if (st !== 'green') {
+              const need = (veh.v * veh.v) / (2 * veh.type.comfortDecel);
+              if (st === 'red' ? dm >= need / 2 : dm >= need) {
+                veh.midStop = m.s;
+                const g = dm - 0.3 + veh.type.minGapM;
+                if (g < gap) { gap = g; vLead = 0; }
+              }
+            }
+            break;
+          }
           veh.acc = idmAcceleration(veh.v, this.desiredSpeed(veh, link, dist), gap, vLead, veh.type);
         }
       }
@@ -2793,6 +2865,7 @@ export class TrafficMicroSim {
             limit = this.stopLine(veh, link) - 0.1;
             if (pos > limit) v = 0;
           }
+          if (veh.midStop != null && veh.midStop - 0.1 < limit) { limit = veh.midStop - 0.1; if (pos > limit) v = 0; }
           if (pos > limit) pos = Math.max(veh.pos, limit);
           // Fuel and emissions from this step's speed and actual acceleration (measured window only; docs/ODME_AND_EMISSIONS.md)
           if (this.emissions) this.emissions.add(veh.type.kind, v, (v - veh.v) / dt, dt);

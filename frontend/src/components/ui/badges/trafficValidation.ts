@@ -8,6 +8,10 @@
  * (docs/urbanos/TRAFFIC_ESTIMATED_P10.md §5), which also scores them against the ESTIMATED 2026 volumes. The
  * sites are split once into CALIBRATION (may be fitted) and HOLD-OUT (never fitted) in
  * backend/data/observed_validation/pune_network_validation_v1.json; both are shown separately (TAG M3.1 §3.3).
+ * Re-run on branch p11-sim (docs/urbanos/SIM_USER_TEST_P11.md §2) with the p11 engine: the same shipped configuration
+ * gives 2/15 within GEH 5 (hold-out 1/8, mean GEH 31.4) and river −26.5% (p10: −26.2%); the small changes come from the
+ * unified road centreline lengths. The p11 zone demand + estimate match was tried twice and is not shipped (worse on the
+ * hold-out river screen line, collapsed area speeds).
  * Speeds: docs/ENGINEERING_VALIDATION.md §5.0 (code c916854), not re-run in p9.
  * These are recorded results, not live values: update COUNT_RESULTS / RIVER_SCREENLINE only from a re-run.
  * The criteria below are TAG's and must not be loosened to change a verdict.
@@ -52,25 +56,25 @@ export const flowOk = (m: number, c: number) => Math.abs(m - c) <= (c < 700 ? 10
  * and Gunjan Chowk 2017.
  */
 export const COUNT_RESULTS: CountSiteResult[] = [
-  { id: 'cmp08_shivaji', name: 'Shivaji Bridge', role: 'calibration', hour: 18, count: 7245, model: 2393 },
-  { id: 'cmp08_shinde', name: 'Shinde Bridge', role: 'calibration', hour: 18, count: 4636, model: 2071 },
-  { id: 'cmp08_smjoshi', name: 'S. M. Joshi Bridge', role: 'calibration', hour: 11, count: 4036, model: 1973 },
-  { id: 'cmp08_rajaram', name: 'Raja Ram Bridge', role: 'calibration', hour: 10, count: 7050, model: 7093 },
-  { id: 'cmp08_sangam', name: 'Sangam Bridge (old + new)', role: 'calibration', hour: 19, count: 15640, model: 11000 },
-  { id: 'cmp08_wadia_rob', name: 'ROB at Wadia College', role: 'calibration', hour: 11, count: 4454, model: 3721 },
-  { id: 'cmp08_sancheti_rob', name: 'ROB near Sancheti Hospital', role: 'calibration', hour: 19, count: 6255, model: 5728 },
-  { id: 'cmp08_mhatre', name: 'Mhatre Bridge', role: 'holdout', hour: 18, count: 9753, model: 4741 },
-  { id: 'cmp08_tilak', name: 'Tilak Bridge', role: 'holdout', hour: 10, count: 2070, model: 1701 },
-  { id: 'cmp08_sambhaji', name: 'Sambhaji Bridge (no two-wheelers)', role: 'holdout', hour: 11, count: 4251, model: 1942 },
-  { id: 'cmp08_yerwada_ambedkar', name: 'Yerwada + Ambedkar bridges', role: 'holdout', hour: 18, count: 19143, model: 19487 },
-  { id: 'cmp08_rangehill_rub', name: 'RUB at Range Hill', role: 'holdout', hour: 16, count: 1611, model: 2782 },
-  { id: 'gunjan17_09', name: 'Gunjan Chowk 09:00', role: 'holdout', hour: 9, count: 10034, model: 5735 },
-  { id: 'gunjan17_14', name: 'Gunjan Chowk 14:00', role: 'holdout', hour: 14, count: 6581, model: 4043 },
-  { id: 'gunjan17_19', name: 'Gunjan Chowk 19:00', role: 'holdout', hour: 19, count: 9460, model: 5735 },
+  { id: 'cmp08_shivaji', name: 'Shivaji Bridge', role: 'calibration', hour: 18, count: 7245, model: 2444 },
+  { id: 'cmp08_shinde', name: 'Shinde Bridge', role: 'calibration', hour: 18, count: 4636, model: 1631 },
+  { id: 'cmp08_smjoshi', name: 'S. M. Joshi Bridge', role: 'calibration', hour: 11, count: 4036, model: 2080 },
+  { id: 'cmp08_rajaram', name: 'Raja Ram Bridge', role: 'calibration', hour: 10, count: 7050, model: 7304 },
+  { id: 'cmp08_sangam', name: 'Sangam Bridge (old + new)', role: 'calibration', hour: 19, count: 15640, model: 10907 },
+  { id: 'cmp08_wadia_rob', name: 'ROB at Wadia College', role: 'calibration', hour: 11, count: 4454, model: 3078 },
+  { id: 'cmp08_sancheti_rob', name: 'ROB near Sancheti Hospital', role: 'calibration', hour: 19, count: 6255, model: 5720 },
+  { id: 'cmp08_mhatre', name: 'Mhatre Bridge', role: 'holdout', hour: 18, count: 9753, model: 5013 },
+  { id: 'cmp08_tilak', name: 'Tilak Bridge', role: 'holdout', hour: 10, count: 2070, model: 1799 },
+  { id: 'cmp08_sambhaji', name: 'Sambhaji Bridge (no two-wheelers)', role: 'holdout', hour: 11, count: 4251, model: 2006 },
+  { id: 'cmp08_yerwada_ambedkar', name: 'Yerwada + Ambedkar bridges', role: 'holdout', hour: 18, count: 19143, model: 18890 },
+  { id: 'cmp08_rangehill_rub', name: 'RUB at Range Hill', role: 'holdout', hour: 16, count: 1611, model: 2752 },
+  { id: 'gunjan17_09', name: 'Gunjan Chowk 09:00', role: 'holdout', hour: 9, count: 10034, model: 5804 },
+  { id: 'gunjan17_14', name: 'Gunjan Chowk 14:00', role: 'holdout', hour: 14, count: 6581, model: 4084 },
+  { id: 'gunjan17_19', name: 'Gunjan Chowk 19:00', role: 'holdout', hour: 19, count: 9460, model: 5804 },
 ];
 
 /** River screen line (CMP 2008 screen line 2, 9 crossings, each at its own hour, motor vehicles). Sambhaji at its total model volume. */
-export const RIVER_SCREENLINE = { crossings: 9, model: 54505, count: 73824 };
+export const RIVER_SCREENLINE = { crossings: 9, model: 54247, count: 73824 };
 
 /**
  * The same runs against the ESTIMATED 2026 volumes of the same crossings (urbanos-data/estimated/traffic-v1/anchors.csv:
@@ -78,20 +82,20 @@ export const RIVER_SCREENLINE = { crossings: 9, model: 54505, count: 73824 };
  * counts, never instead of them. Roles are the estimated dataset's own calibration / hold-out split.
  */
 export const ESTIMATED_BASIS_RESULTS: { id: string; role: 'calibration' | 'holdout'; hour: number; target: number; model: number }[] = [
-  { id: 'cmp08_shivaji', role: 'calibration', hour: 18, target: 7503, model: 2393 },
-  { id: 'cmp08_mhatre', role: 'holdout', hour: 18, target: 9152, model: 4741 },
-  { id: 'cmp08_shinde', role: 'calibration', hour: 18, target: 5662, model: 2071 },
-  { id: 'cmp08_tilak', role: 'holdout', hour: 10, target: 5440, model: 1701 },
-  { id: 'cmp08_smjoshi', role: 'calibration', hour: 11, target: 5875, model: 1973 },
-  { id: 'cmp08_sambhaji', role: 'holdout', hour: 11, target: 5707, model: 4045 },
-  { id: 'cmp08_rajaram', role: 'calibration', hour: 10, target: 7743, model: 7093 },
-  { id: 'cmp08_sangam', role: 'calibration', hour: 19, target: 20166, model: 11000 },
-  { id: 'cmp08_yerwada_ambedkar', role: 'holdout', hour: 18, target: 21694, model: 19487 },
-  { id: 'cmp08_sancheti_rob', role: 'calibration', hour: 19, target: 16025, model: 5728 }
+  { id: 'cmp08_shivaji', role: 'calibration', hour: 18, target: 7503, model: 2444 },
+  { id: 'cmp08_mhatre', role: 'holdout', hour: 18, target: 9152, model: 5013 },
+  { id: 'cmp08_shinde', role: 'calibration', hour: 18, target: 5662, model: 1631 },
+  { id: 'cmp08_tilak', role: 'holdout', hour: 10, target: 5440, model: 1799 },
+  { id: 'cmp08_smjoshi', role: 'calibration', hour: 11, target: 5875, model: 2080 },
+  { id: 'cmp08_sambhaji', role: 'holdout', hour: 11, target: 5707, model: 4180 },
+  { id: 'cmp08_rajaram', role: 'calibration', hour: 10, target: 7743, model: 7304 },
+  { id: 'cmp08_sangam', role: 'calibration', hour: 19, target: 20166, model: 10907 },
+  { id: 'cmp08_yerwada_ambedkar', role: 'holdout', hour: 18, target: 21694, model: 18890 },
+  { id: 'cmp08_sancheti_rob', role: 'calibration', hour: 19, target: 16025, model: 5720 }
 ];
-export const ESTIMATED_RIVER = { crossings: 9, model: 54504, target: 88942 };
+export const ESTIMATED_RIVER = { crossings: 9, model: 54248, target: 88942 };
 /** Where the edge flows of the shipped model come from (said on the banner). */
-export const EDGE_FLOW_BASIS = 'Edge flows: class-typical flows per lane; edge flows calibrated to estimated data (pune_estimated_traffic_v1: estimated, project-level, not for decisions) were tried and are not used, being worse on the hold-out sites';
+export const EDGE_FLOW_BASIS = 'Edge flows: class-typical flows per lane; edge flows calibrated to estimated data (pune_estimated_traffic_v1: estimated, project-level, not for decisions) were tried and are not used, being worse on the hold-out sites; nor is area demand from estimated zone land use matched to the estimated road volumes (p11, worse on the hold-out river screen line)';
 
 export interface CountSummary { n: number; withinGeh5: number; flowOk: number; meanGeh: number }
 export function summarizeCounts(rows: readonly CountSiteResult[]): CountSummary {
