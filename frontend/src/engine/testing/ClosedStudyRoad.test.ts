@@ -5,7 +5,7 @@ import type { RoadObject } from '../objects/types';
 import { ObjectManager } from '../objects/ObjectManager';
 import type { DrivableObject } from '../simulation/StudyAreaExplorer';
 import { SimulationMode } from '../simulation/SimulationMode';
-import { pickRerouting } from '../simulation/ScenarioComparison';
+import { pickRerouting, compareAnalyses } from '../simulation/ScenarioComparison';
 
 /**
  * A closure proposal deletes the studied road itself (p11 user test, Baba Bhide Bridge): before, Simulate said "The
@@ -95,5 +95,21 @@ describe('Where traffic moved', () => {
     expect(r.map(x => x.roadName)).toEqual(['Baba Bhide Bridge', 'Jagannath Kaniram Kasat Path', 'Dandekar Bridge', 'Barrister Nath Pai Chowk', 'Jagtap Road', 'Ganesh Path', 'Dagadi Pool Road', 'Maharshi Vitthal Ramji Shinde Bridge']);
     // Before: the eight largest changes, two of them gains, none of them another bridge
     expect(r.filter(x => x.change > 0)).toHaveLength(4);
+  });
+});
+
+describe('Where traffic moved: the closed road', () => {
+  it('is marked closed, so its routed figure is not read as a second "traffic through it" (Baba Bhide Bridge −1,031 next to 561 veh/h)', () => {
+    const out = (links: [string, number][]) => ({ result: {
+      perSeed: [{ seed: 42, sectionVph: 561, sectionTimeS: 60, endDelayS: 10, servedShare: 0.9, completedTrips: 100, meanTravelTimeS: 200, meanDelayS: 50, gridlockRemovals: 0 }], totalVph: 561,
+      directions: [{ label: 'north', demandVph: 1000, vph: 561, meanSpeedKmh: 20 }], load: { servedShare: 0.9, overloaded: false },
+      network: { completedTrips: 100, meanTravelTimeS: 200, meanDelayS: 50, gridlockRemovals: 0 }, assignment: { totalVehHours: 100, overCapacityLinks: 0, unroutedVph: 0 },
+      areaLinkVph: new Map(links), areaVc: new Map(links.map(([k, v]) => [k.replace(/_(fwd|bwd)$/, ''), v / 1000])), areaBottlenecks: [] } }) as any;
+    const road = (id: string, name: string) => ({ id, name }) as any;
+    const before = new Map([['b1', road('b1', 'Baba Bhide Bridge')], ['d1', road('d1', 'Dandekar Bridge')]]);
+    const after = new Map([['d1', road('d1', 'Dandekar Bridge')]]);
+    const c = compareAnalyses(out([['b1_seg_1_fwd', 1031], ['d1_seg_1_fwd', 2000]]), out([['d1_seg_1_fwd', 2600]]), { before, after }, { before: 1000, after: 1000 }, undefined, undefined, { closedRoadNames: ['Baba Bhide Bridge'] });
+    expect(c.rerouting.find(x => x.roadName === 'Baba Bhide Bridge')).toMatchObject({ change: -1031, closed: true });
+    expect(c.rerouting.find(x => x.roadName === 'Dandekar Bridge')!.closed).toBeUndefined();
   });
 });

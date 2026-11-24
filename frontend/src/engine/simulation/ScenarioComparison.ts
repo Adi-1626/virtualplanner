@@ -24,7 +24,9 @@ export interface Delta { label: string; before: number | null; after: number | n
   agreement?: { same: number; of: number };
   /** Why a value is missing, when one side has none. */
   note?: string }
-export interface RoadChange { roadName: string; before: number; after: number; change: number; segmentKeys: string[]; vcBefore: number; vcAfter: number }
+export interface RoadChange { roadName: string; before: number; after: number; change: number; segmentKeys: string[]; vcBefore: number; vcAfter: number;
+  /** No road of this name is left in the proposal (a closure): its traffic is gone because the road is. */
+  closed?: boolean }
 
 export interface ComparisonResult {
   kind: 'infrastructure' | 'development';
@@ -284,9 +286,12 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
     return out;
   };
   const ra = byRoad(a, roads.before), rb = byRoad(b, roads.after);
+  const namesAfter = new Set([...roads.after.values()].map(r => r.name));
   const changes: RoadChange[] = [...new Set([...ra.keys(), ...rb.keys()])].map(roadName => {
     const x = ra.get(roadName), y = rb.get(roadName);
-    return { roadName, before: Math.round(x?.vph ?? 0), after: Math.round(y?.vph ?? 0), change: Math.round((y?.vph ?? 0) - (x?.vph ?? 0)), segmentKeys: [...new Set([...(x?.keys ?? []), ...(y?.keys ?? [])])], vcBefore: x?.vc ?? 0, vcAfter: y?.vc ?? 0 };
+    return { roadName, before: Math.round(x?.vph ?? 0), after: Math.round(y?.vph ?? 0), change: Math.round((y?.vph ?? 0) - (x?.vph ?? 0)), segmentKeys: [...new Set([...(x?.keys ?? []), ...(y?.keys ?? [])])], vcBefore: x?.vc ?? 0, vcAfter: y?.vc ?? 0,
+      // "Baba Bhide Bridge −1,031 veh/h" next to "the 561 veh/h that crossed it" read as two figures for one thing: it is the road removed
+      ...(!namesAfter.has(roadName) ? { closed: true } : {}) };
   });
   // Where traffic left and where it went, up to four roads each: by size alone, a closure listed eight roads that lost
   // traffic near it and none of the other bridges that took it (p11 user test, Baba Bhide Bridge)
