@@ -48,20 +48,35 @@ const M = 111320;
 const near = (p: readonly number[], q: readonly number[], m: number) => Math.hypot((p[0] - q[0]) * M * Math.cos(p[1] * Math.PI / 180), (p[1] - q[1]) * M) < m;
 
 export interface RoadAgg { vph: number; vc: number; vkm: number; vh: number; delay: number; km: number; keys: Set<string> }
-/** Per named road of the area routing: volume (busiest stretch, both directions), load (busiest stretch, one direction), speed, delay. */
+
+/** Compass bearing (degrees) of a link: its road drawn from first to last point, reversed for the backward link. */
+function linkBearing(road: DrivableObject | undefined, dir: string): number {
+  const c = road?.coordinates;
+  const base = c && c.length >= 2
+    ? Math.atan2((c[c.length - 1][0] - c[0][0]) * Math.cos(c[0][1] * Math.PI / 180), c[c.length - 1][1] - c[0][1]) * 180 / Math.PI
+    : 0;
+  return dir === 'bwd' ? base + 180 : base;
+}
+
+/**
+ * Per named road of the area routing: volume, load (v/c of its busiest stretch in one direction), speed and delay.
+ * The volume is the busiest stretch in each direction of travel, added: the way 'Traffic routed along it' counts the
+ * studied road. The heaviest single direction read 'Baba Bhide Bridge 1,031 veh/h' beside 'routed along it 1,787' (p11);
+ * a divided road's carriageways are separate one-way roads of one name, so the direction comes from each link's
+ * bearing, not from fwd/bwd.
+ */
 export function byRoad(r: RoadAnalysisResult, roads: ReadonlyMap<string, DrivableObject>): Map<string, RoadAgg> {
   const out = new Map<string, RoadAgg>();
   const times = r.areaLinkTime;
-  // Both directions of a stretch together: the road's volume is its busiest stretch, two-way, as 'Traffic routed along
-  // it' counts it. The heaviest single direction read 'Baba Bhide Bridge 1,031 veh/h' beside 'routed along it 1,787' (p11)
-  const segVph = new Map<string, number>();
+  const flows = new Map<string, { bearing: number; vph: number }[]>();
   r.areaLinkVph.forEach((vph, linkId) => {
     const roadId = linkId.replace(/_seg_\d+_(fwd|bwd)$/, '');
-    const name = roads.get(roadId)?.name;
+    const road = roads.get(roadId);
+    const name = road?.name;
     if (!name || isGenericRoadName(name)) return;
     const seg = linkId.replace(/_(fwd|bwd)$/, '');
     const e = out.get(name) ?? out.set(name, { vph: 0, vc: 0, vkm: 0, vh: 0, delay: 0, km: 0, keys: new Set() }).get(name)!;
-    segVph.set(seg, (segVph.get(seg) ?? 0) + vph);
+    (flows.get(name) ?? flows.set(name, []).get(name)!).push({ bearing: linkBearing(road, linkId.endsWith('_bwd') ? 'bwd' : 'fwd'), vph });
     e.vc = Math.max(e.vc, r.areaVc.get(seg) ?? 0);
     const t = times?.get(linkId);
     if (t) {
@@ -74,7 +89,16 @@ export function byRoad(r: RoadAnalysisResult, roads: ReadonlyMap<string, Drivabl
     }
     e.keys.add(seg);
   });
-  out.forEach(e => { e.vph = Math.max(0, ...[...e.keys].map(k => segVph.get(k) ?? 0)); });
+  out.forEach((e, name) => {
+    const fs = flows.get(name) ?? [];
+    const axis = fs.reduce((m, f) => (f.vph > m.vph ? f : m), fs[0] ?? { bearing: 0, vph: 0 }).bearing;
+    let along = 0, against = 0;
+    for (const f of fs) {
+      if (Math.cos((f.bearing - axis) * Math.PI / 180) >= 0) along = Math.max(along, f.vph);
+      else against = Math.max(against, f.vph);
+    }
+    e.vph = along + against;
+  });
   return out;
 }
 
@@ -128,7 +152,7 @@ export function comparisonTables(a: RoadAnalysisResult, b: RoadAnalysisResult, r
     { label: 'Stretches over capacity', before: a.assignment.overCapacityLinks, after: b.assignment.overCapacityLinks, unit: 'stretches', source: 'routed', lowerIsBetter: true },
   ];
   const notes = [
-    'Links: the area routing (user equilibrium, BPR link times) on the frozen demand; volume is each road\'s busiest stretch with both directions together, load (v/c) its busiest stretch in one direction, speed is weighted by traffic over its stretches, delay is time above free flow.',
+    'Links: the area routing (user equilibrium, BPR link times) on the frozen demand; volume is each road\'s busiest stretch in each direction of travel, added (both carriageways of a divided road), load (v/c) its busiest stretch in one direction, speed is weighted by traffic over its stretches, delay is time above free flow.',
     'Junctions: the corridor micro-simulation, mean over the seeds; level of service from control delay (Indo-HCM / HCM thresholds), longest queue in metres.',
     'Per vehicle class: the class mix of the demand is fixed and all classes share the routed paths, so travel times by class are not modelled; only the demand by class is shown.',
     'All figures are modelled from estimated demand and the traffic model fails validation (TAG M3.1): read directions and relative sizes, not absolute values.',

@@ -29,7 +29,7 @@ function LinksTable({ rows, onShow }: { rows: LinkRow[]; onShow: (r: LinkRow) =>
   return (
     <div className="overflow-x-auto" data-testid="results-links">
       <table className="w-full text-[11px] text-slate-300">
-        <thead><tr className="text-slate-500"><th className="text-left font-medium px-1">Road</th><th className={th} title="Busiest stretch, both directions, vehicles per hour">veh/h</th><th className={th} title="Volume / capacity on the busiest stretch">v/c</th><th className={th} title="Traffic-weighted speed over the road's stretches">km/h</th><th className={th} title="Vehicle-hours above free flow on the road">Delay veh·h</th></tr></thead>
+        <thead><tr className="text-slate-500"><th className="text-left font-medium px-1">Road</th><th className={th} title="Busiest stretch in each direction, added (both carriageways of a divided road), vehicles per hour">veh/h</th><th className={th} title="Volume / capacity on the busiest stretch">v/c</th><th className={th} title="Traffic-weighted speed over the road's stretches">km/h</th><th className={th} title="Vehicle-hours above free flow on the road">Delay veh·h</th></tr></thead>
         <tbody>{rows.map(r => (
           <tr key={r.road} className="border-t border-white/5 hover:bg-white/[0.04] cursor-pointer" onClick={() => onShow(r)} title={`${r.road}: show on the map`}>
             <td className="px-1 py-0.5 max-w-[9rem] truncate">{r.road}</td>

@@ -270,8 +270,8 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
   const lost = area[2];
   if (lost.change === null && (lost.after ?? 0) - (lost.before ?? 0) > 1) { lost.good = false; lost.note = `${Math.round((lost.after ?? 0) - (lost.before ?? 0)).toLocaleString()} veh/h more have no route in the proposal and drop out of the other figures.`; }
 
-  // Per road (assignment): volume and load before and after, as the road table counts them (two-way volume of the
-  // busiest stretch: the heaviest single direction listed the closed Baba Bhide Bridge as −1,031 veh/h beside 'routed
+  // Per road (assignment): volume and load before and after, as the road table counts them (busiest stretch in each
+  // direction, added: the heaviest single direction listed the closed Baba Bhide Bridge as −1,031 veh/h beside 'routed
   // along it 1,787', p11)
   const ra = roadAggregates(a, roads.before), rb = roadAggregates(b, roads.after);
   const namesAfter = new Set([...roads.after.values()].map(r => r.name));
