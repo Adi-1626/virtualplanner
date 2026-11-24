@@ -84,7 +84,7 @@ ${deltaTable('Whole study area', r.areaDeltas, 'routed')}
 ${t ? `<h2>Summary measures <span class="b">modelled</span></h2><table><tr><th>Measure</th><th>Existing city</th><th>Proposal</th><th>Change</th><th>Source</th></tr>
 ${t.summary.map(s => `<tr><td>${esc(s.label)}</td><td>${num(s.before, 1)} ${esc(s.unit)}</td><td>${num(s.after, 1)} ${esc(s.unit)}</td><td>${pct(s.before, s.after)}</td><td>${esc(s.source)}</td></tr>`).join('')}</table>
 <h2>Roads (volume, load, speed, delay) <span class="b">modelled · routed</span></h2>
-<table><tr><th>Road</th><th>km</th><th>veh/h before</th><th>veh/h after</th><th>v/c before</th><th>v/c after</th><th>km/h before</th><th>km/h after</th><th>delay veh·h before</th><th>delay veh·h after</th></tr>
+<table><tr><th>Road</th><th>km</th><th>veh/h before (both ways)</th><th>veh/h after (both ways)</th><th>v/c before</th><th>v/c after</th><th>km/h before</th><th>km/h after</th><th>delay veh·h before</th><th>delay veh·h after</th></tr>
 ${t.links.slice(0, 40).map(l => `<tr><td>${esc(l.road)}</td><td>${num(l.lengthKm, 1)}</td><td>${num(l.vphBefore)}</td><td>${num(l.vphAfter)}</td><td>${num(l.vcBefore, 2)}</td><td>${num(l.vcAfter, 2)}</td><td>${num(l.speedBefore, 1)}</td><td>${num(l.speedAfter, 1)}</td><td>${num(l.delayVehHBefore, 1)}</td><td>${num(l.delayVehHAfter, 1)}</td></tr>`).join('')}</table>
 ${t.links.length > 40 ? `<p class="muted">${t.links.length - 40} more roads in links.csv.</p>` : ''}
 <h2>Junctions (delay, level of service, queues) <span class="b">modelled · simulated</span></h2>

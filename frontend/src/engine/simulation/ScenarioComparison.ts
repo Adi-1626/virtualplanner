@@ -2,7 +2,7 @@ import type { RoadAnalysisResult, Bottleneck, BindingSegment, DirectionFlow } fr
 import type { AnalysisOutput } from './analysisJob';
 import type { DrivableObject } from './StudyAreaExplorer';
 import { isGenericRoadName } from './roadSection';
-import { comparisonTables, type ComparisonTables } from './comparisonTables';
+import { comparisonTables, byRoad as roadAggregates, type ComparisonTables } from './comparisonTables';
 
 /**
  * Existing city against a proposal (docs/OVERHAUL.md §8). Both are analysed
@@ -270,22 +270,10 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
   const lost = area[2];
   if (lost.change === null && (lost.after ?? 0) - (lost.before ?? 0) > 1) { lost.good = false; lost.note = `${Math.round((lost.after ?? 0) - (lost.before ?? 0)).toLocaleString()} veh/h more have no route in the proposal and drop out of the other figures.`; }
 
-  // Per road (assignment): volume and load before and after
-  const byRoad = (r: RoadAnalysisResult, rs: ReadonlyMap<string, DrivableObject>) => {
-    const out = new Map<string, { vph: number; vc: number; keys: Set<string> }>();
-    r.areaLinkVph.forEach((vph, linkId) => {
-      const roadId = linkId.replace(/_seg_\d+_(fwd|bwd)$/, '');
-      const name = rs.get(roadId)?.name;
-      if (!name || isGenericRoadName(name)) return;
-      const seg = linkId.replace(/_(fwd|bwd)$/, '');
-      const e = out.get(name) ?? out.set(name, { vph: 0, vc: 0, keys: new Set() }).get(name)!;
-      e.vph = Math.max(e.vph, vph);
-      e.vc = Math.max(e.vc, r.areaVc.get(seg) ?? 0);
-      e.keys.add(seg);
-    });
-    return out;
-  };
-  const ra = byRoad(a, roads.before), rb = byRoad(b, roads.after);
+  // Per road (assignment): volume and load before and after, as the road table counts them (two-way volume of the
+  // busiest stretch: the heaviest single direction listed the closed Baba Bhide Bridge as −1,031 veh/h beside 'routed
+  // along it 1,787', p11)
+  const ra = roadAggregates(a, roads.before), rb = roadAggregates(b, roads.after);
   const namesAfter = new Set([...roads.after.values()].map(r => r.name));
   const changes: RoadChange[] = [...new Set([...ra.keys(), ...rb.keys()])].map(roadName => {
     const x = ra.get(roadName), y = rb.get(roadName);

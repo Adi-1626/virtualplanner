@@ -47,17 +47,21 @@ export interface ComparisonTables {
 const M = 111320;
 const near = (p: readonly number[], q: readonly number[], m: number) => Math.hypot((p[0] - q[0]) * M * Math.cos(p[1] * Math.PI / 180), (p[1] - q[1]) * M) < m;
 
-interface RoadAgg { vph: number; vc: number; vkm: number; vh: number; delay: number; km: number; keys: Set<string> }
-function byRoad(r: RoadAnalysisResult, roads: ReadonlyMap<string, DrivableObject>): Map<string, RoadAgg> {
+export interface RoadAgg { vph: number; vc: number; vkm: number; vh: number; delay: number; km: number; keys: Set<string> }
+/** Per named road of the area routing: volume (busiest stretch, both directions), load (busiest stretch, one direction), speed, delay. */
+export function byRoad(r: RoadAnalysisResult, roads: ReadonlyMap<string, DrivableObject>): Map<string, RoadAgg> {
   const out = new Map<string, RoadAgg>();
   const times = r.areaLinkTime;
+  // Both directions of a stretch together: the road's volume is its busiest stretch, two-way, as 'Traffic routed along
+  // it' counts it. The heaviest single direction read 'Baba Bhide Bridge 1,031 veh/h' beside 'routed along it 1,787' (p11)
+  const segVph = new Map<string, number>();
   r.areaLinkVph.forEach((vph, linkId) => {
     const roadId = linkId.replace(/_seg_\d+_(fwd|bwd)$/, '');
     const name = roads.get(roadId)?.name;
     if (!name || isGenericRoadName(name)) return;
     const seg = linkId.replace(/_(fwd|bwd)$/, '');
     const e = out.get(name) ?? out.set(name, { vph: 0, vc: 0, vkm: 0, vh: 0, delay: 0, km: 0, keys: new Set() }).get(name)!;
-    e.vph = Math.max(e.vph, vph);
+    segVph.set(seg, (segVph.get(seg) ?? 0) + vph);
     e.vc = Math.max(e.vc, r.areaVc.get(seg) ?? 0);
     const t = times?.get(linkId);
     if (t) {
@@ -70,6 +74,7 @@ function byRoad(r: RoadAnalysisResult, roads: ReadonlyMap<string, DrivableObject
     }
     e.keys.add(seg);
   });
+  out.forEach(e => { e.vph = Math.max(0, ...[...e.keys].map(k => segVph.get(k) ?? 0)); });
   return out;
 }
 
@@ -123,7 +128,7 @@ export function comparisonTables(a: RoadAnalysisResult, b: RoadAnalysisResult, r
     { label: 'Stretches over capacity', before: a.assignment.overCapacityLinks, after: b.assignment.overCapacityLinks, unit: 'stretches', source: 'routed', lowerIsBetter: true },
   ];
   const notes = [
-    'Links: the area routing (user equilibrium, BPR link times) on the frozen demand; volume and load are each road\'s busiest stretch, speed is weighted by traffic over its stretches, delay is time above free flow.',
+    'Links: the area routing (user equilibrium, BPR link times) on the frozen demand; volume is each road\'s busiest stretch with both directions together, load (v/c) its busiest stretch in one direction, speed is weighted by traffic over its stretches, delay is time above free flow.',
     'Junctions: the corridor micro-simulation, mean over the seeds; level of service from control delay (Indo-HCM / HCM thresholds), longest queue in metres.',
     'Per vehicle class: the class mix of the demand is fixed and all classes share the routed paths, so travel times by class are not modelled; only the demand by class is shown.',
     'All figures are modelled from estimated demand and the traffic model fails validation (TAG M3.1): read directions and relative sizes, not absolute values.',
