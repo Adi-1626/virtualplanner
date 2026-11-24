@@ -96,6 +96,7 @@ export const UnderstandView: React.FC<{ sim: SimulationModeState; goImprove: () 
   const actions = useActions();
   const heading = useCameraHeading();
   const gate = <AnalysisGate sim={sim} />;
+  const { improve, tested } = useImprove(sim);
   const out = sim.analysis.output;
   if (!out) return gate;
   const r = out.result;
@@ -103,7 +104,6 @@ export const UnderstandView: React.FC<{ sim: SimulationModeState; goImprove: () 
   const hour = sim.analysis.hour ?? sim.timeOfDay.hour;
   const period = DAY_PERIODS.find(p => p.id === periodOfHour(hour))?.label ?? hourLabel(hour);
   const suggestions = improvementsFor(r, sim.section?.roadIds ?? sim.seedRoadIds, null);
-  const { improve, tested } = useImprove(sim);
   return (
     <div className="space-y-5">
       {/* Outside the dimmed result, so the notice itself keeps full contrast */}

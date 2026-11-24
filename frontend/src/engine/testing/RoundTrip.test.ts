@@ -32,15 +32,6 @@ const road = (id: string, coords: P3[], extra: Partial<RoadObject> = {}): RoadOb
   hasDivider: false, dividerWidth: 0, hasFootpath: false, footpathWidth: 0, speedLimit: 50, isOneWay: false, trafficCapacity: 2000, connectedJunctions: [],
   createdAt: T, updatedAt: T, ...extra,
 } as RoadObject);
-const baseCity = (): CityObject[] => [
-  road('ew', [pt(-400, 0), pt(0, 0), pt(400, 0), pt(800, 0), pt(1200, 0)]),
-  road('ns', [pt(400, -400), pt(400, 0), pt(400, 400)]),
-  road('north', [pt(-400, 300), pt(400, 300), pt(1200, 300)], { roadClass: 'collector', speedLimit: 40 }),
-  road('w1', [pt(-400, 0), pt(-400, 300)], { roadClass: 'local', speedLimit: 30 }),
-  road('e1', [pt(1200, 0), pt(1200, 300)], { roadClass: 'local', speedLimit: 30 }),
-  // Far away (about 30 km east): outside any study area here
-  road('far', [pt(30000, 0), pt(31000, 0)], { name: 'Far Road' }),
-];
 /** Real OSM roads around Sangamwadi Bridge (as ClosedStudyRoad.test.ts) and a road far outside any study area there. */
 const fx = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/sangamwadi.json'), 'utf8')) as { roads: RoadObject[] };
 const DECK = 'osm_208004768', OTHER = 'osm_216506271';
