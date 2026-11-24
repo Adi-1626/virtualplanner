@@ -204,6 +204,12 @@ const verdictOf = (ds: Delta[]): Verdict => {
   return goods && !bads ? 'better' : bads && !goods ? 'worse' : goods && bads ? 'mixed' : 'no_change';
 };
 
+/** Roads whose traffic changed by 60 veh/h and 10 % or more: the four that lost most and the four that gained most, largest first. */
+export function pickRerouting(changes: readonly RoadChange[]): RoadChange[] {
+  const shifted = changes.filter(r => Math.abs(r.change) >= 60 && Math.abs(r.change) >= 0.1 * Math.max(r.before, r.after)).sort((x, y) => Math.abs(y.change) - Math.abs(x.change));
+  return [...shifted.filter(r => r.change < 0).slice(0, 4), ...shifted.filter(r => r.change > 0).slice(0, 4)].sort((x, y) => Math.abs(y.change) - Math.abs(x.change));
+}
+
 /** The road's own measures when it is closed in the proposal: no traffic crosses it; its time, speed and end delay do not exist. */
 function closedSection(a: RoadAnalysisResult, name: string): Delta[] {
   const note = `${name} is closed in the proposal.`;
@@ -282,7 +288,9 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
     const x = ra.get(roadName), y = rb.get(roadName);
     return { roadName, before: Math.round(x?.vph ?? 0), after: Math.round(y?.vph ?? 0), change: Math.round((y?.vph ?? 0) - (x?.vph ?? 0)), segmentKeys: [...new Set([...(x?.keys ?? []), ...(y?.keys ?? [])])], vcBefore: x?.vc ?? 0, vcAfter: y?.vc ?? 0 };
   });
-  const rerouting = changes.filter(r => Math.abs(r.change) >= 60 && Math.abs(r.change) >= 0.1 * Math.max(r.before, r.after)).sort((x, y) => Math.abs(y.change) - Math.abs(x.change)).slice(0, 8);
+  // Where traffic left and where it went, up to four roads each: by size alone, a closure listed eight roads that lost
+  // traffic near it and none of the other bridges that took it (p11 user test, Baba Bhide Bridge)
+  const rerouting = pickRerouting(changes);
   const winners = changes.filter(r => r.vcBefore > 0.6 && r.vcAfter < r.vcBefore - 0.1).sort((x, y) => (x.vcAfter - x.vcBefore) - (y.vcAfter - y.vcBefore)).slice(0, 5);
   const losers = changes.filter(r => r.vcAfter > 0.6 && r.vcAfter > r.vcBefore + 0.1).sort((x, y) => (y.vcAfter - y.vcBefore) - (x.vcAfter - x.vcBefore)).slice(0, 5);
   const segmentChange = new Map<string, number>();

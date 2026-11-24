@@ -435,7 +435,7 @@ const ComparisonView: React.FC<{ c: ComparisonResult; overlay: string; sim: Simu
         <div className="space-y-1.5">
           <p className="text-[11px] font-semibold text-slate-400 flex items-center gap-1"><MapPin size={12} />Where traffic moved</p>
           <ul className="space-y-1">
-            {c.rerouting.slice(0, 5).map(x => (
+            {c.rerouting.map(x => (
               <li key={x.roadName} className="grid grid-cols-[1fr_6rem_auto] items-center gap-2 text-[11px]" title={`${x.roadName}: ${fmt(x.before)} → ${fmt(x.after)} veh/h on its busiest stretch`}>
                 <span className="text-slate-300 truncate">{x.roadName}</span>
                 <div className="relative h-1.5 rounded-full bg-white/5">

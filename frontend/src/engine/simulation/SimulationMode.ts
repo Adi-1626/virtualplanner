@@ -964,7 +964,10 @@ export class SimulationMode {
       .then(points => {
         if (load !== this.signalLoad) return;
         this.signalPoints = points;
-        this.invalidateComparison('Mapped signals changed. Run the comparison again.');
+        // Only a comparison on show (or running) is out of date: before any had run, "Run the comparison again" read as an
+        // error on a fresh study (p11: a new road, or a closure proposal whose area is mapped from the joining roads)
+        const c = this.state.comparison;
+        this.invalidateComparison(c.result || c.running ? 'Mapped signals changed. Run the comparison again.' : null);
         this.setState({ signals: { status: 'ready', count: points.length } });
       })
       .catch(() => {

@@ -5,6 +5,7 @@ import type { RoadObject } from '../objects/types';
 import { ObjectManager } from '../objects/ObjectManager';
 import type { DrivableObject } from '../simulation/StudyAreaExplorer';
 import { SimulationMode } from '../simulation/SimulationMode';
+import { pickRerouting } from '../simulation/ScenarioComparison';
 
 /**
  * A closure proposal deletes the studied road itself (p11 user test, Baba Bhide Bridge): before, Simulate said "The
@@ -71,4 +72,17 @@ describe('Simulate: the studied road deleted in the proposal', () => {
     expect(mode.getState().area!.seedRoadIds).toEqual([DECK]);
     mode.dispose();
   }, 180000);
+});
+
+describe('Where traffic moved', () => {
+  it('lists where traffic went as well as where it left (Baba Bhide Bridge closure, p11 browser run)', () => {
+    const ch = (roadName: string, before: number, after: number) => ({ roadName, before, after, change: after - before, segmentKeys: [], vcBefore: 0, vcAfter: 0 });
+    const changes = [ch('Baba Bhide Bridge', 1031, 0), ch('Jagannath Kaniram Kasat Path', 1031, 22), ch('Dandekar Bridge', 3272, 2634), ch('Barrister Nath Pai Chowk', 3946, 3356),
+      ch('Guru Nanak Path', 2204, 1632), ch('Narubhau Limaye Path', 1407, 903), ch('Jagtap Road', 0, 575), ch('Ganesh Path', 900, 1433),
+      ch('Dagadi Pool Road', 0, 433), ch('Maharshi Vitthal Ramji Shinde Bridge', 1507, 1871), ch('Sambhaji Bridge', 3663, 3978), ch('Dengle Bridge', 1000, 1000)];
+    const r = pickRerouting(changes);
+    expect(r.map(x => x.roadName)).toEqual(['Baba Bhide Bridge', 'Jagannath Kaniram Kasat Path', 'Dandekar Bridge', 'Barrister Nath Pai Chowk', 'Jagtap Road', 'Ganesh Path', 'Dagadi Pool Road', 'Maharshi Vitthal Ramji Shinde Bridge']);
+    // Before: the eight largest changes, two of them gains, none of them another bridge
+    expect(r.filter(x => x.change > 0)).toHaveLength(4);
+  });
 });
