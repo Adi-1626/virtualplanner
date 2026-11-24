@@ -18,7 +18,7 @@ import { hourFactor, COUNT_HOURS } from '../simulation/timeOfDay';
 import type { MicroDemandTrip } from '../simulation/TrafficMicroSim';
 import type { TimePeriod } from '../objects/demandTypes';
 import { DEFAULT_SUPPLY, SUPPLY_BOUNDS, SUPPLY_KEYS, supplyToVector, vectorToSupply, type SupplyParams } from '../simulation/supplyParams';
-import { scoreProjectCheck, geh, type ProjectObs } from '../calibration/projectCheck';
+import { scoreProjectCheck, geh, sectionCount, sectionDirections, wayBearing, type ProjectObs } from '../calibration/projectCheck';
 import { areaOdProblem } from '../demand/odmeAssignment';
 import { estimateOd, matrixChangeStats, type OdmeCount } from '../demand/odme';
 
@@ -45,6 +45,13 @@ if (process.env.P13 && process.env.P13_API) {
   const base = new URL(process.env.P13_API);
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => new Promise((resolve, reject) => {
     const u = new URL(String(input instanceof Request ? input.url : input));
+    // Writes of loaded roads (POST /api/objects/batch etc.) are not sent: the harness keeps its roads in memory and the backend's
+    // database copy stays as it was (concurrent writes on the shared file system also failed with "database is locked")
+    const method = (init?.method ?? 'GET').toUpperCase();
+    if (method !== 'GET' && u.pathname.startsWith('/api/objects')) {
+      resolve({ ok: true, status: 200, statusText: 'OK (not sent)', text: async () => '{}', json: async () => ({}), headers: { get: () => null } } as unknown as Response);
+      return;
+    }
     const req = http.request({ host: base.hostname, port: base.port, path: u.pathname + u.search, method: init?.method ?? 'GET', headers: { 'Content-Type': 'application/json' } }, res => {
       const chunks: Buffer[] = [];
       res.on('data', c => chunks.push(c));
@@ -68,7 +75,20 @@ interface RecordSpec {
 }
 interface Built { rec: RecordSpec; area: StudyArea; roads: Map<string, DrivableObject>; signals: readonly (readonly [number, number])[] | undefined; trips: Map<number, MicroDemandTrip[]> }
 
+/** Keep only what the area assignment reads: the network edges of the area's segments, their end nodes and their roads. */
+function trimBuilt(b: Built): Built {
+  const segKey = (id: string) => id.replace(/_(fwd|bwd)$/, '');
+  const included = new Set(b.area.segments.map(s => s.key));
+  const edges = new Map([...b.area.network.edges].filter(([, e]) => included.has(segKey(e.id))));
+  const nodeIds = new Set([...edges.values()].flatMap(e => [e.fromNodeId, e.toNodeId]));
+  const nodes = new Map([...b.area.network.nodes].filter(([id]) => nodeIds.has(id)));
+  const roadIds = new Set([...edges.values()].map(e => e.roadId));
+  const roads = new Map([...b.roads].filter(([id]) => roadIds.has(id)));
+  return { ...b, area: { ...b.area, network: { ...b.area.network, edges, nodes } } as StudyArea, roads };
+}
 const wayOf = (id: string) => { const m = /^osm_(\d+)/.exec(id); return m ? Number(m[1]) : null; };
+/** Bearing of a counted link: its OSM way drawn first to last point, reversed for the backward link. */
+const countBearing = (b: Built, linkId: string) => wayBearing(b.roads.get(linkId.replace(/_seg_\d+_(fwd|bwd)$/, '').replace(/_(fwd|bwd)$/, ''))?.coordinates as number[][] | undefined, linkId.endsWith('_bwd'));
 const distM = (a: readonly number[], b: readonly number[]) => Math.hypot((a[0] - b[0]) * 111320 * Math.cos(a[1] * Math.PI / 180), (a[1] - b[1]) * 111320);
 
 /** Evaluate one record at one hour under a parameter set. */
@@ -77,11 +97,13 @@ function evaluate(b: Built, hour: number, p: Readonly<SupplyParams>, iters: numb
   const a = assignTraffic(b.area, b.roads, trips, { signalPoints: b.signals, supply: p, maxIterations: iters, maxMs: 1e9, targetGap: 1e-3 });
   const base = { id: `${b.rec.id}@${hour}`, record: b.rec.id, split: b.rec.split, roadClass: b.rec.roadClass, area: b.rec.area, hour };
   if (b.rec.kind === 'count' && b.rec.count) {
+    // One cross-section per direction of travel (busiest piece of the counted stretch in each direction, both added),
+    // never the sum over the stretch's OSM ways (p13 fix: a site matched to 19 ways read up to 38 pieces added).
     const ways = new Set(b.rec.count.ways);
-    const best = new Map<string, number>();
-    a.links.forEach((l, i) => { const w = wayOf(l.id); if (w === null || !ways.has(w)) return; const k = `${w}${l.id.endsWith('_bwd') ? 'b' : 'f'}`; best.set(k, Math.max(best.get(k) ?? 0, a.volVeh[i])); });
-    if (!best.size) return null;
-    const model = [...best.values()].reduce((n, v) => n + v, 0);
+    const flows: { bearing: number; vph: number }[] = [];
+    a.links.forEach((l, i) => { const w = wayOf(l.id); if (w === null || !ways.has(w)) return; flows.push({ bearing: countBearing(b, l.id), vph: a.volVeh[i] }); });
+    if (!flows.length) return null;
+    const model = sectionCount(flows);
     return { ...base, kind: 'count', observed: b.rec.count.target, model };
   }
   if (b.rec.kind === 'jt' && b.rec.jt) {
@@ -95,7 +117,7 @@ function evaluate(b: Built, hour: number, p: Readonly<SupplyParams>, iters: numb
     };
     const o = near(b.rec.jt.o, true), d = near(b.rec.jt.d, false);
     if (o.i < 0 || d.i < 0 || o.d > 150 || d.d > 150) return { ...base, kind: 'jt', observed: b.rec.jt.targetMin[String(hour)], model: null, note: `O/D not on the area network (${Math.round(o.d)} m / ${Math.round(d.d)} m)` };
-    const dist = new Float64Array(N).fill(Infinity), len = new Float64Array(N), done = new Uint8Array(N);
+    const dist = new Float64Array(N).fill(Infinity), len = new Float64Array(N), done = new Uint8Array(N), predL = new Int32Array(N).fill(-1);
     dist[o.i] = 0;
     // Dijkstra (dense scan is fine for one query per record; areas hold a few thousand nodes)
     const heap: [number, number][] = [[0, o.i]];
@@ -104,10 +126,33 @@ function evaluate(b: Built, hour: number, p: Readonly<SupplyParams>, iters: numb
       const [du, u] = heap[m]; heap[m] = heap[heap.length - 1]; heap.pop();
       if (done[u]) continue; done[u] = 1;
       if (u === d.i) break;
-      for (const li of outs[u]) { const l = a.links[li]; const nd = du + a.timeS[li]; if (nd < dist[l.to]) { dist[l.to] = nd; len[l.to] = len[u] + l.lengthM; heap.push([nd, l.to]); } }
+      for (const li of outs[u]) { const l = a.links[li]; const nd = du + a.timeS[li]; if (nd < dist[l.to]) { dist[l.to] = nd; len[l.to] = len[u] + l.lengthM; predL[l.to] = li; heap.push([nd, l.to]); } }
     }
     if (!Number.isFinite(dist[d.i])) return { ...base, kind: 'jt', observed: b.rec.jt.targetMin[String(hour)], model: null, note: 'no route in the area network' };
-    return { ...base, kind: 'jt', observed: b.rec.jt.targetMin[String(hour)], model: dist[d.i] / 60, routeKm: len[d.i] / 1000, googleKm: b.rec.jt.googleKm[String(hour)], range: b.rec.jt.rangeMin[String(hour)] };
+    // Where the modelled time goes along the route: running at free-flow speed, signal delay (in t0), congestion (BPR above t0)
+    const diag = { runS: 0, signalS: 0, congS: 0, stopLines: 0, links: 0, maxVc: 0, ffKmh: 0, junctions: 0 };
+    for (let v = d.i; predL[v] >= 0; v = a.links[predL[v]].from) {
+      const li = predL[v], l = a.links[li], run = l.lengthM / (l.freeSpeedKmh / 3.6);
+      diag.runS += run; diag.signalS += l.t0 - run; diag.congS += a.timeS[li] - l.t0; diag.links++;
+      if (l.gC !== null) diag.stopLines++;
+      if (outs[l.to].length >= 2) diag.junctions++;
+      diag.maxVc = Math.max(diag.maxVc, a.volPcu[li] / Math.max(1, l.capacityPcu));
+    }
+    diag.ffKmh = len[d.i] / 1000 / Math.max(1e-9, diag.runS / 3600);
+    // P13_DIAG_LINKS: the route's most loaded links (what a gridlocked route queues on)
+    const worst: unknown[] = [];
+    if (process.env.P13_DIAG_LINKS) {
+      const onPath: number[] = [];
+      for (let v = d.i; predL[v] >= 0; v = a.links[predL[v]].from) onPath.push(predL[v]);
+      onPath.sort((x, y) => a.volPcu[y] / a.links[y].capacityPcu - a.volPcu[x] / a.links[x].capacityPcu);
+      for (const li of onPath.slice(0, 4)) {
+        const l = a.links[li], r = b.roads.get(l.roadId) as (DrivableObject & { osmProvenance?: { originalTags?: Record<string, string> } }) | undefined;
+        const nIn = a.links.filter(k => k.to === l.to).length, nOut = outs[l.to].length;
+        worst.push({ id: l.id, name: r?.name, hw: r?.osmProvenance?.originalTags?.highway, oneway: r?.isOneWay, lanes: l.lanes, midPcu: Math.round(l.midblockPcu), stopPcu: l.stopLinePcu && Math.round(l.stopLinePcu), gC: l.gC && +l.gC.toFixed(2),
+          volPcu: Math.round(a.volPcu[li]), vc: +(a.volPcu[li] / l.capacityPcu).toFixed(2), tMin: +(a.timeS[li] / 60).toFixed(1), lenM: Math.round(l.lengthM), nodeInOut: `${nIn}/${nOut}` });
+      }
+    }
+    return { ...base, kind: 'jt', observed: b.rec.jt.targetMin[String(hour)], model: dist[d.i] / 60, routeKm: len[d.i] / 1000, googleKm: b.rec.jt.googleKm[String(hour)], range: b.rec.jt.rangeMin[String(hour)], diag: worst.length ? { ...diag, worst } : diag };
   }
   return null;
 }
@@ -166,7 +211,7 @@ describe.skipIf(!process.env.P13)('p13 project-level validation against estimate
     const cacheFile = process.env.P13_CACHE;
     // P13_CACHE_READ: several cache files (built in chunks) read together instead of P13_CACHE
     const readFiles = process.env.P13_CACHE_READ ? process.env.P13_CACHE_READ.split(',') : cacheFile && fs.existsSync(cacheFile) ? [cacheFile] : [];
-    const built: Built[] = readFiles.flatMap(f => v8.deserialize(fs.readFileSync(f)) as Built[]).filter(b => records.some(r => r.id === b.rec.id));
+    const built: Built[] = readFiles.flatMap(f => (v8.deserialize(fs.readFileSync(f)) as Built[]).filter(b => records.some(r => r.id === b.rec.id)).map(trimBuilt));
     // A cached area keeps its demand and network; the record (split, targets) is always taken from the current records file
     for (const b of built) b.rec = records.find(r => r.id === b.rec.id)!;
     if (built.length) log({ cache: cacheFile, records: built.length });
@@ -196,7 +241,7 @@ describe.skipIf(!process.env.P13)('p13 project-level validation against estimate
         const f = hourFactor(profile, h, COUNT_HOURS[h < 12 ? 'AM' : 'PM'], st.timeOfDay.day);
         trips.set(h, snapDemandPlan(plan, area.network, 250, segs).map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * f })));
       }
-      built.push({ rec, area, roads, signals: mode.mappedSignalPoints() ?? undefined, trips });
+      built.push(trimBuilt({ rec, area, roads, signals: mode.mappedSignalPoints() ?? undefined, trips }));
       log({ build: rec.id, settled: ok, seeds: seeds.length, of: rec.seedRoadIds.length, segments: area.segments.length, demandVph: Object.fromEntries([...trips].map(([h, t]) => [h, Math.round(t.reduce((n, x) => n + x.vehiclesPerHour, 0))])), ms: Date.now() - t0 });
     }
     mode.exit();
@@ -225,11 +270,11 @@ describe.skipIf(!process.env.P13)('p13 project-level validation against estimate
         const h = b.rec.hours[0];
         const trips = (b.trips.get(h) ?? []).map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * set.params.demandScale }));
         const prob = areaOdProblem(b.area, b.roads, trips, { signalPoints: b.signals, supply: set.params, maxIterations: iters, maxMs: 1e9, targetGap: 1e-3 });
-        const groups: number[][] = [];
-        for (const w of b.rec.count.ways) for (const dir of ['_fwd', '_bwd']) {
-          const g = prob.linkIds.map((id, i) => (wayOf(id) === w && (dir === '_bwd' ? id.endsWith('_bwd') : !id.endsWith('_bwd')) ? i : -1)).filter(i => i >= 0);
-          if (g.length) groups.push(g);
-        }
+        // one group per direction of travel at the cross-section (busiest link in each, both added), as evaluate() counts it
+        const ways = new Set(b.rec.count.ways);
+        const ix = prob.linkIds.map((id, i) => (ways.has(wayOf(id) ?? -1) ? i : -1)).filter(i => i >= 0);
+        const dirs = sectionDirections(ix.map(i => countBearing(b, prob.linkIds[i])));
+        const groups = [dirs.along.map(k => ix[k]), dirs.against.map(k => ix[k])].filter(g => g.length);
         if (!groups.length) { log({ odme: b.rec.id, error: 'counted way not in the area network' }); continue; }
         const counts: OdmeCount[] = [{ id: b.rec.id, groups, observed: b.rec.count.target, datasetId: 'p13_published_counts_calibration' }];
         const est = estimateOd(prob, counts, { cellFactorBounds: cfg.bounds, priorWeight: cfg.mu, maxIterations: cfg.iterations, heldOutDatasetIds: ['p13_published_counts_holdout'] });

@@ -1,4 +1,6 @@
 import type { Viewer } from 'cesium';
+import { TUNED_SUPPLY, TUNED_SUPPLY_DEFAULT_ON } from '../calibration/tunedSupply';
+import type { SupplyParams } from './supplyParams';
 import {
   StudyAreaExplorer,
   clampRangeM,
@@ -345,6 +347,8 @@ export interface SimulationModeState {
   comparison: TrafficComparisonState;
   selectedVehicleId: number | null;
   calibration: CalibrationState;
+  /** p13: which assignment parameters run: the defaults or the tuned (estimated) set (calibration/tunedSupply.ts). */
+  supplySet: 'default' | 'tuned';
   timeOfDay: TimeOfDayState;
   /** The road section the click stands for (both carriageways, between main junctions). */
   section: RoadSection | null;
@@ -455,6 +459,7 @@ export class SimulationMode {
     comparison: { baseline: null, current: null, result: null, staleReason: null, running: false, progress: 0, demandChanged: false, showingProposal: false },
     selectedVehicleId: null,
     calibration: EMPTY_CALIBRATION,
+    supplySet: TUNED_SUPPLY_DEFAULT_ON && TUNED_SUPPLY ? 'tuned' : 'default',
     timeOfDay: { status: 'idle', error: null, profile: null, hour: COUNT_HOURS.AM, day: 'weekday', countPeak: 'PM', factor: 1 },
     section: null,
     corridor: null,
@@ -1219,7 +1224,9 @@ export class SimulationMode {
   }
 
   private studyKey() {
-    return contentKey({ roads: this.state.seedRoadIds, range: this.state.rangeMeters, direction: this.state.direction });
+    // p13: the tuned (estimated) supply set is part of the study, so a baseline made with the other setting is never
+    // compared against (nor restored onto) this one; the default set adds nothing, so keys of baselines saved before p13 hold
+    return contentKey({ roads: this.state.seedRoadIds, range: this.state.rangeMeters, direction: this.state.direction, ...(this.useTunedSupply ? { supply: 'tuned' } : {}) });
   }
 
   private demandContextKey() {
@@ -1252,6 +1259,28 @@ export class SimulationMode {
   private calibratedEdgeFlows: CalibratedEdgeFlows | null = null;
   /** Use the calibrated window edge flows where they cover the area (default). Off only to cut the window itself from the prior (WindowCalibration harness). */
   public useCalibratedEdgeFlows = true;
+  /**
+   * p13: the tuned (estimated) supply set of the area assignment (calibration/tunedSupply.ts; docs/urbanos/VALIDATION_P13.md).
+   * On by default only when it passed the project check on its hold-out records and did not worsen the official-count check;
+   * otherwise an opt-in "tuned (estimated)" setting.
+   */
+  public useTunedSupply = TUNED_SUPPLY_DEFAULT_ON && !!TUNED_SUPPLY;
+  /** Turns the tuned (estimated) supply set on or off: a saved baseline made with the other setting can no longer be compared. */
+  public setTunedSupply(on: boolean) {
+    const next = on && !!TUNED_SUPPLY;
+    if (this.useTunedSupply === next) return;
+    this.useTunedSupply = next;
+    this.invalidateComparison(STUDY_CHANGED.supply);
+    this.setState({ supplySet: next ? 'tuned' : 'default' });
+    // Switched back to the baseline's setting (same roads, range and direction): its notice no longer applies
+    const c = this.state.comparison;
+    if (c.baseline && c.staleReason && STUDY_REASONS.has(c.staleReason) && this.baselineStudyKey === this.studyKey()) this.setState({ comparison: { ...c, staleReason: null } });
+    if (this.state.area) { this.analysisStale = true; this.scheduleAnalysis(); }
+  }
+  /** The supply set an analysis uses now (null: the defaults). */
+  public activeSupply(): SupplyParams | null {
+    return this.useTunedSupply ? TUNED_SUPPLY : null;
+  }
   private estimatedTraffic: EstimatedTrafficModel | null = null;
   /**
    * Use the city-wide estimated traffic for main-road edge flows. OFF: tried in p10 (docs/urbanos/TRAFFIC_ESTIMATED_P10.md
@@ -1329,7 +1358,7 @@ export class SimulationMode {
   private analysisJob(plan: DemandPlan, area: StudyArea, section: RoadSection, measureS: number = DEFAULT_ANALYSIS.measureS, o: { hourFactor?: number; seeds?: readonly number[] } = {}): AnalysisJob {
     const ds = this.state.calibration.dataset;
     const corridor = this.state.corridor ?? area;
-    return { area, corridor, roads: new Map(structuredClone(this.getRoads()).map(r => [r.id, r])), options: this.simOptions(), plan: structuredClone(plan), section,
+    return { area, corridor, roads: new Map(structuredClone(this.getRoads()).map(r => [r.id, r])), options: this.simOptions(), supply: this.activeSupply(), plan: structuredClone(plan), section,
       hourFactor: o.hourFactor ?? this.state.timeOfDay.factor, seeds: o.seeds ?? this.analysisSeeds, warmupS: DEFAULT_ANALYSIS.warmupS, measureS,
       countJunctions: ds ? junctionsIn(ds, corridor.bounds) : undefined };
   }
@@ -2271,6 +2300,7 @@ export const STUDY_CHANGED = {
   roads: 'The study roads changed since the baseline. Save again to make a baseline for these roads, or go back to the baseline\'s roads.',
   range: 'The study range changed since the baseline. Save again for a new baseline, or set the range back.',
   direction: 'The study direction changed since the baseline. Save again for a new baseline, or set the direction back.',
+  supply: 'The traffic parameters changed since the baseline (defaults vs tuned, estimated). Save again for a new baseline, or switch them back.',
 } as const;
 const STUDY_REASONS = new Set<string>(Object.values(STUDY_CHANGED));
 

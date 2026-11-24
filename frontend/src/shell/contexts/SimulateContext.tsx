@@ -6,6 +6,8 @@ import { useSimulationMode } from '../../hooks/useSimulationMode';
 import { useShellStore } from '../useShellStore';
 import { TrafficCountsNotice } from '../../components/data/TrafficCountsNotice';
 import { TRAFFIC_VALIDATION, TRAFFIC_VALIDATION_SUMMARY, RIVER_SCREENLINE_TEXT, COUNTS_ALL, COUNTS_CALIBRATION, COUNTS_HOLDOUT } from '../../components/ui/badges/trafficValidation';
+import { bannerText, projectScoreFor, PROJECT_CHECK, PROJECT_DATA_NOTE } from '../../components/ui/badges/projectValidation';
+import { engineInstance } from '../../engine/TwinCityEngine';
 
 /**
  * Simulate context panel: the model list with each model's standing, and how to start. The study itself
@@ -15,11 +17,18 @@ export const SimulateContext: React.FC = () => {
   const sim = useSimulationMode();
   const setInspectorOpen = useShellStore(s => s.setInspectorOpen);
   const inspectorOpen = useShellStore(s => s.inspectorOpen);
+  const using = sim.supplySet;
+  const banner = bannerText(TRAFFIC_VALIDATION.verdict === 'meets_criteria', projectScoreFor(using), using);
   return (
     <div className="space-y-5">
       <div className="uos-banner-fail" role="status" data-testid="simulate-validation-banner">
         <OctagonAlert size={16} aria-hidden className="shrink-0 mt-0.5" />
-        <p>Traffic model {TRAFFIC_VALIDATION.verdict === 'fails_validation' ? 'fails validation' : 'meets the recorded criteria'} ({TRAFFIC_VALIDATION.standard}): {TRAFFIC_VALIDATION_SUMMARY}. Results are estimates for comparing options on the same inputs, not forecasts.</p>
+        <div className="space-y-1">
+          <p className="font-medium" data-testid="validation-banner-headline">{banner.headline}.</p>
+          <p data-testid="validation-banner-official">Official-count check ({TRAFFIC_VALIDATION.standard}): {TRAFFIC_VALIDATION.verdict === 'fails_validation' ? 'fails' : 'meets the criteria'}: {TRAFFIC_VALIDATION_SUMMARY}.</p>
+          <p data-testid="validation-banner-project">{banner.project}</p>
+          <p data-testid="validation-banner-meaning">{banner.meaning}</p>
+        </div>
       </div>
       <PanelSection title="Study">
         {sim.seedRoadIds.length === 0
@@ -35,8 +44,18 @@ export const SimulateContext: React.FC = () => {
           <li className="uos-row"><span className="flex-1 text-text-1">Feasibility screening</span><span className="text-text-2 font-medium">Screening only</span></li>
         </ul>
       </PanelSection>
+      {PROJECT_CHECK.tunedAvailable && (
+        <PanelSection title="Traffic parameters">
+          <label className="flex items-start gap-2 text-label text-text-1">
+            <input type="checkbox" data-testid="tuned-supply-toggle" checked={using === 'tuned'} onChange={e => engineInstance.simMode.setTunedSupply(e.target.checked)} />
+            <span>Tuned parameters (estimated): speeds, capacities and demand fitted to Google journey times and published counts.</span>
+          </label>
+          <p className="text-meta text-text-3 mt-1.5">{PROJECT_CHECK.tunedDecision.on ? 'On by default: ' : 'Off by default: '}{PROJECT_CHECK.tunedDecision.reason}. Changing it needs a new baseline.</p>
+        </PanelSection>
+      )}
       <PanelSection title="Data">
         <TrafficCountsNotice compact />
+        <p className="text-meta text-text-3 mt-1.5">{PROJECT_DATA_NOTE}</p>
         <p className="text-meta text-text-3 mt-1.5">Pune has no openly published official traffic counts. The checks use research transcriptions (6 junctions, NICMAR 2025; 8 CCTV cameras, 2023; the 2008 river-bridge counts), so the model is compared with old or partial counts only.</p>
       </PanelSection>
       <Disclosure>

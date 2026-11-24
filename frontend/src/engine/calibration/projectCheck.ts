@@ -21,6 +21,8 @@ export interface ProjectObs {
   /** Modelled value (minutes for a journey time, motor vehicles per hour for a count); null when the model gave none. */
   model: number | null;
   routeKm?: number; googleKm?: number; range?: [number, number]; note?: string;
+  /** Harness diagnostics (where a journey time goes: running, signal, congestion delay); not scored. */
+  diag?: Record<string, unknown>;
 }
 
 export const geh = (m: number, c: number) => Math.sqrt((2 * (m - c) ** 2) / Math.max(1e-9, m + c));
@@ -85,4 +87,38 @@ export function scoreProjectCheck(obs: readonly ProjectObs[]): ProjectScore {
   const sum = (g: GroupScore) => ({ geh: `${g.counts.gehOk}/${g.counts.n}`, meanGeh: g.counts.meanGeh && +g.counts.meanGeh.toFixed(1), r2: g.counts.r2 && +g.counts.r2.toFixed(3), bias: pct(g.counts.bias),
     jt: `${g.jt.ok}/${g.jt.n}`, jtMedianErr: pct(g.jt.medianRelErr), jtByHour: g.jt.byHour, river: pct(g.river.pct), riverN: g.river.n });
   return { calibration, holdout, all, pass: checks.counts && checks.jt && checks.screenline, checks, loss: projectLoss(obs), summary: { calibration: sum(calibration), holdout: sum(holdout) } };
+}
+
+/** Compass bearing (degrees) of a way drawn from its first to its last point; +180 for the backward link. */
+export function wayBearing(coords: readonly (readonly number[])[] | undefined, backward: boolean): number {
+  const base = coords && coords.length >= 2
+    ? Math.atan2((coords[coords.length - 1][0] - coords[0][0]) * Math.cos(coords[0][1] * Math.PI / 180), coords[coords.length - 1][1] - coords[0][1]) * 180 / Math.PI
+    : 0;
+  return backward ? base + 180 : base;
+}
+
+/**
+ * Indices of the links of one counted cross-section, split by direction of travel. A count site is ONE cross-section,
+ * but it is matched to every OSM way of the counted stretch (up to 20 consecutive pieces, and a divided road's two
+ * carriageways are separate one-way ways): the count is the flow through one cross-section per direction, never the sum
+ * over the pieces. The direction comes from each link's bearing (as the p11 comparison does, 53189e4), not from fwd/bwd,
+ * so a one-way carriageway falls on its own side. The axis is the first link's bearing (the sites' ways are matched along
+ * one road, so they are near-parallel).
+ */
+export function sectionDirections(bearings: readonly number[]): { along: number[]; against: number[] } {
+  const along: number[] = [], against: number[] = [];
+  if (!bearings.length) return { along, against };
+  const axis = bearings[0];
+  bearings.forEach((b, i) => (Math.cos((b - axis) * Math.PI / 180) >= 0 ? along : against).push(i));
+  return { along, against };
+}
+
+/**
+ * Modelled count at a cross-section: per direction of travel, the busiest piece of the counted stretch (the counted
+ * place is one of them; the busiest is taken as countValidation.ts does), both directions added.
+ */
+export function sectionCount(flows: readonly { bearing: number; vph: number }[]): number {
+  const { along, against } = sectionDirections(flows.map(f => f.bearing));
+  const mx = (ix: number[]) => ix.reduce((m, i) => Math.max(m, flows[i].vph), 0);
+  return mx(along) + mx(against);
 }

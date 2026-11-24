@@ -34,6 +34,7 @@ Read in this order; each phase re-runs the same 15-site validation (TAG M3.1).
 | P9 | [TRAFFIC_CALIBRATION_P9.md](TRAFFIC_CALIBRATION_P9.md) | The count sites, the calibration / hold-out split, edge-flow calibration and why it fails |
 | P10 | [TRAFFIC_ESTIMATED_P10.md](TRAFFIC_ESTIMATED_P10.md) | The city-wide ESTIMATED traffic dataset (project-level, not for decisions) and why it is not used for edge flows |
 | P11 | [SIM_USER_TEST_P11.md](SIM_USER_TEST_P11.md) | The planner workflow, the p11 validation record (zone demand and estimate match tried, not shipped), three scenarios end to end (Katraj flyover, Baba Bhide Bridge closure, Sinhagad Road widening), every bug fixed, the verdict and remaining gaps |
+| P13 | [VALIDATION_P13.md](VALIDATION_P13.md) | Project-level check against ESTIMATED data (Google typical journey times, published 2021 counts), kept apart from the official-count check: count-matching fix, why the model is too fast and gridlocks, SPSA tuning and ODME on calibration only, hold-out verdict (fails, default and tuned), tuned parameters opt-in, banner states |
 
 ## Seven facts to remember
 1. **Seven workspaces**: Explore, Design, Underground, Environment, Simulate, Projects, Reports (`frontend/src/shell/workspaces.ts`).
