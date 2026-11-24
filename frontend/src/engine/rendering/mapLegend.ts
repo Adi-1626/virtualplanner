@@ -8,7 +8,8 @@
  */
 
 /** How the symbol looks in the key. */
-export type SwatchKind = 'line' | 'dash' | 'glow' | 'dot' | 'ring' | 'square' | 'label' | 'arrow' | 'fill' | 'gradient' | 'outline';
+export type SwatchKind = 'line' | 'dash' | 'glow' | 'dot' | 'ring' | 'square' | 'label' | 'arrow' | 'fill' | 'gradient' | 'outline' | 'marker';
+/** 'marker': a dot with its map label beside it (the label shows when zoomed in). */
 export interface Swatch {
   kind: SwatchKind;
   color: string;
@@ -96,7 +97,13 @@ export const mapLegend = new MapLegendRegistry();
 export const itemTip = (i: LegendItem) => (i.detail ? `${i.label}: ${i.detail}` : i.label);
 
 /** Group order: what the planner is working on first, the base city last. */
-export const LEGEND_ORDER = { roundTrip: 5, simOverlay: 10, simLive: 15, simStudy: 20, simDirections: 22, highlight: 25, design: 30, junctions: 35, street: 40, demand: 45, explore: 50, environment: 55, underground: 60, city: 90 } as const;
+export const LEGEND_ORDER = { roundTrip: 5, simOverlay: 10, simDirections: 12, simLive: 15, simStudy: 20, highlight: 25, design: 30, junctions: 35, street: 40, demand: 45, explore: 50, environment: 55, underground: 60, city: 90 } as const;
+
+/**
+ * Map-symbol tooltips show only with the Select tool. While a drawing or placing tool is active a click places a
+ * point, so a tooltip would sit under the cursor and a tapped one would take Esc away from cancelling the drawing.
+ */
+export const mapTipsAllowed = (editingMode: string | null | undefined): boolean => !editingMode || editingMode === 'select';
 
 /** The description a picked object carries (a marker's `id.legendTip`, an entity's `properties.legendTip`), else the registered resolvers'. */
 export function tipFromPick(picked: unknown): PickTip | null {

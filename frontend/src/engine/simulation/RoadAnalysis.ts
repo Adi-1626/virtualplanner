@@ -38,6 +38,9 @@ export interface DelayBreakdown {
   signal: number; blocked: number; giveWay: number; conflict: number; other: number; total: number;
 }
 
+/** A stop line that limits a direction: a signal, a roundabout entry, or a signalised mid-block crossing, and where it stands. */
+export interface StopLine { kind: 'signal' | 'roundabout' | 'crossing'; at: [number, number]; source: 'run' | 'assignment' }
+
 export interface DirectionFlow {
   /** "northbound", "towards the south-west", ... */
   label: string;
@@ -81,6 +84,12 @@ export interface DirectionFlow {
   stopLinePcu: number | null;
   capacityPcu: number;
   capacityBasis: 'midblock' | 'signal';
+  /**
+   * The stop line that sets `stopLinePcu`: what it is and where (the run's signal at the direction's end, else the
+   * assignment's tightest stop line along it, which can be part-way along). Suggestions open this, not the end of the
+   * direction's geometry. Absent on results saved before it existed.
+   */
+  stopLine?: StopLine | null;
   /** Volume / capacity from the demand on it (assignment) and from what got through (simulation), PCU. */
   vc: number;
   servedVc: number;
@@ -451,7 +460,7 @@ export function sectionDirections(area: StudyArea, section: RoadSection, roads?:
 export interface CorridorRun {
   seed: number;
   windowS: number;
-  directions: { vph: number; pcuph: number; meanSpeedKmh: number | null; travelTimeS: number | null; freeTimeS: number; freeSpeedKmh: number; lengthM: number; lanes: number; delay: DelayBreakdown | null; queuedNow: number; stopLinePcu: number | null; endSignal: boolean }[];
+  directions: { vph: number; pcuph: number; meanSpeedKmh: number | null; travelTimeS: number | null; freeTimeS: number; freeSpeedKmh: number; lengthM: number; lanes: number; delay: DelayBreakdown | null; queuedNow: number; stopLinePcu: number | null; endSignal: boolean; /** The signal at the direction's end in the run (where its stop line stands). */ stopLineAt?: [number, number] | null }[];
   chains: (QueueChain | null)[];
   junctions: JunctionUse[];
   linkVph: Map<string, number>;
@@ -516,7 +525,9 @@ export function readCorridorRun(sim: TrafficMicroSim, seed: number, corridor: St
     const last = ls.find(l => !ls.some(m => m.from === l.to)) ?? ls[ls.length - 1];
     // Stop-line capacity at a signalised end, from the run's own signal plan (Webster green ratio) and Indo-HCM saturation flow
     const stopLinePcu = last?.signal && last.gC !== null ? indoHcmSaturationFlow(last.lanes * 3.5) * last.gC : null;
-    return { vph, pcuph, meanSpeedKmh, travelTimeS, freeTimeS, freeSpeedKmh: (len / Math.max(0.1, freeTimeS)) * 3.6, lengthM: len, lanes, delay, queuedNow: ls.reduce((n, l) => n + l.queuedNow, 0), stopLinePcu, endSignal: !!last?.signal };
+    const endAt = stopLinePcu !== null ? sim.nodeCoordinates(last.to) : null;
+    return { vph, pcuph, meanSpeedKmh, travelTimeS, freeTimeS, freeSpeedKmh: (len / Math.max(0.1, freeTimeS)) * 3.6, lengthM: len, lanes, delay, queuedNow: ls.reduce((n, l) => n + l.queuedNow, 0), stopLinePcu, endSignal: !!last?.signal,
+      stopLineAt: endAt ? [endAt[0], endAt[1]] as [number, number] : null };
   });
   const linkVph = new Map<string, number>();
   for (const l of counts.links) linkVph.set(l.id, l.entries * perH);
@@ -611,7 +622,7 @@ function bindingOf(ls: readonly { roadId: string; lengthM: number; lanes: number
 }
 
 export interface AreaContext {
-  directions: { demandVph: number; demandPcu: number; midblockPcu: number; stopLinePcu: number | null; lanes: number; lanesRange: [number, number]; narrowestM: number; lengthM: number;
+  directions: { demandVph: number; demandPcu: number; midblockPcu: number; stopLinePcu: number | null; stopLine: StopLine | null; lanes: number; lanesRange: [number, number]; narrowestM: number; lengthM: number;
     binding: BindingSegment | null; bindingSegments: BindingSegment[]; roadIds: string[]; segments: BindingSegment[] }[];
   origins: Place[]; destinations: Place[];
   composition: { throughShare: number; localShare: number };
@@ -743,13 +754,16 @@ export function areaContext(res: AssignmentResult, area: StudyArea, roads: Reado
     const w = (f: (l: (typeof ls)[number]) => number) => ls.reduce((n, l) => n + f(l) * l.lengthM, 0) / len;
     // Capacity of the direction: its tightest stretch, and the stop line at its signalised end if any
     const stop = ls.filter(l => l.stopLinePcu !== null).map(l => l.stopLinePcu!);
+    // Where that tightest stop line stands (it can be part-way along the direction, not only at its end)
+    const tight = ls.filter(l => l.stopLinePcu !== null).sort((x, y) => x.stopLinePcu! - y.stopLinePcu!)[0];
+    const stopLine: StopLine | null = tight?.stopLine ? { ...tight.stopLine, source: 'assignment' } : null;
     // Lanes are those of the stretch the mid-block capacity comes from (its narrowest), so the two always agree;
     // a length-weighted mean read "3 lanes" beside a 2-lane stretch's capacity once part of a carriageway was widened (docs/OVERHAUL.md §14)
     const midblockPcu = ls.length ? Math.min(...ls.map(l => l.midblockPcu)) : 0;
     const narrowest = ls.filter(l => l.midblockPcu <= midblockPcu + 1e-6);
     const laneList = ls.map(l => l.lanes);
     return { demandVph: w(l => res.volVeh[l.index]), demandPcu: w(l => res.volPcu[l.index]), midblockPcu,
-      stopLinePcu: stop.length ? Math.min(...stop) : null, lanes: narrowest.length ? Math.min(...narrowest.map(l => l.lanes)) : 0,
+      stopLinePcu: stop.length ? Math.min(...stop) : null, stopLine, lanes: narrowest.length ? Math.min(...narrowest.map(l => l.lanes)) : 0,
       lanesRange: (ls.length ? [Math.min(...laneList), Math.max(...laneList)] : [0, 0]) as [number, number],
       narrowestM: narrowest.reduce((n, l) => n + l.lengthM, 0), lengthM: ls.reduce((n, l) => n + l.lengthM, 0),
       ...bindingOf(ls, narrowest, roads) };
@@ -878,6 +892,9 @@ export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { 
     // The corridor run's own signal timing where it has one, else the assignment's assumed green ratio
     const simStop = rs.map(r => r.stopLinePcu).filter((x): x is number => x !== null);
     const stopLinePcu = simStop.length ? mean(simStop) : a.stopLinePcu;
+    // Where the stop line that limits it stands: the run's own signal at the direction's end, else the assignment's
+    const runAt = rs.find(r => r.stopLinePcu !== null && r.stopLineAt)?.stopLineAt;
+    const stopLine: StopLine | null = simStop.length ? (runAt ? { kind: 'signal', at: runAt, source: 'run' } : null) : a.stopLine ?? null;
     const capacityPcu = Math.min(a.midblockPcu || Infinity, stopLinePcu ?? Infinity);
     const vc = a.demandPcu / Math.max(1, capacityPcu);
     const pcuph = mean(rs.map(r => r.pcuph));
@@ -885,7 +902,7 @@ export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { 
     const avgDelay = delays.length ? { signal: mean(delays.map(x => x.signal)), blocked: mean(delays.map(x => x.blocked)), giveWay: mean(delays.map(x => x.giveWay)), conflict: mean(delays.map(x => x.conflict)), other: mean(delays.map(x => x.other)), total: mean(delays.map(x => x.total)) } : null;
     return { label: d.label, bearingDeg: d.bearing, compass: d.compass ?? compassWord(d.labelBearing ?? d.bearing), labelBearingDeg: d.labelBearing ?? d.bearing, towards: d.towards ?? null, paths: d.paths ?? [], vph: Math.round(mean(vphs)), vphRange: [Math.round(Math.min(...vphs)), Math.round(Math.max(...vphs))] as [number, number], pcuph: Math.round(pcuph),
       demandVph: Math.round(a.demandVph), demandPcu: Math.round(a.demandPcu), lanes: a.lanes || rs[0]?.lanes || 1, lanesRange: a.lanesRange, narrowestM: Math.round(a.narrowestM), lengthM: Math.round(a.lengthM), binding: a.binding, bindingSegments: a.bindingSegments, roadIds: a.roadIds, segments: a.segments,
-      midblockPcu: Math.round(a.midblockPcu), stopLinePcu: stopLinePcu !== null ? Math.round(stopLinePcu) : null, capacityPcu: Math.round(capacityPcu), capacityBasis: (stopLinePcu !== null && stopLinePcu < a.midblockPcu ? 'signal' : 'midblock') as 'signal' | 'midblock',
+      midblockPcu: Math.round(a.midblockPcu), stopLinePcu: stopLinePcu !== null ? Math.round(stopLinePcu) : null, capacityPcu: Math.round(capacityPcu), capacityBasis: (stopLinePcu !== null && stopLinePcu < a.midblockPcu ? 'signal' : 'midblock') as 'signal' | 'midblock', stopLine,
       vc, servedVc: pcuph / Math.max(1, capacityPcu),
       meanSpeedKmh, speedRange: speeds.length ? [Math.min(...speeds), Math.max(...speeds)] as [number, number] : null, freeSpeedKmh, speedRatio,
       travelTimeS, freeTimeS, los: speedLos(speedRatio, forcedVc(vc, pcuph, a.demandPcu)), losBasis: losBasisOf(speedRatio, vc, pcuph, a.demandPcu),

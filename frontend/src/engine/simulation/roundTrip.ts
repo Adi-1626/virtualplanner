@@ -89,7 +89,9 @@ export interface RoundTripState {
 // ── Change detection ──────────────────────────────────────────────────────
 
 /** A minimal object view: what the flow reads of a city object. */
-export interface TripObject { id: string; type: string; name?: string; updatedAt?: string; coordinates?: unknown; scenarioId?: string }
+export interface TripObject { id: string; type: string; name?: string; updatedAt?: string; coordinates?: unknown; scenarioId?: string;
+  /** Set on an existing road whose capacity a new flyover reduced (merge and weave at its ramps, BUILD_PROPAGATION.md): a side effect, not a change of its own. */
+  flyoverImpact?: { flyoverId?: string } | null }
 
 /** The change set of a proposal as id → stamp: its own objects and its changes to base objects ('×' for a removal). */
 export function proposalSnapshot(own: readonly TripObject[], overlay: ReadonlyMap<string, TripObject | null>): Record<string, string> {
@@ -118,6 +120,13 @@ export interface ChangeSummary {
   total: number;
   /** Changes that reach the traffic network (roads, flyovers, junctions, street elements). */
   network: number;
+  /** Of those: junctions (a junction drawn or an existing junction's control edited) and street elements; the rest are roads. */
+  junctions?: number;
+  streetElements?: number;
+  /** New objects drawn in the proposal, by type (a flyover, a road), counted apart from changes to existing ones. */
+  added?: Record<string, number>;
+  /** Existing roads changed only as a side effect of a new flyover in this change set (merge loss at its ramps). */
+  sideEffects?: number;
   /** Network changes with any point inside the study area. */
   inArea: number;
   underground: number;
@@ -145,8 +154,9 @@ export function touchesBounds(coords: unknown, b: Bounds, padM = 50): boolean {
  * `lookup` returns the object as the proposal shows it now, or (for a removal) as it was; a removal with no copy left
  * is counted as a network change in the area (it cannot be placed, and leaving it out would hide a closure).
  */
-export function summariseChanges(ids: readonly string[], lookup: (id: string) => TripObject | undefined, bounds: Bounds | null): ChangeSummary {
-  const s: ChangeSummary = { total: ids.length, network: 0, inArea: 0, underground: 0, demand: 0, other: 0, outsideNames: [] };
+export function summariseChanges(ids: readonly string[], lookup: (id: string) => TripObject | undefined, bounds: Bounds | null, isExisting?: (id: string) => boolean): ChangeSummary {
+  const s: ChangeSummary = { total: ids.length, network: 0, junctions: 0, streetElements: 0, added: {}, sideEffects: 0, inArea: 0, underground: 0, demand: 0, other: 0, outsideNames: [] };
+  const inSet = new Set(ids);
   for (const id of ids) {
     const o = lookup(id);
     if (!o) { s.network++; s.inArea++; continue; }
@@ -154,7 +164,16 @@ export function summariseChanges(ids: readonly string[], lookup: (id: string) =>
     else if (DEMAND_TYPES.has(o.type)) s.demand++;
     else if (NETWORK_TYPES.has(o.type)) {
       s.network++;
+      const existing = isExisting?.(id) ?? false;
+      // A flyover drawn in this leg lowers the capacity of the roads at its ramps (merge and weave, BUILD_PROPAGATION.md): one change,
+      // not "16 road changes" (P12 browser test)
+      const side = existing && !!o.flyoverImpact?.flyoverId && inSet.has(o.flyoverImpact.flyoverId);
+      if (side) s.sideEffects!++;
+      else if (o.type === 'junction') s.junctions!++;
+      else if (o.type === 'street_element') s.streetElements!++;
+      else if (isExisting && !existing) s.added![o.type] = (s.added![o.type] ?? 0) + 1;
       if (!bounds || touchesBounds(o.coordinates, bounds)) s.inArea++;
+      else if (side) continue;
       else if (o.name && !s.outsideNames.includes(o.name)) s.outsideNames.push(o.name);
       else if (!o.name && !s.outsideNames.includes('an unnamed road')) s.outsideNames.push('an unnamed road');
     } else s.other++;
@@ -260,11 +279,20 @@ export function legHeadline(leg: Pick<TripLeg, 'target'>): string {
 export function changeCountText(s: ChangeSummary): string {
   if (s.total === 0) return 'No change yet';
   const parts: string[] = [];
-  if (s.network) parts.push(`${s.network} road change${s.network === 1 ? '' : 's'}`);
+  const junctions = s.junctions ?? 0, elements = s.streetElements ?? 0, side = s.sideEffects ?? 0;
+  const added = Object.entries(s.added ?? {});
+  const roads = s.network - junctions - elements - side - added.reduce((n, [, k]) => n + k, 0);
+  const n = (k: number, w: string) => `${k} ${w} change${k === 1 ? '' : 's'}`;
+  const NEW: Record<string, [string, string]> = { flyover: ['flyover', 'flyovers'], metro_flyover: ['metro flyover', 'metro flyovers'], road: ['road', 'roads'] };
+  for (const [type, k] of added) { const w = NEW[type] ?? [type.replace(/_/g, ' '), `${type.replace(/_/g, ' ')}s`]; parts.push(`${k} new ${k === 1 ? w[0] : w[1]}`); }
+  if (roads > 0) parts.push(n(roads, 'road'));
+  if (junctions) parts.push(n(junctions, 'junction'));
+  if (elements) parts.push(n(elements, 'street element'));
   if (s.demand) parts.push(`${s.demand} land-use change${s.demand === 1 ? '' : 's'}`);
   if (s.underground) parts.push(`${s.underground} underground`);
   if (s.other) parts.push(`${s.other} other`);
-  return parts.join(', ');
+  const text = parts.join(', ');
+  return side ? `${text || 'No change of its own'} (${side} road${side === 1 ? '' : 's'} it joins adjusted for merging at its ramps)` : text;
 }
 
 export function outsideAreaText(names: readonly string[], rangeMeters: number): string {

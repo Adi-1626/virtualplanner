@@ -35,9 +35,9 @@ export const RoundTripBar: React.FC = () => {
   const wider = widerRange(study.rangeMeters, STUDY_DISTANCES_M);
   return (
     <section className="uos-roundtrip" role="region" aria-label="Return to study" data-testid="roundtrip-bar" data-phase={leg.phase}>
-      <div className="flex items-start gap-2 min-w-0">
+      <div className="flex flex-wrap items-start gap-2 min-w-0">
         <ArrowLeftRight size={16} className="text-cyan-300 shrink-0 mt-0.5" aria-hidden />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-[300px]">
           <p className="text-[13px] font-semibold text-white leading-snug" data-testid="roundtrip-study">
             {trip.resumed ? 'Resume: ' : ''}Testing a change for {study.label}
             <span className="font-normal text-slate-400"> · {hourLabel(study.hour)} {study.day} · {formatDistanceM(study.rangeMeters)} area</span>
@@ -47,7 +47,7 @@ export const RoundTripBar: React.FC = () => {
           </p>
           <p className="text-[11px] text-slate-400" data-testid="roundtrip-changes">{changes ? changeCountText(changes) : 'Counting changes…'}{changes && changes.network > 0 && changes.inArea < changes.network ? ` (${changes.network - changes.inArea} outside the study area)` : ''}</p>
         </div>
-        <div className="flex gap-1.5 shrink-0 flex-wrap justify-end">
+        <div className="flex gap-1.5 shrink-0 flex-wrap justify-end ml-auto">
           <Button size="sm" variant="primary" icon={busy ? Loader2 : CornerDownLeft} spin={busy} disabled={busy || baseActive} data-testid="roundtrip-done" onClick={() => void rt.finish()}
             title="Go back to the study, run this proposal on the baseline's trips, hour and seeds, and compare">{trip.resumed ? 'Return and re-test' : 'Done – re-test'}</Button>
           <Button size="sm" variant="ghost" icon={X} disabled={busy} data-testid="roundtrip-cancel" onClick={() => rt.cancel()} title="Go back to the study without a re-test">Cancel</Button>

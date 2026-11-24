@@ -178,6 +178,9 @@ describe('#1 junction control brush', () => {
     // Edited signal: every approach link has a stop-line capacity and g/C; the base has none (no mapped signal)
     expect(into.every(l => l.stopLinePcu != null && (l.gC ?? 1) < 1)).toBe(true);
     expect(intoB.every(l => l.stopLinePcu == null)).toBe(true);
+    // ...and says what sets it and where: the edited signal at the link's end (P12: a suggestion opens this junction)
+    expect(into.every(l => l.stopLine?.kind === 'signal')).toBe(true);
+    expect(intoB.every(l => !l.stopLine)).toBe(true);
     expect(canonBase(om)).toBe(base0);
     // Save → reload gives the same network
     expect(compile(reloaded(om.viewOf(P)), P).key).toBe(p.key);
@@ -405,6 +408,7 @@ describe('#7 roundabouts (IRC:65-2017)', () => {
     for (const l of into) {
       expect(l.gC).toBeNull();
       expect(l.stopLinePcu).toBeCloseTo(perLane * Math.max(1, Math.min(l.lanes, 1)), 6);
+      expect(l.stopLine?.kind).toBe('roundabout');
     }
     expect(canonBase(om)).toBe(base0);
     expect(compile(reloaded(om.viewOf(P)), P, SP).key).toBe(p.key);

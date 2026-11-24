@@ -252,7 +252,11 @@ export class RoundTripController {
     for (const id of ids) { const v = overlay.get(id); if (v) found.set(id, v); }
     // A removed base object (or one whose change was undone) is looked up as stored
     if (found.size < ids.length) for (const o of this.d.objects.getAllStored()) if (want.has(o.id) && !found.has(o.id)) found.set(o.id, o);
-    return summariseChanges(ids, id => found.get(id), t.study.bounds);
+    // Existing objects: in the proposal when the leg started, overridden from the existing city (its overlay), or stored
+    // outside it; the rest were drawn in this leg
+    const own = new Set(this.d.objects.getByScenario(leg.proposalId).map(o => o.id));
+    const existing = (id: string) => id in leg.startSnapshot || overlay.has(id) || !own.has(id);
+    return summariseChanges(ids, id => found.get(id), t.study.bounds, existing);
   }
 
   private scheduleChangeCount() {

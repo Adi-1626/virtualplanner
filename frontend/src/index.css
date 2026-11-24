@@ -447,14 +447,17 @@ button.uos-row:hover { background: var(--surface-2); }
 /* ---- Simulate round trip: the "Return to study" bar over the map (docs/urbanos/SIM_FLOW_P12.md). Top centre, clear of
    the panel reopen button (top left) and Cesium's buttons (top right); full width on phones. ---- */
 .uos-roundtrip {
-  position: absolute; z-index: 30; top: var(--sp-3); left: 50%; transform: translateX(-50%);
-  width: min(720px, calc(100% - 300px)); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;
+  position: absolute; z-index: 30; top: var(--sp-3);
+  /* centred and at most 720 px on a wide map; on a narrow one from the left edge to clear of Cesium's buttons (~130 px) */
+  left: max(var(--sp-3), calc(50% - 360px)); right: max(140px, calc(50% - 360px));
+  padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; max-height: calc(100% - 2 * var(--sp-3)); overflow-y: auto;
   border-radius: var(--r-lg); border: 1px solid rgba(103, 232, 249, .35); background: rgba(2, 6, 23, .94);
   box-shadow: var(--shadow-float); backdrop-filter: blur(8px);
 }
+.uos-shell:not([data-context=open]) .uos-roundtrip { left: max(230px, calc(50% - 360px)); }
 .uos-roundtrip-ask { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-1); }
 @media (max-width: 1024.98px) {
-  .uos-roundtrip { width: auto; left: calc(var(--sp-3) + 120px); right: 64px; transform: none; }
+  .uos-roundtrip { left: calc(var(--sp-3) + 120px); right: 64px; }
   .uos-shell[data-context=open] .uos-roundtrip { left: calc(var(--ctx-tablet-w, 0px) + var(--sp-3)); }
 }
 @media (max-width: 767.98px) {
@@ -473,7 +476,7 @@ button.uos-row:hover { background: var(--surface-2); }
 .uos-shell:has(.uos-drawer.is-open) .uos-legend { bottom: calc(var(--drawer-h) + 36px); }
 .uos-legend-head { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-weight: 600; color: var(--text-1); cursor: pointer; min-height: 30px; }
 .uos-legend-body { padding: 4px 10px 10px; overflow-y: auto; max-height: min(52vh, 460px); display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); }
-.uos-legend .uos-legend-body { max-height: calc(100dvh - var(--topbar-h, 52px) - 220px); }
+.uos-legend .uos-legend-body { max-height: min(44vh, 400px, calc(100dvh - var(--topbar-h, 52px) - 220px)); }
 .uos-map-tip {
   position: fixed; z-index: 10001; max-width: 260px; padding: 6px 9px; pointer-events: none; font-size: 11px; line-height: 1.35;
   border-radius: var(--r-md); border: 1px solid var(--border); background: rgba(2, 6, 23, .96); box-shadow: var(--shadow-float);

@@ -79,6 +79,12 @@ export interface AssignLink {
   midblockPcu: number;
   /** Stop-line capacity at a signalised approach (PCU/h), else null. */
   stopLinePcu: number | null;
+  /**
+   * What sets the stop-line capacity, and where it stands: the signal or roundabout at the link's end (its node), or a
+   * signalised mid-block crossing on the link (its point). Null without a stop line. Lets a suggestion open the thing
+   * that limits a road, not just the end of the road's geometry.
+   */
+  stopLine?: { kind: 'signal' | 'roundabout' | 'crossing'; at: [number, number] } | null;
   gC: number | null;
   capacityPcu: number;
   /** On a road open only for local access (isAccessRestricted): usable at the start or end of a trip, not through. */
@@ -200,6 +206,8 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
     const midblockPcu = midblockCapacityPcu(road, lanes, !oneWay && !divided, divided);
     const speed = Math.max(10, e.speedLimit || 30);
     let stopLinePcu: number | null = null, gC: number | null = null, sigDelay = 0;
+    let stopLine: AssignLink['stopLine'] = null;
+    const endAt = (): [number, number] => { const c = e.coordinates[e.coordinates.length - 1]; return [c[0], c[1]]; };
     const edited = editedAt.get(e.toNodeId);
     if (edited) {
       // An approach of an edited signal: its green from the plan (effective green = green + amber - start-up lost time, per phase serving it),
@@ -212,31 +220,35 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
         const phasesServing = plan.phases.filter(p => p.arms.includes(arm)).length;
         gC = Math.max(0.02, Math.min(1, ratio + phasesServing * (plan.amberS - STARTUP_LOST_S) / cyc));
         stopLinePcu = indoHcmSaturationFlow(connectedEntryLanes(edited.spec, arm, lanes) * LANE_WIDTH_M) * gC;
+        stopLine = { kind: 'signal', at: endAt() };
         sigDelay = cyc * (1 - gC) ** 2 / 2;
       }
     } else if (signalised.has(e.toNodeId) && !signalised.has(e.fromNodeId)) {
       const n = Math.min(4, Math.max(2, approaches.get(e.toNodeId) ?? 2));
       gC = Math.max(0.1, (ASSIGN_CYCLE_S - n * ASSIGN_LOST_PER_PHASE_S) / ASSIGN_CYCLE_S / n);
       stopLinePcu = indoHcmSaturationFlow(lanes * LANE_WIDTH_M) * gC;
+      stopLine = { kind: 'signal', at: endAt() };
       sigDelay = ASSIGN_CYCLE_S * (1 - gC) ** 2 / 2;
     }
     // Roundabout entry (IRC:65 Table 9.1, Qc assumed): capacity per entry lane x entry lanes (no more than the approach has)
     const rb = rbAt.get(e.toNodeId);
     if (rb && !rbAt.has(e.fromNodeId)) {
       const perLane = entryCapacityPcu(rb.icdM, rb.qcPcu);
-      if (perLane != null) stopLinePcu = Math.min(stopLinePcu ?? Infinity, perLane * Math.max(1, Math.min(lanes, rb.entryLanes)));
+      const rbPcu = perLane != null ? perLane * Math.max(1, Math.min(lanes, rb.entryLanes)) : null;
+      if (rbPcu !== null && rbPcu < (stopLinePcu ?? Infinity)) { stopLinePcu = rbPcu; stopLine = { kind: 'roundabout', at: endAt() }; }
     }
     // Signalised mid-block crossings on this road (streetDesign/crossings.ts): a two-phase signal where the link passes the crossing
     const mid = (road as { streetEffects?: { midblockSignals?: { point: [number, number]; gC: number; cycleS: number }[] } } | undefined)?.streetEffects?.midblockSignals;
     if (mid?.length) for (const m of mid) {
       if (!e.coordinates.some((c, i) => i > 0 && pointSegM(m.point, e.coordinates[i - 1], c) < MIDBLOCK_MATCH_M)) continue;
-      stopLinePcu = Math.min(stopLinePcu ?? Infinity, indoHcmSaturationFlow(lanes * LANE_WIDTH_M) * m.gC);
+      const xPcu = indoHcmSaturationFlow(lanes * LANE_WIDTH_M) * m.gC;
+      if (xPcu < (stopLinePcu ?? Infinity)) { stopLinePcu = xPcu; stopLine = { kind: 'crossing', at: [m.point[0], m.point[1]] }; }
       gC = Math.min(gC ?? 1, m.gC);
       sigDelay += m.cycleS * (1 - m.gC) ** 2 / 2;
     }
     const t0 = e.length / (speed / 3.6) + sigDelay;
     return { index, id: e.id, segmentKey: segKey(e.id), roadId: e.roadId, from: idx(e.fromNodeId), to: idx(e.toNodeId), lengthM: e.length, lanes,
-      t0, freeSpeedKmh: speed, midblockPcu, stopLinePcu, gC, capacityPcu: Math.min(midblockPcu, stopLinePcu ?? Infinity), restricted: isAccessRestricted(road) };
+      t0, freeSpeedKmh: speed, midblockPcu, stopLinePcu, stopLine, gC, capacityPcu: Math.min(midblockPcu, stopLinePcu ?? Infinity), restricted: isAccessRestricted(road) };
   });
   // Outgoing links per node (CSR)
   const outStart = new Int32Array(nodes.length + 1);

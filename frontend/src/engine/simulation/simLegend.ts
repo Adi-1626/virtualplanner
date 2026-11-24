@@ -38,9 +38,9 @@ export function studyLegend(area: Pick<StudyArea, 'junctions' | 'boundary' | 'gr
   if (kinds.has('roundabout')) items.push({ id: 'roundabout', label: 'Roundabout', swatch: { kind: 'dot', color: STUDY_JUNCTION_COLORS.roundabout, color2: '#0f172a' } });
   if (kinds.has('dead_end')) items.push({ id: 'dead_end', label: 'Dead end', swatch: { kind: 'dot', color: STUDY_JUNCTION_COLORS.dead_end, color2: '#0f172a' } });
   const b = new Set(area.boundary.map(x => x.kind));
-  if (b.has('entry')) items.push({ id: 'in', label: 'Traffic enters the area', detail: 'IN ×n: n entry points within 150 m', swatch: { kind: 'label', color: STUDY_BOUNDARY_COLORS.entry, text: 'IN' } });
-  if (b.has('exit')) items.push({ id: 'out', label: 'Traffic leaves the area', detail: 'OUT ×n: n exit points within 150 m', swatch: { kind: 'label', color: STUDY_BOUNDARY_COLORS.exit, text: 'OUT' } });
-  if (b.has('entry_exit') || (b.has('entry') && b.has('exit'))) items.push({ id: 'inout', label: 'Traffic enters and leaves', detail: 'two-way road at the edge, or entries and exits close together', swatch: { kind: 'label', color: STUDY_BOUNDARY_COLORS.entry_exit, text: 'IN/OUT' } });
+  if (b.has('entry')) items.push({ id: 'in', label: 'Traffic enters the area', detail: 'dot at the edge, labelled IN ×n up close (n entry points within 150 m)', swatch: { kind: 'marker', color: STUDY_BOUNDARY_COLORS.entry, text: 'IN' } });
+  if (b.has('exit')) items.push({ id: 'out', label: 'Traffic leaves the area', detail: 'dot at the edge, labelled OUT ×n up close (n exit points within 150 m)', swatch: { kind: 'marker', color: STUDY_BOUNDARY_COLORS.exit, text: 'OUT' } });
+  if (b.has('entry_exit') || (b.has('entry') && b.has('exit'))) items.push({ id: 'inout', label: 'Traffic enters and leaves', detail: 'pink dot: a two-way road at the edge, or entries and exits close together', swatch: { kind: 'marker', color: STUDY_BOUNDARY_COLORS.entry_exit, text: 'IN/OUT' } });
   if (area.gradeSeparations.length) items.push({ id: 'grade', label: 'Roads cross without meeting', detail: 'a flyover or bridge over another road: no turns between them', swatch: { kind: 'ring', color: STUDY_GRADE_SEPARATION_COLOR } });
   const shown = area.problems.filter(p => p.severity !== 'info' || p.kind === 'area_edge');
   if (shown.some(p => p.kind !== 'area_edge' && p.severity === 'error')) items.push({ id: 'p-error', label: 'Network error', detail: 'e.g. a one-way trap; see Details → network checks', swatch: { kind: 'dot', color: STUDY_PROBLEM_COLORS.error, color2: '#ffffff' } });

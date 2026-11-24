@@ -9,7 +9,7 @@ import { filterObjectsForScenario } from '../scenarios/scenarioFilter';
 import { isDrivable, type DrivableObject } from '../simulation/StudyAreaExplorer';
 import { SimulationMode } from '../simulation/SimulationMode';
 import {
-  afterReload, changedSince, decideBeforeReturn, decideInSimulate, parseTrip, proposalSnapshot, sinceLastTest, suggestionKey, summariseChanges,
+  afterReload, changeCountText, changedSince, decideBeforeReturn, decideInSimulate, parseTrip, proposalSnapshot, sinceLastTest, suggestionKey, summariseChanges,
   testOf, testedButGone, widerRange, outsideAreaText, ROUND_TRIP_VERSION, type RoundTripState, type TripTest,
 } from '../simulation/roundTrip';
 import { RoundTripController, useRoundTrip, type RoundTripDeps, type RoundTripNav } from '../../shell/roundTripController';
@@ -57,6 +57,21 @@ describe('round trip model', () => {
     };
     expect(summariseChanges(['ew', 'far', 'u1'], id => objs[id], bounds)).toMatchObject({ total: 3, network: 2, inArea: 1, underground: 1, outsideNames: ['Far Road'] });
     // A removal with no copy left counts as a change in the area (never hides a closure)
+    // A junction's control edited (or a junction drawn) is a junction change, not a road change (P12 test #2)
+    const jx = { id: 'jx', type: 'junction', name: 'Bharati Hospital junction', coordinates: pt(100, 0) } as any;
+    const lk = (id: string) => ({ ...objs, jx } as Record<string, any>)[id];
+    expect(changeCountText(summariseChanges(['jx'], lk, bounds))).toBe('1 junction change');
+    expect(changeCountText(summariseChanges(['ew', 'jx'], lk, bounds))).toBe('1 road change, 1 junction change');
+    // A drawn flyover is one new flyover; the existing roads at its ramps it adjusted are its side effect (P12: "16 road changes")
+    const fo = { id: 'fo', type: 'flyover', name: 'New flyover', coordinates: [pt(0, 0), pt(300, 0)] } as any;
+    const ew2 = { ...objs.ew, flyoverImpact: { flyoverId: 'fo' } };
+    const lk2 = (id: string) => ({ fo, ew: ew2, jx } as Record<string, any>)[id];
+    const fs2 = summariseChanges(['fo', 'ew'], lk2, bounds, id => id !== 'fo');
+    expect(fs2).toMatchObject({ network: 2, inArea: 2, added: { flyover: 1 }, sideEffects: 1 });
+    expect(changeCountText(fs2)).toBe('1 new flyover (1 road it joins adjusted for merging at its ramps)');
+    expect(decideBeforeReturn(fs2)).toEqual({ action: 'run' });
+    // ...and a road the planner changed by hand is still a road change beside it
+    expect(changeCountText(summariseChanges(['fo', 'ew', 'jx'], id => ({ fo, ew: objs.ew, jx } as Record<string, any>)[id], bounds, id => id !== 'fo'))).toBe('1 new flyover, 1 road change, 1 junction change');
     expect(summariseChanges(['gone'], () => undefined, bounds)).toMatchObject({ network: 1, inArea: 1 });
     expect(decideBeforeReturn(summariseChanges(['far'], id => objs[id], bounds))).toEqual({ action: 'outside-area', names: ['Far Road'] });
     expect(decideBeforeReturn(summariseChanges(['far'], id => objs[id], bounds), { outsideAccepted: true })).toEqual({ action: 'run' });

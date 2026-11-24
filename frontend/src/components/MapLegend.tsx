@@ -22,7 +22,11 @@ import { UndergroundLegend } from './underground/UndergroundLegend';
 const OPEN_KEY = 'urbanos.mapLegend.open';
 const readOpen = (): boolean => {
   try { const v = localStorage.getItem(OPEN_KEY); if (v === '1' || v === '0') return v === '1'; } catch { /* private mode */ }
-  return typeof window !== 'undefined' && window.innerWidth >= 1280;
+  // First visit: open only where it leaves most of the map free (a map stage 1000 px wide or more); else the closed
+  // "Map key" chip with its count, one tap away.
+  if (typeof document === 'undefined') return false;
+  const map = document.querySelector('.uos-map') as HTMLElement | null;
+  return (map?.clientWidth ?? window.innerWidth) >= 1000;
 };
 
 export const SwatchIcon: React.FC<{ s: Swatch }> = ({ s }) => {
@@ -38,6 +42,7 @@ export const SwatchIcon: React.FC<{ s: Swatch }> = ({ s }) => {
     case 'fill': return <svg width="22" height="12" aria-hidden className="shrink-0"><rect x="2" y="2" width="18" height="8" rx="1.5" fill={c} fillOpacity={0.85} /></svg>;
     case 'arrow': return <svg width="22" height="10" aria-hidden className="shrink-0"><line x1="1" y1="5" x2="15" y2="5" stroke={c} strokeWidth={3} /><path d="M14 1 L21 5 L14 9 Z" fill={c} /></svg>;
     case 'label': return <span className="shrink-0 inline-flex min-w-[22px] justify-center rounded px-0.5 text-[9px] font-bold leading-[14px]" style={{ color: c, background: '#0f172a' }} aria-hidden>{s.text}</span>;
+    case 'marker': return <span className="shrink-0 inline-flex items-center gap-0.5" aria-hidden><svg width="10" height="12"><circle cx="5" cy="6" r="4" fill={c} stroke={s.color2 ?? "#0f172a"} strokeWidth={1.5} /></svg><span className="rounded px-0.5 text-[9px] font-bold leading-[14px]" style={{ color: c, background: '#0f172a' }}>{s.text}</span></span>;
     case 'gradient': return <span className="shrink-0 inline-block h-2.5 w-[22px] rounded-sm" style={{ background: `linear-gradient(90deg, ${c}, ${c2})` }} aria-hidden />;
   }
 };

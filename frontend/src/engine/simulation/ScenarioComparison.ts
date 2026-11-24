@@ -25,7 +25,9 @@ export interface Delta { label: string; before: number | null; after: number | n
   note?: string }
 export interface RoadChange { roadName: string; before: number; after: number; change: number; segmentKeys: string[]; vcBefore: number; vcAfter: number;
   /** No road of this name is left in the proposal (a closure): its traffic is gone because the road is. */
-  closed?: boolean }
+  closed?: boolean;
+  /** No road of this name was in the existing city (built in the proposal): it carries traffic because it is new, not because it lost. */
+  opened?: boolean }
 
 export interface ComparisonResult {
   kind: 'infrastructure' | 'development';
@@ -40,6 +42,8 @@ export interface ComparisonResult {
   /** Roads with clearly less load (v/c down) and clearly more (v/c up). */
   winners: RoadChange[];
   losers: RoadChange[];
+  /** Roads built in the proposal, with the load they carry (never listed as losers: 0% → 63% is a new road filling up). */
+  newRoads?: RoadChange[];
   /** Over-capacity places in the proposal that were not in the existing city. */
   newBottlenecks: Bottleneck[];
   /** Per direction of the selected road whose lanes were edited: whether its capacity followed, and which stretch sets it (docs/OVERHAUL.md §16). */
@@ -274,18 +278,21 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
   // along it 1,787', p11)
   const ra = roadAggregates(a, roads.before, roads.after), rb = roadAggregates(b, roads.after, roads.before);
   const namesAfter = new Set([...roads.after.values()].map(r => r.name));
+  const namesBefore = new Set([...roads.before.values()].map(r => r.name));
   const changes: RoadChange[] = [...new Set([...ra.keys(), ...rb.keys()])].map(roadName => {
     const x = ra.get(roadName), y = rb.get(roadName);
     return { roadName, before: Math.round(x?.vph ?? 0), after: Math.round(y?.vph ?? 0), change: Math.round((y?.vph ?? 0) - (x?.vph ?? 0)), segmentKeys: [...new Set([...(x?.keys ?? []), ...(y?.keys ?? [])])], vcBefore: x?.vc ?? 0, vcAfter: y?.vc ?? 0,
       // "Baba Bhide Bridge −1,031 veh/h" next to "the 561 veh/h that crossed it" read as two figures for one thing: it is the road removed
-      ...(!namesAfter.has(roadName) ? { closed: true } : {}) };
+      ...(!namesAfter.has(roadName) ? { closed: true } : {}), ...(!namesBefore.has(roadName) && !x ? { opened: true } : {}) };
   });
   // Where traffic left and where it went, up to four roads each: by size alone, a closure listed eight roads that lost
   // traffic near it and none of the other bridges that took it (p11 user test, Baba Bhide Bridge)
   const rerouting = pickRerouting(changes);
   // A road the proposal removed is not one that "gains": it carries nothing because it is gone (closure proposals)
   const winners = changes.filter(r => rb.has(r.roadName) && r.vcBefore > 0.6 && r.vcAfter < r.vcBefore - 0.1).sort((x, y) => (x.vcAfter - x.vcBefore) - (y.vcAfter - y.vcBefore)).slice(0, 5);
-  const losers = changes.filter(r => r.vcAfter > 0.6 && r.vcAfter > r.vcBefore + 0.1).sort((x, y) => (y.vcAfter - y.vcBefore) - (x.vcAfter - x.vcBefore)).slice(0, 5);
+  // A road the proposal built is not one that "loses": it went from nothing to its load because it is new (P12 flyover test)
+  const newRoads = changes.filter(r => r.opened && rb.has(r.roadName)).sort((x, y) => y.after - x.after).slice(0, 5);
+  const losers = changes.filter(r => !r.opened && r.vcAfter > 0.6 && r.vcAfter > r.vcBefore + 0.1).sort((x, y) => (y.vcAfter - y.vcBefore) - (x.vcAfter - x.vcBefore)).slice(0, 5);
   const segmentChange = new Map<string, number>();
   new Set([...a.areaVc.keys(), ...b.areaVc.keys()]).forEach(k => segmentChange.set(k, (b.areaVc.get(k) ?? 0) - (a.areaVc.get(k) ?? 0)));
   const M = 111320;
@@ -345,7 +352,7 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
   if (!inputCheck || inputCheck.matched) caveats.push(`Both analyses use the same demand, hour and ${nSeeds} seed${nSeeds === 1 ? '' : 's'}; drivers are re-routed on the proposal by the area assignment. Differences under 5% (3% for neighbourhood trip time, trips completed and the share that got through; 10% for junction delay; 1% for area travel time) are shown as no change, and a simulated change counts only if every seed shows it.`);
   if (after.unroutedVph > before.unroutedVph + 1) caveats.push(`${Math.round(after.unroutedVph - before.unroutedVph).toLocaleString()} veh/h more can no longer reach their destination: the change cuts a route.`);
   const emissions = emissionDeltas(a, b, sameSeeds);
-  return { kind, demandBefore: demand.before, demandAfter: demand.after, section, network, area, rerouting, winners, losers, newBottlenecks, segmentChange, ...(emissions ? { emissions } : {}),
+  return { kind, demandBefore: demand.before, demandAfter: demand.after, section, network, area, rerouting, winners, losers, newRoads, newBottlenecks, segmentChange, ...(emissions ? { emissions } : {}),
     laneInsights: closedName ? [] : laneInsights(a.directions, b.directions, roads, newBottlenecks), tables: comparisonTables(a, b, roads, demandByClass),
     verdict: { section: sv, network: nv, area: av, overall, summary }, confidence, caveats, ...(inputCheck ? { inputs: inputCheck } : {}) };
 }

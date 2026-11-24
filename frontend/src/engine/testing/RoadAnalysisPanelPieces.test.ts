@@ -175,6 +175,28 @@ describe('road analysis panel pieces', () => {
     expect(none).toBeDefined();
     expect(none?.action).toBeUndefined();
   });
+  it('"more green time" opens the stop line that limits the direction, not the end of its drawn geometry (P12 test #2: Bharati Hospital junction, run without a signal)', () => {
+    const paths: [number, number, number][][] = [[[73.86, 18.53, 0], [73.861, 18.531, 0]], [[73.861, 18.531, 0], [73.862, 18.532, 0]]];
+    const cause = { kind: 'insufficient' as const, text: 't', chain: null };
+    const find = (d: DirectionFlow, title = 'Give its approach more green time') => improvementsFor(result({ directions: [d, dir({})], status: 'severe', cause }), ['osm_1'], null).find(x => x.title === title);
+    // The run's signal at the direction's end: there, even though the geometry ends 120 m further on
+    const run = find(dir({ label: 'northbound', vc: 1.05, capacityBasis: 'signal', stopLinePcu: 1500, capacityPcu: 1500, paths, stopLine: { kind: 'signal', at: [73.8605, 18.5305], source: 'run' } }));
+    expect(run?.action).toEqual({ label: 'Open the junction in Design', roadIds: ['osm_1'], at: [73.8605, 18.5305, 0], junction: true });
+    expect(run?.evidence).toContain('what the signal at its end passes');
+    // The assignment's tightest signal part-way along: there, and the words say "on its way"
+    const mid = find(dir({ label: 'northbound', vc: 1.05, capacityBasis: 'signal', stopLinePcu: 1500, capacityPcu: 1500, paths, stopLine: { kind: 'signal', at: [73.8607, 18.5307], source: 'assignment' } }));
+    expect(mid?.action?.at).toEqual([73.8607, 18.5307, 0]);
+    expect(mid?.evidence).toContain('the signal on its way');
+    // A roundabout entry is not a green time; a signalised crossing has no junction to open
+    const rb = find(dir({ vc: 1.2, capacityBasis: 'signal', stopLinePcu: 900, capacityPcu: 900, paths, stopLine: { kind: 'roundabout', at: [73.861, 18.531], source: 'assignment' } }), 'Give its roundabout entry more room');
+    expect(rb?.action).toMatchObject({ at: [73.861, 18.531, 0], junction: true });
+    const cx = find(dir({ vc: 1.2, capacityBasis: 'signal', stopLinePcu: 900, capacityPcu: 900, paths, stopLine: { kind: 'crossing', at: [73.8612, 18.5312], source: 'assignment' } }), 'Give the crossing on it a shorter cycle');
+    expect(cx?.action).toEqual({ label: 'Select the road in Design', roadIds: ['osm_1'], at: [73.8612, 18.5312, 0] });
+    // Known to have no located stop line: no action rather than the wrong junction
+    const none = find(dir({ vc: 1.2, capacityBasis: 'signal', stopLinePcu: 900, capacityPcu: 900, paths, stopLine: null }));
+    expect(none).toBeDefined();
+    expect(none?.action).toBeUndefined();
+  });
   it('a flowing road whose routed traffic mostly did not get through is not "No pressing problem" (browser workflow 2026-11-09, Sangamwadi: 886 of 1,954 veh/h)', () => {
     const flowing = { status: 'flowing' as const, statusBySeed: ['flowing', 'flowing', 'flowing'] as RoadAnalysisResult['statusBySeed'], cause: { kind: 'mixed' as const, text: 't', chain: null }, headline: 'Eastbound traffic moves freely: 45 km/h against a free-flow 50 km/h (level of service A).' };
     const held = improvementsFor(result({ ...flowing, directions: [dir({ label: 'eastbound', vph: 886, demandVph: 1954, vc: 0.3 }), dir({})] }), ['osm_1'], null);

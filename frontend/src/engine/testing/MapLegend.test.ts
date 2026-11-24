@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { mapLegend, itemTip, tipFromPick } from '../rendering/mapLegend';
+import { mapLegend, itemTip, tipFromPick, mapTipsAllowed } from '../rendering/mapLegend';
 import { studyLegend, liveLegend, overlayLegend, directionsLegend, COMPARISON_COLORS, CAUSE_COLORS, BOTTLENECK_COLOR } from '../simulation/simLegend';
 import { cityLegend, SCHEMATIC_CITY_COLORS } from '../rendering/cityLegend';
 import { MATERIAL_COLORS } from '../rendering/materials/materialPalette';
@@ -69,8 +69,8 @@ describe('Simulate key groups use the map\'s own colours and list only what is d
     expect(by.junction.color).toBe(STUDY_JUNCTION_COLORS.junction);
     expect(by.dead_end.color).toBe(STUDY_JUNCTION_COLORS.dead_end);
     expect(by.roundabout).toBeUndefined();
-    expect(by.in).toMatchObject({ color: STUDY_BOUNDARY_COLORS.entry, text: 'IN' });
-    expect(by.out).toMatchObject({ color: STUDY_BOUNDARY_COLORS.exit, text: 'OUT' });
+    expect(by.in).toMatchObject({ kind: 'marker', color: STUDY_BOUNDARY_COLORS.entry, text: 'IN' });
+    expect(by.out).toMatchObject({ kind: 'marker', color: STUDY_BOUNDARY_COLORS.exit, text: 'OUT' });
     expect(by.grade).toBeUndefined();
     const live = studyLegend(area({ problems: [{ kind: 'one_way_trap', severity: 'error' }, { kind: 'area_edge', severity: 'info' }] as any }), { live: true, overlay: 'none' });
     expect(live.items.map(i => i.id)).not.toContain('downstream');
@@ -125,7 +125,7 @@ describe('other map symbols', () => {
   });
 
   it('every swatch kind renders', () => {
-    for (const kind of ['line', 'dash', 'glow', 'outline', 'dot', 'ring', 'square', 'fill', 'arrow', 'label', 'gradient'] as const) {
+    for (const kind of ['line', 'dash', 'glow', 'outline', 'dot', 'ring', 'square', 'fill', 'arrow', 'label', 'gradient', 'marker'] as const) {
       const html = renderToStaticMarkup(createElement(SwatchIcon, { s: { kind, color: '#ff0000', color2: '#00ff00', text: 'IN' } }));
       expect(html.length, kind).toBeGreaterThan(10);
     }
@@ -177,5 +177,23 @@ describe('environment layers in the map key (read without the map renderer)', ()
     useShellStore.setState({ workspace: 'explore' } as any);
     setDrawnEnvLayer('ndvi', null);
     expect(drawnEnvLayers()).toEqual([]);
+  });
+});
+
+describe('map-symbol tooltips and drawing tools', () => {
+  it('show only with the Select tool: a drawing tool keeps the map for clicks and Esc for cancelling the drawing', () => {
+    expect(mapTipsAllowed('select')).toBe(true);
+    expect(mapTipsAllowed(undefined)).toBe(true);
+    for (const m of ['draw_road', 'draw_flyover', 'draw_junction', 'place_station', 'brush_junction_control', 'draw_underground']) expect(mapTipsAllowed(m), m).toBe(false);
+  });
+});
+
+describe('the junction tool group of the key', () => {
+  it('lists only the markers on the map now', async () => {
+    const { junctionToolLegend } = await import('../rendering/renderers/JunctionEditorOverlay');
+    expect(junctionToolLegend({ drawn: 0, selected: false, placing: false })).toBeNull();
+    expect(junctionToolLegend({ drawn: 2, selected: false, placing: false })!.items.map(i => i.id)).toEqual(['drawn']);
+    expect(junctionToolLegend({ drawn: 1, selected: true, placing: false })!.items.map(i => i.id)).toEqual(['drawn', 'selected']);
+    expect(junctionToolLegend({ drawn: 0, selected: false, placing: true })!.items.map(i => i.id)).toEqual(['invalid']);
   });
 });

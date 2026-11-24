@@ -107,3 +107,19 @@ describe('scenario comparison: new bottlenecks', () => {
     expect(c.verdict.overall).not.toBe('better');
   });
 });
+
+describe('scenario comparison: a road built in the proposal', () => {
+  it('is listed as a new road with its load, never under "Roads that lose" (P12 flyover test: 0% → 63%)', () => {
+    const road = (id: string, name: string, lat: number) => ({ id, type: 'road', name, coordinates: [[73.85, lat, 0], [73.86, lat, 0]] }) as any;
+    const sat = road('osm_a', 'Satara Road', 18.45), fly = road('new1', 'Katraj Chowk Flyover', 18.451), side = road('osm_b', 'Mediacal College Road', 18.452);
+    const before = output([100, 100, 100], 20), after = output([80, 80, 85], 24);
+    before.result.areaLinkVph = new Map([['osm_a_seg_0_fwd', 2000], ['osm_b_seg_0_fwd', 500]]);
+    before.result.areaVc = new Map([['osm_a_seg_0', 0.95], ['osm_b_seg_0', 0.5]]);
+    after.result.areaLinkVph = new Map([['osm_a_seg_0_fwd', 1200], ['new1_seg_0_fwd', 1100], ['osm_b_seg_0_fwd', 900]]);
+    after.result.areaVc = new Map([['osm_a_seg_0', 0.6], ['new1_seg_0', 0.63], ['osm_b_seg_0', 0.9]]);
+    const c = compareAnalyses(before, after, { before: new Map([['osm_a', sat], ['osm_b', side]]), after: new Map([['osm_a', sat], ['new1', fly], ['osm_b', side]]) }, { before: 1000, after: 1000 });
+    expect(c.losers.map(x => x.roadName)).toEqual(['Mediacal College Road']);
+    expect(c.newRoads).toEqual([expect.objectContaining({ roadName: 'Katraj Chowk Flyover', before: 0, after: 1100, vcAfter: 0.63, opened: true })]);
+    expect(c.winners.map(x => x.roadName)).toEqual(['Satara Road']);
+  });
+});

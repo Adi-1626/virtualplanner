@@ -427,6 +427,19 @@ const RoadChanges: React.FC<{ title: string; rows: RoadChange[]; tone: 'good' | 
   </div>
 );
 
+/** Roads built in the proposal: their load, not a gain or loss (nothing to compare with). */
+const NewRoads: React.FC<{ rows: RoadChange[] }> = ({ rows }) => rows.length === 0 ? null : (
+  <div className="space-y-1.5" data-testid="comparison-new-roads">
+    <p className="text-[11px] font-semibold text-cyan-300">New road{rows.length > 1 ? 's' : ''} (built in the proposal)</p>
+    <ul className="space-y-1.5">{rows.map(x => (
+      <li key={x.roadName} className="space-y-0.5" title={`${x.roadName}: new in the proposal; ${fmt(x.after)} veh/h, ${Math.round(x.vcAfter * 100)}% of capacity on its busiest stretch`}>
+        <div className="flex justify-between gap-2 text-[11px]"><span className="text-slate-300 truncate">{x.roadName}</span><span className="tabular-nums text-slate-400 shrink-0">{fmt(x.after)} veh/h · <span className={x.vcAfter > 1 ? 'text-rose-300' : x.vcAfter > 0.85 ? 'text-amber-300' : 'text-cyan-300'}>{Math.round(x.vcAfter * 100)}% loaded</span></span></div>
+        <Meter value={Math.min(1.5, x.vcAfter)} max={1.5} marker={1} color="#22d3ee" height="xs" />
+      </li>
+    ))}</ul>
+  </div>
+);
+
 const LEVEL_KPI: Record<string, string> = { 'Time to drive it': 'Time to drive', 'Speed on it': 'Speed', 'Worst junction delay at its ends': 'End junction delay', 'Traffic through the road': 'Traffic through' };
 
 const ComparisonView: React.FC<{ c: ComparisonResult; overlay: string; sim: SimulationModeState }> = ({ c, overlay, sim: simState }) => {
@@ -468,6 +481,7 @@ const ComparisonView: React.FC<{ c: ComparisonResult; overlay: string; sim: Simu
       )}
       <RoadChanges title="Roads that gain (less loaded)" rows={c.winners} tone="good" />
       <RoadChanges title="Roads that lose (more loaded)" rows={c.losers} tone="bad" />
+      <NewRoads rows={c.newRoads ?? []} />
       <EmissionsCompare c={c} />
       <Button size="sm" icon={MapIcon} variant={overlay === 'comparison' ? 'primary' : 'secondary'} onClick={() => mode.setOverlay(overlay === 'comparison' ? 'none' : 'comparison')}>{overlay === 'comparison' ? 'Hide changes on the map' : 'Show gains and losses on the map'}</Button>
       <div className="space-y-1">

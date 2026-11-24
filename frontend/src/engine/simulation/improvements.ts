@@ -60,12 +60,22 @@ export function improvementsFor(r: RoadAnalysisResult, sectionRoadIds: string[],
   }
   const signalCap = r.directions.find(d => d.vc > 0.85 && d.capacityBasis === 'signal');
   if (signalCap && r.cause.kind !== 'own-signal') {
-    out.push({ kind: 'signal', title: 'Give its approach more green time',
-      evidence: `${capital(signalCap.label)} the traffic routed along it is ${Math.round(100 * signalCap.vc)}% of what the signal at its end passes (${signalCap.capacityPcu.toLocaleString()} PCU/h).`,
-      figure: { value: `${Math.round(100 * signalCap.vc)}%`, label: `of what the signal passes, ${signalCap.label}` },
-      why: 'More green here means less for the crossing road: compare the junction as a whole.',
-      // The signal at the direction's downstream end: its stop line is the last point of the direction's geometry
-      action: (() => { const end = signalCap.paths.at(-1)?.at(-1); return end ? { label: 'Open the junction in Design', roadIds: sectionRoadIds, at: [end[0], end[1], 0] as [number, number, number], junction: true } : undefined; })() });
+    // The stop line that limits the direction, where the analysis found it (the run's signal at its end, else the
+    // assignment's tightest stop line along it). Before, the action opened the last point of the direction's drawn
+    // geometry, which could be a junction the run held without a signal (P12 browser test #2, Satara Road: the
+    // Bharati Hospital junction). A result saved before `stopLine` existed falls back to that end point.
+    const sl = signalCap.stopLine;
+    const at: [number, number, number] | null = sl ? [sl.at[0], sl.at[1], 0] : sl === null ? null : (() => { const e = signalCap.paths.at(-1)?.at(-1); return e ? [e[0], e[1], 0] as [number, number, number] : null; })();
+    const kind = sl?.kind ?? 'signal';
+    const where = sl?.source === 'assignment' ? 'on its way' : 'at its end';
+    const what = kind === 'roundabout' ? `the roundabout entry ${where}` : kind === 'crossing' ? 'the signalised crossing on it' : `the signal ${where}`;
+    out.push({ kind: 'signal', title: kind === 'roundabout' ? 'Give its roundabout entry more room' : kind === 'crossing' ? 'Give the crossing on it a shorter cycle' : 'Give its approach more green time',
+      evidence: `${capital(signalCap.label)} the traffic routed along it is ${Math.round(100 * signalCap.vc)}% of what ${what} passes (${signalCap.capacityPcu.toLocaleString()} PCU/h).`,
+      figure: { value: `${Math.round(100 * signalCap.vc)}%`, label: `of what ${kind === 'roundabout' ? 'the roundabout entry' : kind === 'crossing' ? 'the crossing' : 'the signal'} passes, ${signalCap.label}` },
+      why: kind === 'roundabout' ? 'An extra entry lane or a wider entry raises what it passes; compare the roundabout\'s other entries too.'
+        : kind === 'crossing' ? 'A shorter cycle at the crossing lets more traffic through but makes people on foot wait longer: compare both.'
+          : 'More green here means less for the crossing road: compare the junction as a whole.',
+      action: at ? (kind === 'crossing' ? { label: 'Select the road in Design', roadIds: sectionRoadIds, at } : { label: 'Open the junction in Design', roadIds: sectionRoadIds, at, junction: true }) : undefined });
   }
   if (congested && r.composition.throughShare > 0.6) {
     const spare = r.nearby.filter(n => (n.vc ?? 1) < 0.6 && n.roadClass !== 'local' && n.vph > 0).sort((a, b) => (a.vc ?? 1) - (b.vc ?? 1))[0];

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ScreenSpaceEventHandler, ScreenSpaceEventType, type Cartesian2 } from 'cesium';
 import { engineInstance } from '../engine/TwinCityEngine';
-import { tipFromPick, type PickTip } from '../engine/rendering/mapLegend';
+import { mapTipsAllowed, tipFromPick, type PickTip } from '../engine/rendering/mapLegend';
 import { useShellStore } from '../shell/useShellStore';
 
 /**
@@ -12,6 +12,8 @@ import { useShellStore } from '../shell/useShellStore';
 
 const THROTTLE_MS = 120;
 const OWN_TOOLTIPS = new Set(['underground', 'environment']);
+/** A drawing or placing tool is active: no tooltips (a click places a point, Esc cancels the drawing). */
+const drawing = () => { try { return !mapTipsAllowed(engineInstance.editing?.getMode?.()); } catch { return false; } };
 
 export const MapSymbolTooltip: React.FC = () => {
   const workspace = useShellStore(s => s.workspace);
@@ -27,6 +29,7 @@ export const MapSymbolTooltip: React.FC = () => {
     const handler = new ScreenSpaceEventHandler(canvas);
     let dragging = false, hideTimer: ReturnType<typeof setTimeout> | null = null;
     const at = (pos: Cartesian2, sticky: boolean) => {
+      if (drawing()) { setTip(null); return; }
       let picked: unknown;
       try { picked = v.scene.pick(pos); } catch { picked = undefined; }
       const t = picked ? tipFromPick(picked) : null;
@@ -54,11 +57,12 @@ export const MapSymbolTooltip: React.FC = () => {
   const shown = !!tip && tip.sticky && !off;
   useEffect(() => {
     if (!shown) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); setTip(null); } };
+    // With a drawing tool active the tooltip goes and Esc is left to the drawing (cancel it)
+    const onKey = (e: KeyboardEvent) => { if (e.key !== 'Escape' || e.defaultPrevented) return; setTip(null); if (!drawing()) e.preventDefault(); };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [shown]);
-  if (!tip || off) return null;
+  if (!tip || off || drawing()) return null;
   const left = Math.min(tip.x + 14, window.innerWidth - 280);
   const top = Math.min(tip.y + 14, window.innerHeight - 90);
   return (
