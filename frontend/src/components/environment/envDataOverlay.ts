@@ -11,7 +11,6 @@
  * Entity ids are prefixed `env_overlay_` so the engine's pick handler never treats them as city objects; imagery layers
  * carry `__uosEnvOverlay` so the base-layer (Satellite) toggle leaves them alone.
  */
-import { create } from 'zustand';
 import {
   Cartesian2, Cartesian3, Color, CustomDataSource, ImageryLayer, LabelStyle, Math as CesiumMath, NearFarScalar,
   type Primitive, Rectangle, SingleTileImageryProvider, VerticalOrigin, type Viewer,
@@ -28,25 +27,8 @@ import { Lru } from './treeTiles';
 import { staticLines, type StaticLine } from './staticLines';
 import { enableRenderOnDemand, ENV_WORKSPACES, HEARTBEAT_MS, sameBox, wantsOnDemand } from './envPerf';
 
-export interface EnvDataOverlayState {
-  status: 'off' | 'loading' | 'shown' | 'error';
-  variant: string | null;
-  bbox: number[] | null;
-  bboxFrom: 'camera view' | 'layer bounds' | null;
-  message: string | null;
-  error: string | null;
-}
-const OFF: EnvDataOverlayState = { status: 'off', variant: null, bbox: null, bboxFrom: null, message: null, error: null };
-
-interface Store {
-  overlays: Record<string, EnvDataOverlayState>;
-  set: (id: string, s: Partial<EnvDataOverlayState>) => void;
-}
-export const useEnvDataOverlayStore = create<Store>(set => ({
-  overlays: {},
-  set: (id, s) => set(st => ({ overlays: { ...st.overlays, [id]: { ...(st.overlays[id] ?? OFF), ...s } } })),
-}));
-export const overlayState = (id: string): EnvDataOverlayState => useEnvDataOverlayStore.getState().overlays[id] ?? OFF;
+import { OFF, overlayState, useEnvDataOverlayStore, setDrawnEnvLayer, type EnvDataOverlayState } from './envDataOverlayStore';
+export { overlayState, useEnvDataOverlayStore, drawnEnvLayers, type EnvDataOverlayState } from './envDataOverlayStore';
 
 const imagery = new Map<string, ImageryLayer>();
 const blobUrls = new Map<string, string>();
@@ -289,6 +271,7 @@ export async function setEnvDataVisible(l: EnvDataLayer, visible: boolean, varia
   const store = useEnvDataOverlayStore.getState();
   if (!visible) {
     active.delete(l.id);
+    setDrawnEnvLayer(l.id, null);
     seq.set(l.id, (seq.get(l.id) ?? 0) + 1);
     dropMapObjects(l.id, v);
     store.set(l.id, { ...OFF, variant: overlayState(l.id).variant });
@@ -298,6 +281,7 @@ export async function setEnvDataVisible(l: EnvDataLayer, visible: boolean, varia
   if (variant !== undefined) store.set(l.id, { variant });
   else if (!overlayState(l.id).variant && l.variants.length) store.set(l.id, { variant: l.variants[0].id });
   active.set(l.id, l);
+  setDrawnEnvLayer(l.id, l);
   if (v) ensureMoveListener(v);
   await draw(l);
 }
@@ -358,3 +342,4 @@ export function envOverlayCounts(): { imagery: number; sources: number; entities
   return { imagery: imagery.size, sources: sources.size, entities, lines: nl, trees: treeLayerCounts(), shown: shownHere() };
 }
 (window as unknown as { __envOverlayCounts?: typeof envOverlayCounts }).__envOverlayCounts = envOverlayCounts;
+

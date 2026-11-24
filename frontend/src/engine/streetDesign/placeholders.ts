@@ -8,8 +8,19 @@ import type { CityObject, StreetElementObject } from '../objects/types';
 import { scenePoint } from '../terrain/groundHeight';
 import type { MarkingItem } from './junctionTool';
 import { frameAt, toLngLat } from './geom';
+import { mapLegend, LEGEND_ORDER, type LegendItem } from '../rendering/mapLegend';
 
-const COLOUR: Record<StreetElementObject['kind'], string> = {
+const STREET_LABEL: Record<StreetElementObject['kind'], { label: string; detail: string; swatch: LegendItem['swatch']['kind'] }> = {
+  crossing: { label: 'Pedestrian crossing', detail: 'placeholder dot where a crossing is drawn', swatch: 'dot' },
+  bus_stop: { label: 'Bus stop', detail: 'placeholder dot', swatch: 'dot' },
+  streetlight: { label: 'Streetlights', detail: 'one dot per pole, at pole height', swatch: 'dot' },
+  street_tree: { label: 'Street trees', detail: 'one dot per tree', swatch: 'dot' },
+  roundabout: { label: 'Roundabout', detail: 'outer ring and central island', swatch: 'ring' },
+  path: { label: 'Footpath, cycle track or foot overbridge', detail: 'line at its level', swatch: 'line' },
+};
+
+/** Placeholder colour by street element kind (shared with the map key). */
+export const STREET_ELEMENT_COLOUR: Record<StreetElementObject['kind'], string> = {
   crossing: '#f8fafc', bus_stop: '#f59e0b', streetlight: '#fde68a', street_tree: '#22c55e', roundabout: '#38bdf8', path: '#a78bfa',
 };
 
@@ -29,11 +40,16 @@ export class StreetElementPlaceholders {
     if (!v) return;
     for (const e of this.entities) v.entities.remove(e);
     this.entities = [];
-    if (!visible) return;
+    if (!visible) { mapLegend.set('street-elements', null); return; }
+    const kinds = new Set<StreetElementObject['kind']>();
+    for (const o of objects) if (o.type === 'street_element' && o.coordinates.length) kinds.add(o.kind);
+    mapLegend.set('street-elements', kinds.size ? { title: 'Street elements (placeholders)', order: LEGEND_ORDER.street,
+      items: [...kinds].map(k => ({ id: k, label: STREET_LABEL[k].label, detail: STREET_LABEL[k].detail, swatch: { kind: STREET_LABEL[k].swatch, color: STREET_ELEMENT_COLOUR[k], color2: '#000000' } })),
+      note: 'Simple markers where the data is; selected ones turn cyan. Hover or tap one to see what it is.' } : null);
     for (const o of objects) {
       if (o.type !== 'street_element' || !o.coordinates.length) continue;
       const sel = o.id === selectedId;
-      const col = Color.fromCssColorString(sel ? '#22d3ee' : COLOUR[o.kind]);
+      const col = Color.fromCssColorString(sel ? '#22d3ee' : STREET_ELEMENT_COLOUR[o.kind]);
       const p = (c: readonly number[], h = 0.6) => scenePoint(c[0], c[1], (c[2] || 0) + h);
       if (o.kind === 'path') {
         this.entities.push(v.entities.add({ id: o.id, name: o.name, polyline: { positions: o.coordinates.map(c => p(c, o.path?.level === 'fob' ? (o.path.clearHeightM ?? 5.5) : 0.3)), width: sel ? 6 : 4, material: col.withAlpha(0.9) } }));

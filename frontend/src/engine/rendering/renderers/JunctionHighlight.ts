@@ -7,6 +7,7 @@ import { scenePoint } from '../../terrain/groundHeight';
  * pointing out (orange), and the pieces inside the junction (cyan). Drawn
  * lifted and without a depth test, not pickable, so clicks reach the roads.
  */
+import { mapLegend, LEGEND_ORDER } from '../mapLegend';
 export const JUNCTION_HIGHLIGHT_STYLE = {
   approach: { css: '#4ade80', width: 16 },
   exit: { css: '#fb923c', width: 16 },
@@ -44,6 +45,13 @@ export class JunctionHighlight {
   public show(input: JunctionHighlightInput) {
     this.clear();
     const focus = new Set(input.focusArmIds ?? []);
+    const S = JUNCTION_HIGHLIGHT_STYLE;
+    mapLegend.set('junction-highlight', { title: 'Junction being edited', order: LEGEND_ORDER.highlight, items: [
+      { id: 'approach', label: 'Approach (traffic coming in)', detail: 'arrow points along the traffic', swatch: { kind: 'arrow', color: S.approach.css } },
+      { id: 'exit', label: 'Exit (traffic going out)', swatch: { kind: 'arrow', color: S.exit.css } },
+      ...(input.internal.length ? [{ id: 'internal', label: 'Inside the junction', swatch: { kind: 'line' as const, color: S.internal.css } }] : []),
+      ...(focus.size ? [{ id: 'focus', label: 'Arm you are editing', swatch: { kind: 'arrow' as const, color: S.focus.css } }] : []),
+    ] });
     this.current = { junctionId: input.junctionId, approachIds: input.approaches.map(a => a.id), exitIds: input.exits.map(a => a.id), internalIds: input.internal.map(a => a.id), focusArmIds: [...focus] };
     const viewer = this.viewer;
     if (!viewer || viewer.isDestroyed()) return;
@@ -71,6 +79,7 @@ export class JunctionHighlight {
   }
 
   public clear() {
+    if (this.current) mapLegend.set('junction-highlight', null);
     this.current = null;
     if (this.viewer && !this.viewer.isDestroyed()) {
       for (const p of this.primitives) this.viewer.scene.primitives.remove(p);

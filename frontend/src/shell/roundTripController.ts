@@ -70,6 +70,21 @@ export interface RoundTripDeps {
   now(): string;
   /** Waits (ms); tests pass a fast one. */
   sleep(ms: number): Promise<void>;
+  /** The browser's Back button during a leg (optional: tests without it get no history entries). */
+  nav?: RoundTripNav;
+}
+
+/**
+ * The browser history during a leg: one entry is added when a leg starts, so Back while changing a proposal comes to
+ * the round trip (and never leaves the app with the change half done); it is taken off again when the leg ends.
+ */
+export interface RoundTripNav {
+  /** Adds (or, after a reload, adopts) the history entry for this leg. */
+  mark(legId: string): void;
+  /** Takes the leg's entry off (no-op when there is none). */
+  unmark(): void;
+  /** Back was pressed past the leg's entry (the entry is gone). */
+  onBack(cb: () => void): () => void;
 }
 
 /** What the bar and the panel show. */
@@ -102,7 +117,9 @@ export class RoundTripController {
     this.unsub.push(d.scenarios.onChange(() => this.onScenarioChange()));
     this.unsub.push(d.objects.onChange(() => this.scheduleChangeCount()));
     this.unsub.push(d.onAppMode(() => this.syncBaseGuard()));
+    if (d.nav) this.unsub.push(d.nav.onBack(() => this.onBrowserBack()));
     this.syncBaseGuard();
+    this.syncNav();
   }
 
   dispose() { this.unsub.forEach(u => u()); this.unsub = []; if (this.changeTimer) clearTimeout(this.changeTimer); }
@@ -112,7 +129,30 @@ export class RoundTripController {
 
   private set(patch: Partial<RoundTripView>) {
     useRoundTrip.setState(patch);
-    if ('trip' in patch) this.d.storage.set(patch.trip ? JSON.stringify(patch.trip) : null);
+    if ('trip' in patch) { this.d.storage.set(patch.trip ? JSON.stringify(patch.trip) : null); this.syncNav(); }
+  }
+
+  /** One history entry while a leg is open, none otherwise. */
+  private navLeg: string | null = null;
+  private syncNav() {
+    const nav = this.d.nav;
+    if (!nav) return;
+    const id = this.trip?.leg?.id ?? null;
+    if (id === this.navLeg) return;
+    if (id) nav.mark(id); else nav.unmark();
+    this.navLeg = id;
+  }
+
+  /**
+   * The browser's Back during a leg. Never loses a change: while editing it is the bar's Cancel (straight back to the
+   * study when nothing was changed, else the question undo / keep / stay); while a re-test runs, or with Simulate already
+   * on show, it is ignored. Either way the leg keeps its history entry until it ends.
+   */
+  onBrowserBack() {
+    this.navLeg = null;   // the entry was popped
+    const leg = this.trip?.leg;
+    if (leg && leg.phase === 'editing' && this.d.workspace() !== 'simulate') this.cancel();
+    this.syncNav();
   }
   private patchTrip(patch: Partial<RoundTripState>) {
     const t = this.trip;

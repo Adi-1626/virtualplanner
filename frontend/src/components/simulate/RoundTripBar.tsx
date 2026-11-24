@@ -20,6 +20,14 @@ const VERDICT_TONE: Record<TripTest['verdict'], Tone> = { better: 'good', worse:
 export const RoundTripBar: React.FC = () => {
   const { trip, changes, ask, baseActive } = useRoundTrip();
   const leg = trip?.leg;
+  // Esc on an open question closes the question only (keep editing): not the drawing, the selection or the test
+  const asking = !!ask && !!leg;
+  React.useEffect(() => {
+    if (!asking) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); roundTrip().dismissAsk(); } };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [asking]);
   if (!trip || !leg) return null;
   const rt = roundTrip();
   const study = trip.study;

@@ -174,3 +174,6 @@ export async function setMuniLayerVisible(layer: InfraLayer, visible: boolean): 
   ensureHandlers(v);
   await load(layer.id);
 }
+
+/** A municipal layer's description (name, colour key) once it has been drawn, for the map key. */
+export function muniLayerMeta(id: string): InfraLayer | undefined { return metaById.get(id); }

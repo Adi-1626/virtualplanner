@@ -1,16 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { engineInstance } from '../../engine/TwinCityEngine';
-import { JUNCTION_POINT_COLORS, type JunctionPointKind } from '../../engine/rendering/renderers/TrafficNetworkVisualizer';
+import { JUNCTION_POINT_COLORS, JUNCTION_POINT_LEGEND } from '../../engine/rendering/renderers/TrafficNetworkVisualizer';
 
 const LAYER = 'traffic_network_debug';
-const LEGEND: { kind: JunctionPointKind; label: string }[] = [
-  { kind: 't_junction', label: 'T' },
-  { kind: 'x_junction', label: 'X' },
-  { kind: 'complex', label: '5+' },
-  { kind: 'roundabout', label: 'Roundabout' },
-  { kind: 'dead_end', label: 'Dead end' },
-];
+const LEGEND = JUNCTION_POINT_LEGEND;
 
 /**
  * Map toggles for the Design workspace. "Junction points" shows the traffic network's junctions and dead ends
@@ -46,7 +40,7 @@ export const DesignMapToggles: React.FC = () => {
         <ul className="flex flex-wrap gap-x-2.5 gap-y-1 px-1 text-meta text-text-3" aria-label="Junction point colours">
           {LEGEND.map(l => (
             <li key={l.kind} className="inline-flex items-center gap-1">
-              <span className="inline-block h-2 w-2 rounded-full" style={{ background: JUNCTION_POINT_COLORS[l.kind] }} aria-hidden />{l.label}
+              <span className="inline-block h-2 w-2 rounded-full" style={{ background: JUNCTION_POINT_COLORS[l.kind] }} aria-hidden title={l.detail} />{l.label}
             </li>
           ))}
         </ul>

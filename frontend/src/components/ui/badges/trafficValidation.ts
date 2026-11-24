@@ -159,3 +159,46 @@ export const RIVER_SCREENLINE_TEXT =
 
 /** Short label used on every traffic / ODME / emissions output. */
 export const FAILS_VALIDATION_LABEL = `Fails validation (${TRAFFIC_VALIDATION.standard})`;
+
+/**
+ * The banner in plain words (docs/urbanos/SIM_FLOW_P12.md §7): what was checked, what it found, why it fails, and what
+ * that means for using a result. Built from the same recorded results and fixed criteria as the verdict; the
+ * thresholds are TAG's and are not loosened here.
+ */
+export const TRAFFIC_VALIDATION_PLAIN = {
+  headline: `Traffic model fails validation (${TRAFFIC_VALIDATION.standard})`,
+  checked: `The model's traffic was compared with real counts at ${COUNTS_ALL.n} places in Pune (river bridges counted in 2008, Gunjan Chowk in 2017) and on the ${RIVER_SCREENLINE.crossings} river crossings taken together. The UK standard (TAG M3.1) needs 85% of places within GEH 5, a usual closeness test, and the crossings within 5% of the count.`,
+  result: `${COUNTS_ALL.withinGeh5} of ${COUNTS_ALL.n} places are close enough (${COUNTS_HOLDOUT.withinGeh5} of the ${COUNTS_HOLDOUT.n} never used for fitting), and the river crossings carry ${Math.abs(Math.round(RIVER_SCREENLINE_ERROR * 1000) / 10)}% ${RIVER_SCREENLINE_ERROR < 0 ? 'less' : 'more'} traffic than counted.`,
+  why: 'Why it fails: there are too few real counts (old, and on only a few roads); there are no classified turning counts at junctions and no measured journey times to calibrate against; and the trips are synthesized from OpenStreetMap roads (typical flows per lane where roads cross the study area\'s edge, plus trips from buildings or zones drawn in the project), not from a travel survey.',
+  meaning: 'What it means: use a result for the direction of a change and its trade-offs between options run on the same inputs (better or worse, which roads gain or lose, where traffic moves). Do not quote its volumes, speeds or times as forecasts.',
+} as const;
+
+/**
+ * One check shown in the validation banner. The banner lists checks in order, each separately labelled, so another check
+ * (e.g. a project check against estimated data) is added as one more entry without touching the others.
+ */
+export interface ValidationCheck {
+  id: string;
+  /** Short name of the check, e.g. "Model against real traffic counts". */
+  label: string;
+  outcome: 'fails' | 'passes' | 'not_run' | 'screening';
+  /** What was compared with what, and the criterion. */
+  checked: string;
+  /** What the comparison found. */
+  result: string;
+  /** Why it fails (or the caveat when it passes); optional. */
+  why?: string;
+}
+
+/** The recorded check of the traffic model against Pune's counts (TAG M3.1). */
+export const COUNTS_CHECK: ValidationCheck = {
+  id: 'counts',
+  label: 'Model against real traffic counts',
+  outcome: TRAFFIC_VALIDATION.verdict === 'fails_validation' ? 'fails' : 'passes',
+  checked: TRAFFIC_VALIDATION_PLAIN.checked,
+  result: TRAFFIC_VALIDATION_PLAIN.result,
+  why: TRAFFIC_VALIDATION_PLAIN.why,
+};
+
+/** Checks the Simulate banner shows, in order. */
+export const VALIDATION_CHECKS: readonly ValidationCheck[] = [COUNTS_CHECK];

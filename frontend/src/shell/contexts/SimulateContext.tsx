@@ -1,11 +1,12 @@
 import React from 'react';
-import { OctagonAlert, MousePointerClick } from 'lucide-react';
+import { MousePointerClick } from 'lucide-react';
 import { PanelSection } from '../../components/ui/Panel';
 import { Disclosure } from '../../components/ui/Disclosure';
 import { useSimulationMode } from '../../hooks/useSimulationMode';
 import { useShellStore } from '../useShellStore';
 import { TrafficCountsNotice } from '../../components/data/TrafficCountsNotice';
-import { TRAFFIC_VALIDATION, TRAFFIC_VALIDATION_SUMMARY, RIVER_SCREENLINE_TEXT, COUNTS_ALL, COUNTS_CALIBRATION, COUNTS_HOLDOUT } from '../../components/ui/badges/trafficValidation';
+import { RIVER_SCREENLINE_TEXT, COUNTS_ALL, COUNTS_CALIBRATION, COUNTS_HOLDOUT } from '../../components/ui/badges/trafficValidation';
+import { ValidationBanner } from '../../components/ui/badges/ValidationBanner';
 
 /**
  * Simulate context panel: the model list with each model's standing, and how to start. The study itself
@@ -17,10 +18,7 @@ export const SimulateContext: React.FC = () => {
   const inspectorOpen = useShellStore(s => s.inspectorOpen);
   return (
     <div className="space-y-5">
-      <div className="uos-banner-fail" role="status" data-testid="simulate-validation-banner">
-        <OctagonAlert size={16} aria-hidden className="shrink-0 mt-0.5" />
-        <p>Traffic model {TRAFFIC_VALIDATION.verdict === 'fails_validation' ? 'fails validation' : 'meets the recorded criteria'} ({TRAFFIC_VALIDATION.standard}): {TRAFFIC_VALIDATION_SUMMARY}. Results are estimates for comparing options on the same inputs, not forecasts.</p>
-      </div>
+      <ValidationBanner />
       <PanelSection title="Study">
         {sim.seedRoadIds.length === 0
           ? <p className="text-label text-text-2 flex items-center gap-2"><MousePointerClick size={14} aria-hidden />Click a road, bridge or flyover on the map. The steps are in the panel on the right.</p>

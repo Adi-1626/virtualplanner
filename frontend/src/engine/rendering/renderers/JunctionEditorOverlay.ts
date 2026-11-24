@@ -3,6 +3,10 @@ import { scenePoint } from '../../terrain/groundHeight';
 import type { CityObject } from '../../objects/types';
 import { junctionLayout } from '../../objects/junctionLayout';
 import { GeometryContext } from '../geometry/GeometryContext';
+import { mapLegend, LEGEND_ORDER } from '../mapLegend';
+
+/** Colours of the junction tool's markers (shared with the map key). */
+export const JUNCTION_TOOL_COLORS = { drawn: '#22d3ee', selected: '#fbbf24', invalid: '#fb7185' } as const;
 
 /** Editor-only affordances; the actual asphalt stays in the batched mesh renderer. */
 export class JunctionEditorOverlay {
@@ -24,7 +28,7 @@ export class JunctionEditorOverlay {
     }
     this.markers.forEach(e => this.viewer!.entities.remove(e));
     this.markers = [];
-    if (!editing) { this.clearPreview(); return; }
+    if (!editing) { this.clearPreview(); mapLegend.set('junction-tool', null); return; }
     for (const j of objects) {
       if (j.type !== 'junction') continue;
       const selected = j.id === selectedId;
@@ -32,7 +36,7 @@ export class JunctionEditorOverlay {
       this.markers.push(this.viewer.entities.add({
         id: `junction_edit_${j.id}`,
         position: scenePoint(cs[0], cs[1], (cs[2] || 0) + 1.5),
-        point: { pixelSize: selected ? 14 : 10, color: Color.fromCssColorString(selected ? '#fbbf24' : '#22d3ee'), outlineColor: Color.WHITE, outlineWidth: 2, disableDepthTestDistance: Infinity },
+        point: { pixelSize: selected ? 14 : 10, color: Color.fromCssColorString(selected ? JUNCTION_TOOL_COLORS.selected : JUNCTION_TOOL_COLORS.drawn), outlineColor: Color.WHITE, outlineWidth: 2, disableDepthTestDistance: Infinity },
         label: {
           text: selected ? `${j.name}\n${j.hasSignals ? 'Signalised' : 'Give way'} · ${j.connectedRoads.length} roads` : 'Junction',
           font: '12px Inter, sans-serif', fillColor: Color.WHITE, outlineColor: Color.BLACK, outlineWidth: 3,
@@ -41,6 +45,11 @@ export class JunctionEditorOverlay {
         },
       }));
     }
+    mapLegend.set('junction-tool', this.markers.length ? { title: 'Junctions you drew', order: LEGEND_ORDER.design, items: [
+      { id: 'drawn', label: 'Drawn junction', swatch: { kind: 'dot', color: JUNCTION_TOOL_COLORS.drawn, color2: '#ffffff' } },
+      { id: 'selected', label: 'Selected junction', detail: 'its label says signalised or give way and how many roads', swatch: { kind: 'dot', color: JUNCTION_TOOL_COLORS.selected, color2: '#ffffff' } },
+      { id: 'invalid', label: 'Junction tool: not on a road connection', detail: 'cyan when it can be placed', swatch: { kind: 'dot', color: JUNCTION_TOOL_COLORS.invalid, color2: '#ffffff' } },
+    ] } : null);
   }
 
   preview(point: [number, number, number]) {
@@ -48,7 +57,7 @@ export class JunctionEditorOverlay {
     const [x, y] = point;
     const nearby = this.context.drivablesNear(x - 0.0003, y - 0.0003, x + 0.0003, y + 0.0003);
     const layout = junctionLayout(point, nearby);
-    const color = Color.fromCssColorString(layout.valid ? '#22d3ee' : '#fb7185');
+    const color = Color.fromCssColorString(layout.valid ? JUNCTION_TOOL_COLORS.drawn : JUNCTION_TOOL_COLORS.invalid);
     const label = layout.valid ? `Place junction · ${layout.roadIds.length} road${layout.roadIds.length === 1 ? '' : 's'}\nClick to place · Esc to cancel` : 'Move onto a road connection';
     const position = scenePoint(x, y, layout.elevation + 1.5);
     const boundary = layout.boundary.map(p => scenePoint(p[0], p[1], p[2] + 0.18));

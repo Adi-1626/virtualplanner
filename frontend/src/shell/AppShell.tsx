@@ -31,6 +31,8 @@ import { ProjectsContext } from './contexts/ProjectsContext';
 import { ReportsContext } from './contexts/ReportsContext';
 import { DataCatalogueOverlay } from '../components/data/DataCatalogueView';
 import { RoundTripBar } from '../components/simulate/RoundTripBar';
+import { MapLegend } from '../components/MapLegend';
+import { MapSymbolTooltip } from '../components/MapSymbolTooltip';
 import { roundTrip } from './roundTrip';
 
 type Toast = { message: string; type: 'success' | 'error' | 'info' };
@@ -188,6 +190,8 @@ export const AppShell: React.FC<{ trust?: React.ReactNode }> = ({ trust }) => {
         <div className="uos-map"><Viewport3D /></div>
         {mode === 'simulate' && <SimulationHud />}
         {workspace !== 'simulate' && <RoundTripBar />}
+        <MapLegend />
+        <MapSymbolTooltip />
         <DataCatalogueOverlay />
         <div className="uos-compass"><MapCompass /></div>
         {!showContext && (

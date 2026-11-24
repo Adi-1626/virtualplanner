@@ -1,6 +1,7 @@
 import { engineInstance } from '../engine/TwinCityEngine';
 import { sessionTripStorage } from '../engine/simulation/roundTrip';
 import { RoundTripController } from './roundTripController';
+import { browserRoundTripNav } from './roundTripNav';
 import { useShellStore } from './useShellStore';
 
 /** The app's round trip controller (docs/urbanos/SIM_FLOW_P12.md), made on first use once the engine exists. */
@@ -29,6 +30,7 @@ export function roundTrip(): RoundTripController {
     storage: sessionTripStorage,
     now: () => new Date().toISOString(),
     sleep: ms => new Promise(r => setTimeout(r, ms)),
+    nav: browserRoundTripNav(),
   });
   return controller;
 }

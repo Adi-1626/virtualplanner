@@ -31,6 +31,7 @@ import { undergroundView } from './underground/UndergroundView';
 import { cesiumIonToken } from '../lib/cesiumToken';
 import { ObjectManager, classifyObjectChange } from './objects/ObjectManager';
 import type { CityObject, RoadObject, ZoneObject, GatewayObject, BuildingObject } from './objects/types';
+import { mapLegend, LEGEND_ORDER } from './rendering/mapLegend';
 import { renderManagerInstance } from './rendering/RenderManager';
 import { TrafficNetworkVisualizer } from './rendering/renderers/TrafficNetworkVisualizer';
 import { JunctionEditorOverlay } from './rendering/renderers/JunctionEditorOverlay';
@@ -217,6 +218,17 @@ export class TwinCityEngine {
     });
 
     (window as any).engineInstance = this;
+    // Hover / tap on a gateway, zone or street element placeholder: what it is (MapSymbolTooltip, the map key)
+    mapLegend.setResolver('city-objects', picked => {
+      const e = (picked as { id?: { id?: unknown } } | undefined)?.id;
+      const raw = typeof e === 'object' && e && typeof e.id === 'string' ? e.id.split('#')[0] : null;
+      const o = raw ? this.objects.getById(raw) : undefined;
+      if (!o) return null;
+      if (o.type === 'gateway') return { title: `Gateway: ${o.name}`, text: `Where traffic enters or leaves the modelled area (flows are estimated).${o.connectedNodeId ? '' : ' Not connected to a road yet.'}` };
+      if (o.type === 'zone') return { title: `Demand zone: ${o.name}`, text: 'Population and jobs here make the trips the model routes (estimated).' };
+      if (o.type === 'street_element') return { title: o.name || 'Street element', text: 'A placeholder marker where this street element is drawn; the 3D models are simplified.' };
+      return null;
+    });
     this.scenarios.load();
 
     this.startTrafficWorker();
@@ -293,6 +305,7 @@ export class TwinCityEngine {
         this.editing.setActiveSnap(null);
       }
       this.snapPreviewMode = mode;
+      this.publishDrawLegend();
     });
 
 
@@ -1113,6 +1126,7 @@ export class TwinCityEngine {
       this.viewer.entities.remove(this.gapPreviewEntity);
       this.gapPreviewEntity = null;
     }
+    mapLegend.set('road-gap', gap ? { title: 'Connect preview', order: LEGEND_ORDER.design, items: [{ id: 'gap', label: 'Link Connect would add', detail: 'from the road end to the join point', swatch: { kind: 'dash', color: '#34d399' } }] } : null);
     if (!gap) return;
     const lift = (p: [number, number, number]) => scenePoint(p[0], p[1], (p[2] || 0) + 1.5);
     this.gapPreviewEntity = this.viewer.entities.add({
@@ -1830,7 +1844,31 @@ export class TwinCityEngine {
     this.selection.clearSelection();
     this.syncZonesAndGatewaysWithCesium();
     this.objects.notifyViewOnly();
+    this.publishDrawLegend();
     this.emitMode();
+  }
+
+  /** Map key for demand zones and gateways while they are drawn (docs/urbanos/SIM_FLOW_P12.md §8). */
+  private publishDemandLegend() {
+    const zones = this.zoneEntities.length > 0, gws = this.gatewayEntities.length > 0;
+    mapLegend.set('demand', zones || gws ? { title: 'Traffic demand inputs', order: LEGEND_ORDER.demand, items: [
+      ...(zones ? [{ id: 'zone', label: 'Demand zone', detail: 'population and jobs that make trips (outline; cyan when selected)', swatch: { kind: 'outline' as const, color: '#f43f5e' } }] : []),
+      ...(gws ? [{ id: 'gateway', label: 'Gateway', detail: 'where traffic enters or leaves the modelled area; "(not connected)" if it joins no road', swatch: { kind: 'dot' as const, color: '#eab308', color2: '#000000' } },
+        { id: 'gw-link', label: 'Gateway link', detail: 'joins a gateway to its road node', swatch: { kind: 'line' as const, color: '#22d3ee' } }] : []),
+    ], evidence: 'estimated' } : null);
+  }
+
+  /** Map key for the drawing aids of a Design tool while one is in use. */
+  private publishDrawLegend() {
+    const mode = this.editing?.getMode?.() ?? 'select';
+    if (!this.isPlanningMode || mode === 'select') { mapLegend.set('design-draw', null); return; }
+    mapLegend.set('design-draw', { title: 'While drawing', order: LEGEND_ORDER.design, items: [
+      { id: 'snap-end', label: 'Snaps to a road end', swatch: { kind: 'ring', color: '#00ff00' } },
+      { id: 'snap-edge', label: 'Snaps onto a road (makes a junction)', swatch: { kind: 'ring', color: '#ffd700' } },
+      { id: 'snap-other', label: 'Snaps to a junction or node', swatch: { kind: 'ring', color: '#00ffff' } },
+      { id: 'rubber', label: 'Line being drawn', detail: 'curves filleted as they will be built', swatch: { kind: 'dash', color: '#ffff00' } },
+      { id: 'guide', label: 'Alignment guide', detail: 'keeps the bearing of the last straight', swatch: { kind: 'dash', color: '#00ffff' } },
+    ], note: 'The snap marker\'s label says what it snaps to.' });
   }
 
   private syncZonesAndGatewaysWithCesium() {
@@ -1970,6 +2008,7 @@ export class TwinCityEngine {
         this.gatewayEntities.push(entity);
       });
     }
+    this.publishDemandLegend();
 
     // 4. In Planning Mode, draw cyan vertex point markers if a zone is selected
     if (selectedObj && selectedObj.type === 'zone' && this.isPlanningMode) {

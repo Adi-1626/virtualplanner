@@ -5,6 +5,17 @@ import type { TrafficEdge, TrafficNetwork, TrafficNode } from '../../objects/tra
 /** Node classes shown by the "Junction points" layer (docs/urbanos/DESIGN_WORKSPACE.md, Points layer). */
 export type JunctionPointKind = 'dead_end' | 't_junction' | 'x_junction' | 'complex' | 'roundabout';
 
+/** The junction point kinds in words, for the map key and Design's toggle. */
+import { mapLegend, LEGEND_ORDER } from '../mapLegend';
+
+export const JUNCTION_POINT_LEGEND: { kind: JunctionPointKind; label: string; detail: string }[] = [
+  { kind: 't_junction', label: 'T junction', detail: 'three roads meet' },
+  { kind: 'x_junction', label: 'Crossroads', detail: 'four roads meet' },
+  { kind: 'complex', label: '5 or more roads', detail: 'a complex junction' },
+  { kind: 'roundabout', label: 'Roundabout', detail: 'a node on a roundabout ring' },
+  { kind: 'dead_end', label: 'Dead end', detail: 'a road that ends without joining another' },
+];
+
 export const JUNCTION_POINT_COLORS: Record<JunctionPointKind, string> = {
   dead_end: '#facc15',
   t_junction: '#fb923c',
@@ -70,6 +81,7 @@ export class TrafficNetworkVisualizer {
     }
     this.points = null;
     this.pointCount = 0;
+    mapLegend.set('junction-points', null);
     this.viewer?.scene.requestRender();
   }
 
@@ -97,6 +109,8 @@ export class TrafficNetworkVisualizer {
     });
     this.pointCount = count;
     this.points = this.viewer.scene.primitives.add(points);
+    mapLegend.set('junction-points', { title: 'Junction points (traffic network)', order: LEGEND_ORDER.junctions, items: JUNCTION_POINT_LEGEND.map(l => ({ id: l.kind, label: l.label, detail: l.detail, swatch: { kind: 'dot', color: JUNCTION_POINT_COLORS[l.kind], color2: '#0f172a' } })),
+      note: 'Where the traffic model joins roads, from the drawn and imported roads. Shown when zoomed in.' });
     this.viewer.scene.requestRender();
   }
 }

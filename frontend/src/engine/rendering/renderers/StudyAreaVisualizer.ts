@@ -45,6 +45,28 @@ export const STUDY_BOUNDARY_COLORS: Record<BoundaryKind, string> = {
 };
 
 export const STUDY_GRADE_SEPARATION_COLOR = '#38bdf8';
+/** Junction dots of the study area (shared with the map key). */
+export const STUDY_JUNCTION_COLORS = { junction: '#ffffff', roundabout: '#22d3ee', dead_end: '#94a3b8' } as const;
+/** Network-check markers: an error, a warning, a road cut at the edge of the mapped area (shared with the map key). */
+export const STUDY_PROBLEM_COLORS = { error: '#ef4444', warning: '#f59e0b', area_edge: '#a78bfa' } as const;
+/** Select-link shading: from a small to the largest share of the selected road's traffic (shared with the map key). */
+export const SELECT_LINK_COLORS = ['#a78bfa', '#f0abfc'] as const;
+/** A stretch with nothing to show in the current colouring (no vehicles, or outside an overlay). */
+export const STUDY_EMPTY_COLOR = '#64748b';
+/** What a map symbol is, for the hover / tap tooltip (MapSymbolTooltip reads `id.legendTip`). */
+const tip = (title: string, text: string) => ({ legendTip: { title, text } });
+const JUNCTION_TIP: Record<JunctionKind, ReturnType<typeof tip>> = {
+  dead_end: tip('Dead end', 'A road that ends here in the study area\'s network (grey dot).'),
+  t_junction: tip('Junction', 'Three roads meet here (white dot).'),
+  crossroads: tip('Junction', 'Four roads meet here (white dot).'),
+  complex: tip('Junction', 'Five or more roads meet here (white dot, larger).'),
+  roundabout: tip('Roundabout', 'Traffic gives way to the ring here (cyan dot).'),
+};
+const BOUNDARY_TIP: Record<BoundaryKind, ReturnType<typeof tip>> = {
+  entry: tip('Edge of the study area: IN', 'Traffic enters the study area here (amber). ×n: n crossings within 150 m share one label.'),
+  exit: tip('Edge of the study area: OUT', 'Traffic leaves the study area here (green). ×n: n crossings within 150 m share one label.'),
+  entry_exit: tip('Edge of the study area: IN/OUT', 'Traffic enters and leaves here (pink). ×n: n crossings within 150 m share one label.'),
+};
 
 const JUNCTION_SIZE: Record<JunctionKind, number> = {
   dead_end: 6,
@@ -80,7 +102,7 @@ const REVEAL_MS = 700;
 const ALWAYS_ON_TOP = Number.POSITIVE_INFINITY;
 const JUNCTION_SCALE = new NearFarScalar(300, 1, 2500, 0.45);
 const JUNCTION_VISIBLE = new DistanceDisplayCondition(0, 2500);
-const EMPTY_STRETCH = '#64748b';
+const EMPTY_STRETCH = STUDY_EMPTY_COLOR;
 
 /**
  * Draws a study area on the map: road stretches coloured by their relation to
@@ -211,7 +233,7 @@ export class StudyAreaVisualizer {
       const v = vph.get(key) ?? 0;
       const t = Math.min(1, v / max);
       if (v <= 0) { Color.fromCssColorString(EMPTY_STRETCH, scratch); scratch.alpha = 0.12; }
-      else { Color.lerp(Color.fromCssColorString('#a78bfa'), Color.fromCssColorString('#f0abfc'), t, scratch); scratch.alpha = 0.35 + 0.6 * Math.sqrt(t); }
+      else { Color.lerp(Color.fromCssColorString(SELECT_LINK_COLORS[0]), Color.fromCssColorString(SELECT_LINK_COLORS[1]), t, scratch); scratch.alpha = 0.35 + 0.6 * Math.sqrt(t); }
       a.color = ColorGeometryInstanceAttribute.toValue(scratch, a.color);
     }
   }
@@ -221,7 +243,7 @@ export class StudyAreaVisualizer {
   private overlayEntities: Entity[] = [];
 
   /** Colours every stretch by `colour` (null: dimmed). Live speed colouring is paused while an overlay is on. */
-  public showOverlay(colour: ((key: string) => { css: string; alpha: number } | null) | null, markers: { coordinates: readonly number[]; label: string; css: string }[] = []) {
+  public showOverlay(colour: ((key: string) => { css: string; alpha: number } | null) | null, markers: { coordinates: readonly number[]; label: string; css: string; tip?: { title: string; text: string } }[] = []) {
     this.overlay = colour ? { colour } : null;
     for (const e of this.overlayEntities) this.dataSource?.entities.remove(e);
     this.overlayEntities = [];
@@ -245,6 +267,7 @@ export class StudyAreaVisualizer {
       const pos = scenePoint(m.coordinates[0], m.coordinates[1], (m.coordinates[2] || 0) + LIFT_M);
       this.overlayEntities.push(this.dataSource!.entities.add({
         position: pos,
+        ...(m.tip ? { properties: { legendTip: m.tip } } : {}),
         point: { pixelSize: 18, color: Color.fromCssColorString(m.css), outlineColor: Color.WHITE, outlineWidth: 3, disableDepthTestDistance: ALWAYS_ON_TOP },
         label: { text: m.label, font: '600 13px sans-serif', fillColor: Color.WHITE, outlineColor: ink, outlineWidth: 4, style: LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cartesian2(0, -24), disableDepthTestDistance: ALWAYS_ON_TOP, showBackground: true, backgroundColor: ink.withAlpha(0.8) },
       }));
@@ -307,6 +330,7 @@ export class StudyAreaVisualizer {
     for (const s of area.segments) {
       if (!isSeed(s)) continue;
       this.seedEntities.set(s.key, ds.entities.add({
+        properties: { legendTip: { title: 'The road you are studying', text: 'Pulsing glow: cyan, or coloured by speed while live traffic runs.' } },
         polyline: {
           positions: s.coordinates.map(c => scenePoint(c[0], c[1], (c[2] || 0) + LINE_LIFT_M)),
           width: SEED_GLOW_WIDTH_PX,
@@ -430,7 +454,8 @@ export class StudyAreaVisualizer {
       points.add({
         position: at(j.coordinates),
         pixelSize: JUNCTION_SIZE[j.kind],
-        color: j.kind === 'dead_end' ? Color.fromCssColorString('#94a3b8') : j.kind === 'roundabout' ? Color.fromCssColorString('#22d3ee') : Color.WHITE,
+        id: JUNCTION_TIP[j.kind],
+        color: Color.fromCssColorString(j.kind === 'dead_end' ? STUDY_JUNCTION_COLORS.dead_end : j.kind === 'roundabout' ? STUDY_JUNCTION_COLORS.roundabout : STUDY_JUNCTION_COLORS.junction),
         outlineColor: ink,
         outlineWidth: 2,
         disableDepthTestDistance: ALWAYS_ON_TOP,
@@ -445,7 +470,7 @@ export class StudyAreaVisualizer {
     const gradeColor = Color.fromCssColorString(STUDY_GRADE_SEPARATION_COLOR);
     for (const g of area.gradeSeparations) {
       const [lng, lat] = g.coordinates;
-      points.add({ position: at([lng, lat], g.upperZ), pixelSize: 11, color: ink, outlineColor: gradeColor, outlineWidth: 3, disableDepthTestDistance: ALWAYS_ON_TOP, scaleByDistance: JUNCTION_SCALE, distanceDisplayCondition: JUNCTION_VISIBLE });
+      points.add({ id: tip('Roads cross without meeting', 'One road passes over the other here (a flyover or bridge): no turns between them. Hollow blue ring; a dashed line drops to the lower road.'), position: at([lng, lat], g.upperZ), pixelSize: 11, color: ink, outlineColor: gradeColor, outlineWidth: 3, disableDepthTestDistance: ALWAYS_ON_TOP, scaleByDistance: JUNCTION_SCALE, distanceDisplayCondition: JUNCTION_VISIBLE });
       if (g.upperZ - g.lowerZ > 0.5) {
         this.markerEntities.push(this.dataSource!.entities.add({
           polyline: {
@@ -463,13 +488,14 @@ export class StudyAreaVisualizer {
     const groups: { c: readonly number[]; kinds: Set<BoundaryKind>; n: number }[] = [];
     for (const b of area.boundary) {
       const color = Color.fromCssColorString(STUDY_BOUNDARY_COLORS[b.kind]);
-      points.add({ position: at(b.coordinates), pixelSize: 12, color, outlineColor: ink, outlineWidth: 2, disableDepthTestDistance: ALWAYS_ON_TOP });
+      points.add({ id: BOUNDARY_TIP[b.kind], position: at(b.coordinates), pixelSize: 12, color, outlineColor: ink, outlineWidth: 2, disableDepthTestDistance: ALWAYS_ON_TOP });
       const g = groups.find(x => groundDistanceM(x.c, b.coordinates) < BOUNDARY_LABEL_GROUP_M);
       if (g) { g.kinds.add(b.kind); g.n++; } else groups.push({ c: b.coordinates, kinds: new Set([b.kind]), n: 1 });
     }
     for (const g of groups) {
       const kind: BoundaryKind = g.kinds.size === 1 ? [...g.kinds][0] : 'entry_exit';
       labels.add({
+        id: BOUNDARY_TIP[kind],
         position: at(g.c),
         text: BOUNDARY_LABEL[kind] + (g.n > 1 ? ` ×${g.n}` : ''),
         font: '600 11px sans-serif',
@@ -488,9 +514,10 @@ export class StudyAreaVisualizer {
       // Dead ends already show as grey junction dots; roads cut at a mapped area's edge are gateway candidates
       if (p.severity === 'info' && p.kind !== 'area_edge') continue;
       points.add({
+        id: tip(p.title, p.detail),
         position: at(p.location),
         pixelSize: 15,
-        color: Color.fromCssColorString(p.kind === 'area_edge' ? '#a78bfa' : p.severity === 'error' ? '#ef4444' : '#f59e0b'),
+        color: Color.fromCssColorString(p.kind === 'area_edge' ? STUDY_PROBLEM_COLORS.area_edge : p.severity === 'error' ? STUDY_PROBLEM_COLORS.error : STUDY_PROBLEM_COLORS.warning),
         outlineColor: Color.WHITE,
         outlineWidth: 2,
         disableDepthTestDistance: ALWAYS_ON_TOP,

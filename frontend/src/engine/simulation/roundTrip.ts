@@ -310,3 +310,12 @@ export function parseTrip(raw: string | null): RoundTripState | null {
 export function afterReload(t: RoundTripState): RoundTripState {
   return { ...t, leg: t.leg ? { ...t.leg, phase: 'editing' } : null, status: null, resumed: !!t.leg };
 }
+
+/**
+ * Esc in Simulate: clear the study (then leave the mode), as always, except while a re-test from Design runs on the
+ * study, when Esc must not pull the study from under it ('hold').
+ */
+export function simulateEscape(o: { legPhase: TripLeg['phase'] | null; hasStudy: boolean }): 'hold' | 'clear-study' | 'leave' {
+  if (o.legPhase === 'retesting') return 'hold';
+  return o.hasStudy ? 'clear-study' : 'leave';
+}

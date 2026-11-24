@@ -21,6 +21,8 @@ import { scenePoint } from '../../terrain/groundHeight';
  * depth test, so the road mesh or buildings never hide it. It is not
  * pickable: a click on it still selects the road underneath.
  */
+import { mapLegend, LEGEND_ORDER } from '../mapLegend';
+
 export type RoadHighlightKind = 'lane-scope' | 'binding';
 
 /**
@@ -57,6 +59,9 @@ export class RoadHighlight {
     const lines = roads.filter(r => r.coordinates.length >= 2);
     if (!lines.length) return;
     this.current = { kind, roadIds: lines.map(r => r.id) };
+    mapLegend.set('road-highlight', { title: 'Highlight', order: LEGEND_ORDER.highlight, items: [kind === 'binding'
+      ? { id: 'binding', label: 'Binding stretch', detail: 'the stretch whose capacity limits the road (amber with a dark edge)', swatch: { kind: 'outline', color: STYLE.binding.css, color2: '#0f172a' } }
+      : { id: 'lane-scope', label: 'Lanes this edit changes', detail: 'the pieces a lane edit applies to (preview)', swatch: { kind: 'line', color: STYLE['lane-scope'].css } }] });
     const viewer = this.viewer;
     if (!viewer || viewer.isDestroyed()) return;
     const style = STYLE[kind];
@@ -83,6 +88,7 @@ export class RoadHighlight {
   }
 
   public clear() {
+    if (this.current) mapLegend.set('road-highlight', null);
     this.current = null;
     if (this.primitive && this.viewer && !this.viewer.isDestroyed()) {
       this.viewer.scene.primitives.remove(this.primitive);

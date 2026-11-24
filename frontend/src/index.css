@@ -460,3 +460,32 @@ button.uos-row:hover { background: var(--surface-2); }
 @media (max-width: 767.98px) {
   .uos-roundtrip, .uos-shell[data-context=open] .uos-roundtrip { left: 8px; right: 60px; top: 8px; max-height: calc(100% - var(--sheet-h, 52dvh) - 16px); overflow-y: auto; }
 }
+
+/* ---- Map key (docs/urbanos/SIM_FLOW_P12.md §8): bottom right of the map, above Cesium's credits and fullscreen button
+   and the bottom drawer's tab strip; it never covers the panels (it lives in the map stage). ---- */
+.uos-legend {
+  position: absolute; z-index: 25; right: var(--sp-3); bottom: 36px; width: 264px; max-width: calc(100% - 2 * var(--sp-3));
+  border-radius: var(--r-lg); border: 1px solid var(--border); background: rgba(2, 6, 23, .92); box-shadow: var(--shadow-float);
+  backdrop-filter: blur(8px); font-size: 11px; color: var(--text-2); display: flex; flex-direction: column;
+}
+.uos-legend[data-open=false] { width: auto; }
+.uos-shell:has(.uos-drawer) .uos-legend { bottom: calc(40px + 36px); }
+.uos-shell:has(.uos-drawer.is-open) .uos-legend { bottom: calc(var(--drawer-h) + 36px); }
+.uos-legend-head { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-weight: 600; color: var(--text-1); cursor: pointer; min-height: 30px; }
+.uos-legend-body { padding: 4px 10px 10px; overflow-y: auto; max-height: min(52vh, 460px); display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); }
+.uos-legend .uos-legend-body { max-height: calc(100dvh - var(--topbar-h, 52px) - 220px); }
+.uos-map-tip {
+  position: fixed; z-index: 10001; max-width: 260px; padding: 6px 9px; pointer-events: none; font-size: 11px; line-height: 1.35;
+  border-radius: var(--r-md); border: 1px solid var(--border); background: rgba(2, 6, 23, .96); box-shadow: var(--shadow-float);
+}
+/* Tablet with the inspector over the map's right side: the key moves to the left, above the compass */
+@media (min-width: 768px) and (max-width: 1024.98px) {
+  .uos-shell[data-inspector=open] .uos-legend { right: auto; left: var(--sp-3); bottom: calc(var(--sp-3) + 140px); }
+  .uos-shell[data-inspector=open][data-context=open] .uos-legend { left: calc(var(--ctx-tablet-w) + var(--sp-3)); }
+}
+/* Phone: above the open sheet, narrower */
+@media (max-width: 767.98px) {
+  .uos-legend { width: min(240px, calc(100% - 70px)); bottom: 12px; }
+  .uos-shell:is([data-context=open], [data-inspector=open]) .uos-legend { bottom: calc(var(--sheet-h) + 12px); }
+  .uos-shell:is([data-context=open], [data-inspector=open]) .uos-legend-body { max-height: calc(100dvh - var(--sheet-h) - var(--topbar-h, 52px) - var(--tabbar-h) - 70px); }
+}

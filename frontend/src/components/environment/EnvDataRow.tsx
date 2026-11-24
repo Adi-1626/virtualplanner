@@ -7,38 +7,18 @@ import React from 'react';
 import { Ban, CircleHelp, Eye, EyeOff, Loader2, OctagonX } from 'lucide-react';
 import { DataStatus } from '../ui/badges/DataStatus';
 import { Disclosure } from '../ui/Disclosure';
-import type { EnvDataLayer, EnvLegend } from '../../lib/envDataApi';
-import { classLine, envDataStatus, hasMapToggle, legendOf, rampCss, STATUS_LABEL } from './envDataModel';
+import type { EnvDataLayer } from '../../lib/envDataApi';
+import { classLine, envDataStatus, hasMapToggle, legendOf, STATUS_LABEL } from './envDataModel';
 import { setEnvDataVariant, setEnvDataVisible, useEnvDataOverlayStore } from './envDataOverlay';
 import { displayPath, redactPaths } from '../../lib/redactPaths';
 import { LayerMeta } from './EnvBits';
+import { Legend } from './EnvLegendView';
 import { LEGEND_UNITS, metaOfEnv, PLAIN, plainTitle } from './envPlanner';
 
 const selCls = 'max-w-full min-w-0 rounded-md bg-white/[0.05] border border-white/10 px-1.5 py-0.5 text-label text-text-1 focus:outline-none focus:border-cyan-400/60';
 
 
-export const Legend: React.FC<{ legend: EnvLegend; testId?: string; unitNote?: string }> = ({ legend, testId, unitNote }) => {
-  if (legend.type === 'ramp') {
-    const s = legend.stops;
-    return (
-      <div className="space-y-0.5" data-testid={testId}>
-        <p className="text-meta text-text-2">{legend.label}</p>
-        <div className="h-2.5 rounded-sm border border-white/10" style={{ background: rampCss(s) }} aria-hidden />
-        <div className="flex justify-between text-meta text-text-3 tabular-nums"><span>≤ {s[0].value} {legend.unit}</span><span>≥ {s[s.length - 1].value} {legend.unit}</span></div>
-      </div>
-    );
-  }
-  return (
-    <ul className="grid grid-cols-2 gap-x-3 gap-y-0.5" data-testid={testId} data-units={unitNote ?? ''}>
-      {legend.items.map(i => (
-        <li key={i.label} className="flex items-center gap-1.5 text-meta text-text-2">
-          <span className={legend.type === 'line' ? 'inline-block h-0.5 w-3' : 'inline-block h-2.5 w-2.5 rounded-sm'} style={{ background: i.color }} aria-hidden />{i.label}
-        </li>
-      ))}
-      {unitNote && <li className="col-span-2 text-meta text-text-3">{unitNote}</li>}
-    </ul>
-  );
-};
+export { Legend };
 
 const StatusLine: React.FC<{ l: EnvDataLayer; variant: string | null }> = ({ l, variant }) => {
   if (l.status === 'available') return <DataStatus name={l.name} value={envDataStatus(l, variant)} />;

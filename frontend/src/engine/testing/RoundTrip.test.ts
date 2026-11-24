@@ -12,7 +12,9 @@ import {
   afterReload, changedSince, decideBeforeReturn, decideInSimulate, parseTrip, proposalSnapshot, sinceLastTest, suggestionKey, summariseChanges,
   testOf, testedButGone, widerRange, outsideAreaText, ROUND_TRIP_VERSION, type RoundTripState, type TripTest,
 } from '../simulation/roundTrip';
-import { RoundTripController, useRoundTrip, type RoundTripDeps } from '../../shell/roundTripController';
+import { RoundTripController, useRoundTrip, type RoundTripDeps, type RoundTripNav } from '../../shell/roundTripController';
+import { browserRoundTripNav } from '../../shell/roundTripNav';
+import { simulateEscape } from '../simulation/roundTrip';
 
 /**
  * The Simulate → Design → Simulate round trip (docs/urbanos/SIM_FLOW_P12.md): the change detection and decisions
@@ -110,7 +112,7 @@ describe('round trip model', () => {
 
 afterEach(() => { vi.restoreAllMocks(); useRoundTrip.setState({ trip: null, changes: null, ask: null, baseActive: false }); });
 
-function setup(o: { stored?: string | null; createFails?: boolean } = {}) {
+function setup(o: { stored?: string | null; createFails?: boolean; nav?: RoundTripNav } = {}) {
   const om = new ObjectManager();
   for (const k of Object.getOwnPropertyNames(ObjectManager.prototype).filter(n => /^sync(Post|Delete|Changes)/.test(n))) {
     if (typeof (om as any)[k] === 'function') vi.spyOn(om as any, k).mockResolvedValue(undefined);
@@ -147,6 +149,7 @@ function setup(o: { stored?: string | null; createFails?: boolean } = {}) {
     storage: { get: () => stored, set: v => { stored = v; } },
     now: () => T,
     sleep: () => Promise.resolve(),
+    nav: o.nav,
   };
   const rt = new RoundTripController(deps);
   const study = async () => {
@@ -333,5 +336,116 @@ describe('round trip controller (real ObjectManager, HistoryManager, SimulationM
     expect(useRoundTrip.getState().trip!.leg).toBeNull();
     expect(useRoundTrip.getState().trip!.status!.text).toMatch(/could not be created.*not changed/);
     expect(f.baseCanon()).toBe(base0);
+  }, 120_000);
+});
+
+// ── Esc and the browser's Back button during the round trip ───────────────
+
+/** A window with a history stack (same URL, states only) whose back() fires popstate like a browser. */
+function fakeWindow() {
+  const stack: unknown[] = [null];
+  let i = 0;
+  const ls = new Set<(e: PopStateEvent) => void>();
+  const w = {
+    history: {
+      get state() { return stack[i]; },
+      pushState(st: unknown) { stack.splice(i + 1); stack.push(st); i++; },
+      back() { if (i > 0) { i--; const st = stack[i]; ls.forEach(l => l({ state: st } as PopStateEvent)); } },
+    },
+    addEventListener: (_: string, l: (e: PopStateEvent) => void) => { ls.add(l); },
+    removeEventListener: (_: string, l: (e: PopStateEvent) => void) => { ls.delete(l); },
+  };
+  return { w: w as unknown as Window, depth: () => stack.length, at: () => i, back: () => w.history.back() };
+}
+
+describe('Esc and Back during the round trip', () => {
+  afterEach(() => useRoundTrip.setState({ trip: null, changes: null, ask: null, baseActive: false }));
+
+  it('Esc in Simulate never clears the study while a re-test runs on it', () => {
+    expect(simulateEscape({ legPhase: 'retesting', hasStudy: true })).toBe('hold');
+    expect(simulateEscape({ legPhase: 'retesting', hasStudy: false })).toBe('hold');
+    expect(simulateEscape({ legPhase: 'editing', hasStudy: true })).toBe('clear-study');
+    expect(simulateEscape({ legPhase: null, hasStudy: true })).toBe('clear-study');
+    expect(simulateEscape({ legPhase: null, hasStudy: false })).toBe('leave');
+  });
+
+  it('the browser nav adds one entry per leg, adopts it after a reload, takes it off silently, and reports Back', () => {
+    const f = fakeWindow();
+    const nav = browserRoundTripNav(f.w);
+    let backs = 0;
+    nav.onBack(() => backs++);
+    nav.mark('leg1');
+    nav.mark('leg1');
+    expect(f.at()).toBe(1);
+    nav.unmark();                       // the leg ended in the app: the entry goes, no Back reported
+    expect(f.at()).toBe(0);
+    expect(backs).toBe(0);
+    nav.mark('leg2');
+    f.back();                           // the user pressed Back
+    expect(backs).toBe(1);
+    nav.unmark();                       // nothing left to take off
+    expect(f.at()).toBe(0);
+    // After a reload the entry is still the current one: adopted, not pushed twice
+    nav.mark('leg3');
+    const nav2 = browserRoundTripNav(f.w);
+    nav2.mark('leg3');
+    expect(f.at()).toBe(1);
+  });
+
+  it('Back while changing with nothing changed returns to the study; with changes it asks (undo / keep / stay) and keeps them', async () => {
+    const f = fakeWindow();
+    const s = setup({ nav: browserRoundTripNav(f.w) });
+    await s.study();
+    await s.rt.start(WIDEN);
+    expect(f.at()).toBe(1);
+    f.back();
+    await new Promise(r => setTimeout(r, 0));
+    expect(useRoundTrip.getState().trip!.leg).toBeNull();
+    expect(s.workspace()).toBe('simulate');
+    expect(f.at()).toBe(0);
+
+    await s.rt.start(WIDEN);
+    const pid = useRoundTrip.getState().trip!.leg!.proposalId;
+    s.widen();
+    const lanes = JSON.stringify((s.om.getById(DECK) as RoadObject).sections);
+    f.back();
+    expect(useRoundTrip.getState().ask).toEqual({ kind: 'cancel' });
+    expect(useRoundTrip.getState().trip!.leg!.proposalId).toBe(pid);
+    expect(s.workspace()).toBe('design');
+    expect(JSON.stringify((s.om.getById(DECK) as RoadObject).sections)).toBe(lanes);
+    // The entry is back, so a second Back also comes here (it never leaves the app with the change half done)
+    expect(f.at()).toBe(1);
+    f.back();
+    expect(useRoundTrip.getState().trip!.leg).not.toBeNull();
+    expect(f.at()).toBe(1);
+    s.rt.dismissAsk();
+    // Done afterwards still works and takes the entry off
+    await s.rt.finish();
+    expect(useRoundTrip.getState().trip!.leg).toBeNull();
+    expect(useRoundTrip.getState().trip!.tests).toHaveLength(1);
+    expect(f.at()).toBe(0);
+  }, 120_000);
+
+  it('Back while a re-test runs, or with Simulate on show, is ignored safely', async () => {
+    const f = fakeWindow();
+    const s = setup({ nav: browserRoundTripNav(f.w) });
+    await s.study();
+    await s.rt.start(null);
+    s.widen();
+    // The planner came back to Simulate by the rail with the leg open: Back keeps the leg and the change
+    s.deps.goTo('simulate');
+    f.back();
+    expect(useRoundTrip.getState().trip!.leg!.phase).toBe('editing');
+    expect(useRoundTrip.getState().ask).toBeNull();
+    expect(f.at()).toBe(1);
+    // While the re-test runs
+    s.deps.goTo('design');
+    const done = s.rt.finish();
+    expect(useRoundTrip.getState().trip!.leg!.phase).toBe('retesting');
+    f.back();
+    expect(useRoundTrip.getState().trip!.leg!.phase).toBe('retesting');
+    await done;
+    expect(useRoundTrip.getState().trip!.tests).toHaveLength(1);
+    expect(f.at()).toBe(0);
   }, 120_000);
 });

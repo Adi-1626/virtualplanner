@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import { toolByHotkey } from '../components/tools';
 import { DRAW_HEIGHT_FINE_STEP_M, DRAW_HEIGHT_STEP_M } from '../engine/editing/drawConstraints';
+import { useRoundTrip } from '../shell/roundTripController';
+import { simulateEscape } from '../engine/simulation/roundTrip';
 
 interface ShortcutHandlers {
   /** Ask the UI to confirm deleting the object with this id. */
@@ -16,6 +18,7 @@ const isTypingTarget = (target: EventTarget | null): boolean => {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
 };
 
+export const RETEST_RUNNING_MESSAGE = 'A re-test is running on this study; Esc does not clear it. The comparison opens when it finishes.';
 const READ_ONLY_MESSAGE = 'Roads cannot be changed while simulating. Open Design (Alt+2) to edit.';
 
 /**
@@ -28,7 +31,10 @@ function handleSimulationKey(e: KeyboardEvent): boolean {
   const lower = e.key.toLowerCase();
 
   if (e.key === 'Escape') {
-    if (simMode.getState().seedRoadIds.length > 0) simMode.clearSeeds();
+    const act = simulateEscape({ legPhase: useRoundTrip.getState().trip?.leg?.phase ?? null, hasStudy: simMode.getState().seedRoadIds.length > 0 });
+    // A re-test from Design is running on this study: Esc must not clear the study under it
+    if (act === 'hold') (window as any).showToast?.(RETEST_RUNNING_MESSAGE, 'info');
+    else if (act === 'clear-study') simMode.clearSeeds();
     else engineInstance.setAppMode('view');
     e.preventDefault();
     return true;

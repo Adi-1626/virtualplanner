@@ -1,4 +1,6 @@
 import type { Viewer } from 'cesium';
+import { mapLegend } from '../rendering/mapLegend';
+import { studyLegend, liveLegend, overlayLegend, directionsLegend, COMPARISON_COLORS, CAUSE_COLORS, BOTTLENECK_COLOR } from './simLegend';
 import {
   StudyAreaExplorer,
   clampRangeM,
@@ -535,6 +537,8 @@ export class SimulationMode {
     loadCorrections: (() => Promise<unknown>) | null = () => apiGet<unknown>(`/api/network-corrections/${DEFAULT_CORRECTION_LAYER}`),
     loadScreenlines: (() => Promise<ScreenlineFile>) | null = () => fetchScreenlines()) {
     this.loadCounts = loadCounts;
+    // Hover / tap on a study-area stretch: which road it is and what its colour means now (MapSymbolTooltip)
+    mapLegend.setResolver('sim-stretch', picked => this.describeStretch(picked));
     loadScreenlines?.().then(screenlines => this.setState({ screenlines })).catch(() => { /* no counts: the check is not shown */ });
     // Calibrated window edge flows: areas inside the window take their edge flows from it once loaded; until then, and
     // without the file, the class-typical flows per lane apply (state.edgeFlows says which)
@@ -601,7 +605,53 @@ export class SimulationMode {
   private setState(patch: Partial<SimulationModeState>) {
     this.state = { ...this.state, ...patch };
     this.syncArrows();
+    this.publishLegend();
     this.listeners.forEach(cb => cb());
+  }
+
+  /** What a picked study-area stretch is (its id is the stretch key), for the map tooltip; null for anything else. */
+  private stretchNames: { area: StudyArea; byKey: Map<string, string> } | null = null;
+  private describeStretch(picked: unknown): { title: string; text: string } | null {
+    const id = (picked as { id?: unknown } | undefined)?.id;
+    const area = this.state.area;
+    if (!this.state.active || !area || typeof id !== 'string') return null;
+    if (this.stretchNames?.area !== area) {
+      const names = new Map(this.getRoads().map(r => [r.id, r.name || 'Unnamed road']));
+      this.stretchNames = { area, byKey: new Map(area.segments.map(sg => [sg.key, names.get(sg.roadId) ?? 'Unnamed road'])) };
+    }
+    const name = this.stretchNames.byKey.get(id);
+    if (!name) return null;
+    const out = this.state.analysis.output?.result, ov = this.state.overlay;
+    let text = 'A road in the study area. Its traffic is routed and simulated with the rest of the area.';
+    if (ov === 'area-vc' && out) { const vc = out.areaVc.get(id); text = vc === undefined ? 'No traffic routed over it.' : `Routed traffic is ${Math.round(vc * 100)}% of its capacity (modelled).`; }
+    else if (ov === 'comparison' && this.state.comparison.result) { const d = this.state.comparison.result.segmentChange.get(id); text = d === undefined || Math.abs(d) < 0.05 ? 'Little or no change in load with the proposal (modelled).' : `Load ${d < 0 ? 'falls' : 'rises'} by ${Math.round(Math.abs(d) * 100)} points of capacity with the proposal (modelled).`; }
+    else if (ov === 'select-link' && out) { const v = out.selectLinkVph.get(id); text = v ? `About ${Math.round(v).toLocaleString()} veh/h of the studied road's traffic uses it (routed, modelled).` : 'None of the studied road\'s traffic uses it.'; }
+    return { title: name, text };
+  }
+
+  /** Inputs of the map key last published (it is rebuilt only when one of them changes). */
+  private legendKey: unknown[] = [];
+  /**
+   * The map key of what Simulate draws now (docs/urbanos/SIM_FLOW_P12.md §8): the study area's markers, the live view,
+   * the overlay on show, the studied road's directions. Cleared when Simulate closes or the road is dropped.
+   */
+  private publishLegend() {
+    const st = this.state;
+    const live = st.traffic.status === 'running' || st.traffic.status === 'paused';
+    const shownOverlay = st.analysis.output ? st.overlay : 'none';
+    const key = [st.active, st.area, live, shownOverlay, this.arrowDirections, st.comparison.result, st.analysis.output];
+    if (key.length === this.legendKey.length && key.every((k, i) => k === this.legendKey[i])) return;
+    this.legendKey = key;
+    const on = st.active && !!st.area;
+    mapLegend.set('sim-study', on ? studyLegend(st.area!, { live, overlay: shownOverlay }) : null);
+    mapLegend.set('sim-live', on && live ? liveLegend({ signals: !!this.signalPoints?.length }) : null);
+    const out = st.analysis.output?.result;
+    const overlay = on && !(shownOverlay === 'comparison' && !st.comparison.result) ? overlayLegend(shownOverlay, {
+      hasRootMarker: !!out?.cause.chain?.root, bottlenecks: out?.areaBottlenecks.length ?? 0, newBottlenecks: st.comparison.result?.newBottlenecks.length ?? 0,
+    }) : null;
+    mapLegend.set('sim-overlay', on ? overlay : null);
+    const dirs = this.arrowDirections as { label: string }[] | null;
+    mapLegend.set('sim-directions', on && dirs?.length ? directionsLegend(dirs.map(d => d.label)) : null);
   }
 
   /**
@@ -1539,22 +1589,25 @@ export class SimulationMode {
     if (kind === 'select-link') { this.visualizer.showOverlay(null); this.visualizer.showSelectLink(out.selectLinkVph); return; }
     if (kind === 'area-vc') {
       this.visualizer.showOverlay(key => { const vc = out.areaVc.get(key); return vc === undefined ? null : { css: vcColour(vc), alpha: vc < 0.3 ? 0.35 : 0.9 }; },
-        out.areaBottlenecks.slice(0, 5).map((b, i) => ({ coordinates: b.coordinates, label: `${i + 1}. ${b.roadName} ${vcText(b.vc)}`, css: '#f43f5e' })));
+        out.areaBottlenecks.slice(0, 5).map((b, i) => ({ coordinates: b.coordinates, label: `${i + 1}. ${b.roadName} ${vcText(b.vc)}`, css: BOTTLENECK_COLOR,
+          tip: { title: `Bottleneck ${i + 1}: ${b.roadName}`, text: `Routed traffic is ${vcText(b.vc)} of its capacity; ranked by the extra vehicle-hours it causes (modelled).` } })));
       return;
     }
     if (kind === 'cause') {
       const chain = out.cause.chain;
       const keys = new Set(chain?.segmentKeys ?? []), section = new Set(out.section.segmentKeys);
-      this.visualizer.showOverlay(key => section.has(key) ? { css: '#67e8f9', alpha: 1 } : keys.has(key) ? { css: '#f43f5e', alpha: 1 } : null,
-        chain?.root ? [{ coordinates: [chain.root.coordinates[0], chain.root.coordinates[1], 0], label: `Queue starts here: ${chain.root.label}`, css: '#f43f5e' }] : []);
+      this.visualizer.showOverlay(key => section.has(key) ? { css: CAUSE_COLORS.section, alpha: 1 } : keys.has(key) ? { css: CAUSE_COLORS.queue, alpha: 1 } : null,
+        chain?.root ? [{ coordinates: [chain.root.coordinates[0], chain.root.coordinates[1], 0], label: `Queue starts here: ${chain.root.label}`, css: CAUSE_COLORS.queue,
+          tip: { title: `Queue starts here: ${chain.root.label}`, text: 'The junction holding the first vehicle of the queue that delays the studied road (traced in the simulation, modelled).' } }] : []);
       return;
     }
     if (kind === 'comparison') {
       const c = this.state.comparison.result;
       if (!c) { this.visualizer.showOverlay(null); return; }
       const change = c.segmentChange;
-      this.visualizer.showOverlay(key => { const d = change.get(key); if (d === undefined || Math.abs(d) < 0.05) return null; return { css: d < 0 ? '#34d399' : '#f43f5e', alpha: Math.min(1, 0.4 + Math.abs(d)) }; },
-        [...c.newBottlenecks.map(b => ({ coordinates: b.coordinates, label: `New bottleneck: ${b.roadName}`, css: '#f43f5e' }))]);
+      this.visualizer.showOverlay(key => { const d = change.get(key); if (d === undefined || Math.abs(d) < 0.05) return null; return { css: d < 0 ? COMPARISON_COLORS.better : COMPARISON_COLORS.worse, alpha: Math.min(1, 0.4 + Math.abs(d)) }; },
+        [...c.newBottlenecks.map(b => ({ coordinates: b.coordinates, label: `New bottleneck: ${b.roadName}`, css: BOTTLENECK_COLOR,
+          tip: { title: `New bottleneck: ${b.roadName}`, text: 'Over capacity in the proposal and not in the existing city (modelled).' } }))]);
     }
   }
 
