@@ -85,6 +85,10 @@ saved baseline, and results that go stale when their inputs change.
 | **Back** while changing, nothing changed | Returns to the study (like Cancel) | P12 follow-up, tested |
 | **Back** while changing, with changes | Opens the Cancel question (undo / keep / stay); the change is kept; a second Back comes back to the question, never leaves the app | P12 follow-up, tested |
 | **Back** while a re-test runs, or with Simulate already on show | Ignored safely; the leg and its history entry stay | P12 follow-up, tested |
+| Cancel → **Undo them and return** after a test of the same proposal | The comparison comes back as it was (the network is again the one it tested), not "the network changed" | P12 follow-up, tested (`EditScope.test.ts`: cleared on the undone network, back on the tested one, dropped again after a study change) |
+| Another change, a study change, demand or focus change after that | The parked comparison is dropped; Compare again | P12 follow-up, tested |
+| Junction card, approach held by a signal on a piece inside the junction | Its green share is that piece's (walked inside from where the approach enters, as the editor's "as run" plan does), not "—%" | P12 follow-up, tested (`JunctionEditing.test.ts`) |
+| Limiting stop line part-way along a direction, or with the assignment's assumed split | Said as such ("the signal part-way along it (assumed green split)"), and the suggestion opens it there | P12 follow-up, tested (`RoadAnalysisPanelPieces.test.ts`) |
 
 Browser history: one same-URL entry (`history.state.uosRoundTrip = <leg id>`) is pushed when a leg starts, adopted
 (not pushed again) after a reload, and taken off when the leg ends (that `popstate` is skipped).

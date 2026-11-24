@@ -210,7 +210,7 @@ describe('road analysis panel pieces', () => {
     expect(stopLineWords({ paths })).toBe('the signal at its end');
     const before = [dir({ label: 'towards the north-east', midblockPcu: 3857, capacityBasis: 'signal', stopLinePcu: 2499, roadIds: ['osm_1157871403'], bearingDeg: 45, lanesRange: [3, 3] })];
     const after = [dir({ label: 'towards the north-east', midblockPcu: 5143, capacityBasis: 'signal', stopLinePcu: 3332, roadIds: ['osm_1157871403'], bearingDeg: 45, lanesRange: [4, 4], paths, stopLine: { kind: 'signal', at: [73.83817, 18.49592], source: 'assignment' } })];
-    const ins = laneInsights(before, after, { before: new Map([['osm_1157871403', { coordinates: [] } as never]]), after: new Map([['osm_1157871403', { coordinates: [] } as never]]) }, []);
+    const ins = laneInsights(before, after, { before: new Map([['osm_1157871403', { laneCount: 3, coordinates: [] } as never]]), after: new Map([['osm_1157871403', { laneCount: 4, coordinates: [] } as never]]) }, []);
     expect(ins[0].text).toContain('The signal part-way along it (assumed green split) passes 3,332 PCU/h at the stop line and limits it more than the road does.');
   });
   it('a flowing road whose routed traffic mostly did not get through is not "No pressing problem" (browser workflow 2026-11-09, Sangamwadi: 886 of 1,954 veh/h)', () => {
