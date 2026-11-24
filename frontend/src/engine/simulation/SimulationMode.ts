@@ -1512,12 +1512,15 @@ export class SimulationMode {
   /** The restore attempt in progress (for tests and the panel), or null. */
   public baselineRestore: Promise<boolean> | null = null;
   private restoreTried = new Set<string>();
+  /** Studies with no baseline of their own in the browser (not looked up again while another study's baseline is kept). */
+  private restoreMissing = new Set<string>();
 
   private saveBaseline(baseline: TrafficRunSnapshot, plan: DemandPlan) {
     const seedRoadIds = [...this.state.seedRoadIds];
     const rec: StoredBaseline = { v: BASELINE_STORE_VERSION, savedAt: new Date().toISOString(), studyKey: this.baselineStudyKey, contextKey: this.baselineContextKey, seedRoadIds,
       baseline, plan, roads: [...(this.baselineRoads?.values() ?? [])].map(compactRoad) };
     this.restoreTried.add(seedKeyOf(seedRoadIds));
+    this.restoreMissing.delete(rec.studyKey);
     void this.baselineStore.put(seedKeyOf(seedRoadIds), rec).catch(() => {});
   }
 
@@ -1528,16 +1531,22 @@ export class SimulationMode {
   private maybeRestoreBaseline() {
     const c = this.state.comparison;
     const key = seedKeyOf(this.state.seedRoadIds);
-    if (c.baseline || c.running || !this.state.seedRoadIds.length || this.restoreTried.has(key)) return;
+    const studyKey = this.studyKey();
+    if (c.running || !this.state.seedRoadIds.length) return;
+    // A baseline for another study (another road, range or direction) gives way to one saved for this study: with
+    // baselines saved for two roads, the second road showed the first one's baseline as 'The study roads changed since
+    // the baseline' after a reload (p11 browser run: Satara Road after Baba Bhide Bridge)
+    if (c.baseline && this.baselineStudyKey === studyKey) return;
+    if (c.baseline ? this.restoreMissing.has(studyKey) : this.restoreTried.has(key)) return;
     this.restoreTried.add(key);
-    const generation = this.comparisonGeneration, studyKey = this.studyKey();
+    const generation = this.comparisonGeneration, prior = c.baseline;
     this.baselineRestore = (async () => {
       const rec = await this.baselineStore.get(key).catch(() => undefined);
-      if (!rec || rec.v !== BASELINE_STORE_VERSION || rec.studyKey !== studyKey) return false;
+      if (!rec || rec.v !== BASELINE_STORE_VERSION || rec.studyKey !== studyKey) { this.restoreMissing.add(studyKey); return false; }
       // Nothing else happened meanwhile (a baseline saved, a run started, another road selected)
       const now = this.state.comparison;
       // (a change meanwhile, such as the mapped signals arriving, tries again; a baseline saved meanwhile does not)
-      if (generation !== this.comparisonGeneration || now.baseline || now.running || this.studyKey() !== studyKey) { if (!now.baseline) this.restoreTried.delete(key); return false; }
+      if (generation !== this.comparisonGeneration || now.baseline !== prior || now.running || this.studyKey() !== studyKey) { if (now.baseline === prior) this.restoreTried.delete(key); return false; }
       // The existing city it ran on has changed since: not restored (a comparison against it would not be like with like)
       // (tried again on the next change of the network: the mapped signals or roads may still be loading after a reload)
       if ((this.getContext().scenarioId ?? 'current') === rec.baseline.scenarioId && this.currentNetworkKey() !== rec.baseline.networkKey) { this.restoreTried.delete(key); return false; }

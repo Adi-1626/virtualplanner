@@ -111,4 +111,40 @@ describe('the baseline is kept across a page reload', () => {
     await edited.baselineRestore;
     expect(edited.getState().comparison.baseline).toBeNull();
   }, 240000);
+
+  it('with baselines saved for two roads, each road gets its own back after a reload, whichever is studied first (p11 browser run)', async () => {
+    const store = memoryStore();
+    const om = new ObjectManager();
+    om.addMultiple(structuredClone(fx.roads), true);
+    const OTHER = fx.roads.find(r => r.id !== DECK && r.type === 'road' && r.name && !r.isOneWay && (r.laneCount ?? 0) >= 2)!.id;
+    const a = session(om, store);
+    a.selectRoad(DECK, false);
+    await a.runAnalysis();
+    const baseDeck = (await a.captureBaseline(60))!;
+    a.selectRoad(OTHER, false);
+    await a.runAnalysis();
+    const baseOther = (await a.captureBaseline(60))!;
+    expect(store.m.size).toBe(2);
+
+    const b = session(om, store);
+    b.selectRoad(DECK, false);
+    await b.baselineRestore;
+    expect(b.getState().comparison.baseline?.inputs.demandKey).toBe(baseDeck.inputs.demandKey);
+    // The second road: its own baseline, not the first road's under 'The study roads changed since the baseline'
+    b.selectRoad(OTHER, false);
+    await new Promise(r => setTimeout(r, 50));
+    await b.baselineRestore;
+    let c = b.getState().comparison;
+    expect(c.baseline?.inputs.demandKey).toBe(baseOther.inputs.demandKey);
+    expect(c.restoredAt).toBeTruthy();
+    expect(c.staleReason).toBeNull();
+    // And back
+    b.selectRoad(DECK, false);
+    await new Promise(r => setTimeout(r, 50));
+    await b.baselineRestore;
+    c = b.getState().comparison;
+    expect(c.baseline?.inputs.demandKey).toBe(baseDeck.inputs.demandKey);
+    expect(c.staleReason).toBeNull();
+  }, 240000);
 });
+
