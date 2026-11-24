@@ -177,7 +177,11 @@ export interface TrafficComparisonState {
   showingProposal: boolean;
 }
 
+/** Key of a set of studied roads (order-free). */
+export const seedKeyOf = (ids: readonly string[]) => [...ids].sort().join('|');
+
 /** Road analysis of the selected section, from a fixed repeatable run. */
+
 export interface RoadAnalysisState {
   status: 'idle' | 'running' | 'ready' | 'error';
   progress: number;
@@ -188,6 +192,8 @@ export interface RoadAnalysisState {
   demandVph: number | null;
   /** Network, demand and hour the output is for: kept across closing and reopening Simulate while unchanged. */
   key: string | null;
+  /** The studied roads the output is for (sorted ids). A result for other roads is not shown under a new road's name. */
+  seedKey?: string;
   /**
    * The output on show is for a network, demand or hour that has changed since
    * (e.g. a Build edit); its re-run is pending or running. Cleared when the new
@@ -851,6 +857,10 @@ export class SimulationMode {
         this.analysisStale = false;
         this.setState({ analysis: kept.analysis, comparison: { ...this.state.comparison, showingProposal: this.showsProposal(this.state.comparison.baseline) } });
         this.clearAnalysisStopNotice();
+      } else if (shown.output && shown.seedKey !== undefined && shown.seedKey !== seedKeyOf(area.seedRoadIds)) {
+        // Another road's result: never shown under this road's name while its own analysis runs (p11 user test: Baba
+        // Bhide Bridge showed Satara Road's 9 km/h and 163% with "the network changed since this result")
+        this.setState({ analysis: { ...EMPTY_ANALYSIS, status: shown.status === 'running' ? 'running' : 'idle' } });
       } else {
         const outdated = !!shown.output && shown.key !== key;
         if (shown.output && !!shown.outdated !== outdated) this.setState({ analysis: { ...shown, outdated } });
@@ -1328,8 +1338,9 @@ export class SimulationMode {
       this.analysisRun = null;
       this.runningAnalysis = null;
       this.analysisNetworkKey = networkKey;
-      this.keepResult(key, networkKey, { status: 'ready', progress: 1, output, error: null, hour, demandVph, key, hourFactor, timeProfile, fingerprint });
-      this.setState({ analysis: { status: 'ready', progress: 1, output, error: null, hour, demandVph, key, hourFactor, timeProfile, fingerprint },
+      const seedKey = seedKeyOf(area.seedRoadIds);
+      this.keepResult(key, networkKey, { status: 'ready', progress: 1, output, error: null, hour, demandVph, key, hourFactor, timeProfile, fingerprint, seedKey });
+      this.setState({ analysis: { status: 'ready', progress: 1, output, error: null, hour, demandVph, key, hourFactor, timeProfile, fingerprint, seedKey },
         comparison: { ...this.state.comparison, showingProposal: this.showsProposal(this.state.comparison.baseline) } });
       this.clearAnalysisStopNotice();
       this.redrawOverlay();
@@ -1549,7 +1560,7 @@ export class SimulationMode {
     void plan;
     const key = this.analysisKey(), networkKey = this.currentNetworkKey(), t = this.state.timeOfDay;
     const analysis: RoadAnalysisState = { status: 'ready', progress: 1, output, error: null, hour: t.hour, demandVph: current.provenance.vehiclesPerHour * t.factor, key,
-      hourFactor: t.factor, timeProfile: t.status === 'ready' ? 'loaded' : 'unavailable', fingerprint };
+      hourFactor: t.factor, timeProfile: t.status === 'ready' ? 'loaded' : 'unavailable', fingerprint, seedKey: seedKeyOf(this.state.area?.seedRoadIds ?? this.state.seedRoadIds) };
     this.cancelAnalysis();
     this.analysisStale = false;
     this.analysisNetworkKey = networkKey;
