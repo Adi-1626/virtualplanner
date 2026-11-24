@@ -143,23 +143,25 @@ export function getFlyoverConnectionStatus(
   const startCoord = flyover.coordinates[0];
   const endCoord = flyover.coordinates[flyover.coordinates.length - 1];
 
-  let startNodeId: string | undefined;
-  let endNodeId: string | undefined;
-
+  // The node each ramp end sits on: the nearest within the builder's tolerance, preferring a node the flyover's own edges
+  // use. Before p11 the last node found within 6 m won, so a ramp joined to the road it was drawn along could be reported
+  // against a side lane whose node happened to be close by.
+  const ownEdge = (node: { incomingSegments: string[]; outgoingSegments: string[] }) =>
+    [...node.incomingSegments, ...node.outgoingSegments].some(id => network.edges.get(id)?.roadId === flyoverId);
   // Spatial tolerance used in builder is 0.00006 degrees (~6 meters)
   const tol = 0.00006;
-
-  network.nodes.forEach(node => {
-    const startDist = Math.sqrt((node.coordinates[0] - startCoord[0]) ** 2 + (node.coordinates[1] - startCoord[1]) ** 2);
-    if (startDist < tol && Math.abs((node.coordinates[2] || 0) - (startCoord[2] || 0)) < 3.0) {
-      startNodeId = node.id;
+  const pick = (c: number[]): string | undefined => {
+    let best: { id: string; own: boolean; d: number } | null = null as { id: string; own: boolean; d: number } | null;
+    for (const node of network.nodes.values()) {
+      const d = Math.hypot(node.coordinates[0] - c[0], node.coordinates[1] - c[1]);
+      if (d >= tol || Math.abs((node.coordinates[2] || 0) - (c[2] || 0)) >= 3.0) continue;
+      const own = ownEdge(node);
+      if (!best || (own && !best.own) || (own === best.own && d < best.d)) best = { id: node.id, own, d };
     }
-
-    const endDist = Math.sqrt((node.coordinates[0] - endCoord[0]) ** 2 + (node.coordinates[1] - endCoord[1]) ** 2);
-    if (endDist < tol && Math.abs((node.coordinates[2] || 0) - (endCoord[2] || 0)) < 3.0) {
-      endNodeId = node.id;
-    }
-  });
+    return best?.id;
+  };
+  const startNodeId = pick(startCoord);
+  const endNodeId = pick(endCoord);
 
   if (!startNodeId || !endNodeId) {
     return { connected: false, startConnected: !!startNodeId, endConnected: !!endNodeId };
@@ -193,4 +195,24 @@ export function getFlyoverConnectionStatus(
     startNodeId,
     endNodeId
   };
+}
+
+/**
+ * The roads each ramp end is joined to (p11 user test: a flyover reported "Connected" while its end ramp had joined a
+ * side lane instead of the road it was drawn along; the planner could not see that). Names, de-duplicated, the flyover
+ * itself left out.
+ */
+export function rampJoins(
+  flyoverId: string,
+  conn: { startNodeId?: string; endNodeId?: string },
+  network: TrafficNetwork | null,
+  nameOf: (roadId: string) => string,
+): { start: string[]; end: string[] } {
+  const at = (nodeId?: string): string[] => {
+    const node = nodeId ? network?.nodes.get(nodeId) : undefined;
+    if (!node || !network) return [];
+    const ids = new Set([...node.incomingSegments, ...node.outgoingSegments].map(id => network.edges.get(id)?.roadId).filter((r): r is string => !!r && r !== flyoverId));
+    return [...new Set([...ids].map(nameOf))];
+  };
+  return { start: at(conn.startNodeId), end: at(conn.endNodeId) };
 }

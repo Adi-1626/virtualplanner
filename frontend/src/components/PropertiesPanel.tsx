@@ -21,7 +21,7 @@ type BuildingSplitKey = typeof BUILDING_SPLIT_KEYS[number];
 import { findNearestTrack, normalizeHeading, resolveStationHeading } from '../engine/objects/stationAlignment';
 import type { UndergroundAlignmentObject, UtilityType, StreetElementObject } from '../engine/objects/types';
 import type { CityObject, RoadObject, BuildingObject, JunctionObject, UtilityObject, FlyoverObject, MetroLineObject, MetroStationObject, BuildingCategory, BuildingState, ZoneObject, GatewayObject } from '../engine/objects/types';
-import { getFlyoverConnectionStatus } from '../engine/objects/flyoverHelper';
+import { getFlyoverConnectionStatus, rampJoins } from '../engine/objects/flyoverHelper';
 import { commitRoadFieldEdit, flyoverFieldUpdates } from '../engine/editing/roadEdits';
 import { LaneScopeControl } from './LaneScopeControl';
 import { JunctionOffer } from './JunctionPanel';
@@ -1315,6 +1315,15 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
     if (isFlyover) engineInstance.requestTrafficNetwork();
   }, [isFlyover]);
   const [tick, setTick] = useState(0);
+  // The city-wide graph is built in the background: until it is there the connection is "being checked", not "disconnected"
+  // (p11 user test: a freshly drawn, joined flyover read "disconnected … redraw the ends" for its first seconds)
+  const [, setNetTick] = useState(0);
+  const networkReady = !!engineInstance.getTrafficNetwork();
+  useEffect(() => {
+    if (!isFlyover || networkReady) return;
+    const t = setInterval(() => { if (engineInstance.getTrafficNetwork()) setNetTick(n => n + 1); }, 700);
+    return () => clearInterval(t);
+  }, [isFlyover, networkReady]);
 
   useEffect(() => {
     // If the traffic simulation is actively running, update stats every 500ms
@@ -1331,6 +1340,7 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
 
   const network = engineInstance.getTrafficNetwork();
   const conn = getFlyoverConnectionStatus(r, network);
+  const joins = rampJoins(r.id, conn, network, id => { const o = engineInstance.objects.getById(id) as { name?: string } | undefined; return o?.name || 'an unnamed road'; });
 
   const capacity = (r as any).trafficCapacity || (r.laneCount * 1000);
   const activeVehicles = engineInstance.simulations.getActiveVehicleCount(r.id);
@@ -1576,7 +1586,9 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
           {/* Connection Status */}
           <div className="flex flex-col gap-1">
             <span className="text-xs text-slate-400 uppercase font-semibold">Connectivity</span>
-            {conn.connected ? (
+            {!network ? (
+              <span className="text-xs text-slate-400 flex items-center gap-1" data-testid="flyover-connection-checking">Checking how the ramps join the road network…</span>
+            ) : conn.connected ? (
               <span className="text-xs text-emerald-400 font-medium flex items-center gap-1">
                 ● Traffic connection: Connected
               </span>
@@ -1590,6 +1602,11 @@ const RoadEditor: React.FC<{ r: RoadObject | FlyoverObject; onUpdate: (field: st
                     ? "The start ramp is not joined to a road in the traffic network."
                     : "The end ramp is not joined to a road in the traffic network."}
                 </span>
+              </span>
+            )}
+            {network && (joins.start.length > 0 || joins.end.length > 0) && (
+              <span className="text-xs text-slate-400" data-testid="flyover-ramp-joins">
+                Start ramp joins {joins.start.length ? joins.start.join(', ') : 'no road'} · end ramp joins {joins.end.length ? joins.end.join(', ') : 'no road'}. Check these are the roads the flyover is meant to carry.
               </span>
             )}
           </div>

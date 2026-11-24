@@ -375,10 +375,12 @@ def save_version(sid: str, body: VersionIn, db: Session = Depends(get_db)):
 @router.get("/scenarios/{sid}/versions")
 def list_versions(sid: str, db: Session = Depends(get_db)):
     _proposal(db, sid)
-    head = change_set_hash(head_change_set(db, sid))
+    head_set = head_change_set(db, sid)
+    head = change_set_hash(head_set)
     versions = (db.query(ScenarioVersionEntity).filter(ScenarioVersionEntity.scenario_id == sid)
                 .order_by(ScenarioVersionEntity.number.desc()).all())
-    return {"scenarioId": sid, "headChangeSetHash": head, "baselineFingerprint": baseline_fingerprint(db),
+    # headChangeCount: a new, empty proposal has nothing to save (p11: it read "Unsaved changes" before any edit)
+    return {"scenarioId": sid, "headChangeSetHash": head, "headChangeCount": len(head_set), "baselineFingerprint": baseline_fingerprint(db),
             "versions": [_version_dict(v) for v in versions]}
 
 

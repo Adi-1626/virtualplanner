@@ -94,6 +94,18 @@ const atEndOf = (r: RoadObject, pt: readonly number[]) => [r.coordinates[0], r.c
 const isDrawnStructure = (r: RoadObject) => ((r as { type: string }).type === 'flyover' || (r as { type: string }).type === 'metro_flyover') && !r.osmProvenance;
 const nearStructureEnd = (r: RoadObject, pt: readonly number[], tol: number) =>
   [r.coordinates[0], r.coordinates[r.coordinates.length - 1]].some(e => Math.hypot(e[0] - pt[0], e[1] - pt[1]) <= tol);
+/** Same as the drawing's END_CLEAR_M (EditingEngine): a crossing this close to the other road's own end is that end. */
+const STRUCTURE_END_CLEAR_M = 1;
+/**
+ * A drawn structure's line passing through (within 1 m of) the end of another road, away from the structure's own ends:
+ * that road ends there on the road under the structure, not on its ramp. The drawing does not flag it as a crossing
+ * (EditingEngine "through the other road's own end"), so the builder must not join it either. p11 user test: a side lane
+ * ending on Satara Road 0.6 m inside a Katraj Chowk flyover's ramp line was joined to the ramp at 1 m height and fed it
+ * ~700 veh/h.
+ */
+const structureOverOtherEnd = (structure: RoadObject, other: RoadObject, pt: readonly number[], tol: number) =>
+  isDrawnStructure(structure) && !nearStructureEnd(structure, pt, tol)
+  && [other.coordinates[0], other.coordinates[other.coordinates.length - 1]].some(e => planDistM(e, pt) < STRUCTURE_END_CLEAR_M);
 
 export class TrafficNetworkBuilder {
   private readonly spatialTolerance = JOIN_TOLERANCE_DEG;
@@ -293,6 +305,7 @@ export class TrafficNetworkBuilder {
 
               // A crossing at a shared node is a junction; the vertex checks below join it
               if (gradeSeparated && shared!.has(vertexKey(crossing))) continue;
+              if (structureOverOtherEnd(roadA, roadB, crossing, this.spatialTolerance) || structureOverOtherEnd(roadB, roadA, crossing, this.spatialTolerance)) continue;
 
               if (isHeldApart(crossing, FLAG_MATCH_M)) {
                 bridgeTunnelCrossingsCount++;

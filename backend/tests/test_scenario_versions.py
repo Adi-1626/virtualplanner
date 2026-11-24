@@ -274,3 +274,12 @@ def test_concurrent_modifies_of_one_base_object_all_succeed(client):
         assert codes == [200] * 16
     rows = [c for c in client.get("/api/scenario-changes", params={"scenario_id": sid}).json() if c["objectId"] == ids[0]]
     assert len(rows) == 1 and rows[0]["op"] == "modify"
+
+
+def test_new_empty_proposal_has_nothing_to_save(client):
+    """p11 user test: a just-created proposal read "Unsaved changes" before any edit."""
+    sid = _scenario(client, "Empty")
+    body = client.get(f"/api/scenarios/{sid}/versions").json()
+    assert body["versions"] == [] and body["headChangeCount"] == 0
+    assert client.post("/api/objects/batch", json=[_obj(f"{sid}_o1", sid)]).status_code == 201
+    assert client.get(f"/api/scenarios/{sid}/versions").json()["headChangeCount"] == 1

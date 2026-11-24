@@ -59,7 +59,10 @@ export type ConnectionState = 'online' | 'saving' | 'offline';
 
 type StateListener = (state: ConnectionState) => void;
 
-let activeRequests = 0;
+let activeWrites = 0;
+
+/** Writes in flight (what the header's "Saving…" reflects); exported for tests. */
+export const pendingWrites = () => activeWrites;
 
 class ConnectionStateStore {
   private state: ConnectionState = 'online';
@@ -164,8 +167,10 @@ async function request<T = void>(
 
   const isWrite = (init.method ?? 'GET') !== 'GET';
 
-  activeRequests++;
-  if (isWrite) connectionState.set('saving');
+  // "Saving…" counts writes only, and every way a write ends clears it: before p11 a slow read in flight (an area's roads,
+  // a dataset) kept the header on "Saving…" after the save itself had finished, and an aborted write never cleared it.
+  if (isWrite) { activeWrites++; connectionState.set('saving'); }
+  const writeDone = () => { if (isWrite) activeWrites = Math.max(0, activeWrites - 1); };
 
   let res: Response;
   try {
@@ -178,20 +183,22 @@ async function request<T = void>(
     });
   } catch (networkErr) {
     // fetch itself threw — network unreachable, DNS failure, etc.
-    activeRequests--;
-    if (isAbortOrTimeout(networkErr)) throw networkErr;
+    writeDone();
+    if (isAbortOrTimeout(networkErr)) {
+      if (activeWrites === 0 && connectionState.current === 'saving') connectionState.set('online');
+      throw networkErr;
+    }
     connectionState.set('offline');
     // The browser's own "Failed to fetch" means nothing to a planner (Final QA 2026-11-21: it was on screen in
     // Explore, Projects → Data, Reports and the Data catalogue with the server stopped).
     throw new Error(SERVER_UNREACHABLE);
   }
 
-  activeRequests--;
-  // Any HTTP response (even an error status) proves the server is reachable,
-  // so a previous "offline" state is cleared here. HTTP errors are reported
-  // to the caller via ApiError rather than by marking the connection offline.
-  if (activeRequests === 0) {
-    connectionState.set('online');
+  writeDone();
+  // Any HTTP response (even an error status) proves the server is reachable, so a previous "offline" state is cleared
+  // here; "Saving…" stays only while another write is still in flight. HTTP errors reach the caller as ApiError.
+  if (activeWrites === 0 ? connectionState.current !== 'online' : connectionState.isCurrentlyOffline) {
+    connectionState.set(activeWrites === 0 ? 'online' : 'saving');
   }
 
   if (!res.ok) {

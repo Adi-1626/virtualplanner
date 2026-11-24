@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { History, Save, RotateCcw } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import type { ScenarioVersion, ScenarioVersionList } from '../engine/scenarios/versions';
-import { assumptionDifferences } from '../engine/scenarios/versions';
+import { assumptionDifferences, hasUnsavedChanges } from '../engine/scenarios/versions';
 import { ConfirmDialog } from './ui/ConfirmDialog';
 
 /**
@@ -75,7 +75,7 @@ export const ScenarioVersions: React.FC<{ scenarioId: string }> = ({ scenarioId 
 
   const versions = list?.versions ?? [];
   const latest = versions[0];
-  const unsaved = !!list && (!latest || latest.changeSetHash !== list.headChangeSetHash);
+  const unsaved = hasUnsavedChanges(list);
   const now = engineInstance.scenarioAssumptions();
 
   return (
@@ -83,7 +83,7 @@ export const ScenarioVersions: React.FC<{ scenarioId: string }> = ({ scenarioId 
       <div className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
         <History size={13} className="text-indigo-400" /> Versions
         <span className={`ml-auto text-[11px] ${unsaved ? 'text-amber-300' : 'text-slate-500'}`} data-testid="versions-status">
-          {list ? (unsaved ? 'Unsaved changes' : `At version ${latest?.number}`) : ''}
+          {list ? (unsaved ? 'Unsaved changes' : latest ? `At version ${latest.number}` : 'No changes yet') : ''}
         </span>
       </div>
       <div className="flex gap-1.5">

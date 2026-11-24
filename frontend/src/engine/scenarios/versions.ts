@@ -23,6 +23,8 @@ export interface ScenarioVersionList {
   scenarioId: string;
   /** Hash of the proposal's current change set: equal to a version's when nothing changed since it. */
   headChangeSetHash: string;
+  /** Changes in the proposal now (0 for a new, empty proposal: nothing to save). */
+  headChangeCount?: number;
   baselineFingerprint: string;
   versions: ScenarioVersion[];
 }
@@ -40,4 +42,12 @@ export function assumptionDifferences(a: Record<string, unknown>, b: Record<stri
   const show = (v: unknown) => (v === undefined ? '—' : typeof v === 'string' ? v : JSON.stringify(v));
   const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
   return keys.filter(k => JSON.stringify(a[k]) !== JSON.stringify(b[k])).map(k => ({ key: k, label: ASSUMPTION_LABELS[k] ?? k, a: show(a[k]), b: show(b[k]) }));
+}
+
+/** Whether the proposal has changes no version holds: differs from the latest version, or has any change and no version. */
+export function hasUnsavedChanges(list: Pick<ScenarioVersionList, 'headChangeSetHash' | 'headChangeCount' | 'versions'> | null): boolean {
+  if (!list) return false;
+  const latest = list.versions[0];
+  if (latest) return latest.changeSetHash !== list.headChangeSetHash;
+  return (list.headChangeCount ?? 1) > 0;
 }
