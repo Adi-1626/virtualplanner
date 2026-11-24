@@ -589,6 +589,9 @@ export function compileAreaDemand(context: SimulationContext, area: StudyArea, r
 /** The calibrated window shipped with the app (backend/data/calibrated_flows). */
 export const DEFAULT_CALIBRATED_EDGE_FLOWS = 'pune_central_window_v1';
 export async function fetchCalibratedEdgeFlows(id = DEFAULT_CALIBRATED_EDGE_FLOWS): Promise<CalibratedEdgeFlows> {
+  // Not shipped (TRAFFIC_CALIBRATION_P9.md): ask what is installed first, so its absence is not a failed request in the console
+  const installed = await apiGet<{ files: string[] }>('/api/calibrated-flows');
+  if (!installed.files.includes(id)) throw new Error(`calibrated-flow file ${id} is not installed`);
   const doc = await apiGet<{ id: string; window: { bounds: CalibratedEdgeFlows['bounds'] }; periods: CalibratedEdgeFlows['periods'] }>(`/api/calibrated-flows/${encodeURIComponent(id)}`);
   if (!doc?.window?.bounds || !doc.periods) throw new Error(`Calibrated flows ${id}: no window or periods`);
   return { id: doc.id, bounds: doc.window.bounds, periods: doc.periods };

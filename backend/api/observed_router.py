@@ -31,6 +31,12 @@ def get_estimated_traffic(file_id: str):
         raise HTTPException(status_code=500, detail=f"Invalid estimated-traffic file {file_id!r}: {exc}")
 
 
+@calibrated_flows_router.get("")
+def list_calibrated_flows():
+    """Calibrated-flow files installed (none is shipped: the app asks first, so a missing file is not a failed request)."""
+    return {"files": calibrated_flows.list_files()}
+
+
 @calibrated_flows_router.get("/{file_id}")
 def get_calibrated_flows(file_id: str):
     try:
