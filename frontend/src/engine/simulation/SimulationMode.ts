@@ -841,14 +841,17 @@ export class SimulationMode {
     this.stopTraffic();
     try {
       const roads = this.getRoads();
-      const { exploreSeeds, closed } = this.studySeeds(roads);
+      const { exploreSeeds, closed, sourcePoints, sourceRoadIds } = this.studySeeds(roads);
+      // A closed road's area is measured from its ends, as the baseline's was from the road: not from the whole of the roads that joined it
+      const from = sourcePoints.length ? { sourcePoints, sourceRoadIds } : {};
       const area = this.explorer.explore(roads, this.revision, {
         seedRoadIds: exploreSeeds,
         rangeMeters: this.state.rangeMeters,
         direction: this.state.direction,
+        ...from,
       });
       // The neighbourhood simulated vehicle by vehicle: the same network, a shorter range from the road
-      const corridor = area.rangeMeters <= CORRIDOR_RANGE_M ? area : this.explorer.explore(roads, this.revision, { seedRoadIds: area.seedRoadIds, rangeMeters: CORRIDOR_RANGE_M, direction: this.state.direction });
+      const corridor = area.rangeMeters <= CORRIDOR_RANGE_M ? area : this.explorer.explore(roads, this.revision, { seedRoadIds: area.seedRoadIds, rangeMeters: CORRIDOR_RANGE_M, direction: this.state.direction, ...from });
       // Seeds deleted from the network drop out here
       const section = area.seedRoadIds.length ? roadSection(area, new Map(roads.map(r => [r.id, r])), area.seedRoadIds) : null;
       // A closed road stays the study (its baseline and name); the area and section are mapped from the roads that joined it
@@ -900,24 +903,26 @@ export class SimulationMode {
    * roads within 25 m of its ends (the roads that joined it), and the deleted ones as closed. A studied road never seen
    * in the network is left to the explorer (which reports it missing).
    */
-  private studySeeds(roads: readonly DrivableObject[]): { exploreSeeds: string[]; closed: { id: string; name: string }[] } {
+  private studySeeds(roads: readonly DrivableObject[]): { exploreSeeds: string[]; closed: { id: string; name: string }[]; sourcePoints: number[][]; sourceRoadIds: string[] } {
     const want = this.state.seedRoadIds;
     const byId = new Map<string, DrivableObject>();
     const wanted = new Set(want);
     for (const r of roads) if (wanted.has(r.id)) byId.set(r.id, r);
     for (const [id, r] of byId) this.seedMemory.set(id, { name: r.name || '', coordinates: r.coordinates });
     const missing = want.filter(id => !byId.has(id) && this.seedMemory.has(id));
-    if (!missing.length) return { exploreSeeds: want, closed: [] };
+    if (!missing.length) return { exploreSeeds: want, closed: [], sourcePoints: [], sourceRoadIds: [] };
     const seeds = new Set(want.filter(id => byId.has(id)));
+    const sourcePoints: number[][] = [];
     for (const id of missing) {
       const c = this.seedMemory.get(id)!.coordinates;
       for (const p of [c[0], c[c.length - 1]]) {
+        sourcePoints.push([p[0], p[1]]);
         const near = this.explorer.nearestRoad(roads as DrivableObject[], this.revision, p[0], p[1], 25);
         if (near) seeds.add(near);
       }
     }
-    if (!seeds.size) return { exploreSeeds: want, closed: [] };
-    return { exploreSeeds: [...seeds], closed: missing.map(id => ({ id, name: this.seedMemory.get(id)!.name })) };
+    if (!seeds.size) return { exploreSeeds: want, closed: [], sourcePoints: [], sourceRoadIds: [] };
+    return { exploreSeeds: [...seeds], closed: missing.map(id => ({ id, name: this.seedMemory.get(id)!.name })), sourcePoints, sourceRoadIds: [...byId.keys()] };
   }
 
   /** Runs the analysis once a road has been picked and its area is fully mapped (the live view only starts on request). */

@@ -30,6 +30,7 @@ describe('Simulate: the studied road deleted in the proposal', () => {
     await mode.runAnalysis();
     const base = await mode.captureBaseline(60);
     expect(base).toBeTruthy();
+    const baseArea = new Set(mode.getState().area!.segments.map(x => x.roadId));
 
     om.delete(DECK, true);
     mode.networkChanged();
@@ -42,6 +43,13 @@ describe('Simulate: the studied road deleted in the proposal', () => {
     expect(st.area!.seedRoadIds).not.toContain(DECK);
     expect(st.area!.seedRoadIds.length).toBeGreaterThan(0);
     expect(st.comparison.staleReason).toBeNull();
+    // The same area as the baseline's less the closed road: measured from the whole of the roads that joined it, the
+    // area grew by their length and the closure was compared on other roads and trips (Baba Bhide Bridge: 416 more
+    // links, Dandekar Bridge beside it lost 638 veh/h)
+    // (by road: a road the closed one split in two is one stretch now, under another key)
+    const nowArea = new Set(st.area!.segments.map(x => x.roadId));
+    expect([...nowArea].filter(k => !baseArea.has(k))).toEqual([]);
+    expect([...baseArea].filter(k => !nowArea.has(k))).toEqual([DECK]);
 
     await mode.runComparison();
     const c = mode.getState().comparison.result!;

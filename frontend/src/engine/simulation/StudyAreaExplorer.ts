@@ -128,6 +128,15 @@ export interface StudyAreaOptions {
   seedRoadIds: string[];
   rangeMeters: number;
   direction: StudyDirection;
+  /**
+   * Where the area is measured from instead of the seed roads' own nodes: the ends of a studied road the proposal
+   * deleted (a closure). Measured from the whole of the roads that joined it, the area grew by their length (Baba
+   * Bhide Bridge: 416 more links than the baseline's area), so the closure was compared on another network and other
+   * trips, and Dandekar Bridge lost 638 veh/h when the bridge beside it closed (p11 user test).
+   */
+  sourcePoints?: readonly (readonly number[])[];
+  /** With `sourcePoints`: roads measured from their own nodes as usual (the studied roads the proposal kept). */
+  sourceRoadIds?: readonly string[];
 }
 
 export interface StudyArea extends StudyAreaOptions {
@@ -357,7 +366,7 @@ export class StudyAreaExplorer {
     let build = this.cachedBuild;
     let reusedBuild = !!build && build.revision === revision && boundsContain(build.box, needed);
     if (!reusedBuild) build = this.compile(index, revision, needed);
-    let grown = this.grow(build!, seeds, range, options.direction);
+    let grown = this.grow(build!, seeds, range, options.direction, options.sourcePoints, options.sourceRoadIds);
     if (!grown) {
       throw new Error('The selected road has no drivable length.');
     }
@@ -368,10 +377,10 @@ export class StudyAreaExplorer {
     if (!boundsContain(build!.box, reach)) {
       build = this.compile(index, revision, unionBounds(needed, reach));
       reusedBuild = false;
-      grown = this.grow(build, seeds, range, options.direction)!;
+      grown = this.grow(build, seeds, range, options.direction, options.sourcePoints, options.sourceRoadIds)!;
     }
 
-    return this.describe(index, build!, grown, { seedRoadIds: seeds, rangeMeters: range, direction: options.direction }, reusedBuild);
+    return this.describe(index, build!, grown, { seedRoadIds: seeds, rangeMeters: range, direction: options.direction, ...(options.sourcePoints ? { sourcePoints: options.sourcePoints, sourceRoadIds: options.sourceRoadIds ?? [] } : {}) }, reusedBuild);
   }
 
   /** The drivable road nearest to a point, within `maxDistM`, or null. */
@@ -468,11 +477,24 @@ export class StudyAreaExplorer {
   }
 
   /** Grows outward from the seeds and decides which road stretches are in the area. */
-  private grow(build: LocalBuild, seeds: string[], range: number, direction: StudyDirection) {
+  private grow(build: LocalBuild, seeds: string[], range: number, direction: StudyDirection, sourcePoints?: readonly (readonly number[])[], sourceRoadIds?: readonly string[]) {
     const net = build.network;
     const seedSet = new Set(seeds);
     const sources = new Set<string>();
-    net.edges.forEach(e => {
+    if (sourcePoints?.length) {
+      // The junction nearest each point (within 30 m), so the area is the one the deleted road had
+      for (const p of sourcePoints) {
+        let best: string | null = null, bestD = 30;
+        net.nodes.forEach((n, id) => {
+          const d = Math.hypot((n.coordinates[0] - p[0]) * 111320 * Math.cos(p[1] * Math.PI / 180), (n.coordinates[1] - p[1]) * 111320);
+          if (d <= bestD && n.incomingSegments.length + n.outgoingSegments.length > 0) { best = id; bestD = d; }
+        });
+        if (best) sources.add(best);
+      }
+      const own = new Set(sourceRoadIds ?? []);
+      net.edges.forEach(e => { if (own.has(e.roadId)) { sources.add(e.fromNodeId); sources.add(e.toNodeId); } });
+    }
+    if (sources.size === 0) net.edges.forEach(e => {
       if (seedSet.has(e.roadId)) {
         sources.add(e.fromNodeId);
         sources.add(e.toNodeId);
@@ -492,9 +514,11 @@ export class StudyAreaExplorer {
 
     net.edges.forEach(e => {
       const key = segmentKey(e.id);
-      const isSeed = seedSet.has(e.roadId);
       const dDown = down.get(e.fromNodeId) ?? Infinity;
       const dUp = up.get(e.toNodeId) ?? Infinity;
+      // Measured from points (a closed road's ends), the roads that joined it are in the area only as far as the range
+      // reaches, as they were in the baseline's
+      const isSeed = seedSet.has(e.roadId) && (!sourcePoints?.length || dDown < range || dUp < range);
       if (isSeed || dDown < range || dUp < range) withinRange.set(key, { roadId: e.roadId, nodes: [e.fromNodeId, e.toNodeId] });
 
       const inDown = wantDown && dDown < range;
