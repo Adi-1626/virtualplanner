@@ -21,6 +21,7 @@ import { entryCapacityPcu, roundaboutChecks, roundaboutSizes, roundaboutSpec } f
 import { pathChecks } from '../streetDesign/paths';
 import { DEFAULT_STREET_SETTINGS, placeStreetElement, type StreetToolSettings } from '../streetDesign/placement';
 import { distM } from '../streetDesign/geom';
+import { TrafficMicroSim } from '../simulation/TrafficMicroSim';
 
 /**
  * Street design tools (docs/urbanos/DESIGN_TOOLS_P7.md): #1 junction control, #2 crossings, #3 bus lane / stops,
@@ -381,7 +382,7 @@ describe('#7 roundabouts (IRC:65-2017)', () => {
     expect(st(roundaboutChecks(el(32), objs), 'rb-fit')).toBe('unknown');
     expect(st(roundaboutChecks(el(32, 'urban_single', 30), objs), 'rb-fit')).toBe('fail');
     expect(st(roundaboutChecks(el(32), objs), 'rb-splitter')).toBe('unknown');
-    expect(roundaboutChecks(el(32), objs).find(c => c.id === 'rb-model')!.message).toMatch(/micro-simulation does not model roundabouts/);
+    expect(roundaboutChecks(el(32), objs).find(c => c.id === 'rb-model')!.message).toMatch(/micro-simulation the junction has no signal and each entry gives way to traffic from its right/);
   });
   it('downstream: the signalised junction becomes a roundabout in the proposal assignment (no signal, IRC:65 entry capacity); base keeps its signal; Undo; save → reload', () => {
     const { om, history, editing } = setup();
@@ -409,6 +410,31 @@ describe('#7 roundabouts (IRC:65-2017)', () => {
     expect(compile(reloaded(om.viewOf(P)), P, SP).key).toBe(p.key);
     history.undo();
     expect(sim(om, P, SP).key).toBe(b.key);
+  });
+  it('micro-simulation: the junction runs as a roundabout (no signal, entries give way to the right), traffic flows on every arm, base keeps its signal', () => {
+    const { om, editing } = setup();
+    const SP: [number, number][] = [[JX[0], JX[1]]];
+    place(editing, 'place_roundabout', [pt(402, 1)]);
+    const run = (sid: string) => {
+      const c = sim(om, sid, SP);
+      const map = new Map(c.roads.map(r => [r.id, r]));
+      const node = (x: number, y: number) => [...c.area.network.nodes.values()].sort((a, q) => distM(a.coordinates, pt(x, y)) - distM(q.coordinates, pt(x, y)))[0].id;
+      const ends = [node(-400, 0), node(1200, 0), node(400, -400), node(400, 400)];
+      // 300 veh/h from every arm to every other arm (2,400 veh/h through the junction)
+      const trips = ends.flatMap(f => ends.filter(t => t !== f).map(t => ({ fromNodeId: f, toNodeId: t, vehiclesPerHour: 200, kind: 'car' as const })));
+      const ms = new TrafficMicroSim(c.area, map, { demandLevel: 1, seed: 3, signalPoints: SP, demandTrips: trips });
+      for (let i = 0; i < 3600; i++) ms.step();
+      return { ms, m: ms.getMetrics(), into: ms.linkEnds().filter(l => distM(l.to, JX) < 3 && distM(l.from, JX) >= 3).map(l => l.id) };
+    };
+    const p = run(P), b = run('base');
+    expect(p.ms.roundaboutJunctions.size).toBe(1);
+    expect(b.ms.roundaboutJunctions.size).toBe(0);
+    expect(p.into.length).toBeGreaterThan(0);
+    expect(p.into.every(id => p.ms.signalStateOf(id) === null)).toBe(true);
+    expect(b.into.some(id => b.ms.signalStateOf(id) !== null)).toBe(true);
+    // 15 simulated minutes: trips complete from the roundabout and nothing is left gridlocked there
+    expect(p.m.completedTrips).toBeGreaterThan(300);
+    expect(p.m.accounting.gridlockedNow).toBe(0);
   });
 });
 

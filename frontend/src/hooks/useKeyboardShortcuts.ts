@@ -78,6 +78,8 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
     const onKeyDown = (e: KeyboardEvent) => {
       // Modal dialogs own the keyboard while open (they handle Esc/Enter themselves)
       if (document.querySelector('[aria-modal="true"]')) return;
+      // A popover already handled the key (Esc closing it must not also close the study or cancel a drawing)
+      if (e.defaultPrevented) return;
       if (isTypingTarget(e.target)) return;
 
       const { editing, history, selection } = engineInstance;

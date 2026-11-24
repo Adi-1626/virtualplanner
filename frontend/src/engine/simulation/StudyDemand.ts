@@ -46,6 +46,15 @@ export interface DemandComponents {
   /** Edge roads whose flows come from the city-wide estimated traffic (estimated, not measured). */
   estimatedCordonPoints?: number;
   throughIncluded?: boolean;
+  /**
+   * The estimated zone land use added inside the area (AreaDemand estimatedLandUse; estimated, not measured): residents and
+   * jobs the CMP-2024 zones imply in the area, the vehicles added per end (after what the project already makes there),
+   * the street cells they were put on and the activity with no street within reach (left out).
+   */
+  /** After matching to the estimated link flows (AreaDemandMatch.ts): matched / prior total, and the match report. */
+  matchScale?: number;
+  estimateMatch?: import('./AreaDemandMatch').EstimateMatch;
+  landUse?: { residents: number; employees: number; originVph: number; destinationVph: number; projectOriginVph: number; projectDestinationVph: number; cells: number; noStreet: number };
 }
 /** A place that makes or attracts trips: its vehicles per hour by class. */
 export interface ActivityEndpoint { id: string; point: [number, number, number]; flow: number; vehicles: [VehicleKind, number][]; /** A project gateway: its flows already come from or go beyond the area. */ gateway?: boolean; /** A residual zone: the (clipped) polygon its activity is spread over. */ spread?: [number, number, number][] }
@@ -56,6 +65,8 @@ export interface DemandPlan {
     from: [number, number, number]; to: [number, number, number]; vehiclesPerHour: number; kind: VehicleKind; viaRoadId?: string;
     /** Links (simulator link ids) the trip must use in this order: a count-seeded trip's stop-line approach and exit. */
     viaLinkIds?: string[];
+    /** Which part of the area demand the trip belongs to (AreaDemand.ts), so the parts can be re-totalled after matching. */
+    part?: 'internal' | 'outbound' | 'inbound' | 'through';
   }[];
 }
 const DEFAULT_SPLIT: ModeSplit = { car: .25, twoWheeler: .35, bus: .2, metro: .1, walking: .08, other: .02 };
@@ -73,6 +84,18 @@ const distance = (a: readonly number[], b: readonly number[]) => Math.hypot((a[0
 
 /** Employees' daily motorised trips: the model's 1.5 trips per employee, at PCMC's motorised share of all trips (CMP 2018 Table 6). */
 const EMPLOYEE_MOTORISED_DAILY = 1.5 * PUNE_TRIP_RATES.motorisedTripsPerResident / PUNE_TRIP_RATES.allTripsPerResident;
+
+/**
+ * Peak-hour vehicles by class made by `residents` and `employees` (PCMC rates): residents leave in the AM peak and
+ * return in the PM peak, jobs the reverse. `origin` / `destination` are the two ends' vehicles for the period.
+ */
+export function landUseVehicles(residents: number, employees: number, period: TimePeriod): { origin: [VehicleKind, number][]; destination: [VehicleKind, number][] } | null {
+  if (period !== 'AM_Peak' && period !== 'PM_Peak') return null;
+  const share = PUNE_TRIP_RATES.peakHourShare;
+  const home = vehicleTripsByClass(residents * PUNE_TRIP_RATES.motorisedTripsPerResident * share);
+  const work = vehicleTripsByClass(employees * EMPLOYEE_MOTORISED_DAILY * share);
+  return period === 'AM_Peak' ? { origin: home, destination: work } : { origin: work, destination: home };
+}
 
 /** Vehicles per class for person trips under an explicit (user or gateway) mode split. */
 function vehiclesFromSplit(personTrips: number, split: ModeSplit): [VehicleKind, number][] {
@@ -96,15 +119,12 @@ export function activityEndpoints(context: SimulationContext, bounds?: Bounds): 
     const flow = vehicles.reduce((n, [, v]) => n + v, 0);
     if (flow > 0 && Number.isFinite(flow)) (role === 'origin' ? origins : destinations).push({ id, point, flow, vehicles, ...(gateway ? { gateway } : {}), ...(spread ? { spread } : {}) });
   };
-  const peak = period === 'AM_Peak' || period === 'PM_Peak';
-  const share = PUNE_TRIP_RATES.peakHourShare;
   /** Residents leave in the AM peak and return in the PM peak; jobs the reverse. */
   const addActivity = (id: string, point: [number, number, number], residents: number, employees: number, spread?: [number, number, number][]) => {
-    if (!peak) return;
-    const home = vehicleTripsByClass(residents * PUNE_TRIP_RATES.motorisedTripsPerResident * share);
-    const work = vehicleTripsByClass(employees * EMPLOYEE_MOTORISED_DAILY * share);
-    add(period === 'AM_Peak' ? 'origin' : 'destination', id, point, home, false, spread);
-    add(period === 'AM_Peak' ? 'destination' : 'origin', id, point, work, false, spread);
+    const v = landUseVehicles(residents, employees, period);
+    if (!v) return;
+    add('origin', id, point, v.origin, false, spread);
+    add('destination', id, point, v.destination, false, spread);
   };
   const inBounds = (p: readonly number[]) => !bounds || (p[0] >= bounds.minLng && p[0] <= bounds.maxLng && p[1] >= bounds.minLat && p[1] <= bounds.maxLat);
   const buildings = (context.buildings ?? []).filter(b => b.coordinates.length && inBounds(centroid(b.coordinates)));

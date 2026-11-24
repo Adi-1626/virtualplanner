@@ -55,6 +55,12 @@ const JUNCTION_SIZE: Record<JunctionKind, number> = {
 };
 
 const BOUNDARY_LABEL: Record<BoundaryKind, string> = { entry: 'IN', exit: 'OUT', entry_exit: 'IN/OUT' };
+/** Edge crossings closer than this share one label (their dots stay separate). */
+const BOUNDARY_LABEL_GROUP_M = 150;
+function groundDistanceM(a: readonly number[], b: readonly number[]): number {
+  const k = 111320;
+  return Math.hypot((a[0] - b[0]) * k * Math.cos((a[1] * Math.PI) / 180), (a[1] - b[1]) * k);
+}
 
 /** Height above the road surface markers are drawn at, so they are not hidden inside the road mesh. */
 const LIFT_M = 1.2;
@@ -452,20 +458,28 @@ export class StudyAreaVisualizer {
       }
     }
 
+    // One dot per edge crossing; one label per group of crossings within BOUNDARY_LABEL_GROUP_M (a dual carriageway,
+    // a road and its slip lane, a junction just outside the edge): side by side their labels overlapped (p10 A06)
+    const groups: { c: readonly number[]; kinds: Set<BoundaryKind>; n: number }[] = [];
     for (const b of area.boundary) {
       const color = Color.fromCssColorString(STUDY_BOUNDARY_COLORS[b.kind]);
       points.add({ position: at(b.coordinates), pixelSize: 12, color, outlineColor: ink, outlineWidth: 2, disableDepthTestDistance: ALWAYS_ON_TOP });
+      const g = groups.find(x => groundDistanceM(x.c, b.coordinates) < BOUNDARY_LABEL_GROUP_M);
+      if (g) { g.kinds.add(b.kind); g.n++; } else groups.push({ c: b.coordinates, kinds: new Set([b.kind]), n: 1 });
+    }
+    for (const g of groups) {
+      const kind: BoundaryKind = g.kinds.size === 1 ? [...g.kinds][0] : 'entry_exit';
       labels.add({
-        position: at(b.coordinates),
-        text: BOUNDARY_LABEL[b.kind],
+        position: at(g.c),
+        text: BOUNDARY_LABEL[kind] + (g.n > 1 ? ` ×${g.n}` : ''),
         font: '600 11px sans-serif',
-        fillColor: color,
+        fillColor: Color.fromCssColorString(STUDY_BOUNDARY_COLORS[kind]),
         outlineColor: ink,
         outlineWidth: 3,
         style: LabelStyle.FILL_AND_OUTLINE,
         pixelOffset: new Cartesian2(0, -16),
         // Labels only when zoomed in enough to read them without clutter
-        distanceDisplayCondition: new DistanceDisplayCondition(0, 3000),
+        distanceDisplayCondition: new DistanceDisplayCondition(0, 2200),
         disableDepthTestDistance: ALWAYS_ON_TOP,
       });
     }

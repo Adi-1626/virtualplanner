@@ -40,6 +40,7 @@ export function startUndergroundRuntime() {
   };
   const syncView = (ws: string) => {
     undergroundRenderer.setInUnderground(ws === 'underground');
+    undergroundRenderer.setInSimulate(ws === 'simulate');
     if (ws === 'underground') { undergroundView.enter(viewer()); return; }
     undergroundView.leave();
     // legend "Show …" toggles only apply in Underground

@@ -39,6 +39,7 @@ import type { GehSummary } from '../calibration/geh';
 import { fetchEstimatedTraffic, type EstimatedTrafficModel } from './EstimatedTraffic';
 import { fetchDiurnalProfile, hourFactor, COUNT_HOURS, type DiurnalProfile, type DayType } from './timeOfDay';
 import { compileAreaDemand, fetchCalibratedEdgeFlows, type CalibratedEdgeFlows } from './AreaDemand';
+import { matchPlanToEstimates } from './AreaDemandMatch';
 import { roadSection, type RoadSection } from './roadSection';
 import { startAnalysisJob, type RunningAnalysis } from './analysisRunner';
 import { DEFAULT_ANALYSIS, CORRIDOR_RANGE_M, type AnalysisJob, type AnalysisOutput } from './analysisJob';
@@ -692,7 +693,9 @@ export class SimulationMode {
    * removed from, the roads being studied.
    */
   public selectRoad(roadId: string, additive: boolean) {
-    this.invalidateComparison('The study roads changed. Capture a new baseline.');
+    // Clicking the road already studied again changes nothing: the comparison, the analysis and the live view stay
+    if (!additive && this.state.area && this.state.seedRoadIds.length === 1 && this.state.seedRoadIds[0] === roadId) return;
+    this.invalidateComparison(STUDY_CHANGED.roads);
     this.cancelTimeline(true);
     // A new road: the live view stops (it belonged to the old one) and is started again by the user
     this.stopTraffic();
@@ -715,7 +718,7 @@ export class SimulationMode {
   }
 
   public clearSeeds() {
-    this.invalidateComparison('The study roads changed. Capture a new baseline.');
+    this.invalidateComparison(STUDY_CHANGED.roads);
     this.cancelTimeline(true);
     this.cancelPendingRecompute();
     this.stopTraffic();
@@ -734,13 +737,14 @@ export class SimulationMode {
   public setRange(meters: number) {
     const rangeMeters = clampRangeM(meters);
     if (rangeMeters === this.state.rangeMeters) return;
-    this.invalidateComparison('The study range changed. Capture a new baseline.');
+    this.invalidateComparison(STUDY_CHANGED.range);
     this.setState({ rangeMeters });
     if (this.state.seedRoadIds.length > 0) this.recompute(true, false);
   }
 
   public setDirection(direction: StudyDirection) {
-    this.invalidateComparison('The study direction changed. Capture a new baseline.');
+    if (direction === this.state.direction) return;
+    this.invalidateComparison(STUDY_CHANGED.direction);
     this.setState({ direction });
     if (this.state.seedRoadIds.length > 0) this.recompute(false, false);
   }
@@ -834,6 +838,9 @@ export class SimulationMode {
       // Seeds deleted from the network drop out here
       const section = area.seedRoadIds.length ? roadSection(area, new Map(roads.map(r => [r.id, r])), area.seedRoadIds) : null;
       this.setState({ area, corridor, error: null, seedRoadIds: area.seedRoadIds, section, speeds: this.speedReport });
+      // Back on the baseline's roads, range and direction: a "study changed" notice no longer applies
+      const c = this.state.comparison;
+      if (c.baseline && c.staleReason && STUDY_REASONS.has(c.staleReason) && this.baselineStudyKey === this.studyKey()) this.setState({ comparison: { ...c, staleReason: null } });
       // A kept result for another network or demand stays on show until its re-run lands: say so.
       // An undo back to the shown result's network (before its re-run landed) makes it current again: clear the flag.
       const shown = this.state.analysis, key = this.analysisKey();
@@ -1098,14 +1105,14 @@ export class SimulationMode {
 
   public setDemandLevel(level: number) {
     const demandLevel = Math.max(0, Math.min(1, level));
-    this.invalidateComparison('Demand settings changed. Restore the baseline settings or capture a new baseline.');
+    this.invalidateComparison('Demand settings changed. Restore the baseline settings, or Save again for a new baseline.');
     this.live?.setDemand(demandLevel, focusLoadFor({ focus: this.state.traffic.focus, demandLevel }));
     this.setTraffic({ demandLevel, metrics: this.live?.metrics() ?? this.state.traffic.metrics });
   }
 
   /** Turns the extra through traffic on the selected roads on or off. */
   public setFocus(focus: boolean) {
-    this.invalidateComparison('Focus settings changed. Restore the baseline settings or capture a new baseline.');
+    this.invalidateComparison('Focus settings changed. Restore the baseline settings, or Save again for a new baseline.');
     this.live?.setDemand(this.state.traffic.demandLevel, focusLoadFor({ focus, demandLevel: this.state.traffic.demandLevel }));
     this.setTraffic({ focus, metrics: this.live?.metrics() ?? this.state.traffic.metrics });
   }
@@ -1151,6 +1158,13 @@ export class SimulationMode {
    * project-level, not for decisions); the validation harness turns this on with VAL24_ESTIMATED=1 to re-check it.
    */
   public useEstimatedTraffic = false;
+  /**
+   * With the estimated traffic on (p11): the area's own trips from the estimated CMP-2024 zone land use (AreaDemand
+   * estimatedLandUse) and the demand matched to the estimated main-road flows (AreaDemandMatch.ts). Separate switches so
+   * the validation harness can take each part out (VAL24_EST_LANDUSE=0, VAL24_EST_MATCH=0).
+   */
+  public estimatedLandUse = true;
+  public estimatedMatch = true;
 
   /**
    * The OD demand the area runs on: the counts-calibrated plan when applied,
@@ -1165,10 +1179,20 @@ export class SimulationMode {
     if (this.calibratedPlan) plan = this.calibratedPlan;
     else {
       const period = landUse;
-      const key = contentKey({ ctx: demandContextKey({ ...this.getContext(), period }), rev: this.revision, seeds: area.seedRoadIds, range: area.rangeMeters, dir: area.direction, through: settings.through, corr: this.correctionsEnabled, edge: this.useCalibratedEdgeFlows ? this.calibratedEdgeFlows?.id ?? null : null, est: this.useEstimatedTraffic ? this.estimatedTraffic?.id ?? null : null });
+      const key = contentKey({ ctx: demandContextKey({ ...this.getContext(), period }), rev: this.revision, seeds: area.seedRoadIds, range: area.rangeMeters, dir: area.direction, through: settings.through, corr: this.correctionsEnabled, edge: this.useCalibratedEdgeFlows ? this.calibratedEdgeFlows?.id ?? null : null, est: this.useEstimatedTraffic ? this.estimatedTraffic?.id ?? null : null,
+        estLu: this.useEstimatedTraffic && this.estimatedLandUse, estMatch: this.useEstimatedTraffic && this.estimatedMatch, sig: this.useEstimatedTraffic && this.estimatedMatch ? this.signalPoints?.length ?? null : null });
       if (this.planCache?.key !== key) {
         const ctx = { ...this.getContext(), period };
-        this.planCache = { key, plan: compileAreaDemand(ctx, area, new Map(this.getRoads().map(r => [r.id, r])), { through: settings.through, calibratedEdgeFlows: this.useCalibratedEdgeFlows ? this.calibratedEdgeFlows : null, estimatedTraffic: this.useEstimatedTraffic ? this.estimatedTraffic : null }) };
+        const roads = new Map(this.getRoads().map(r => [r.id, r]));
+        const est = this.useEstimatedTraffic ? this.estimatedTraffic : null;
+        let compiled = compileAreaDemand(ctx, area, roads, { through: settings.through, calibratedEdgeFlows: this.useCalibratedEdgeFlows ? this.calibratedEdgeFlows : null, estimatedTraffic: est, estimatedLandUse: !!est && this.estimatedLandUse });
+        // Matched to the estimated main-road flows (estimated, project-level, not for decisions); through traffic switched
+        // off is the user's what-if and is left unmatched
+        if (compiled && est && this.estimatedMatch && settings.through !== false) {
+          const m = matchPlanToEstimates(compiled, area, roads, est, period === 'PM_Peak' ? 19 : 9, { signalPoints: this.mappedSignalPoints() ?? undefined });
+          if (m) compiled = m.plan;
+        }
+        this.planCache = { key, plan: compiled };
       }
       plan = this.planCache.plan;
     }
@@ -1408,12 +1432,12 @@ export class SimulationMode {
   /** Records each baseline and proposal run's frozen inputs (set by the engine; null: not recorded). */
   public runRecorder: RunRecorder | null = null;
 
-  private async recordRun(snap: TrafficRunSnapshot): Promise<void> {
+  private async recordRun(snap: TrafficRunSnapshot, comparison?: ComparisonRunRecord): Promise<void> {
     if (!this.runRecorder) return;
     try {
       const r = snap.analysis.result;
       snap.runId = await this.runRecorder({ scenarioId: snap.scenarioId, inputs: snap.inputs,
-        results: { totalVph: r.totalVph, meanTravelTimeS: r.network.meanTravelTimeS, meanDelayS: r.network.meanDelayS, completedTrips: r.network.completedTrips } });
+        results: { totalVph: r.totalVph, meanTravelTimeS: r.network.meanTravelTimeS, meanDelayS: r.network.meanDelayS, completedTrips: r.network.completedTrips, ...(comparison ? { comparison } : {}) } });
     } catch (e) {
       console.warn('[SimulationMode] run inputs not recorded:', e);
     }
@@ -1581,7 +1605,7 @@ export class SimulationMode {
     const demandChanged = !!baseline && this.baselineContextKey !== this.demandContextKey();
     let reason: string | null = null;
     if (!baseline || !frozen) reason = 'Save the existing city as a baseline before comparing.';
-    else if (this.baselineStudyKey !== this.studyKey()) reason = 'The study road or range changed. Save a new baseline.';
+    else if (this.baselineStudyKey !== this.studyKey()) reason = STUDY_CHANGED.roads;
     else if (baseline.seed !== this.state.traffic.seed || baseline.demandLevel !== this.state.traffic.demandLevel || baseline.focus !== this.state.traffic.focus) reason = 'Restore the baseline seed and volume before comparing.';
     else if (baseline.hour !== this.state.timeOfDay.hour || Math.abs(baseline.hourFactor - this.state.timeOfDay.factor) > 1e-9) reason = `Set the clock back to ${String(baseline.hour).padStart(2, '0')}:00, the baseline's hour, to compare like with like.`;
     if (reason) {
@@ -1597,10 +1621,12 @@ export class SimulationMode {
       const output = await this.runJob(plan, baseline!.durationS, generation, baseline!.inputs?.seeds);
       if (generation !== this.comparisonGeneration) return null;
       const current = this.snapshotOf(output, plan, baseline!.durationS);
-      void this.recordRun(current);
       const result = compareAnalyses(baseline!.analysis, output, { before: this.baselineRoads ?? new Map(), after: new Map(this.getRoads().map(r => [r.id, r])) },
-        { before: baseline!.demandVph, after: current.demandVph }, baseline!.inputs ? { before: baseline!.inputs, after: current.inputs, newDemand: !!opts.withNewDemand && demandChanged } : undefined);
+        { before: baseline!.demandVph, after: current.demandVph }, baseline!.inputs ? { before: baseline!.inputs, after: current.inputs, newDemand: !!opts.withNewDemand && demandChanged } : undefined,
+        demandByClass(plan, baseline!.hourFactor));
       if (demandChanged && !opts.withNewDemand) result.caveats.unshift('The land use changed since the baseline. This comparison holds the demand at the baseline\'s, so it shows the effect of the road changes alone.');
+      // The proposal run is recorded with the comparison's summary, so the planning-project report (backend PDF) can print it
+      void this.recordRun(current, comparisonRunRecord(result, baseline!, this.state.area?.seedRoadIds ?? []));
       this.setState({ comparison: { ...this.state.comparison, baseline, current, result, staleReason: null, running: false, progress: 1, demandChanged } });
       return current;
     } catch (err) {
@@ -1972,7 +1998,7 @@ export class SimulationMode {
       if (reason) { this.setState({ odme: { ...this.state.odme, used: false, staleReason: reason } }); return; }
     }
     if (this.state.odme.used === on) return;
-    this.invalidateComparison('The demand changed (estimated from counts on/off). Save a new baseline.');
+    this.invalidateComparison('The demand changed (estimated from counts on/off). Save again for a new baseline.');
     this.setState({ odme: { ...this.state.odme, used: on, staleReason: null } });
     this.refreshTimelineOutdated();
     this.stopTraffic();
@@ -2070,4 +2096,53 @@ export class SimulationMode {
       this.recomputeTimer = null;
     }
   }
+}
+
+/** Notices for a study change after a baseline was saved (cleared again when the study goes back to the baseline's). */
+export const STUDY_CHANGED = {
+  roads: 'The study roads changed since the baseline. Save again to make a baseline for these roads, or go back to the baseline\'s roads.',
+  range: 'The study range changed since the baseline. Save again for a new baseline, or set the range back.',
+  direction: 'The study direction changed since the baseline. Save again for a new baseline, or set the direction back.',
+} as const;
+const STUDY_REASONS = new Set<string>(Object.values(STUDY_CHANGED));
+
+/** Vehicles per hour by class of a plan at the clock hour (the plan's veh/h times the hour factor), largest first. */
+export function demandByClass(plan: DemandPlan, hourFactor: number): { kind: string; vph: number }[] {
+  const m = new Map<string, number>();
+  for (const t of plan.trips) m.set(t.kind ?? 'car', (m.get(t.kind ?? 'car') ?? 0) + t.vehiclesPerHour * hourFactor);
+  return [...m].map(([kind, vph]) => ({ kind, vph })).sort((a, b) => b.vph - a.vph);
+}
+
+/** The comparison summary stored with the proposal's run record (backend planning report §5 prints it). Compact by design. */
+export interface ComparisonRunRecord {
+  schema: 'twincity.comparison_summary/v1';
+  baselineRunId: string | null;
+  hour: number;
+  seedRoadIds: string[];
+  verdict: { overall: string; section: string; network: string; area: string; summary: string };
+  confidence: { level: string; text: string };
+  demandLabel: string;
+  demandEstimated: boolean;
+  deltas: { group: string; label: string; before: number | null; after: number | null; unit: string }[];
+  roads: { road: string; vphBefore: number; vphAfter: number; vcBefore: number; vcAfter: number; speedBefore: number | null; speedAfter: number | null }[];
+  junctions: { label: string; delayBefore: number | null; delayAfter: number | null; losBefore: string | null; losAfter: string | null }[];
+  caveats: string[];
+}
+export function comparisonRunRecord(c: import('./ScenarioComparison').ComparisonResult, baseline: TrafficRunSnapshot, seedRoadIds: readonly string[]): ComparisonRunRecord {
+  const r1 = (v: number | null) => (v === null || !Number.isFinite(v) ? null : Math.round(v * 10) / 10);
+  const d = (group: string, xs: readonly import('./ScenarioComparison').Delta[]) => xs.map(x => ({ group, label: x.label, before: r1(x.before), after: r1(x.after), unit: x.unit }));
+  const label = baseline.analysis.result.evidence.demand?.label ?? '';
+  const t = c.tables;
+  return {
+    schema: 'twincity.comparison_summary/v1', baselineRunId: baseline.runId ?? null, hour: baseline.hour, seedRoadIds: [...seedRoadIds],
+    verdict: { overall: c.verdict.overall, section: c.verdict.section, network: c.verdict.network, area: c.verdict.area, summary: c.verdict.summary },
+    confidence: { level: c.confidence.level, text: c.confidence.text }, demandLabel: label, demandEstimated: /estimated/i.test(label),
+    deltas: [...d('Selected road', c.section), ...d('Neighbourhood', c.network), ...d('Whole area', c.area)],
+    // The 15 roads and 10 junctions that changed most (the full tables are in the HTML / CSV export)
+    roads: (t?.links ?? []).slice().sort((a, b) => Math.abs(b.vphAfter - b.vphBefore) - Math.abs(a.vphAfter - a.vphBefore)).slice(0, 15)
+      .map(x => ({ road: x.road, vphBefore: Math.round(x.vphBefore), vphAfter: Math.round(x.vphAfter), vcBefore: Math.round(x.vcBefore * 100) / 100, vcAfter: Math.round(x.vcAfter * 100) / 100, speedBefore: r1(x.speedBefore), speedAfter: r1(x.speedAfter) })),
+    junctions: (t?.junctions ?? []).slice().sort((a, b) => Math.abs((b.delayAfter ?? 0) - (b.delayBefore ?? 0)) - Math.abs((a.delayAfter ?? 0) - (a.delayBefore ?? 0))).slice(0, 10)
+      .map(x => ({ label: x.label, delayBefore: r1(x.delayBefore), delayAfter: r1(x.delayAfter), losBefore: x.losBefore, losAfter: x.losAfter })),
+    caveats: c.caveats.slice(0, 8),
+  };
 }

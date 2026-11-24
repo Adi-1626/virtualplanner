@@ -17,9 +17,9 @@ export function SimulationHud() {
   const shown = m ? Math.max(0, m.timeS - traffic.warmupS) : 0;
   const clock = `${Math.floor(shown / 60).toString().padStart(2, '0')}:${Math.floor(shown % 60).toString().padStart(2, '0')}`;
   return (
-    <section aria-label="Live simulation controls" data-testid="sim-hud" data-status={traffic.status} className="simulation-hud absolute bottom-20 left-4 z-20 pointer-events-auto rounded-2xl border border-cyan-300/20 bg-slate-950/95 shadow-2xl backdrop-blur-xl overflow-hidden">
+    <section aria-label="Live simulation controls" data-testid="sim-hud" data-status={traffic.status} className="simulation-hud absolute bottom-20 left-4 z-20 max-w-[calc(100%-2rem)] pointer-events-auto rounded-2xl border border-cyan-300/20 bg-slate-950/95 shadow-2xl backdrop-blur-xl overflow-hidden">
       <div className="h-0.5 bg-gradient-to-r from-cyan-400 via-indigo-400 to-emerald-400" />
-      <div className="flex items-center gap-4 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3" data-testid="sim-hud-row">
         {preparing ? <span className="rounded-xl bg-cyan-400/15 p-3 text-cyan-200"><Loader2 size={20} className="animate-spin" /></span> : (
           <button onClick={() => running ? mode.pauseTraffic() : mode.resumeTraffic()} aria-label={running ? 'Pause the live view' : 'Resume the live view'} className="rounded-xl bg-cyan-400/15 p-3 text-cyan-200 hover:bg-cyan-400/25 cursor-pointer">
             {running ? <Pause size={20} /> : <Play size={20} />}
@@ -35,7 +35,7 @@ export function SimulationHud() {
           <HudMetric icon={Activity} label="On the roads" value={m.onNetwork.toLocaleString()} />
           <HudMetric icon={CheckCheck} label="Trips finished" value={m.completedTrips.toLocaleString()} />
           <HudMetric icon={Clock3} label="Queued at the edge" value={m.waitingToEnter.toLocaleString()} warning={m.waitingToEnter > 50} />
-          <div className="hidden xl:block"><HudMetric icon={Route} label="Mean speed" value={m.meanSpeedKmh === null ? '—' : `${Math.round(m.meanSpeedKmh)} km/h`} /></div>
+          <HudMetric icon={Route} label="Mean speed" value={m.meanSpeedKmh === null ? '—' : `${Math.round(m.meanSpeedKmh)} km/h`} />
         </>}
       </div>
     </section>
@@ -43,5 +43,5 @@ export function SimulationHud() {
 }
 
 function HudMetric({ icon: Icon, label, value, warning = false }: { icon: typeof Activity; label: string; value: string; warning?: boolean }) {
-  return <div className="border-l border-white/10 pl-4"><div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-slate-400"><Icon size={12} />{label}</div><div className={`mt-1 text-lg font-semibold tabular-nums ${warning ? 'text-amber-300' : 'text-slate-100'}`}>{value}</div></div>;
+  return <div className="border-l border-white/10 pl-4 min-w-0"><div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-slate-400 whitespace-nowrap"><Icon size={12} />{label}</div><div className={`mt-1 text-lg font-semibold tabular-nums whitespace-nowrap ${warning ? 'text-amber-300' : 'text-slate-100'}`}>{value}</div></div>;
 }

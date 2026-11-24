@@ -56,9 +56,10 @@ export const AnchoredPopover: React.FC<{
 
   useEffect(() => {
     if (!open || !onClose) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // Capture phase + preventDefault: Esc closes this popover only (the global shortcuts skip a handled key)
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [open, onClose]);
 
   if (!open || typeof document === 'undefined') return null;

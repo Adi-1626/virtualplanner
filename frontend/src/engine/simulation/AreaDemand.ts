@@ -2,10 +2,10 @@ import { apiGet } from '../../lib/api';
 import type { TrafficNetwork } from '../objects/trafficTypes';
 import { isAreaCutEnd, type StudyArea, type DrivableObject } from './StudyAreaExplorer';
 import type { VehicleKind } from './TrafficMicroSim';
-import { estimatedLinkFlow, type EstimatedTrafficModel } from './EstimatedTraffic';
+import { estimatedLinkFlow, zoneDensityAt, type EstimatedTrafficModel } from './EstimatedTraffic';
 import { VEHICLE_TYPES } from './TrafficMicroSim';
 import { roadKeys } from './roadSection';
-import { activityEndpoints, type DemandPlan, type SimulationContext, type DemandComponents, type ActivityEndpoint } from './StudyDemand';
+import { activityEndpoints, landUseVehicles, type DemandPlan, type SimulationContext, type DemandComponents, type ActivityEndpoint } from './StudyDemand';
 
 /**
  * Study-area demand with the trips that cross the area's edge.
@@ -125,7 +125,7 @@ const distM = (a: readonly number[], b: readonly number[]) =>
 
 /** Where roads cross the area's edge, with their lanes and class-typical flows. */
 export function cordonOf(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, calibrated?: { flows: CalibratedEdgeFlows | null; period: string },
-  estimated?: { model: EstimatedTrafficModel | null; hour: number }): CordonPoint[] {
+  estimated?: { model: EstimatedTrafficModel | null; hour: number; edgeScale?: number }): CordonPoint[] {
   const net = area.network;
   // City-wide estimated flow on one directed link at the period's reference hour (null without the model)
   const est = (e: { roadId: string; fromNodeId: string; toNodeId: string }, at: readonly number[]): number | null => {
@@ -137,7 +137,9 @@ export function cordonOf(area: StudyArea, roads: ReadonlyMap<string, DrivableObj
     if (!a || !b) return null;
     // Only part of a road's traffic crosses the area: the rest starts or ends inside it, where central Pune has no land use
     // in the project; the share (areaEdgeScale) is fitted on the calibration crossings (TRAFFIC_ESTIMATED_P10.md §4)
-    return estimatedLinkFlow(estimated.model, road, at, [b[0] - a[0], b[1] - a[1]], estimated.hour) * (estimated.model.areaEdgeScale ?? 1);
+    // With the zone land use inside the area (estimatedLandUse) the whole estimated flow crosses the edge (edgeScale 1): the
+    // area's own trips then take their share of it and only the rest is through traffic
+    return estimatedLinkFlow(estimated.model, road, at, [b[0] - a[0], b[1] - a[1]], estimated.hour) * (estimated.edgeScale ?? estimated.model.areaEdgeScale ?? 1);
   };
   const included = new Set(area.segments.map(s => s.key));
   const out: CordonPoint[] = [];
@@ -309,7 +311,17 @@ export interface AreaDemandOptions {
   calibratedEdgeFlows?: CalibratedEdgeFlows | null;
   /** City-wide estimated traffic (EstimatedTraffic.ts): edge flows road by road where no calibrated window covers the link. */
   estimatedTraffic?: EstimatedTrafficModel | null;
+  /**
+   * Trips that start and end inside the area from the estimated CMP-2024 zone population and employment (p11,
+   * docs/urbanos/SIM_USER_TEST_P11.md §1): where the project holds less activity than the zones imply, the rest is added on
+   * the area's streets, and the edge flows are taken whole (the area's own trips take their share, the rest is through).
+   * Needs `estimatedTraffic` with zones.
+   */
+  estimatedLandUse?: boolean;
 }
+
+/** Cell size (m) of the estimated land use spread over an area's streets. */
+export const LAND_USE_CELL_M = 250;
 
 /**
  * Peak-hour OD demand for a study area: internal, land-use <-> edge and
@@ -345,8 +357,9 @@ export function compileAreaDemand(context: SimulationContext, area: StudyArea, r
   const { origins, destinations } = activityEndpoints(context, { minLng: b.minLng - padLng, maxLng: b.maxLng + padLng, minLat: b.minLat - padLat, maxLat: b.maxLat + padLat });
   // Edge flows of the estimated traffic are taken at the period's reference hour (09:00 / 19:00, timeOfDay.COUNT_HOURS); the
   // hour factor then scales the plan to the clock hour with the same Pune profile the dataset uses
+  const landUseModel = options.estimatedLandUse && options.estimatedTraffic?.zones?.rows?.length ? options.estimatedTraffic : null;
   const cordon = cordonOf(area, roads, options.calibratedEdgeFlows ? { flows: options.calibratedEdgeFlows, period } : undefined,
-    options.estimatedTraffic ? { model: options.estimatedTraffic, hour: period === 'PM_Peak' ? 19 : 9 } : undefined);
+    options.estimatedTraffic ? { model: options.estimatedTraffic, hour: period === 'PM_Peak' ? 19 : 9, ...(landUseModel ? { edgeScale: 1 } : {}) } : undefined);
   const calibratedPoints = cordon.filter(c => c.flowSource === 'calibrated').length;
   const estimatedPoints = cordon.filter(c => c.flowSource === 'estimated').length;
   if (!cordon.length && !origins.length && !destinations.length) return null;
@@ -408,15 +421,62 @@ export function compileAreaDemand(context: SimulationContext, area: StudyArea, r
     }
     return { ends: [...byNode.values()], dropped };
   };
+  // Estimated zone land use (CMP-2024 population + employment, kernel-spread): the activity the project does not hold here
+  let landUse: NonNullable<DemandComponents['landUse']> | null = null;
+  if (landUseModel && outline.length >= 3) {
+    landUse = { residents: 0, employees: 0, originVph: 0, destinationVph: 0, projectOriginVph: 0, projectDestinationVph: 0, cells: 0, noStreet: 0 };
+    const lat0 = (b.minLat + b.maxLat) / 2, dLat = LAND_USE_CELL_M / M_PER_DEG_LAT, dLng = dLat / Math.cos(lat0 * Math.PI / 180);
+    const cellKm2 = (LAND_USE_CELL_M / 1000) ** 2;
+    const lots = nodes.filter(n => (frontage.get(n.id) ?? 0) > 0);
+    const byCell = new Map<string, (typeof nodes)[number]>();
+    for (const n of lots) {
+      const k = `${Math.floor((n.coordinates[0] - b.minLng) / dLng)}:${Math.floor((n.coordinates[1] - b.minLat) / dLat)}`;
+      const cur = byCell.get(k);
+      if (!cur || frontage.get(n.id)! > frontage.get(cur.id)!) byCell.set(k, n);
+    }
+    const cells: { node: (typeof nodes)[number]; pop: number; emp: number }[] = [];
+    for (let i = 0; b.minLng + i * dLng < b.maxLng; i++) for (let j = 0; b.minLat + j * dLat < b.maxLat; j++) {
+      const c = [b.minLng + (i + 0.5) * dLng, b.minLat + (j + 0.5) * dLat];
+      if (!inPolygon(c, outline)) continue;
+      const d = zoneDensityAt(landUseModel, c[0], c[1]);
+      if (!d) continue;
+      const pop = d.pop * cellKm2, emp = d.emp * cellKm2;
+      landUse.residents += pop; landUse.employees += emp;
+      // The cell's busiest street end, else the nearest street within 400 m (a river, a hill or a campus has none)
+      let node = byCell.get(`${i}:${j}`);
+      if (!node) { let bd = 400; for (const n of lots) { const dd = distM(c, n.coordinates); if (dd < bd) { bd = dd; node = n; } } }
+      if (!node) { landUse.noStreet += pop + emp; continue; }
+      cells.push({ node, pop, emp });
+    }
+    // Only what the project's own buildings and zones do not already make here is added (in vehicles, per end)
+    const inArea = (e: ActivityEndpoint) => !e.gateway && inPolygon(e.point, outline);
+    landUse.projectOriginVph = origins.filter(inArea).reduce((n, e) => n + e.flow, 0);
+    landUse.projectDestinationVph = destinations.filter(inArea).reduce((n, e) => n + e.flow, 0);
+    const full = cells.map(c => landUseVehicles(c.pop, c.emp, period));
+    const tot = (role: 'origin' | 'destination') => full.reduce((n, v) => n + (v ? v[role].reduce((x, [, y]) => x + y, 0) : 0), 0);
+    const oTot = tot('origin'), dTot = tot('destination');
+    const fo = oTot > 0 ? Math.max(0, oTot - landUse.projectOriginVph) / oTot : 0, fd = dTot > 0 ? Math.max(0, dTot - landUse.projectDestinationVph) / dTot : 0;
+    cells.forEach((c, k) => {
+      const v = full[k];
+      if (!v) return;
+      const o = v.origin.map(([kind, x]) => [kind, x * fo] as [VehicleKind, number]), d = v.destination.map(([kind, x]) => [kind, x * fd] as [VehicleKind, number]);
+      const of = o.reduce((n, [, x]) => n + x, 0), df = d.reduce((n, [, x]) => n + x, 0);
+      const point = [...c.node.coordinates] as [number, number, number];
+      if (of > 0) origins.push({ id: `lu:${k}`, point, flow: of, vehicles: o });
+      if (df > 0) destinations.push({ id: `lu:${k}`, point, flow: df, vehicles: d });
+      landUse!.originVph += of; landUse!.destinationVph += df;
+    });
+    landUse.cells = cells.length;
+  }
   const prod = merge(origins), attr = merge(destinations);
 
   const trips: DemandPlan['trips'] = [];
-  const components: DemandComponents = { internal: 0, outbound: 0, inbound: 0, through: 0, outsideArea: prod.dropped + attr.dropped, noEdgeRoute: 0 };
+  const components: DemandComponents = { internal: 0, outbound: 0, inbound: 0, through: 0, outsideArea: prod.dropped + attr.dropped, noEdgeRoute: 0, ...(landUse ? { landUse } : {}) };
   // A closed network (no road crosses the edge) is the whole modelled world: every trip stays inside it
   const share = (point: readonly number[], L: number) => cordon.length ? externalShare(point, outline, L) : 0;
   const usedIn = new Map<string, number>(), usedOut = new Map<string, number>();
-  const push = (from: [number, number, number], to: [number, number, number], vph: number, kind: VehicleKind) => {
-    if (vph > 1e-6 && distM(from, to) > 1) trips.push({ from: [...from], to: [...to], vehiclesPerHour: vph, kind });
+  const push = (from: [number, number, number], to: [number, number, number], vph: number, kind: VehicleKind, part: 'internal' | 'outbound' | 'inbound' | 'through') => {
+    if (vph > 1e-6 && distM(from, to) > 1) trips.push({ from: [...from], to: [...to], vehiclesPerHour: vph, kind, part });
   };
   const MAX_INTERNAL = 24, MAX_EDGE = 12;
   const attrTotal = (e: End) => [...e.vehicles.values()].reduce((n, v) => n + v, 0);
@@ -436,11 +496,11 @@ export function compileAreaDemand(context: SimulationContext, area: StudyArea, r
         .sort((p, q) => q.w - p.w).slice(0, MAX_INTERNAL);
       const wSum = options2.reduce((n, x) => n + x.w, 0);
       const ext = wSum > 0 ? (o.gateway ? 0 : share(o.point, L)) : 1;
-      for (const { d, w } of options2) { push(o.point, d.point, vph * (1 - ext) * w / wSum, kind); components.internal += vph * (1 - ext) * w / wSum; }
+      for (const { d, w } of options2) { push(o.point, d.point, vph * (1 - ext) * w / wSum, kind, 'internal'); components.internal += vph * (1 - ext) * w / wSum; }
       const exits = edgeWeights(o.point, L, 'out', o.nodeId);
       if (!exits.length) components.noEdgeRoute! += vph * ext;
       for (const { c, share } of exits) {
-        push(o.point, c.coordinates, vph * ext * share, kind);
+        push(o.point, c.coordinates, vph * ext * share, kind, 'outbound');
         components.outbound += vph * ext * share;
         usedOut.set(c.nodeId, (usedOut.get(c.nodeId) ?? 0) + vph * ext * share);
       }
@@ -455,7 +515,7 @@ export function compileAreaDemand(context: SimulationContext, area: StudyArea, r
       const entries = edgeWeights(d.point, L, 'in', d.nodeId);
       if (!entries.length) components.noEdgeRoute! += vph * ext;
       for (const { c, share } of entries) {
-        push(c.coordinates, d.point, vph * ext * share, kind);
+        push(c.coordinates, d.point, vph * ext * share, kind, 'inbound');
         components.inbound += vph * ext * share;
         usedIn.set(c.nodeId, (usedIn.get(c.nodeId) ?? 0) + vph * ext * share);
       }
@@ -490,7 +550,7 @@ export function compileAreaDemand(context: SimulationContext, area: StudyArea, r
       const v = m[i][j];
       if (v < 0.5) continue;
       components.through += v;
-      for (const t of mix) push(cordon[i].coordinates, cordon[j].coordinates, v * t.share, t.kind);
+      for (const t of mix) push(cordon[i].coordinates, cordon[j].coordinates, v * t.share, t.kind, 'through');
     }
   }
   const total = trips.reduce((n, t) => n + t.vehiclesPerHour, 0);
@@ -519,7 +579,7 @@ export function compileAreaDemand(context: SimulationContext, area: StudyArea, r
         ? `at flows from the central-Pune window calibrated to ${options.calibratedEdgeFlows!.periods[period as 'AM_Peak' | 'PM_Peak']?.calibrationSites.length ?? 0} 2008 counts (${calibratedPoints} of ${cordon.length} edge roads; the rest at class-typical flows)`
         : estimatedPoints
           ? `at the city-wide estimated flows (${options.estimatedTraffic!.id}, ${options.estimatedTraffic!.label}; ${estimatedPoints} of ${cordon.length} edge roads), calibrated to estimated data`
-          : 'on main roads at counted Pune arterial flows'}. ${parts.join(', ')} veh/h. Not measured on these roads.`,
+          : 'on main roads at counted Pune arterial flows'}${landUse ? `; trips of the estimated CMP-2024 zone population and employment not held by the project (${Math.round(landUse.residents).toLocaleString('en-IN')} residents, ${Math.round(landUse.employees).toLocaleString('en-IN')} jobs here; estimated, project-level, not for decisions)` : ''}. ${parts.join(', ')} veh/h. Not measured on these roads.`,
       period, vehiclesPerHour: total, pairCount: trips.length,
       components: { ...components, cordonPoints: cordon.length, calibratedCordonPoints: calibratedPoints, estimatedCordonPoints: estimatedPoints, throughIncluded: options.through !== false },
     },

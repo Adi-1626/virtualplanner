@@ -143,10 +143,23 @@ export class UndergroundRenderer {
     this.applyVisibility();
   }
   isInUnderground() { return this.inUnderground; }
+  /**
+   * Simulate is about traffic on the surface: underground alignments, drawn utilities, plan-only metro and the cutaway are
+   * hidden there (p10 shots A02-A04: their surface projections covered the roads and the vehicles).
+   */
+  private inSimulate = false;
+  setInSimulate(on: boolean) {
+    if (on === this.inSimulate) return;
+    this.inSimulate = on;
+    this.applyVisibility();
+  }
   private applyVisibility() {
+    const surfaceOk = !this.inSimulate;
     if (this.recordsDs) this.recordsDs.show = this.inUnderground && this.isGroupVisible('records');
-    if (this.utilDs) this.utilDs.show = this.isGroupVisible('utilities');
-    if (this.ds) this.ds.show = this.isGroupVisible('alignments');
+    if (this.utilDs) this.utilDs.show = surfaceOk && this.isGroupVisible('utilities');
+    if (this.ds) this.ds.show = surfaceOk && this.isGroupVisible('alignments');
+    if (this.metroDs) this.metroDs.show = surfaceOk;
+    if (this.cutawayDs) this.cutawayDs.show = surfaceOk;
     this.viewer?.scene.requestRender();
   }
 

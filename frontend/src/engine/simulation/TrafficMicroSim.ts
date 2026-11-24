@@ -9,7 +9,7 @@ import { makeLaneConnector, sampleLaneConnector, connectorsConflict, type LaneCo
 import { layoutZone, turnBetween, movementKey, type CountZone, type LinkEnds, type ZoneLayout } from '../calibration/junctionMovements';
 import type { Cardinal } from '../calibration/observedCounts';
 import { compileJunctionEdits, simJunctionSetups, turnBansFor, outRows, defaultEdit, type JunctionEditSpec, type TurnBans } from './junctionControl';
-import { groupJunctions } from './junctionGroups';
+import { groupJunctions, nodeKey } from './junctionGroups';
 import { EmissionAccumulator } from '../emissions/emissions';
 
 /**
@@ -593,6 +593,12 @@ interface Control {
   /** An edited priority junction: the incoming links with priority (else by road class, majorRank). */
   majorLinks?: Set<number>;
   /**
+   * A roundabout drawn in Design (streetDesign/roundabout.ts, riding on its arm roads as streetEffects): no signal, and
+   * every entry gives way to traffic arriving from its right (India: clockwise circulation, IRC:65-2017 §3), with the
+   * gap acceptance of a minor-road entry.
+   */
+  roundabout?: boolean;
+  /**
    * One controller over several simulated junctions (a mapped signal box, see
    * applySignalBoxes): the logical junction's id. Members share cycle, greens and
    * offset; pieces inside the box are never stopped (group -1).
@@ -673,6 +679,13 @@ function headingOf(a: readonly number[], b: readonly number[]): number {
   return Math.atan2((b[1] - a[1]) * M_PER_DEG_LAT, (b[0] - a[0]) * mPerDegLng(a[1]));
 }
 
+/** A heading difference (radians) as signed degrees in (-180, 180]. */
+function signedDeg(d: number): number {
+  while (d > Math.PI) d -= 2 * Math.PI;
+  while (d <= -Math.PI) d += 2 * Math.PI;
+  return (d * 180) / Math.PI;
+}
+
 function angleBetweenDeg(a: number, b: number): number {
   let d = Math.abs(a - b) % (2 * Math.PI);
   if (d > Math.PI) d = 2 * Math.PI - d;
@@ -726,7 +739,7 @@ export class TrafficMicroSim {
   private demandLevel: number;
   private readonly signalTimingMode: 'webster' | 'equal';
   /** Road-analysis counters since startAnalysis(): link entries, and those by vehicles routed over a watched link. */
-  private analysis: { fromT: number; entries: Uint32Array; selectEntries: Uint32Array; selectOd: Map<string, number>; timeSum0: Float64Array; timeN0: Uint32Array; released: number; capSteps: number; steps0: number; gridlock0: number; unroutable0: number;
+  private analysis: { fromT: number; entries: Uint32Array; selectEntries: Uint32Array; selectOd: Map<string, number>; timeSum0: Float64Array; timeN0: Uint32Array; released: number; capSteps: number; steps0: number; gridlock0: number; unroutable0: number; completed0: number;
     /** Queued vehicle-seconds behind a stopped front vehicle, by why the front vehicle was held: signal, blocked (no room ahead), give-way, conflict. */
     hold: Record<HoldCause, Float64Array>; blockedBy: Map<number, Map<number, number>>; pcuEntries: Float64Array } | null = null;
   private linkTimeSum = new Float64Array(0);
@@ -849,6 +862,7 @@ export class TrafficMicroSim {
     this.applyPlacedControls(options.junctions ?? []);
     if (options.signalPoints?.length) this.applySignalBoxes(options.signalPoints, roads, options.junctionEdits);
     this.applyJunctionEdits(net, options.junctionEdits, cost);
+    this.applyRoundabouts(net, roads);
     this.signalLinks = this.links.filter(l => this.controls.get(l.to)?.kind === 'signal').map(l => l.index);
     this.buildSourcesAndSinks(net, included, roads);
     const watch = new Set(options.watchRoadIds ?? []);
@@ -1027,6 +1041,32 @@ export class TrafficMicroSim {
   }
 
   /** Edited imported junctions override mapped, estimated and placed control on every simulated junction they cover. */
+  /**
+   * Roundabouts drawn in Design replace the junction's control (as in the area routing, staticAssignment.ts): the
+   * junction a roundabout's node key falls on becomes a roundabout priority control, whatever signal (mapped, placed or
+   * edited) it had. The ring itself is not drawn as links: the junction stays one node, and the entries give way in turn.
+   */
+  private applyRoundabouts(net: TrafficNetwork, roads: ReadonlyMap<string, DrivableObject>) {
+    const keyed = new Map<string, true>();
+    for (const e of net.edges.values()) {
+      const fx = (roads.get(e.roadId) as { streetEffects?: { roundabouts?: { nodeKeys: string[] }[] } } | undefined)?.streetEffects?.roundabouts;
+      if (!fx?.length) continue;
+      for (const n of [e.fromNodeId, e.toNodeId]) {
+        const c = net.nodes.get(n)?.coordinates;
+        if (c && fx.some(r => r.nodeKeys.includes(nodeKey(c)))) keyed.set(n, true);
+      }
+    }
+    this.roundaboutJunctions.clear();
+    for (const n of keyed.keys()) {
+      const j = this.junction(n);
+      if (this.roundaboutJunctions.has(j) || this.incomingOf(j).length < 2) continue;
+      this.roundaboutJunctions.add(j);
+      this.controls.set(j, { kind: 'priority', groups: new Map(), majorRank: null, offset: 0, busyUntil: 0, busyFrom: -1, roundabout: true });
+    }
+  }
+  /** Simulated junctions controlled as a Design roundabout (applyRoundabouts). */
+  public readonly roundaboutJunctions = new Set<string>();
+
   private applyJunctionEdits(net: TrafficNetwork, edits: readonly JunctionEditSpec[] | undefined, cost: Float64Array) {
     const compiled = compileJunctionEdits(net, edits);
     if (!compiled.length) return;
@@ -1883,7 +1923,7 @@ export class TrafficMicroSim {
     this.junctionPerf.forEach(p => { p.controlDelayS = 0; p.vehicles = 0; p.pcu = 0; p.queueSumM = 0; p.queueMaxM = 0; p.samples = 0; });
     this.startCounting();
     this.analysis = { fromT: this.t, entries: new Uint32Array(this.links.length), selectEntries: new Uint32Array(this.links.length), selectOd: new Map(),
-      timeSum0: Float64Array.from(this.linkTimeSum), timeN0: Uint32Array.from(this.linkTimeN), released: 0, capSteps: 0, steps0: Math.round(this.t / STEP_S), gridlock0: this.gridlockRemovals, unroutable0: this.unroutable,
+      timeSum0: Float64Array.from(this.linkTimeSum), timeN0: Uint32Array.from(this.linkTimeN), released: 0, capSteps: 0, steps0: Math.round(this.t / STEP_S), gridlock0: this.gridlockRemovals, unroutable0: this.unroutable, completed0: this.completed,
       hold: { signal: new Float64Array(this.links.length), blocked: new Float64Array(this.links.length), giveWay: new Float64Array(this.links.length), conflict: new Float64Array(this.links.length) }, blockedBy: new Map(), pcuEntries: new Float64Array(this.links.length) };
   }
 
@@ -1892,7 +1932,7 @@ export class TrafficMicroSim {
    * those of them routed over a watched link (select-link), and the mean
    * traversal time of vehicles that left it in the window.
    */
-  public analysisCounts(): { windowS: number; links: AnalysisLinkCounts[]; selectOd: Map<string, number>; load: { releasedVehicles: number; capShare: number; gridlockRemovals: number; unroutable: number } } | null {
+  public analysisCounts(): { windowS: number; links: AnalysisLinkCounts[]; selectOd: Map<string, number>; load: { releasedVehicles: number; capShare: number; gridlockRemovals: number; unroutable: number; completedInWindow: number } } | null {
     const a = this.analysis;
     if (!a) return null;
     const links = this.links.map(l => {
@@ -1908,7 +1948,7 @@ export class TrafficMicroSim {
     });
     const steps = Math.max(1, Math.round(this.t / STEP_S) - a.steps0);
     return { windowS: this.t - a.fromT, links, selectOd: new Map(a.selectOd),
-      load: { releasedVehicles: a.released, capShare: Math.min(1, a.capSteps / steps), gridlockRemovals: this.gridlockRemovals - a.gridlock0, unroutable: this.unroutable - a.unroutable0 } };
+      load: { releasedVehicles: a.released, capShare: Math.min(1, a.capSteps / steps), gridlockRemovals: this.gridlockRemovals - a.gridlock0, unroutable: this.unroutable - a.unroutable0, completedInWindow: this.completed - a.completed0 } };
   }
 
   /** The simulated junction a network node belongs to (nodes a few metres apart are joined). */
@@ -2077,6 +2117,8 @@ export class TrafficMicroSim {
   private hasPriorityOver(other: Link, link: Link, c: Control): boolean {
     // Roundabout: entering traffic gives way to traffic already circulating
     if (other.roundabout !== link.roundabout) return other.roundabout;
+    // Design roundabout: give way to the entry on the right (traffic crossing in front from right to left, India)
+    if (c.roundabout) { const d = signedDeg(other.headingEnd - link.headingEnd); return d > 30 && d < 150; }
     if (c.majorLinks) return c.majorLinks.has(other.index) && !c.majorLinks.has(link.index);
     if (c.majorRank !== null) return other.rank > link.rank;
     return false;
@@ -2102,6 +2144,8 @@ export class TrafficMicroSim {
     const oncoming = angleBetweenDeg(other.headingEnd, link.headingEnd) > 135;
     if (c.kind === 'signal') return right && oncoming && !this.isRightTurn(other, otherNext);
     if (this.hasPriorityOver(other, link, c)) return true;
+    // At a roundabout every movement circulates: only the entry on the right has priority
+    if (c.roundabout) return false;
     return right && oncoming && !this.hasPriorityOver(link, other, c) && !this.isRightTurn(other, otherNext);
   }
 
@@ -2134,7 +2178,7 @@ export class TrafficMicroSim {
         priority = true;
         minor = true;
       } else {
-        priority = myRight && !this.hasPriorityOver(link, other, c) && angleBetweenDeg(other.headingEnd, link.headingEnd) > 135;
+        priority = !c.roundabout && myRight && !this.hasPriorityOver(link, other, c) && angleBetweenDeg(other.headingEnd, link.headingEnd) > 135;
       }
       if (!priority) continue;
       const tc = criticalGap(minor, veh.waitS) + timeToLine;

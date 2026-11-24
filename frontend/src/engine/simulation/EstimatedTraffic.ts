@@ -35,6 +35,26 @@ export interface EstimatedTrafficModel {
   wayOverrides: Record<string, { factor: number; anchor: string }>;
   rules: { osmWays: number[]; kind: 'two_wheeler_only' | 'closed' | 'add_daily'; dailyMotor?: number; addDaily?: Record<string, number>; from: string | null; source: string }[];
   split?: { calibration: string[]; holdout: string[] };
+  /** CMP-2024 zone points (lon, lat, population 2024, employment 2024; estimated locations), kernel width sigmaKm. */
+  zones?: { columns: string[]; sigmaKm: number; source: string; rows: [number, number, number, number][] };
+}
+
+/**
+ * Population and employment per km² at a point (estimated): the CMP-2024 zone totals spread by the same Gaussian kernel
+ * the dataset's activity grid uses (σ = zones.sigmaKm). Null when the model carries no zones.
+ */
+export function zoneDensityAt(m: EstimatedTrafficModel, lon: number, lat: number): { pop: number; emp: number } | null {
+  const z = m.zones;
+  if (!z?.rows?.length) return null;
+  const s = z.sigmaKm || 1.5, k = 1 / (2 * Math.PI * s * s), cut = 4 * s;
+  let pop = 0, emp = 0;
+  for (const [x, y, p, e] of z.rows) {
+    const dx = (x - lon) * m.kmPerDeg.lon, dy = (y - lat) * m.kmPerDeg.lat;
+    if (Math.abs(dx) > cut || Math.abs(dy) > cut) continue;
+    const w = k * Math.exp(-(dx * dx + dy * dy) / (2 * s * s));
+    pop += p * w; emp += e * w;
+  }
+  return { pop, emp };
 }
 
 const GROUP_OF_CLASS: Record<string, string> = { highway: 'trunk', arterial: 'primary', collector: 'tertiary', local: 'residential' };

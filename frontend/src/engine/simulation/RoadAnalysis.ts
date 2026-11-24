@@ -243,11 +243,15 @@ export interface RoadAnalysisResult {
   signalLinks?: Map<string, { node: string; phase: number }>;
   /** Assigned volumes by area link (veh/h), for comparisons. */
   areaLinkVph: Map<string, number>;
+  /** Per area link (assignment): travel time and free-flow time (s) and length (m), for speeds and delay by road. Absent on older results. */
+  areaLinkTime?: Map<string, { timeS: number; t0S: number; lengthM: number }>;
   /** Worst places in the wider area (assignment v/c), for "which parts suffer most". */
   areaBottlenecks: Bottleneck[];
   /** Main roads in the area that end without a connection (absent on older results). */
   networkGaps?: NetworkGap[];
   network: MicroSimMetrics;
+  /** Trips completed in the neighbourhood per hour over the measured window (warm-up excluded), mean over seeds. Absent on older results. */
+  throughputVph?: number;
   load: LoadCheck;
   /** The load check of each run, in seed order (load above combines them). */
   loadBySeed?: LoadCheck[];
@@ -459,6 +463,8 @@ export interface CorridorRun {
   network: MicroSimMetrics;
   load: LoadCheck;
   gridlockSites?: GridlockSite[];
+  /** Trips completed in the measured window, per hour (warm-up excluded). */
+  throughputVph?: number;
 }
 
 /** Reads one corridor run (counters since sim.startAnalysis()). */
@@ -519,7 +525,7 @@ export function readCorridorRun(sim: TrafficMicroSim, seed: number, corridor: St
   const { signalCycles, signalGreens, signalLinks } = runSignalStructure(sim, counts.links);
   const network = sim.getMetrics();
   const load = loadCheck(Math.max(0, demandVph - counts.load.unroutable * perH), { ...counts.load, gridlockedNow: network.accounting.gridlockedNow }, counts.windowS, network.waitingToEnter);
-  return { seed, windowS: counts.windowS, directions, chains, junctions, linkVph, linkDelay, signalCycles, signalGreens, signalLinks, network, load, gridlockSites: sim.gridlockSites().slice(0, 3) };
+  return { seed, windowS: counts.windowS, directions, chains, junctions, linkVph, linkDelay, signalCycles, signalGreens, signalLinks, network, load, gridlockSites: sim.gridlockSites().slice(0, 3), throughputVph: counts.load.completedInWindow * perH };
 }
 
 /**
@@ -612,6 +618,7 @@ export interface AreaContext {
   selectLinkVph: Map<string, number>;
   areaVc: Map<string, number>;
   areaLinkVph: Map<string, number>;
+  areaLinkTime: Map<string, { timeS: number; t0S: number; lengthM: number }>;
   feeders: RoadUse[];
   nearby: RoadUse[];
   bottlenecks: Bottleneck[];
@@ -774,10 +781,12 @@ export function areaContext(res: AssignmentResult, area: StudyArea, roads: Reado
     return [...m.values()].sort((a, b) => b.vph - a.vph).slice(0, 6).map(p => ({ ...p, vph: Math.round(p.vph) }));
   };
   const selectLinkVph = new Map<string, number>(), areaVc = new Map<string, number>(), areaLinkVph = new Map<string, number>();
+  const areaLinkTime = new Map<string, { timeS: number; t0S: number; lengthM: number }>();
   let over = 0, vehH = 0;
   for (const l of res.links) {
     const v = res.volVeh[l.index], vc = res.volPcu[l.index] / Math.max(1, l.capacityPcu);
     areaLinkVph.set(l.id, v);
+    areaLinkTime.set(l.id, { timeS: res.timeS[l.index], t0S: l.t0, lengthM: l.lengthM });
     if (sl.linkVeh[l.index] > 0.5) selectLinkVph.set(l.segmentKey, Math.max(selectLinkVph.get(l.segmentKey) ?? 0, sl.linkVeh[l.index]));
     areaVc.set(l.segmentKey, Math.max(areaVc.get(l.segmentKey) ?? 0, vc));
     if (vc > 1) over++;
@@ -840,7 +849,7 @@ export function areaContext(res: AssignmentResult, area: StudyArea, roads: Reado
       ...(nearestGap ? { gap: { roadName: nearestGap.g.roadName, title: nearestGap.g.title, coordinates: nearestGap.g.coordinates, distanceM: Math.round(nearestGap.d) } } : {}) });
   }
   return { directions, origins: places('from'), destinations: places('to'), composition: { throughShare: total ? through / total : 0, localShare: total ? 1 - through / total : 0 },
-    selectLinkVph, areaVc, areaLinkVph, feeders, nearby, bottlenecks, networkGaps: gaps, joins: sectionJoins(area, roads, section),
+    selectLinkVph, areaVc, areaLinkVph, areaLinkTime, feeders, nearby, bottlenecks, networkGaps: gaps, joins: sectionJoins(area, roads, section),
     summary: { iterations: res.iterations, relativeGap: res.relativeGap, demandVph, unroutedVph: res.unroutedVeh, overCapacityLinks: over, totalVehHours: vehH, elapsedMs: res.elapsedMs } };
 }
 
@@ -996,11 +1005,12 @@ export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { 
     section: { name: section.name, lengthM: section.lengthM, carriageways: section.carriageways, endsAt: section.endsAt, segmentKeys: section.segmentKeys },
     directions, totalVph, status, statusConsistent, statusBySeed, headline, reasons, cause, explainedDirection: status === 'no_traffic' || !worst ? null : worst.label, bottleneck,
     origins: area.origins, destinations: area.destinations, composition: area.composition, feeders: area.feeders, nearby: area.nearby, junctions,
-    selectLinkVph: area.selectLinkVph, areaVc: area.areaVc, linkVph, linkDelay, signalCycles: runs[0]?.signalCycles, signalGreens: runs[0]?.signalGreens, signalLinks: runs[0]?.signalLinks, areaLinkVph: area.areaLinkVph, areaBottlenecks: area.bottlenecks, networkGaps: area.networkGaps,
+    selectLinkVph: area.selectLinkVph, areaVc: area.areaVc, linkVph, linkDelay, signalCycles: runs[0]?.signalCycles, signalGreens: runs[0]?.signalGreens, signalLinks: runs[0]?.signalLinks, areaLinkVph: area.areaLinkVph, areaLinkTime: area.areaLinkTime, areaBottlenecks: area.bottlenecks, networkGaps: area.networkGaps,
     network: { ...net, completedTrips: Math.round(mean(runs.map(r => r.network.completedTrips))), meanTravelTimeS: meanOrNull(runs.map(r => r.network.meanTravelTimeS)), meanDelayS: meanOrNull(runs.map(r => r.network.meanDelayS)),
       gridlockRemovals: Math.round(mean(runs.map(r => r.network.gridlockRemovals))), waitingToEnter: Math.round(mean(runs.map(r => r.network.waitingToEnter))), onNetwork: Math.round(mean(runs.map(r => r.network.onNetwork))) },
     load: { ...runs[0].load, servedShare: mean(runs.map(r => r.load.servedShare)), overloaded: overloadedRuns > n / 2, message: overloadedRuns > n / 2 ? loadMsg : null },
     loadBySeed: runs.map(r => r.load),
+    ...(runs.every(r => r.throughputVph !== undefined) ? { throughputVph: mean(runs.map(r => r.throughputVph!)) } : {}),
     assignment: area.summary, corridor: corridorInfo,
     perSeed: runs.map(r => {
       const tt = r.directions.map(d => d.travelTimeS).filter((x): x is number => x !== null);

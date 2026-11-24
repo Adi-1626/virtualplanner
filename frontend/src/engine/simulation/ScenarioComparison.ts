@@ -2,6 +2,7 @@ import type { RoadAnalysisResult, Bottleneck, BindingSegment, DirectionFlow } fr
 import type { AnalysisOutput } from './analysisJob';
 import type { DrivableObject } from './StudyAreaExplorer';
 import { isGenericRoadName } from './roadSection';
+import { comparisonTables, type ComparisonTables } from './comparisonTables';
 
 /**
  * Existing city against a proposal (docs/OVERHAUL.md §8). Both are analysed
@@ -54,6 +55,8 @@ export interface ComparisonResult {
    * same frozen demand and seeds; absent when either run has none. Shown apart: never part of the verdict.
    */
   emissions?: { deltas: Delta[]; model: string; source: string; note: string };
+  /** Result tables (links, junctions, summary; comparisonTables.ts), for the panel and the report export. */
+  tables?: ComparisonTables;
 }
 
 /** What a run's figures depend on besides the network. A comparison holds these fixed, so a difference is the network's doing. */
@@ -208,7 +211,7 @@ const sectionSpeed = (r: RoadAnalysisResult) => {
 };
 const mean = (xs: (number | null)[]) => { const v = xs.filter((x): x is number => x !== null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
 
-export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, roads: { before: ReadonlyMap<string, DrivableObject>; after: ReadonlyMap<string, DrivableObject> }, demand: { before: number; after: number }, inputs?: { before: RunInputs; after: RunInputs; newDemand?: boolean }): ComparisonResult {
+export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, roads: { before: ReadonlyMap<string, DrivableObject>; after: ReadonlyMap<string, DrivableObject> }, demand: { before: number; after: number }, inputs?: { before: RunInputs; after: RunInputs; newDemand?: boolean }, demandByClass?: { kind: string; vph: number }[]): ComparisonResult {
   const a = before.result, b = after.result;
   const inputCheck = inputs ? checkRunInputs(inputs.before, inputs.after, inputs.newDemand) : undefined;
   const kind = Math.abs(demand.before - demand.after) > 0.5 ? 'development' : 'infrastructure';
@@ -314,7 +317,7 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
   if (after.unroutedVph > before.unroutedVph + 1) caveats.push(`${Math.round(after.unroutedVph - before.unroutedVph).toLocaleString()} veh/h more can no longer reach their destination: the change cuts a route.`);
   const emissions = emissionDeltas(a, b, sameSeeds);
   return { kind, demandBefore: demand.before, demandAfter: demand.after, section, network, area, rerouting, winners, losers, newBottlenecks, segmentChange, ...(emissions ? { emissions } : {}),
-    laneInsights: laneInsights(a.directions, b.directions, roads, newBottlenecks),
+    laneInsights: laneInsights(a.directions, b.directions, roads, newBottlenecks), tables: comparisonTables(a, b, roads, demandByClass),
     verdict: { section: sv, network: nv, area: av, overall, summary }, confidence, caveats, ...(inputCheck ? { inputs: inputCheck } : {}) };
 }
 

@@ -2,24 +2,9 @@ import type { RoadObject } from '../objects/types';
 import type { TrafficNetwork, TrafficNode, TrafficEdge, TurnMovement, TurnDirection } from '../objects/trafficTypes';
 import { SpatialHashGrid } from '../rendering/spatial/SpatialHashGrid';
 import { hasOsmTopology } from '../objects/osmTopology';
+import { centrelineLength } from '../objects/centreline';
 import { heldApartPoints, planDistM, FLAG_MATCH_M, FLAG_GUARD_M } from '../editing/levelCrossings';
 
-/**
- * Calculates geodesic distance between two points in meters using the Haversine formula.
- */
-function getDistanceMeters(lon1: number, lat1: number, lon2: number, lat2: number): number {
-  const R = 6371000;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
 
 /**
  * Calculates segment-to-segment mathematical intersection point in 2D.
@@ -538,10 +523,9 @@ export class TrafficNetworkBuilder {
         nodeCoordsMap.set(startNodeId, startClusterCoords);
         nodeCoordsMap.set(endNodeId, endClusterCoords);
 
-        let length = 0;
-        for (let i = 0; i < coords.length - 1; i++) {
-          length += getDistanceMeters(coords[i][0], coords[i][1], coords[i+1][0], coords[i+1][1]);
-        }
+        // The app's one length definition (StudyAreaExplorer.polylineLengthM: the centreline in the shape editor's local
+        // projection), so Simulate, Design and the reports give a road the same length
+        const length = centrelineLength(coords);
 
         if (length < 0.1) return;
 

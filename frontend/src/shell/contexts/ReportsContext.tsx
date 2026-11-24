@@ -14,6 +14,9 @@ import { StaleBadge } from '../../components/projects/common';
 import { formatWhen } from '../../lib/formatWhen';
 import { useShellStore } from '../useShellStore';
 import { DataCatalogueSection } from '../../components/data/DataCatalogueSection';
+import { useSimulationMode } from '../../hooks/useSimulationMode';
+import { reportDataOf, downloadReportFile } from '../../components/simulate/comparisonExport';
+import { loadLastComparisonReport, type ComparisonReportData } from '../../engine/report/comparisonReport';
 
 const who = () => localStorage.getItem('td-user') ?? '';
 const when = (iso: string | null | undefined) => formatWhen(iso, 'never');
@@ -24,7 +27,7 @@ const when = (iso: string | null | undefined) => formatWhen(iso, 'never');
  *  - GET  /api/coordination/projects/{id}/conflicts/export?format=csv   conflict summary (audited export)
  *  - POST /api/feasibility/assessments/{id}/documents {format}          Investigation Requirements Document
  *  - GET  /api/feasibility/documents/{id}/download                      a generated document
- * engine/report/scenarioReport.ts (scenario CSV/HTML) has no run wired to it, so it is listed without a button.
+ *  - Scenario traffic report: the last Simulate comparison (engine/report/comparisonReport.ts), HTML + CSV, built in the browser.
  */
 export const ReportsContext: React.FC = () => {
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -149,9 +152,45 @@ export const ReportsContext: React.FC = () => {
         </Disclosure>
       </PanelSection>
 
-      <PanelSection title="Scenario traffic report">
-        <p className="text-label text-text-2">Not available yet: Simulate results are not connected to this report. Use the Simulate panel (Before vs after) for now. <TrustBadge trust="fails_validation" testId="scenario-report-trust" /></p>
-      </PanelSection>
+      <ScenarioTrafficReport />
     </div>
+  );
+};
+
+const VERDICT_WORD: Record<string, string> = { better: 'Better', worse: 'Worse', mixed: 'Mixed', no_change: 'No clear change' };
+
+/** The last before / after comparison from Simulate: the one on show, else the one kept from an earlier session. */
+const ScenarioTrafficReport: React.FC = () => {
+  const sim = useSimulationMode();
+  const setWorkspace = useShellStore(s => s.setWorkspace);
+  const live = reportDataOf(sim);
+  const r: ComparisonReportData | null = live ?? loadLastComparisonReport();
+  return (
+    <PanelSection title="Scenario traffic report">
+      {!r ? (
+        <div className="space-y-1.5" data-testid="scenario-report-empty">
+          <p className="text-label text-text-2">No before / after comparison yet. In Simulate: pick a road, save the existing city, make the change in Design, then Compare. The comparison appears here as a report. <TrustBadge trust="fails_validation" testId="scenario-report-trust" /></p>
+          <button type="button" className="uos-btn uos-btn-sm" onClick={() => setWorkspace('simulate')}>Open Simulate</button>
+        </div>
+      ) : (
+        <div className="uos-card space-y-1.5" data-testid="scenario-report-card">
+          <span className="block text-body text-text-1 break-words">{r.title}</span>
+          <span className="block text-meta text-text-2">{String(r.hour).padStart(2, '0')}:00 · {VERDICT_WORD[r.verdict.overall] ?? r.verdict.overall}, confidence {r.confidence.level} · generated {r.generatedAt}{live ? '' : ' (kept from an earlier session)'}</span>
+          <div className="flex items-center gap-1.5 text-meta text-text-2">Traffic figures: <TrustBadge trust="fails_validation" testId="scenario-report-trust" />{r.demand.estimated && <span className="text-warn">demand estimated (project-level, not for decisions)</span>}</div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button type="button" className="uos-btn uos-btn-sm" onClick={() => downloadReportFile(r, 'report.html')} data-testid="scenario-report-html"><FileDown size={14} aria-hidden />Report (HTML)</button>
+            {r.tables && <>
+              <button type="button" className="uos-btn uos-btn-sm" onClick={() => downloadReportFile(r, 'links.csv')} data-testid="scenario-report-links"><FileDown size={14} aria-hidden />Roads CSV</button>
+              <button type="button" className="uos-btn uos-btn-sm" onClick={() => downloadReportFile(r, 'junctions.csv')} data-testid="scenario-report-junctions"><FileDown size={14} aria-hidden />Junctions CSV</button>
+              <button type="button" className="uos-btn uos-btn-sm" onClick={() => downloadReportFile(r, 'summary.csv')} data-testid="scenario-report-summary"><FileDown size={14} aria-hidden />Summary CSV</button>
+            </>}
+            <button type="button" className="uos-btn uos-btn-sm" onClick={() => downloadReportFile(r, 'report.json')} data-testid="scenario-report-json"><FileDown size={14} aria-hidden />Data (JSON)</button>
+          </div>
+          <Disclosure summary="What this contains">
+            <p className="text-label text-text-2">The comparison exactly as Simulate computed it: verdict and confidence, the road, neighbourhood and area measures, roads (volume, load, speed, delay), junctions (delay, level of service, queues), demand by class, fuel and emissions as relative changes, every assumption, and the traffic model's validation verdict. Print the HTML to PDF from the browser.</p>
+          </Disclosure>
+        </div>
+      )}
+    </PanelSection>
   );
 };

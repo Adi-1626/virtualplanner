@@ -220,13 +220,23 @@ def _docx_text(data: bytes) -> str:
     return re.sub(r"<[^>]+>", " ", xml)
 
 
+# What Simulate records with a proposal run after Compare (SimulationMode.comparisonRunRecord)
+COMPARISON = {"schema": "twincity.comparison_summary/v1", "baselineRunId": "run_x", "hour": 9, "seedRoadIds": ["r1"],
+              "verdict": {"overall": "better", "section": "better", "network": "no_change", "area": "mixed", "summary": "Less delay on the study road."},
+              "confidence": {"level": "medium", "text": "3 of 3 runs agree."}, "demandLabel": "Area demand (estimated)", "demandEstimated": True,
+              "deltas": [{"group": "Selected road", "label": "Delay", "before": 120.5, "after": 80.0, "unit": "s"}],
+              "roads": [{"road": "SYNTHETIC Test Road", "vphBefore": 900, "vphAfter": 1100, "vcBefore": 0.8, "vcAfter": 0.95, "speedBefore": 22.1, "speedAfter": 19.0}],
+              "junctions": [{"label": "SYNTHETIC Chowk", "delayBefore": 60.0, "delayAfter": 41.5, "losBefore": "E", "losAfter": "D"}],
+              "caveats": ["Demand held at the baseline's."]}
+
+
 def _full_project(client):
     road = _road(client)
     sid = _scenario(client)
     client.post(f"/api/scenarios/{sid}/changes", json=[{"objectId": road, "op": "delete"}])
     v = client.post(f"/api/scenarios/{sid}/versions", json={"label": "Option A", "assumptions": {"hour": 9, "seeds": [42], "signalTiming": "webster"}}).json()
     client.post("/api/runs", json={"scenarioId": "base", "inputs": {"hour": 9, "seeds": [42]}, "results": {"totalVph": 1200, "meanDelayS": 40.5}})
-    client.post("/api/runs", json={"scenarioId": sid, "scenarioVersionId": v["id"], "inputs": {"hour": 9, "seeds": [42]}, "results": {"totalVph": 1150, "meanDelayS": 35.0}})
+    client.post("/api/runs", json={"scenarioId": sid, "scenarioVersionId": v["id"], "inputs": {"hour": 9, "seeds": [42]}, "results": {"totalVph": 1150, "meanDelayS": 35.0, "comparison": COMPARISON}})
     ds_m = _dataset(client, kind="measured", name="SYNTHETIC measured counts")
     ds_e = _dataset(client, kind="estimated", name="SYNTHETIC estimated counts", synthetic=False)
     client.post(f"/api/traffic-data/datasets/{ds_m['id']}/records", json={"entered_by": "Counter B", "records": [_rec(road)]})
@@ -247,7 +257,9 @@ def test_report_pdf_and_docx_carry_labels_and_disclaimer(client):
     for s in ("Not an engineering assessment, statutory approval", "NOT a statutory or any other approval", "Measured + SYNTHETIC", "Estimated",
               "model output", "FAIR comparison", "Verified from available data", "Unknown", "Reviewed \u2014 not an approval",
               "Planning decision recorded in this tool", "not a statutory approval", "Assumptions and unknowns", "Audit trail summary",
-              "1,200", "1,150", "-50", "Option A"):
+              "1,200", "1,150", "-50", "Option A",
+              "Simulate comparison recorded with this run", "Better overall", "estimated (project-level, not for decisions)", "SYNTHETIC Test Road", "1,100",
+              "SYNTHETIC Chowk", "41.5", "Demand held at the baseline's."):
         assert s in t, s
     assert not re.search(r"\bapproved\b", t, re.I)
     ev = client.get(f"/api/planning/projects/{pid}/audit").json()["events"]

@@ -1,4 +1,5 @@
 import type { CityObject, RoadObject, FlyoverObject, MetroFlyoverObject } from '../objects/types';
+import { centrelineLength } from '../objects/centreline';
 import type { TrafficNetwork, TrafficEdge, TrafficNode } from '../objects/trafficTypes';
 import { TrafficNetworkBuilder, GRADE_SEPARATION_M, type GradeSeparation } from './TrafficNetworkBuilder';
 import { MinHeap } from './Pathfinder';
@@ -188,14 +189,13 @@ const boundsIntersect = (a: Bounds, b: Bounds) =>
 const boundsContain = (outer: Bounds, inner: Bounds) =>
   inner.minLng >= outer.minLng && inner.maxLng <= outer.maxLng && inner.minLat >= outer.minLat && inner.maxLat <= outer.maxLat;
 
+/**
+ * Length of a road's centreline (m): the app's one length definition, measured horizontally in the shape editor's local
+ * projection (alignmentGeometry.chainages, as Design's drawnWorks.centrelineLengthM). The earlier local formula used
+ * 111,320 m per degree of latitude, 0.7% long north-south (docs/urbanos/DESIGN_WORKSPACE.md §4 remaining item).
+ */
 export function polylineLengthM(coords: readonly (readonly number[])[]): number {
-  let len = 0;
-  for (let i = 0; i < coords.length - 1; i++) {
-    const dx = (coords[i + 1][0] - coords[i][0]) * mPerDegLng(coords[i][1]);
-    const dy = (coords[i + 1][1] - coords[i][1]) * M_PER_DEG_LAT;
-    len += Math.sqrt(dx * dx + dy * dy);
-  }
-  return len;
+  return centrelineLength(coords);
 }
 
 /** Horizontal distance (m) from a point to a polyline, and the polyline's height at the closest point. */

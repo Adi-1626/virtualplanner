@@ -211,6 +211,7 @@ def build_model(db: Session, p: PlanningProjectEntity, now: datetime.datetime | 
             b5.append(Block("table", header=["Metric", "Baseline", "Proposal", "Difference", "Label"], rows=rows or [["(no result summary recorded)", "-", "-", "-", "-"]]))
             if diffs:
                 b5.append(Block("bullets", items=[f"Input differs: {d['field']}: {_short(d['a'], 40)} vs {_short(d['b'], 40)}{' (fairness-critical)' if d['fairnessCritical'] else ''}" for d in diffs]))
+            b5.extend(_comparison_blocks(resb.get("comparison")))
             pairs += 1
     if not pairs:
         b5.append(Block("para", text="No comparison result is present: no proposal run with an earlier baseline run is recorded for the attached scenarios."))
@@ -294,6 +295,44 @@ def build_model(db: Session, p: PlanningProjectEntity, now: datetime.datetime | 
     return DocModel(title=f"Planning project report - {p.name}", subtitle=f"Project {p.id} | status {PROJECT_STATUS_LABEL.get(p.status, p.status)} | generated {generated}",
                     generated_at=generated, sections=[Section(i + 1, SECTION_TITLES[i], b) for i, b in enumerate(S)],
                     header_text=HEADER_TEXT, disclaimer=DISCLAIMER, template_version=TEMPLATE_VERSION)
+
+
+VERDICT_LABEL = {"better": "Better", "worse": "Worse", "mixed": "Mixed", "no_change": "No clear change"}
+
+
+def _comparison_blocks(c) -> list[Block]:
+    """The Simulate before / after comparison stored with a proposal run (frontend comparisonRunRecord, schema
+    twincity.comparison_summary/v1): verdict, measures and the roads / junctions that changed most. MODEL OUTPUTS."""
+    if not isinstance(c, dict) or c.get("schema") != "twincity.comparison_summary/v1":
+        return []
+    v = c.get("verdict") or {}
+    conf = c.get("confidence") or {}
+    out = [Block("para", text=f"Simulate comparison recorded with this run (clock {int(c.get('hour') or 0):02d}:00, baseline run {c.get('baselineRunId') or 'not recorded'}): "
+                              f"{VERDICT_LABEL.get(v.get('overall'), v.get('overall') or '-')} overall; selected road {VERDICT_LABEL.get(v.get('section'), '-')}, "
+                              f"neighbourhood {VERDICT_LABEL.get(v.get('network'), '-')}, whole area {VERDICT_LABEL.get(v.get('area'), '-')}; confidence {conf.get('level') or '-'}. "
+                              f"{_short(v.get('summary') or '', 400)}")]
+    if c.get("demandEstimated"):
+        out.append(Block("note", text="Demand: estimated (project-level, not for decisions). " + _short(c.get("demandLabel") or "", 300)))
+    elif c.get("demandLabel"):
+        out.append(Block("note", text="Demand: " + _short(c.get("demandLabel"), 300)))
+    ds = [d for d in c.get("deltas") or [] if isinstance(d, dict)]
+    if ds:
+        out.append(Block("table", header=["Part", "Measure", "Existing city", "Proposal", "Unit"],
+                         rows=[[str(d.get("group", "")), str(d.get("label", "")), _num(d.get("before")), _num(d.get("after")), str(d.get("unit", ""))] for d in ds[:40]]))
+    rs = [r for r in c.get("roads") or [] if isinstance(r, dict)]
+    if rs:
+        out.append(Block("para", text="Roads whose volume changed most (model output, veh/h at the clock hour; v/c = volume / capacity):"))
+        out.append(Block("table", header=["Road", "Volume before", "Volume after", "v/c before", "v/c after", "Speed before", "Speed after"],
+                         rows=[[str(r.get("road", "")), _num(r.get("vphBefore")), _num(r.get("vphAfter")), _num(r.get("vcBefore")), _num(r.get("vcAfter")), _num(r.get("speedBefore")), _num(r.get("speedAfter"))] for r in rs[:15]]))
+    js = [j for j in c.get("junctions") or [] if isinstance(j, dict)]
+    if js:
+        out.append(Block("para", text="Junctions whose delay changed most (model output, s per vehicle):"))
+        out.append(Block("table", header=["Junction", "Delay before", "Delay after", "LOS before", "LOS after"],
+                         rows=[[str(j.get("label", "")), _num(j.get("delayBefore")), _num(j.get("delayAfter")), str(j.get("losBefore") or "-"), str(j.get("losAfter") or "-")] for j in js[:10]]))
+    cav = [str(x) for x in c.get("caveats") or []][:8]
+    if cav:
+        out.append(Block("bullets", items=[_short(x, 300) for x in cav]))
+    return out
 
 
 ACTOR_HOW = {"header": "name typed in the tool", "request_field": "name typed in the tool", "record_field": "name on the record",

@@ -10,7 +10,9 @@
  * Network effect: the junction becomes a roundabout in Simulate's static assignment: its approaches lose any signal
  * (mapped or edited) and get IRC:65 Table 9.1 entry capacity C = A·exp(−B·Qc) per entry lane (Indo-HCM values by ICD),
  * with the circulating flow Qc ASSUMED (600 PCU/h: the one-pass link capacities cannot feed the modelled circulating flow
- * back). The corridor micro-simulation does not model a roundabout (it keeps the junction's previous control).
+ * back). The corridor micro-simulation controls the junction as a roundabout too (TrafficMicroSim.applyRoundabouts): no
+ * signal, each entry gives way to traffic arriving from its right, with minor-road gap acceptance; the ring is not drawn
+ * as separate links, so circulating flow and its capacity emerge from the gaps at the one junction node.
  */
 import type { CityObject, RoadObject, StreetElementObject } from '../objects/types';
 import type { RoundaboutCategory, RoundaboutSpec } from './types';
@@ -103,7 +105,7 @@ export function roundaboutChecks(el: StreetElementObject, objects: readonly City
   const cap = entryCapacityPcu(rb.icdM, SD.rbAssumedQcPcu.value);
   out.push(sdCheck({ id: 'rb-model', name: 'Effect in Simulate', status: 'info', actual: cap, required: null, unit: 'PCU/h/lane',
     text: cap == null ? `ICD ${fmtM(rb.icdM)} is outside IRC:65 Table 9.1 (20–70 m): the assignment gives its approaches no roundabout capacity (signals removed only).`
-      : `Approaches lose any signal; entry capacity ${cap} PCU/h per entry lane (IRC:65 Table 9.1, Qc assumed ${SD.rbAssumedQcPcu.value} PCU/h). The corridor micro-simulation does not model roundabouts.`,
+      : `Approaches lose any signal; entry capacity ${cap} PCU/h per entry lane (IRC:65 Table 9.1, Qc assumed ${SD.rbAssumedQcPcu.value} PCU/h). In the corridor micro-simulation the junction has no signal and each entry gives way to traffic from its right (the ring is one junction node, not drawn as links).`,
     basis: basisOf('rbAssumedQcPcu') + '; IRC:65-2017 §9 Table 9.1, p. 35 — IRC text, third-party copy — unconfirmed' }));
   return out;
 }

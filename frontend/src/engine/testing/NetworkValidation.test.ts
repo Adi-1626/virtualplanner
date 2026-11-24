@@ -138,6 +138,11 @@ describe.skipIf(!process.env.VAL24)('network-wide validation against observation
     om.onChange((types: Set<string>) => { if (types.has('road') || types.size === 0 || types.has('junction')) mode.networkChanged(); });
     // p10: the city-wide estimated traffic as edge flows is off in the app (worse on the hold-out); VAL24_ESTIMATED=1 turns it on here
     if (process.env.VAL24_ESTIMATED) mode.useEstimatedTraffic = true;
+    // p11: the estimated zone land use inside the area and the match to the estimated main-road flows (each on with the
+    // estimated traffic unless set to 0); VAL24_ESTIMATED=0 runs the class-typical configuration even if the app default changes
+    if (process.env.VAL24_ESTIMATED === '0') mode.useEstimatedTraffic = false;
+    if (process.env.VAL24_EST_LANDUSE === '0') mode.estimatedLandUse = false;
+    if (process.env.VAL24_EST_MATCH === '0') mode.estimatedMatch = false;
     if (process.env.VAL24_SEEDS) mode.analysisSeeds = process.env.VAL24_SEEDS.split(',').map(Number);
     mode.enter();
     if (process.env.VAL24_HYPO_SCALE) { hypo.demandScale = Number(process.env.VAL24_HYPO_SCALE); mode.setDemandSettings({ hypotheticalScale: hypo.demandScale }); }

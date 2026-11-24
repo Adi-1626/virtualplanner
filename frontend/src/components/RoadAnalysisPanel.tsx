@@ -28,6 +28,7 @@ import { CapacityStretchCard, LaneInsightCard } from './LaneBottleneckCard';
 import { ComparisonHourNote, EvidenceTag, ResultHeading } from './simulate/SimulatePieces';
 import { useShellStore } from '../shell/useShellStore';
 import { JunctionCompareCard } from './JunctionCompareCard';
+import { ComparisonTablesView } from './simulate/ComparisonTablesView';
 import { baselineSaveLabel, baselineScenarioWarning, type BaselineScenarioInfo } from './simulate/baselineScenario';
 import { BASE_SCENARIO_ID } from '../engine/scenarios/ScenarioManager';
 import {
@@ -360,7 +361,7 @@ export const ScenarioTest: React.FC<{ sim: SimulationModeState }> = ({ sim }) =>
           </Notice>
         )}
         {result && sim.comparison.current && <ComparisonHourNote comparisonHour={sim.comparison.current.hour} currentHour={sim.timeOfDay.hour} />}
-        {result && <ComparisonView c={result} overlay={sim.overlay} />}
+        {result && <ComparisonView c={result} overlay={sim.overlay} sim={sim} />}
       </div>
     </section>
   );
@@ -381,7 +382,7 @@ const RoadChanges: React.FC<{ title: string; rows: RoadChange[]; tone: 'good' | 
 
 const LEVEL_KPI: Record<string, string> = { 'Time to drive it': 'Time to drive', 'Speed on it': 'Speed', 'Worst junction delay at its ends': 'End junction delay', 'Traffic through the road': 'Traffic through' };
 
-const ComparisonView: React.FC<{ c: ComparisonResult; overlay: string }> = ({ c, overlay }) => {
+const ComparisonView: React.FC<{ c: ComparisonResult; overlay: string; sim: SimulationModeState }> = ({ c, overlay, sim: simState }) => {
   const mode = engineInstance.simMode;
   const v = VERDICT[c.verdict.overall];
   const kpis = ['Time to drive it', 'Speed on it', 'Worst junction delay at its ends', 'Traffic through the road'].map(l => c.section.find(d => d.label === l)).filter((d): d is NonNullable<typeof d> => !!d);
@@ -447,6 +448,7 @@ const ComparisonView: React.FC<{ c: ComparisonResult; overlay: string }> = ({ c,
           </ul>
         </div>
       )}
+      {c.tables && <ComparisonTablesView t={c.tables} sim={simState} />}
       {c.caveats.length > 0 && (
         <Disclosure title="Assumptions of this comparison" testId="comparison-caveats">
           {c.caveats.map((x, i) => <p key={i}>{x}</p>)}

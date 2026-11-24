@@ -28,10 +28,11 @@ const AlternativeChip: React.FC = () => {
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => { if (ref.current && !ref.current.contains(e.target as Node) && !(e.target as Element).closest?.('[aria-modal="true"]')) setOpen(false); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    // Capture phase + preventDefault: Esc closes the popover only, never the Simulate study or a drawing behind it
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); setOpen(false); } };
     window.addEventListener('pointerdown', onDown);
-    window.addEventListener('keydown', onKey);
-    return () => { window.removeEventListener('pointerdown', onDown); window.removeEventListener('keydown', onKey); };
+    window.addEventListener('keydown', onKey, true);
+    return () => { window.removeEventListener('pointerdown', onDown); window.removeEventListener('keydown', onKey, true); };
   }, [open]);
   const onClick = () => {
     if (designVisible) { document.getElementById('uos-alternatives')?.scrollIntoView({ block: 'start', behavior: 'smooth' }); return; }
