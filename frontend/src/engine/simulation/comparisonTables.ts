@@ -119,7 +119,7 @@ export function comparisonTables(a: RoadAnalysisResult, b: RoadAnalysisResult, r
     { label: 'Throughput of the neighbourhood (trips completed)', before: perHour(a), after: perHour(b), unit: 'veh/h', source: 'simulated', lowerIsBetter: false },
     { label: 'Mean trip time in the neighbourhood', before: a.network.meanTravelTimeS, after: b.network.meanTravelTimeS, unit: 's', source: 'simulated', lowerIsBetter: true },
     { label: 'Mean delay per trip', before: a.network.meanDelayS, after: b.network.meanDelayS, unit: 's', source: 'simulated', lowerIsBetter: true },
-    { label: 'Mean speed in the neighbourhood', before: a.network.meanSpeedKmh, after: b.network.meanSpeedKmh, unit: 'km/h', source: 'simulated', lowerIsBetter: false },
+    { label: 'Mean trip speed in the neighbourhood', before: a.network.tripSpeedKmh ?? null, after: b.network.tripSpeedKmh ?? null, unit: 'km/h', source: 'simulated', lowerIsBetter: false },
     { label: 'Stretches over capacity', before: a.assignment.overCapacityLinks, after: b.assignment.overCapacityLinks, unit: 'stretches', source: 'routed', lowerIsBetter: true },
   ];
   const notes = [

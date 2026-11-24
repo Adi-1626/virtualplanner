@@ -437,6 +437,12 @@ export interface MicroSimMetrics {
   delayIndex: number | null;
   /** Completed trips, including waiting to enter. */
   meanTravelTimeS: number | null;
+  /**
+   * Mean speed of the completed trips (km/h): their distance driven over their time, waiting to enter included, so it
+   * agrees with meanTravelTimeS. meanSpeedKmh is a snapshot of the vehicles on the network at one instant, mostly
+   * those standing in queues at the end of a run (p11 user test: 2.4 km/h beside 216 s trips), and is not a trip speed.
+   */
+  tripSpeedKmh: number | null;
   meanDelayS: number | null;
   stopsPerTrip: number | null;
   /** Vehicles removed after standing GRIDLOCK_S (= accounting.stuckRemovals; 0 unless removal is enabled). */
@@ -767,6 +773,7 @@ export class TrafficMicroSim {
   private completed = 0;
   private delaySum = 0;
   private travelTimeSum = 0;
+  private tripDistSum = 0;
   private excessTimeSum = 0;
   private stopsSum = 0;
   private gridlockRemovals = 0;
@@ -3147,6 +3154,7 @@ export class TrafficMicroSim {
     const travelTime = this.t - veh.departT;
     this.delaySum += travelTime / Math.max(veh.freeFlowS, 1);
     this.travelTimeSum += travelTime;
+    this.tripDistSum += veh.odo;
     this.excessTimeSum += Math.max(0, travelTime - veh.freeFlowS);
     this.stopsSum += veh.stops;
   }
@@ -3178,6 +3186,7 @@ export class TrafficMicroSim {
       meanSpeedKmh: n > 0 ? (speedSum / n) * 3.6 : null,
       delayIndex: this.completed > 0 ? this.delaySum / this.completed : null,
       meanTravelTimeS: this.completed > 0 ? this.travelTimeSum / this.completed : null,
+      tripSpeedKmh: this.completed > 0 && this.travelTimeSum > 0 ? (this.tripDistSum / this.travelTimeSum) * 3.6 : null,
       meanDelayS: this.completed > 0 ? this.excessTimeSum / this.completed : null,
       stopsPerTrip: this.completed > 0 ? this.stopsSum / this.completed : null,
       gridlockRemovals: this.gridlockRemovals,

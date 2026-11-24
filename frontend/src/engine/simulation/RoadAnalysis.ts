@@ -1006,7 +1006,7 @@ export function combineAnalysis(area: AreaContext, runs: CorridorRun[], dirs: { 
     directions, totalVph, status, statusConsistent, statusBySeed, headline, reasons, cause, explainedDirection: status === 'no_traffic' || !worst ? null : worst.label, bottleneck,
     origins: area.origins, destinations: area.destinations, composition: area.composition, feeders: area.feeders, nearby: area.nearby, junctions,
     selectLinkVph: area.selectLinkVph, areaVc: area.areaVc, linkVph, linkDelay, signalCycles: runs[0]?.signalCycles, signalGreens: runs[0]?.signalGreens, signalLinks: runs[0]?.signalLinks, areaLinkVph: area.areaLinkVph, areaLinkTime: area.areaLinkTime, areaBottlenecks: area.bottlenecks, networkGaps: area.networkGaps,
-    network: { ...net, completedTrips: Math.round(mean(runs.map(r => r.network.completedTrips))), meanTravelTimeS: meanOrNull(runs.map(r => r.network.meanTravelTimeS)), meanDelayS: meanOrNull(runs.map(r => r.network.meanDelayS)),
+    network: { ...net, completedTrips: Math.round(mean(runs.map(r => r.network.completedTrips))), meanTravelTimeS: meanOrNull(runs.map(r => r.network.meanTravelTimeS)), tripSpeedKmh: meanOrNull(runs.map(r => r.network.tripSpeedKmh ?? null)), meanDelayS: meanOrNull(runs.map(r => r.network.meanDelayS)),
       gridlockRemovals: Math.round(mean(runs.map(r => r.network.gridlockRemovals))), waitingToEnter: Math.round(mean(runs.map(r => r.network.waitingToEnter))), onNetwork: Math.round(mean(runs.map(r => r.network.onNetwork))) },
     load: { ...runs[0].load, servedShare: mean(runs.map(r => r.load.servedShare)), overloaded: overloadedRuns > n / 2, message: overloadedRuns > n / 2 ? loadMsg : null },
     loadBySeed: runs.map(r => r.load),
