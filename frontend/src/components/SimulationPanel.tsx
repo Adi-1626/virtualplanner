@@ -69,7 +69,7 @@ export const SimulationPanel: React.FC = () => {
   return (
     <SidePanel label="Simulate traffic" wide>
       <PanelHeader
-        title={hasRoad ? (sim.section?.name ?? sim.seedRoadIds.map(roadName).join(' + ')) : 'Study a road'}
+        title={hasRoad ? (sim.closedRoads.length ? sim.closedRoads.map(c => c.name || 'Unnamed road').join(' + ') : (sim.section?.name ?? sim.seedRoadIds.map(roadName).join(' + '))) : 'Study a road'}
         subtitle={hasRoad ? `${sim.section ? `${formatDistanceM(sim.section.lengthM)}${sim.section.carriageways === 2 ? ', both carriageways' : ''} · ` : ''}area ${formatDistanceM(sim.rangeMeters)} around it` : 'Click a road, bridge or flyover on the map'}
         onBack={hasRoad ? () => { setTab('understand'); mode.clearSeeds(); } : undefined}
         backLabel="Choose another road"
@@ -89,6 +89,13 @@ export const SimulationPanel: React.FC = () => {
       )}
       <PanelBody>
         {sim.notice && <Notice tone="info" icon={Info} action={<button aria-label="Dismiss" className="text-cyan-200 hover:text-white cursor-pointer" onClick={() => mode.dismissNotice()}><X size={14} /></button>}>{sim.notice}</Notice>}
+        {hasRoad && sim.closedRoads.length > 0 && sim.area && (
+          <div data-testid="closed-road-notice"><Notice tone="info" icon={Info}>
+            {sim.closedRoads.map(c => c.name || 'The studied road').join(' and ')} {sim.closedRoads.length > 1 ? 'are' : 'is'} removed in this proposal.
+            {' '}The study area is mapped from the roads that joined it ({[...new Set(sim.area.seedRoadIds.map(roadName))].join(', ')}), and the figures under What's wrong are for those roads.
+            {' '}Compare it with the existing city under Improve &amp; compare to see where its traffic goes.
+          </Notice></div>
+        )}
         {!hasRoad ? <PickRoad sim={sim} /> : <Study sim={sim} tab={tab} setTab={setTab} />}
       </PanelBody>
     </SidePanel>

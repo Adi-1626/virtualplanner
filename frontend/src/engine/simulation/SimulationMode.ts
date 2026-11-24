@@ -293,6 +293,12 @@ export interface CalibrationState {
 export interface SimulationModeState {
   active: boolean;
   seedRoadIds: string[];
+  /**
+   * Studied roads deleted in the active scenario (a closure proposal), by the name they had. The study stays on them:
+   * the area is mapped from the roads that joined them and Compare reports the closure (p11 user test, Baba Bhide
+   * Bridge: deleting the studied road said "not part of the active scenario any more" and nothing could be compared).
+   */
+  closedRoads: { id: string; name: string }[];
   rangeMeters: number;
   direction: StudyDirection;
   area: StudyArea | null;
@@ -402,6 +408,7 @@ export class SimulationMode {
   private state: SimulationModeState = {
     active: false,
     seedRoadIds: [],
+    closedRoads: [],
     rangeMeters: DEFAULT_STUDY_DISTANCE_M,
     direction: 'both',
     area: null,
@@ -731,7 +738,7 @@ export class SimulationMode {
     this.visualizer.reset();
     this.cancelAnalysis();
     this.analysisNetworkKey = null;
-    this.setState({ seedRoadIds: [], area: null, corridor: null, section: null, error: null, overlay: 'none', analysis: EMPTY_ANALYSIS, comparison: { ...this.state.comparison, showingProposal: false } });
+    this.setState({ seedRoadIds: [], closedRoads: [], area: null, corridor: null, section: null, error: null, overlay: 'none', analysis: EMPTY_ANALYSIS, comparison: { ...this.state.comparison, showingProposal: false } });
     this.forgetOsmResult();
   }
 
@@ -834,8 +841,9 @@ export class SimulationMode {
     this.stopTraffic();
     try {
       const roads = this.getRoads();
+      const { exploreSeeds, closed } = this.studySeeds(roads);
       const area = this.explorer.explore(roads, this.revision, {
-        seedRoadIds: this.state.seedRoadIds,
+        seedRoadIds: exploreSeeds,
         rangeMeters: this.state.rangeMeters,
         direction: this.state.direction,
       });
@@ -843,7 +851,8 @@ export class SimulationMode {
       const corridor = area.rangeMeters <= CORRIDOR_RANGE_M ? area : this.explorer.explore(roads, this.revision, { seedRoadIds: area.seedRoadIds, rangeMeters: CORRIDOR_RANGE_M, direction: this.state.direction });
       // Seeds deleted from the network drop out here
       const section = area.seedRoadIds.length ? roadSection(area, new Map(roads.map(r => [r.id, r])), area.seedRoadIds) : null;
-      this.setState({ area, corridor, error: null, seedRoadIds: area.seedRoadIds, section, speeds: this.speedReport });
+      // A closed road stays the study (its baseline and name); the area and section are mapped from the roads that joined it
+      this.setState({ area, corridor, error: null, seedRoadIds: closed.length ? this.state.seedRoadIds : area.seedRoadIds, closedRoads: closed, section, speeds: this.speedReport });
       // Back on the baseline's roads, range and direction: a "study changed" notice no longer applies
       const c = this.state.comparison;
       if (c.baseline && c.staleReason && STUDY_REASONS.has(c.staleReason) && this.baselineStudyKey === this.studyKey()) this.setState({ comparison: { ...c, staleReason: null } });
@@ -882,6 +891,33 @@ export class SimulationMode {
     this.ensureOsmRoads();
     this.ensureSignals();
     this.maybeAutoStart();
+  }
+
+  /** Name and line of each studied road as last seen in the network, so a road deleted in a proposal can still be studied. */
+  private seedMemory = new Map<string, { name: string; coordinates: DrivableObject['coordinates'] }>();
+  /**
+   * The roads the study area is mapped from: the studied roads, with any deleted in the active scenario replaced by the
+   * roads within 25 m of its ends (the roads that joined it), and the deleted ones as closed. A studied road never seen
+   * in the network is left to the explorer (which reports it missing).
+   */
+  private studySeeds(roads: readonly DrivableObject[]): { exploreSeeds: string[]; closed: { id: string; name: string }[] } {
+    const want = this.state.seedRoadIds;
+    const byId = new Map<string, DrivableObject>();
+    const wanted = new Set(want);
+    for (const r of roads) if (wanted.has(r.id)) byId.set(r.id, r);
+    for (const [id, r] of byId) this.seedMemory.set(id, { name: r.name || '', coordinates: r.coordinates });
+    const missing = want.filter(id => !byId.has(id) && this.seedMemory.has(id));
+    if (!missing.length) return { exploreSeeds: want, closed: [] };
+    const seeds = new Set(want.filter(id => byId.has(id)));
+    for (const id of missing) {
+      const c = this.seedMemory.get(id)!.coordinates;
+      for (const p of [c[0], c[c.length - 1]]) {
+        const near = this.explorer.nearestRoad(roads as DrivableObject[], this.revision, p[0], p[1], 25);
+        if (near) seeds.add(near);
+      }
+    }
+    if (!seeds.size) return { exploreSeeds: want, closed: [] };
+    return { exploreSeeds: [...seeds], closed: missing.map(id => ({ id, name: this.seedMemory.get(id)!.name })) };
   }
 
   /** Runs the analysis once a road has been picked and its area is fully mapped (the live view only starts on request). */
@@ -1653,10 +1689,10 @@ export class SimulationMode {
       const current = this.snapshotOf(output, plan, baseline!.durationS);
       const result = compareAnalyses(baseline!.analysis, output, { before: this.baselineRoads ?? new Map(), after: new Map(this.getRoads().map(r => [r.id, r])) },
         { before: baseline!.demandVph, after: current.demandVph }, baseline!.inputs ? { before: baseline!.inputs, after: current.inputs, newDemand: !!opts.withNewDemand && demandChanged } : undefined,
-        demandByClass(plan, baseline!.hourFactor));
+        demandByClass(plan, baseline!.hourFactor), this.state.closedRoads.length ? { closedRoadNames: this.state.closedRoads.map(c => c.name || 'the studied road') } : undefined);
       if (demandChanged && !opts.withNewDemand) result.caveats.unshift('The land use changed since the baseline. This comparison holds the demand at the baseline\'s, so it shows the effect of the road changes alone.');
       // The proposal run is recorded with the comparison's summary, so the planning-project report (backend PDF) can print it
-      void this.recordRun(current, comparisonRunRecord(result, baseline!, this.state.area?.seedRoadIds ?? []));
+      void this.recordRun(current, comparisonRunRecord(result, baseline!, this.state.closedRoads.length ? this.state.seedRoadIds : this.state.area?.seedRoadIds ?? []));
       this.setState({ comparison: { ...this.state.comparison, baseline, current, result, staleReason: null, running: false, progress: 1, demandChanged } });
       return current;
     } catch (err) {

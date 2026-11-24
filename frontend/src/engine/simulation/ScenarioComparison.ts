@@ -204,6 +204,20 @@ const verdictOf = (ds: Delta[]): Verdict => {
   return goods && !bads ? 'better' : bads && !goods ? 'worse' : goods && bads ? 'mixed' : 'no_change';
 };
 
+/** The road's own measures when it is closed in the proposal: no traffic crosses it; its time, speed and end delay do not exist. */
+function closedSection(a: RoadAnalysisResult, name: string): Delta[] {
+  const note = `${name} is closed in the proposal.`;
+  const closed = (label: string, before: number | null, unit: string, lowerIsBetter: boolean, after: number | null): Delta =>
+    ({ label, before, after, unit, lowerIsBetter, change: after === 0 && before ? -1 : null, good: null, note });
+  return [
+    closed('Traffic through the road', a.totalVph, 'veh/h', false, 0),
+    closed('Traffic routed along it', a.directions.reduce((n, d) => n + d.demandVph, 0), 'veh/h', false, 0),
+    closed('Time to drive it', mean(a.perSeed.map(s => s.sectionTimeS)), 's', true, null),
+    closed('Speed on it', sectionSpeed(a), 'km/h', false, null),
+    closed('Worst junction delay at its ends', mean(a.perSeed.map(s => s.endDelayS)), 's', true, null),
+  ];
+}
+
 const sectionSpeed = (r: RoadAnalysisResult) => {
   const ds = r.directions.filter(d => d.meanSpeedKmh !== null);
   const w = ds.reduce((n, d) => n + Math.max(1, d.vph), 0);
@@ -211,13 +225,14 @@ const sectionSpeed = (r: RoadAnalysisResult) => {
 };
 const mean = (xs: (number | null)[]) => { const v = xs.filter((x): x is number => x !== null); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
 
-export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, roads: { before: ReadonlyMap<string, DrivableObject>; after: ReadonlyMap<string, DrivableObject> }, demand: { before: number; after: number }, inputs?: { before: RunInputs; after: RunInputs; newDemand?: boolean }, demandByClass?: { kind: string; vph: number }[]): ComparisonResult {
+export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, roads: { before: ReadonlyMap<string, DrivableObject>; after: ReadonlyMap<string, DrivableObject> }, demand: { before: number; after: number }, inputs?: { before: RunInputs; after: RunInputs; newDemand?: boolean }, demandByClass?: { kind: string; vph: number }[], opts?: { closedRoadNames?: string[] }): ComparisonResult {
   const a = before.result, b = after.result;
   const inputCheck = inputs ? checkRunInputs(inputs.before, inputs.after, inputs.newDemand) : undefined;
   const kind = Math.abs(demand.before - demand.after) > 0.5 ? 'development' : 'infrastructure';
   const sameSeeds = a.perSeed.length === b.perSeed.length && a.perSeed.every((s, i) => s.seed === b.perSeed[i].seed);
   const seeds = (pick: (s: RoadAnalysisResult['perSeed'][number]) => number | null) => sameSeeds ? { before: a.perSeed.map(pick), after: b.perSeed.map(pick) } : undefined;
-  const section: Delta[] = [
+  const closedName = opts?.closedRoadNames?.length ? opts.closedRoadNames.join(' and ') : null;
+  const section: Delta[] = closedName ? closedSection(a, closedName) : [
     delta('Traffic through the road', a.totalVph, b.totalVph, 'veh/h', false, 0.05, seeds(s => s.sectionVph)),
     delta('Traffic routed along it', a.directions.reduce((n, d) => n + d.demandVph, 0), b.directions.reduce((n, d) => n + d.demandVph, 0), 'veh/h', false, 0.05),
     delta('Time to drive it', mean(a.perSeed.map(s => s.sectionTimeS)), mean(b.perSeed.map(s => s.sectionTimeS)), 's', true, 0.05, seeds(s => s.sectionTimeS)),
@@ -227,7 +242,7 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
     delta('Worst junction delay at its ends', mean(a.perSeed.map(s => s.endDelayS)), mean(b.perSeed.map(s => s.endDelayS)), 's', true, 0.1, seeds(s => s.endDelayS)),
   ];
   const endDelay = section[4];
-  if ((endDelay.before === null) !== (endDelay.after === null)) endDelay.note = `Not measured in the ${endDelay.before === null ? 'existing city' : 'proposal'}: the simulation recorded no junction at the road's ends in any run (an edit can change which junctions count as its ends).`;
+  if (!closedName && (endDelay.before === null) !== (endDelay.after === null)) endDelay.note = `Not measured in the ${endDelay.before === null ? 'existing city' : 'proposal'}: the simulation recorded no junction at the road's ends in any run (an edit can change which junctions count as its ends).`;
   // Volume by itself is neither good nor bad: more vehicles can mean it now relieves a parallel road
   section[0].good = null; section[1].good = null;
   const network: Delta[] = [
@@ -242,6 +257,10 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
     delta('Road stretches over capacity', a.assignment.overCapacityLinks, b.assignment.overCapacityLinks, 'stretches', true, 0.05),
     delta('Trips that cannot reach their destination', a.assignment.unroutedVph, b.assignment.unroutedVph, 'veh/h', true, 0.05),
   ];
+  // From none to some has no percentage, but it is a loss: those trips drop out of every other total, so a cut route
+  // read as "less time spent driving in the area" and a closure as an improvement (p11 closure test)
+  const lost = area[2];
+  if (lost.change === null && (lost.after ?? 0) - (lost.before ?? 0) > 1) { lost.good = false; lost.note = `${Math.round((lost.after ?? 0) - (lost.before ?? 0)).toLocaleString()} veh/h more have no route in the proposal and drop out of the other figures.`; }
 
   // Per road (assignment): volume and load before and after
   const byRoad = (r: RoadAnalysisResult, rs: ReadonlyMap<string, DrivableObject>) => {
@@ -295,6 +314,11 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
     summary = `A trade-off, not a clear improvement: ${gained.join(', ')} improve${gained.length === 1 ? 's' : ''}, but ${lost.join(', ')} get${lost.length === 1 ? 's' : ''} worse in every run.`;
   }
   if (overall === 'better') summary = `The change improves ${sv === 'better' ? 'the selected road' : 'the neighbourhood'} in every run, without a new bottleneck or more total travel time in the area.`;
+  if (closedName) {
+    const moved = `the ${Math.round(a.totalVph).toLocaleString()} veh/h that crossed it in the existing city take other roads (Where traffic moved)`;
+    const cut = lost.good === false ? ` ${Math.round((lost.after ?? 0) - (lost.before ?? 0)).toLocaleString()} veh/h can no longer reach their destination within the study area and are left out of the other figures, so read them with care.` : '';
+    summary = `${closedName} is closed in this proposal: ${moved}. The closure ${word[nv]} its neighbourhood and ${word[av]} the wider area${newBottlenecks.length ? `, with ${newBottlenecks.length} new bottleneck${newBottlenecks.length > 1 ? 's' : ''} (${newBottlenecks.map(x => x.roadName).join(', ')})` : ''}.${cut}`;
+  }
 
   const simDeltas = [...section, ...network].filter(d => d.agreement && d.change !== null && Math.abs(d.change) >= 0.05);
   const allAgree = simDeltas.every(d => d.agreement!.same === d.agreement!.of);
@@ -321,7 +345,7 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
   if (after.unroutedVph > before.unroutedVph + 1) caveats.push(`${Math.round(after.unroutedVph - before.unroutedVph).toLocaleString()} veh/h more can no longer reach their destination: the change cuts a route.`);
   const emissions = emissionDeltas(a, b, sameSeeds);
   return { kind, demandBefore: demand.before, demandAfter: demand.after, section, network, area, rerouting, winners, losers, newBottlenecks, segmentChange, ...(emissions ? { emissions } : {}),
-    laneInsights: laneInsights(a.directions, b.directions, roads, newBottlenecks), tables: comparisonTables(a, b, roads, demandByClass),
+    laneInsights: closedName ? [] : laneInsights(a.directions, b.directions, roads, newBottlenecks), tables: comparisonTables(a, b, roads, demandByClass),
     verdict: { section: sv, network: nv, area: av, overall, summary }, confidence, caveats, ...(inputCheck ? { inputs: inputCheck } : {}) };
 }
 
