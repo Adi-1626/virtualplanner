@@ -207,7 +207,9 @@ const idbBaselineStore: BaselineStore = {
 /** What the comparison reads of a baseline road (ScenarioComparison: names, lane signature): kept small for storage. */
 export const compactRoad = (r: DrivableObject): DrivableObject => {
   const sec = 'sections' in r ? r.sections?.[0] : undefined;
-  return { id: r.id, type: r.type, name: r.name, laneCount: r.laneCount, isOneWay: r.isOneWay,
+  // Its two ends only: the comparison reads each road's direction of travel from them (both carriageways of a divided road)
+  const c = r.coordinates;
+  return { id: r.id, type: r.type, name: r.name, laneCount: r.laneCount, isOneWay: r.isOneWay, ...((c?.length ?? 0) >= 2 ? { coordinates: [c[0], c[c.length - 1]] } : {}),
     ...(sec ? { sections: [{ carriagewayA: { lanes: sec.carriagewayA?.lanes }, ...(sec.carriagewayB ? { carriagewayB: { lanes: sec.carriagewayB.lanes } } : {}) }] } : {}) } as unknown as DrivableObject;
 };
 

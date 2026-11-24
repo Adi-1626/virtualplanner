@@ -50,8 +50,8 @@ const near = (p: readonly number[], q: readonly number[], m: number) => Math.hyp
 export interface RoadAgg { vph: number; vc: number; vkm: number; vh: number; delay: number; km: number; keys: Set<string> }
 
 /** Compass bearing (degrees) of a link: its road drawn from first to last point, reversed for the backward link. */
-function linkBearing(road: DrivableObject | undefined, dir: string): number {
-  const c = road?.coordinates;
+function linkBearing(road: DrivableObject | undefined, dir: string, fallback?: DrivableObject): number {
+  const c = road?.coordinates?.length ? road.coordinates : fallback?.coordinates;
   const base = c && c.length >= 2
     ? Math.atan2((c[c.length - 1][0] - c[0][0]) * Math.cos(c[0][1] * Math.PI / 180), c[c.length - 1][1] - c[0][1]) * 180 / Math.PI
     : 0;
@@ -63,9 +63,10 @@ function linkBearing(road: DrivableObject | undefined, dir: string): number {
  * The volume is the busiest stretch in each direction of travel, added: the way 'Traffic routed along it' counts the
  * studied road. The heaviest single direction read 'Baba Bhide Bridge 1,031 veh/h' beside 'routed along it 1,787' (p11);
  * a divided road's carriageways are separate one-way roads of one name, so the direction comes from each link's
- * bearing, not from fwd/bwd.
+ * bearing, not from fwd/bwd. A baseline restored from the browser keeps its roads without their lines, so the other
+ * side's road of the same id (`geometry`) gives the bearing: otherwise Karve Road's one-way pieces read 4,427 → 8,423.
  */
-export function byRoad(r: RoadAnalysisResult, roads: ReadonlyMap<string, DrivableObject>): Map<string, RoadAgg> {
+export function byRoad(r: RoadAnalysisResult, roads: ReadonlyMap<string, DrivableObject>, geometry?: ReadonlyMap<string, DrivableObject>): Map<string, RoadAgg> {
   const out = new Map<string, RoadAgg>();
   const times = r.areaLinkTime;
   const flows = new Map<string, { bearing: number; vph: number }[]>();
@@ -76,7 +77,7 @@ export function byRoad(r: RoadAnalysisResult, roads: ReadonlyMap<string, Drivabl
     if (!name || isGenericRoadName(name)) return;
     const seg = linkId.replace(/_(fwd|bwd)$/, '');
     const e = out.get(name) ?? out.set(name, { vph: 0, vc: 0, vkm: 0, vh: 0, delay: 0, km: 0, keys: new Set() }).get(name)!;
-    (flows.get(name) ?? flows.set(name, []).get(name)!).push({ bearing: linkBearing(road, linkId.endsWith('_bwd') ? 'bwd' : 'fwd'), vph });
+    (flows.get(name) ?? flows.set(name, []).get(name)!).push({ bearing: linkBearing(road, linkId.endsWith('_bwd') ? 'bwd' : 'fwd', geometry?.get(roadId)), vph });
     e.vc = Math.max(e.vc, r.areaVc.get(seg) ?? 0);
     const t = times?.get(linkId);
     if (t) {
@@ -106,7 +107,7 @@ const losRank = (l: string | null) => (l ? 'ABCDEF'.indexOf(l) : -1);
 
 export function comparisonTables(a: RoadAnalysisResult, b: RoadAnalysisResult, roads: { before: ReadonlyMap<string, DrivableObject>; after: ReadonlyMap<string, DrivableObject> },
   demandByClass?: { kind: string; vph: number }[]): ComparisonTables {
-  const ra = byRoad(a, roads.before), rb = byRoad(b, roads.after);
+  const ra = byRoad(a, roads.before, roads.after), rb = byRoad(b, roads.after, roads.before);
   const links: LinkRow[] = [...new Set([...ra.keys(), ...rb.keys()])].map(road => {
     const x = ra.get(road), y = rb.get(road);
     return {

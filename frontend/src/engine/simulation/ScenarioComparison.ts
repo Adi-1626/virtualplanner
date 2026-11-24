@@ -273,7 +273,7 @@ export function compareAnalyses(before: AnalysisOutput, after: AnalysisOutput, r
   // Per road (assignment): volume and load before and after, as the road table counts them (busiest stretch in each
   // direction, added: the heaviest single direction listed the closed Baba Bhide Bridge as −1,031 veh/h beside 'routed
   // along it 1,787', p11)
-  const ra = roadAggregates(a, roads.before), rb = roadAggregates(b, roads.after);
+  const ra = roadAggregates(a, roads.before, roads.after), rb = roadAggregates(b, roads.after, roads.before);
   const namesAfter = new Set([...roads.after.values()].map(r => r.name));
   const changes: RoadChange[] = [...new Set([...ra.keys(), ...rb.keys()])].map(roadName => {
     const x = ra.get(roadName), y = rb.get(roadName);

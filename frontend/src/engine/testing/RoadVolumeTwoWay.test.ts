@@ -43,4 +43,17 @@ describe('comparison road volumes', () => {
     expect(agg.vph).toBe(3400 + 2900);
     expect(agg.vc).toBeCloseTo(1.3);
   });
+
+  it('reads the direction from the other side when a restored baseline kept its roads without their lines', () => {
+    const geo = new Map([
+      ['ne', road('ne', 'Karve Road', [[73.830, 18.490, 0], [73.840, 18.497, 0]])],
+      ['sw', road('sw', 'Karve Road', [[73.8401, 18.4971, 0], [73.8301, 18.4901, 0]])],
+    ]);
+    const bare = new Map([['ne', road('ne', 'Karve Road')], ['sw', road('sw', 'Karve Road')]]);
+    const r = res({ ne_seg_0_fwd: 4427, sw_seg_0_fwd: 4000 }, { ne_seg_0: 2.5, sw_seg_0: 2.4 });
+    // Without lines on either side both one-way pieces read as one direction (the busier one only)
+    expect(byRoad(r, bare).get('Karve Road')!.vph).toBe(4427);
+    expect(byRoad(r, bare, geo).get('Karve Road')!.vph).toBe(8427);
+    expect(byRoad(r, geo).get('Karve Road')!.vph).toBe(8427);
+  });
 });

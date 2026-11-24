@@ -39,9 +39,13 @@ describe('the baseline is kept across a page reload', () => {
     expect(base).toBeTruthy();
     expect(store.m.size).toBe(1);
     const rec = [...store.m.values()][0];
-    // The roads are kept small: name, lanes and direction only
+    // The roads are kept small: name, lanes, direction and their two ends (the comparison reads each road's direction
+    // of travel from them), not their lines
     expect(Object.keys(rec.roads[0]).sort()).toEqual(expect.arrayContaining(['id', 'isOneWay', 'laneCount', 'name', 'type']));
-    expect(rec.roads.every(r => !('coordinates' in r))).toBe(true);
+    expect(rec.roads.every(r => !('coordinates' in r) || r.coordinates.length === 2)).toBe(true);
+    const anyRoad = rec.roads.find(r => 'coordinates' in r)!;
+    const full = fx.roads.find(r => r.id === anyRoad.id)!;
+    expect(anyRoad.coordinates).toEqual([full.coordinates[0], full.coordinates[full.coordinates.length - 1]]);
     a.exit?.();
 
     // "Reload": a new mode on the same city
