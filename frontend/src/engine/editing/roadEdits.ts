@@ -73,11 +73,17 @@ export function roadFieldUpdates(r: RoadObject, field: string, value: any, synth
     rUpdates.laneWidth = laneWidth;
   }
 
+  // The outer edge's footpath: carriagewayB's right side on a two-way road, carriagewayA's right side on a one-way
+  // one. Kept as it was when the edit is not about footpaths (p11 user test: widening Sinhagad Road, a one-way
+  // carriageway with a footpath on its left only, gave it a new right footpath, 1.5 + 10.5 → 1.5 + 14 + 1.5)
+  const outerFootpath = carriagewayB ? (carriagewayB.rightRoadside?.footpathWidth || 0) : (carriagewayA.rightRoadside?.footpathWidth || 0);
+  const emptySide = (footpathWidth: number) => ({ footpathWidth, cycleTrackWidth: 0, vergeWidth: 0, parkingWidth: 0, drainageWidth: 0 });
   if (field === 'isOneWay') {
     if (isOneWay) {
       carriagewayA.direction = 'forward';
       firstSection.carriagewayB = undefined;
       carriagewayB = undefined;
+      carriagewayA.rightRoadside = { ...(carriagewayA.rightRoadside ?? emptySide(0)), footpathWidth: outerFootpath };
     } else {
       carriagewayA.direction = 'both';
       const defaultBwdLanes = 1;
@@ -85,10 +91,11 @@ export function roadFieldUpdates(r: RoadObject, field: string, value: any, synth
         direction: 'backward',
         lanes: defaultBwdLanes,
         laneWidth,
-        leftRoadside: { footpathWidth: 0, cycleTrackWidth: 0, vergeWidth: 0, parkingWidth: 0, drainageWidth: 0 },
-        rightRoadside: { footpathWidth: hasFootpath ? footpathWidth : 0, cycleTrackWidth: 0, vergeWidth: 0, parkingWidth: 0, drainageWidth: 0 }
+        leftRoadside: emptySide(0),
+        rightRoadside: emptySide(outerFootpath)
       };
       carriagewayB = firstSection.carriagewayB;
+      carriagewayA.rightRoadside = { ...(carriagewayA.rightRoadside ?? emptySide(0)), footpathWidth: 0 };
     }
   } else if (field === 'lanesForward') {
     carriagewayA.lanes = Math.max(1, Number(value));
@@ -102,10 +109,11 @@ export function roadFieldUpdates(r: RoadObject, field: string, value: any, synth
           direction: 'backward',
           lanes: Math.max(1, Number(value)),
           laneWidth,
-          leftRoadside: { footpathWidth: 0, cycleTrackWidth: 0, vergeWidth: 0, parkingWidth: 0, drainageWidth: 0 },
-          rightRoadside: { footpathWidth: hasFootpath ? footpathWidth : 0, cycleTrackWidth: 0, vergeWidth: 0, parkingWidth: 0, drainageWidth: 0 }
+          leftRoadside: emptySide(0),
+          rightRoadside: emptySide(outerFootpath)
         };
         carriagewayB = firstSection.carriagewayB;
+        carriagewayA.rightRoadside = { ...(carriagewayA.rightRoadside ?? emptySide(0)), footpathWidth: 0 };
       } else {
         carriagewayB.lanes = Math.max(1, Number(value));
       }
@@ -118,12 +126,21 @@ export function roadFieldUpdates(r: RoadObject, field: string, value: any, synth
   firstSection.hasMedian = hasDivider && !isOneWay;
   firstSection.medianWidth = firstSection.hasMedian ? dividerWidth : 0;
 
-  carriagewayA.leftRoadside.footpathWidth = hasFootpath ? footpathWidth : 0;
-  if (carriagewayB) {
-    carriagewayB.rightRoadside.footpathWidth = hasFootpath ? footpathWidth : 0;
-    carriagewayA.rightRoadside.footpathWidth = 0;
-  } else {
-    carriagewayA.rightRoadside.footpathWidth = hasFootpath ? footpathWidth : 0;
+  // Footpaths change only on a footpath edit. Turning them on gives both outer edges one (the sides that had one
+  // keep their width); a width edit applies to the sides that have a footpath (both, when none has one yet).
+  carriagewayA.leftRoadside = carriagewayA.leftRoadside ?? emptySide(0);
+  const outer = carriagewayB ? (carriagewayB.rightRoadside = carriagewayB.rightRoadside ?? emptySide(0)) : (carriagewayA.rightRoadside = carriagewayA.rightRoadside ?? emptySide(0));
+  if (carriagewayB) carriagewayA.rightRoadside = { ...(carriagewayA.rightRoadside ?? emptySide(0)), footpathWidth: 0 };
+  if (field === 'hasFootpath') {
+    if (!hasFootpath) { carriagewayA.leftRoadside.footpathWidth = 0; outer.footpathWidth = 0; }
+    else {
+      if (!(carriagewayA.leftRoadside.footpathWidth > 0)) carriagewayA.leftRoadside.footpathWidth = footpathWidth;
+      if (!(outer.footpathWidth > 0)) outer.footpathWidth = footpathWidth;
+    }
+  } else if (field === 'footpathWidth') {
+    const left = carriagewayA.leftRoadside.footpathWidth > 0, right = outer.footpathWidth > 0;
+    if (left || !right) carriagewayA.leftRoadside.footpathWidth = hasFootpath ? footpathWidth : 0;
+    if (right || !left) outer.footpathWidth = hasFootpath ? footpathWidth : 0;
   }
 
   // The lanes or direction are now the user's: the simulation's correction layer must not override them (networkCorrections.ts)
