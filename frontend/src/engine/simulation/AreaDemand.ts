@@ -569,22 +569,43 @@ export function compileAreaDemand(context: SimulationContext, area: StudyArea, r
       },
     };
   }
-  const parts = [`${Math.round(components.internal)} internal`, `${Math.round(components.outbound + components.inbound)} to/from beyond the edge`, `${Math.round(components.through)} through`];
-  if ((components.noEdgeRoute ?? 0) >= 1) parts.push(`${Math.round(components.noEdgeRoute!)} left out (no drivable way to the edge)`);
+  const breakdown = demandBreakdownText(components, total);
+  const own = components.internal + components.outbound + components.inbound >= 0.5;
   return {
     trips,
     provenance: {
       source: 'project-estimate',
-      label: `Estimated peak-hour demand: trips of the area's buildings (CMP 2018 Pune rates and trip lengths) plus traffic crossing the edge ${calibratedPoints
+      label: `Estimated peak-hour demand: ${own ? 'trips of the area\'s buildings (CMP 2018 Pune rates and trip lengths) plus ' : ''}traffic crossing the edge ${calibratedPoints
         ? `at flows from the central-Pune window calibrated to ${options.calibratedEdgeFlows!.periods[period as 'AM_Peak' | 'PM_Peak']?.calibrationSites.length ?? 0} 2008 counts (${calibratedPoints} of ${cordon.length} edge roads; the rest at class-typical flows)`
         : estimatedPoints
           ? `at the city-wide estimated flows (${options.estimatedTraffic!.id}, ${options.estimatedTraffic!.label}; ${estimatedPoints} of ${cordon.length} edge roads), calibrated to estimated data`
-          : 'on main roads at counted Pune arterial flows'}${landUse ? `; trips of the estimated CMP-2024 zone population and employment not held by the project (${Math.round(landUse.residents).toLocaleString('en-IN')} residents, ${Math.round(landUse.employees).toLocaleString('en-IN')} jobs here; estimated, project-level, not for decisions)` : ''}. ${parts.join(', ')} veh/h. Not measured on these roads.`,
+          : 'on main roads at counted Pune arterial flows'}${landUse ? `; trips of the estimated CMP-2024 zone population and employment not held by the project (${Math.round(landUse.residents).toLocaleString('en-IN')} residents, ${Math.round(landUse.employees).toLocaleString('en-IN')} jobs here; estimated, project-level, not for decisions)` : ''}. ${breakdown} Not measured on these roads.`,
       period, vehiclesPerHour: total, pairCount: trips.length,
       components: { ...components, cordonPoints: cordon.length, calibratedCordonPoints: calibratedPoints, estimatedCordonPoints: estimatedPoints, throughIncluded: options.through !== false },
     },
   };
 }
+
+/**
+ * The demand line of the report and the panel: what share of the trips start or end in the area and what share only
+ * cross it. Parts that are zero are left out; when the area's own trips are all zero it says so and why (p11 user
+ * test, S3: "0 internal, 0 to/from beyond the edge, 30193 through veh/h" for an area that was all through traffic).
+ */
+export function demandBreakdownText(c: { internal: number; outbound: number; inbound: number; through: number; noEdgeRoute?: number }, total: number): string {
+  const f = (v: number) => Math.round(v).toLocaleString('en-IN');
+  const edge = c.outbound + c.inbound;
+  const pct = (v: number) => (total > 0 ? Math.round((v / total) * 100) : 0);
+  const left = (c.noEdgeRoute ?? 0) >= 1 ? ` ${f(c.noEdgeRoute!)} veh/h of the area's trips are left out (no drivable way to the edge).` : '';
+  if (internal0(c.internal) && internal0(edge)) {
+    return `All ${f(total)} veh/h is through traffic: it enters and leaves by the roads crossing the edge. No trips start or end in the area, ${(c.noEdgeRoute ?? 0) >= 1 ? `because the area's own ${f(c.noEdgeRoute!)} veh/h have no drivable way to the edge and are left out` : 'because the project holds no buildings or zones with activity here'}, so local access traffic is missing.`;
+  }
+  const parts: string[] = [];
+  if (!internal0(c.internal)) parts.push(`${f(c.internal)} within the area (${pct(c.internal)}%)`);
+  if (!internal0(edge)) parts.push(`${f(edge)} between the area and beyond its edge (${pct(edge)}%)`);
+  parts.push(internal0(c.through) ? 'no through traffic' : `${f(c.through)} through, crossing it (${pct(c.through)}%)`);
+  return `${f(total)} veh/h in all: ${parts.join(', ')}.${left}`;
+}
+const internal0 = (v: number) => !(v >= 0.5);
 
 /** The calibrated window shipped with the app (backend/data/calibrated_flows). */
 export const DEFAULT_CALIBRATED_EDGE_FLOWS = 'pune_central_window_v1';

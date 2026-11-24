@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BuildingObject, RoadObject } from '../objects/types';
 import { StudyAreaExplorer } from '../simulation/StudyAreaExplorer';
-import { compileAreaDemand, cordonOf, externalShare, EDGE_FLOW_PER_LANE_VPH } from '../simulation/AreaDemand';
+import { compileAreaDemand, cordonOf, externalShare, EDGE_FLOW_PER_LANE_VPH, demandBreakdownText } from '../simulation/AreaDemand';
 import { roadSection, SECTION_MAX_M } from '../simulation/roadSection';
 import { snapDemandPlan } from '../simulation/StudyDemand';
 import { TrafficMicroSim, STEP_S } from '../simulation/TrafficMicroSim';
@@ -78,6 +78,19 @@ describe('area demand', () => {
     const noThrough = compileAreaDemand(ctx, a, roadMap, { through: false })!;
     expect(noThrough.provenance.components!.through).toBe(0);
     expect(noThrough.provenance.components!.throughIncluded).toBe(false);
+  });
+  it('the demand line says plainly how the trips split; an area with no trips of its own reads as all through traffic (p11 user test, S3)', () => {
+    const plan = compileAreaDemand(ctx, explore(), roadMap)!;
+    expect(plan.provenance.label).toMatch(/veh\/h in all: [\d,]+ within the area \(\d+%\), [\d,]+ between the area and beyond its edge \(\d+%\), [\d,]+ through, crossing it \(\d+%\)/);
+    // No buildings: the old line read "0 internal, 0 to/from beyond the edge, 30193 through veh/h"
+    const onlyThrough = compileAreaDemand({ buildings: [] }, explore(), roadMap)!;
+    const c = onlyThrough.provenance.components!;
+    expect(c.internal + c.outbound + c.inbound).toBe(0);
+    expect(onlyThrough.provenance.label).not.toMatch(/\b0 internal|0 to\/from|trips of the area's buildings/);
+    expect(onlyThrough.provenance.label).toMatch(/All [\d,]+ veh\/h is through traffic/);
+    expect(onlyThrough.provenance.label).toMatch(/no buildings or zones with activity here/);
+    expect(demandBreakdownText({ internal: 0, outbound: 0, inbound: 0, through: 30193 }, 30193)).toBe('All 30,193 veh/h is through traffic: it enters and leaves by the roads crossing the edge. No trips start or end in the area, because the project holds no buildings or zones with activity here, so local access traffic is missing.');
+    expect(demandBreakdownText({ internal: 100, outbound: 300, inbound: 200, through: 400 }, 1000)).toBe('1,000 veh/h in all: 100 within the area (10%), 500 between the area and beyond its edge (50%), 400 through, crossing it (40%).');
   });
   it('never sends edge trips where they cannot drive, and reports them', () => {
     const a = explore();
