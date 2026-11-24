@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  Loader2, AlertTriangle, Flag, GitCompareArrows, TrendingUp, TrendingDown, Minus, Route, MapPin, Info, Map as MapIcon, Clock, CheckCircle2,
+  Hammer, Loader2, AlertTriangle, Flag, GitCompareArrows, TrendingUp, TrendingDown, Minus, Route, MapPin, Info, Map as MapIcon, Clock, CheckCircle2,
 } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import type { SimulationModeState, TimelineState } from '../engine/simulation/SimulationMode';
@@ -9,7 +9,12 @@ import { STATUS_WORD, type RoadAnalysisResult } from '../engine/simulation/RoadA
 import { DEFAULT_ANALYSIS } from '../engine/simulation/analysisJob';
 import { dayRowView, daySummary } from './timeOfDayView';
 import type { ComparisonResult, Verdict, RoadChange } from '../engine/simulation/ScenarioComparison';
-import { improvementsFor } from '../engine/simulation/improvements';
+import { improvementsFor, type Suggestion } from '../engine/simulation/improvements';
+import { roundTrip } from '../shell/roundTrip';
+import { useRoundTrip } from '../shell/roundTripController';
+import { testOf, testedButGone, verdictWord } from '../engine/simulation/roundTrip';
+import { RoundTripPanel } from './simulate/RoundTripBar';
+import { seedKeyOf } from '../engine/simulation/SimulationMode';
 import { ScenarioGeneratorPanel } from './ScenarioGeneratorPanel';
 import { screenlineChecks } from '../engine/calibration/screenlines';
 import { TrafficCountChecks } from './TrafficCountChecks';
@@ -26,7 +31,6 @@ import { DeltaKpi, DeltaRows, ProposalBadge } from './ScenarioDeltaTable';
 import { useCameraHeading } from '../hooks/useCameraHeading';
 import { CapacityStretchCard, LaneInsightCard } from './LaneBottleneckCard';
 import { ComparisonHourNote, EvidenceTag, ResultHeading } from './simulate/SimulatePieces';
-import { useShellStore } from '../shell/useShellStore';
 import { JunctionCompareCard } from './JunctionCompareCard';
 import { ComparisonTablesView } from './simulate/ComparisonTablesView';
 import { baselineSaveLabel, baselineScenarioWarning, type BaselineScenarioInfo } from './simulate/baselineScenario';
@@ -99,6 +103,7 @@ export const UnderstandView: React.FC<{ sim: SimulationModeState; goImprove: () 
   const hour = sim.analysis.hour ?? sim.timeOfDay.hour;
   const period = DAY_PERIODS.find(p => p.id === periodOfHour(hour))?.label ?? hourLabel(hour);
   const suggestions = improvementsFor(r, sim.section?.roadIds ?? sim.seedRoadIds, null);
+  const { improve, tested } = useImprove(sim);
   return (
     <div className="space-y-5">
       {/* Outside the dimmed result, so the notice itself keeps full contrast */}
@@ -125,7 +130,7 @@ export const UnderstandView: React.FC<{ sim: SimulationModeState; goImprove: () 
             <span className="text-[11px] text-slate-500">options to test, not results</span>
           </div>
           <ul className="space-y-2" data-testid="suggestions-preview">
-            {suggestions.slice(0, 3).map(s => <SuggestionCard key={s.title} s={s} onTest={goImprove} actions={actions} />)}
+            {suggestions.slice(0, 3).map(s => <SuggestionCard key={s.title} s={s} onTest={goImprove} onImprove={improve(s)} tested={tested(s)} actions={actions} />)}
           </ul>
         </section>
       )}
@@ -193,6 +198,7 @@ export const ImproveView: React.FC<{ sim: SimulationModeState; onThroughTheDay?:
   return (
     <div className="space-y-5" data-testid="improve-view">
       {sim.comparison.showingProposal && <ProposalBadge />}
+      <RoundTripPanel seedKey={seedKeyOf(sim.seedRoadIds)} />
       <ScenarioTest sim={sim} />
       {out ? <Suggestions r={out.result} sim={sim} /> : <AnalysisGate sim={sim} />}
       <ScenarioGeneratorPanel />
@@ -203,18 +209,52 @@ export const ImproveView: React.FC<{ sim: SimulationModeState; onThroughTheDay?:
   );
 };
 
+/**
+ * "Improve this" for a suggestion (only while the study is mapped and no re-test is running), and how a suggestion
+ * did when it was tested in this study (docs/urbanos/SIM_FLOW_P12.md).
+ */
+const useImprove = (sim: SimulationModeState) => {
+  const trip = useRoundTrip(t => t.trip);
+  const busy = sim.comparison.running || trip?.leg?.phase === 'retesting';
+  const sameStudy = !!trip && seedKeyOf(trip.study.seedRoadIds) === seedKeyOf(sim.seedRoadIds);
+  return {
+    improve: (s: Suggestion) => (sim.area && !busy ? () => void roundTrip().start(s) : undefined),
+    tested: (s: Suggestion) => { const t = sameStudy ? testOf(trip!.tests, s) : null; return t ? { iteration: t.iteration, verdict: t.verdict, proposalName: t.proposalName } : null; },
+    trip: sameStudy ? trip : null,
+    busy,
+  };
+};
+
 const Suggestions: React.FC<{ r: RoadAnalysisResult; sim: SimulationModeState }> = ({ r, sim }) => {
   const actions = useActions();
-  const list = improvementsFor(r, sim.section?.roadIds ?? sim.seedRoadIds, null);
+  const c = sim.comparison;
+  // After a comparison, the suggestions come from the proposal as it was just tested (the baseline's trips, hour and
+  // seeds), so they answer "what next?" for the change, not the existing city
+  const fromTest = !!c.result && !!c.current && c.showingProposal && !c.staleReason;
+  const src = fromTest ? c.current!.analysis.result : r;
+  const list = improvementsFor(src, sim.section?.roadIds ?? sim.seedRoadIds, null);
+  const { improve, tested, trip, busy } = useImprove(sim);
+  const gone = trip ? testedButGone(trip.tests, list) : [];
   return (
-    <section className="space-y-2">
+    <section className="space-y-2" data-testid="suggestions-section" data-source={fromTest ? 'proposal-test' : 'analysis'}>
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">What to try</h3>
-        <span className="text-[11px] text-slate-500">test each with Compare</span>
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">{fromTest ? 'What to try next' : 'What to try'}</h3>
+        <span className="text-[11px] text-slate-500">{fromTest ? 'from the proposal as tested' : 'options to test, not results'}</span>
       </div>
+      {fromTest && <p className="text-[11px] text-slate-400" data-testid="suggestions-from-test">Recomputed from the proposal run of the comparison above (the same trips, hour and seeds as the baseline). Modelled, low confidence.</p>}
       <ul className="space-y-2" data-testid="suggestions">
-        {list.map(s => <SuggestionCard key={s.title} s={s} full actions={actions} />)}
+        {list.map(s => <SuggestionCard key={s.title} s={s} full onImprove={improve(s)} tested={tested(s)} actions={actions} />)}
       </ul>
+      {gone.length > 0 && (
+        <div className="rounded-xl border border-emerald-400/20 bg-emerald-500/5 p-2.5 space-y-1" data-testid="suggestions-resolved">
+          <p className="text-[11px] font-semibold text-emerald-200">Tested and no longer flagged</p>
+          {gone.map(t => <p key={t.iteration} className="text-[11px] text-slate-300">{t.target!.title}: test #{t.iteration} in “{t.proposalName}” ({verdictWord(t.verdict)}). After that change the analysis no longer suggests it.</p>)}
+        </div>
+      )}
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button size="sm" icon={Hammer} disabled={!sim.area || busy} data-testid="own-change" onClick={() => void roundTrip().start(null)} title="Opens Design on a proposal with this road in view; when you are done, Simulate re-tests it against the saved baseline">Make my own change</Button>
+        <span className="text-[11px] text-slate-500">in Design, then come back here to re-test</span>
+      </div>
     </section>
   );
 };
@@ -321,7 +361,6 @@ export function restoredBaselineText(savedAt: string): string {
 /** Existing city against a proposal on the same frozen demand, hour and seeds. */
 export const ScenarioTest: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   const mode = engineInstance.simMode;
-  const setWorkspace = useShellStore(s => s.setWorkspace);
   const { baseline, result, staleReason, running, progress, demandChanged, showingProposal } = sim.comparison;
   const busy = running || sim.osmRoads.status === 'loading' || sim.signals.status === 'loading';
   const scenOf = (): BaselineScenarioInfo => { const a = engineInstance.scenarios.getActiveScenario(); return { isProposal: !!a && !a.isBase, name: a?.name ?? '' }; };
@@ -330,7 +369,7 @@ export const ScenarioTest: React.FC<{ sim: SimulationModeState }> = ({ sim }) =>
   const scenWarning = baselineScenarioWarning(scen, !!baseline);
   const steps = [
     { n: 1, label: 'Save existing city', done: !!baseline, title: baseline ? `Saved at ${hourLabel(baseline.hour)}, ${fmt(baseline.demandVph)} veh/h of demand` : 'Save the existing city as the baseline' },
-    { n: 2, label: 'Change it in Design', done: showingProposal || !!result, title: 'Draw or edit roads, lanes, junctions or signals in the Design workspace, then come back here', action: () => setWorkspace('design') },
+    { n: 2, label: 'Change it in Design', done: showingProposal || !!result, title: 'Opens Design on a proposal with this road in view; “Done – re-test” brings you back here and compares', action: () => void roundTrip().start(null) },
     { n: 3, label: 'Compare', done: !!result, title: `The same trips, hour and ${mode.analysisSeeds.length} seeds on both` },
   ];
   return (
@@ -343,7 +382,7 @@ export const ScenarioTest: React.FC<{ sim: SimulationModeState }> = ({ sim }) =>
             const cls = `flex items-center gap-1.5 rounded-lg border px-1.5 py-1 ${s.done ? 'border-emerald-400/30 text-emerald-200' : 'border-white/10 text-slate-300'}`;
             return (
               <li key={s.n} title={s.title}>
-                {s.action && baseline
+                {s.action && sim.area
                   ? <button type="button" onClick={s.action} data-testid="open-design" className={`${cls} w-full text-left cursor-pointer hover:border-cyan-300/50 hover:text-white`}>{body}</button>
                   : <span className={cls}>{body}</span>}
               </li>

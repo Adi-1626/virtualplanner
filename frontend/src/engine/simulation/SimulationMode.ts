@@ -841,6 +841,61 @@ export class SimulationMode {
     }, NETWORK_CHANGE_DEBOUNCE_MS);
   }
 
+  /**
+   * Studies these roads again with this range and direction (the round trip back from Design after a page reload, when
+   * the study itself was not kept): the same as picking them on the map, without moving the camera away from them.
+   */
+  public restoreStudy(o: { seedRoadIds: readonly string[]; rangeMeters: number; direction: StudyDirection }) {
+    const same = seedKeyOf(o.seedRoadIds) === seedKeyOf(this.state.seedRoadIds) && clampRangeM(o.rangeMeters) === this.state.rangeMeters && o.direction === this.state.direction;
+    if (same && this.state.area) return;
+    if (seedKeyOf(o.seedRoadIds) !== seedKeyOf(this.state.seedRoadIds)) {
+      this.invalidateComparison(STUDY_CHANGED.roads);
+      this.cancelTimeline(true);
+      this.stopTraffic();
+      this.setOverlay('none');
+      this.forgetOsmResult();
+    }
+    this.setState({ seedRoadIds: [...o.seedRoadIds], rangeMeters: clampRangeM(o.rangeMeters), direction: o.direction });
+    this.recompute(true, true);
+  }
+
+  /**
+   * Settles when the study area is mapped from the current roads and nothing it needs is still loading (the area's
+   * OSM roads, its mapped signals, a pending re-map after an edit, a baseline being restored from the browser).
+   * False when Simulate is closed, the area could not be mapped, or it takes longer than `timeoutMs`.
+   */
+  public async whenSettled(timeoutMs = 180_000): Promise<boolean> {
+    const t0 = Date.now();
+    for (;;) {
+      if (!this.state.active) return false;
+      this.flushPendingRecompute();
+      const busy = !!this.osmLoad || !!this.signalLoad || !!this.recomputeTimer;
+      if (!busy) {
+        if (!this.state.area) return false;
+        const restoring = this.baselineRestore;
+        if (restoring) await restoring.catch(() => false);
+        if (!this.osmLoad && !this.signalLoad && !this.recomputeTimer && this.baselineRestore === restoring) return !!this.state.area;
+      }
+      if (Date.now() - t0 > timeoutMs) return false;
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+
+  /** The network key of the roads the active scenario shows now (what a run on them would record). */
+  public networkKeyNow(): string { return this.currentNetworkKey(); }
+
+  /** The saved baseline as the round trip needs it: its network and scenario, and whether it is for the study on show. */
+  public baselineInfo(): { networkKey: string; scenarioId: string; forThisStudy: boolean } | null {
+    const b = this.state.comparison.baseline;
+    return b ? { networkKey: b.networkKey, scenarioId: b.scenarioId, forThisStudy: this.baselineStudyKey === this.studyKey() && !!this.baselinePlan } : null;
+  }
+
+  /** Camera on these roads (as they are in the active scenario), the way a picked road is framed. */
+  public flyToRoads(ids: readonly string[]) {
+    const want = new Set(ids);
+    this.visualizer.flyToRoad(this.getRoads().filter(r => want.has(r.id)).flatMap(r => r.coordinates));
+  }
+
   public fitView() {
     if (this.state.area) this.visualizer.flyToBounds(this.state.area.bounds);
   }

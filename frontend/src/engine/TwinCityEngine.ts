@@ -1309,18 +1309,26 @@ export class TwinCityEngine {
   public editInBuild(roadIds: readonly string[], location: [number, number, number] | null, o: { junction?: boolean } = {}): void {
     this.exitSimulationMode();
     this.setPlanningModeActive(true);
+    this.focusInDesign(roadIds, location, o);
+  }
+
+  /**
+   * In Design: the road selected (its properties open in the inspector) and in view, or, with `junction`, the whole
+   * junction at `location` open in the junction editor. With no location the camera frames the road.
+   */
+  public focusInDesign(roadIds: readonly string[], location: [number, number, number] | null, o: { junction?: boolean } = {}): void {
+    const roadId = roadIds.find(id => this.objects.getById(id));
+    const frame = () => { if (location) this.simMode.flyTo(location); else if (roadId) this.simMode.flyToRoads(roadIds); };
     if (o.junction && location) {
       void this.openImportedJunctionAt(location, true).then(j => {
         if (j) return;
-        const roadId = roadIds.find(id => this.objects.getById(id));
         if (roadId) this.selection.selectSingle(roadId);
-        this.simMode.flyTo(location);
+        frame();
       });
       return;
     }
-    const roadId = roadIds.find(id => this.objects.getById(id));
     if (roadId) this.selection.selectSingle(roadId);
-    if (location) this.simMode.flyTo(location);
+    frame();
   }
 
   public editProblemInPlanMode(problem: StudyProblem): void {

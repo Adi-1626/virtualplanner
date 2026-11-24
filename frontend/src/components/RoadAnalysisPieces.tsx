@@ -406,28 +406,39 @@ const KIND_ICON: Record<Suggestion['kind'], typeof Hammer> = { junction: Split, 
 const TESTABLE = new Set<Suggestion['kind']>(['junction', 'signal', 'widen', 'divert']);
 const KIND_TONE: Record<Suggestion['kind'], Tone> = { junction: 'info', signal: 'info', widen: 'info', divert: 'info', investigate: 'warn', none: 'good', times: 'good' };
 
-/** A suggestion as a card: what to try, its headline number, and the actions. Full shows the evidence and what to check. */
-export const SuggestionCard: React.FC<{ s: Suggestion; full?: boolean; onTest?: () => void; actions: Pick<AnalysisActions, 'editInBuild'> }> = ({ s, full, onTest, actions }) => {
+/** How a tested suggestion did, for its card (from the round trip's tests: docs/urbanos/SIM_FLOW_P12.md). */
+export interface SuggestionTested { iteration: number; verdict: 'better' | 'worse' | 'mixed' | 'no_change'; proposalName: string }
+const TESTED_WORD: Record<SuggestionTested['verdict'], { label: string; tone: Tone }> = { better: { label: 'Better', tone: 'good' }, worse: { label: 'Worse', tone: 'bad' }, mixed: { label: 'Mixed', tone: 'warn' }, no_change: { label: 'No clear change', tone: 'neutral' } };
+
+/**
+ * A suggestion as a card: what to try, its headline number, and the actions. Full shows the evidence and what to check.
+ * `onImprove`: "Improve this" opens Design on a proposal with the target in view and brings the planner back to re-test.
+ * Without it (no study to return to) the card keeps the plain "open in Design" action.
+ */
+export const SuggestionCard: React.FC<{ s: Suggestion; full?: boolean; onTest?: () => void; onImprove?: () => void; tested?: SuggestionTested | null; actions: Pick<AnalysisActions, 'editInBuild'> }> = ({ s, full, onTest, onImprove, tested, actions }) => {
   const Icon = KIND_ICON[s.kind];
   const tone = KIND_TONE[s.kind];
+  const improvable = !!onImprove && TESTABLE.has(s.kind);
   return (
-    <li className="rounded-xl border border-white/10 bg-white/[0.03] p-2.5 space-y-2" data-testid="suggestion" data-kind={s.kind}>
+    <li className="rounded-xl border border-white/10 bg-white/[0.03] p-2.5 space-y-2" data-testid="suggestion" data-kind={s.kind} data-tested={tested ? tested.verdict : undefined}>
       <div className="flex items-start gap-2">
         <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ background: `${TONE_FILL[tone]}22`, color: TONE_FILL[tone] }}><Icon size={15} /></span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-white leading-snug">{s.title}</p>
           {s.figure && <p className="text-[11px] text-slate-400 leading-snug mt-0.5"><strong className="text-sm text-cyan-200 tabular-nums mr-1">{s.figure.value}</strong>{s.figure.label}</p>}
+          {tested && <p className="mt-1 flex items-center gap-1.5 flex-wrap text-[11px] text-slate-400" data-testid="suggestion-tested"><Chip tone={TESTED_WORD[tested.verdict].tone}>Tested #{tested.iteration}: {TESTED_WORD[tested.verdict].label}</Chip>in “{tested.proposalName}”; still flagged after that change</p>}
         </div>
       </div>
       {full && <p className="text-xs text-slate-300 leading-snug">{s.why}</p>}
       {full ? (
         <Disclosure title="Evidence" tone="subtle"><p>{s.evidence}</p></Disclosure>
       ) : !s.figure && <p className="text-[11px] text-slate-400 leading-snug line-clamp-2" title={s.evidence}>{s.evidence}</p>}
-      {((onTest && (TESTABLE.has(s.kind) || s.kind === 'times')) || s.action) && (
+      {(improvable || (onTest && s.kind === 'times') || s.action) && (
         <div className="flex gap-1.5 flex-wrap">
-          {onTest && TESTABLE.has(s.kind) && <Button size="sm" variant="primary" onClick={onTest} title="Go to Improve & compare: save the existing city, make the change in Design, then compare">Test it<ChevronRight size={13} /></Button>}
+          {improvable && <Button size="sm" variant="primary" data-testid="improve-this" onClick={onImprove} title="Opens Design on a proposal with this in view (the existing city is not changed). When you are done, Simulate re-tests it against the saved baseline and compares.">{tested ? 'Improve again' : 'Improve this'}<ChevronRight size={13} /></Button>}
+          {!improvable && onTest && TESTABLE.has(s.kind) && <Button size="sm" variant="primary" onClick={onTest} title="Go to Improve & compare: save the existing city, make the change in Design, then compare">Test it<ChevronRight size={13} /></Button>}
           {onTest && s.kind === 'times' && <Button size="sm" variant="secondary" onClick={onTest} title="Go to Improve & compare, where the road can be analysed at other times of day">Other times of day<ChevronRight size={13} /></Button>}
-          {s.action && <Button size="sm" variant={onTest ? 'secondary' : 'secondary'} icon={Hammer} onClick={() => actions.editInBuild(s.action!.roadIds, s.action!.at, s.action!.junction)}>{s.action.label}</Button>}
+          {s.action && !improvable && <Button size="sm" variant="secondary" icon={Hammer} onClick={() => actions.editInBuild(s.action!.roadIds, s.action!.at, s.action!.junction)}>{s.action.label}</Button>}
         </div>
       )}
     </li>

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useShellStore } from '../shell/useShellStore';
 import {
   Pause, Play, RotateCcw, Square, Loader2, AlertTriangle, AlertOctagon, CheckCircle2, Maximize2, Eye, Hammer, ChevronDown, Crosshair, X, Info,
 } from 'lucide-react';
@@ -20,6 +21,7 @@ import { SidePanel, PanelHeader, PanelBody, Section, Figure, Button, Segmented, 
 import { UnderstandView, ImproveView, DemandEvidence } from './RoadAnalysisPanel';
 import { openSimulateDrawer, type SimulateDrawerTabId } from '../shell/contexts/SimulateDrawerNav';
 import { GetStartedCard } from './simulate/SimulatePieces';
+import { OpenLegNotice } from './simulate/RoundTripBar';
 import { readableLoadError, studySubtitle } from './simulate/format';
 const capitalise = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
@@ -35,11 +37,8 @@ const SPEED_OPTIONS = TRAFFIC_SPEEDS.map(s => ({ value: s, label: `${s}×` }));
 const PERIOD_OPTIONS = DAY_PERIODS.map(p => ({ value: p.id as DayPeriodId, label: p.label }));
 
 type Tab = 'understand' | 'improve' | 'details';
-/**
- * The open tab outlives the panel: going to Design to draw the proposal unmounts it, and it used to come back on
- * "What's wrong" with Compare out of sight (docs/urbanos/SIMULATE_AUDIT.md).
- */
-const simulateTabMemory: { tab: Tab; roads: string } = { tab: 'understand', roads: '' };
+/** The studied roads the open tab is for: a different road starts on "What's wrong" (the tab itself is in the shell store). */
+const simulateTabMemory: { roads: string } = { roads: '' };
 const TABS: { id: Tab; label: string; hint: string }[] = [
   { id: 'understand', label: '1 · What\'s wrong', hint: 'Conditions, bottlenecks and their causes' },
   { id: 'improve', label: '2 · Improve & compare', hint: 'Options to test, before and after' },
@@ -55,16 +54,16 @@ export const SimulationPanel: React.FC = () => {
   const sim = useSimulationMode();
   const mode = engineInstance.simMode;
   const hasRoad = sim.seedRoadIds.length > 0;
-  const [tab, setTabState] = useState<Tab>(simulateTabMemory.tab);
-  const setTab = (t: Tab) => { simulateTabMemory.tab = t; setTabState(t); };
+  const tab = useShellStore(st => st.simulateTab);
+  const setTab = useShellStore(st => st.setSimulateTab);
   // A different road starts on "What's wrong"; the same road (coming back from Design) keeps the tab
   const roadsKey = sim.seedRoadIds.join(',');
   useEffect(() => {
     if (simulateTabMemory.roads === roadsKey) return;
     const previous = simulateTabMemory.roads;
     simulateTabMemory.roads = roadsKey;
-    if (previous !== '') { simulateTabMemory.tab = 'understand'; setTabState('understand'); }
-  }, [roadsKey]);
+    if (previous !== '') setTab('understand');
+  }, [roadsKey, setTab]);
 
   return (
     <SidePanel label="Simulate traffic" wide>
@@ -88,6 +87,7 @@ export const SimulationPanel: React.FC = () => {
         </nav>
       )}
       <PanelBody>
+        <OpenLegNotice />
         {sim.notice && <Notice tone="info" icon={Info} action={<button aria-label="Dismiss" className="text-cyan-200 hover:text-white cursor-pointer" onClick={() => mode.dismissNotice()}><X size={14} /></button>}>{sim.notice}</Notice>}
         {hasRoad && sim.closedRoads.length > 0 && sim.area && (
           <div data-testid="closed-road-notice"><Notice tone="info" icon={Info}>

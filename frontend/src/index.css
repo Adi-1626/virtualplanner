@@ -443,3 +443,20 @@ button.uos-row:hover { background: var(--surface-2); }
 .uos-data-facts dd.is-unknown { color: var(--unknown, #9AA4B2); }
 .uos-data-footprint { margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .uos-data-chip { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border: 1px solid var(--border-strong); border-radius: 999px; font-size: 11px; color: var(--text-2); white-space: nowrap; }
+
+/* ---- Simulate round trip: the "Return to study" bar over the map (docs/urbanos/SIM_FLOW_P12.md). Top centre, clear of
+   the panel reopen button (top left) and Cesium's buttons (top right); full width on phones. ---- */
+.uos-roundtrip {
+  position: absolute; z-index: 30; top: var(--sp-3); left: 50%; transform: translateX(-50%);
+  width: min(720px, calc(100% - 300px)); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;
+  border-radius: var(--r-lg); border: 1px solid rgba(103, 232, 249, .35); background: rgba(2, 6, 23, .94);
+  box-shadow: var(--shadow-float); backdrop-filter: blur(8px);
+}
+.uos-roundtrip-ask { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-1); }
+@media (max-width: 1024.98px) {
+  .uos-roundtrip { width: auto; left: calc(var(--sp-3) + 120px); right: 64px; transform: none; }
+  .uos-shell[data-context=open] .uos-roundtrip { left: calc(var(--ctx-tablet-w, 0px) + var(--sp-3)); }
+}
+@media (max-width: 767.98px) {
+  .uos-roundtrip, .uos-shell[data-context=open] .uos-roundtrip { left: 8px; right: 60px; top: 8px; max-height: calc(100% - var(--sheet-h, 52dvh) - 16px); overflow-y: auto; }
+}

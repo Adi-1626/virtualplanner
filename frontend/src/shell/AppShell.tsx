@@ -30,6 +30,8 @@ import { SIMULATE_DRAWER_TABS } from './contexts/SimulateDrawer';
 import { ProjectsContext } from './contexts/ProjectsContext';
 import { ReportsContext } from './contexts/ReportsContext';
 import { DataCatalogueOverlay } from '../components/data/DataCatalogueView';
+import { RoundTripBar } from '../components/simulate/RoundTripBar';
+import { roundTrip } from './roundTrip';
 
 type Toast = { message: string; type: 'success' | 'error' | 'info' };
 
@@ -82,6 +84,9 @@ export const AppShell: React.FC<{ trust?: React.ReactNode }> = ({ trust }) => {
     };
     return () => { if (timeoutId) clearTimeout(timeoutId); delete (window as any).showToast; };
   }, []);
+
+  // The Simulate round trip (docs/urbanos/SIM_FLOW_P12.md): made at start so a test open before a reload comes back
+  useEffect(() => { roundTrip(); }, []);
 
   // Viewport class (phone / tablet / laptop / desktop)
   useEffect(() => {
@@ -182,6 +187,7 @@ export const AppShell: React.FC<{ trust?: React.ReactNode }> = ({ trust }) => {
       <main className="uos-stage" aria-label="Map">
         <div className="uos-map"><Viewport3D /></div>
         {mode === 'simulate' && <SimulationHud />}
+        {workspace !== 'simulate' && <RoundTripBar />}
         <DataCatalogueOverlay />
         <div className="uos-compass"><MapCompass /></div>
         {!showContext && (

@@ -42,6 +42,13 @@ export interface ShellState {
   /** A planning project the command palette asked the Projects workspace to open. */
   openProjectId: string | null;
   projectsTab: 'projects' | 'data';
+  /**
+   * The open tab of the Simulate study panel. It outlives the panel: going to Design to draw the proposal unmounts it,
+   * and it used to come back on "What's wrong" with Compare out of sight (docs/urbanos/SIMULATE_AUDIT.md). The round
+   * trip from Design sets it to 'improve' (docs/urbanos/SIM_FLOW_P12.md).
+   */
+  simulateTab: 'understand' | 'improve' | 'details';
+  setSimulateTab: (t: 'understand' | 'improve' | 'details') => void;
 
   /** Switches workspace and drives engine.setAppMode (the only place the shell changes the engine mode). */
   /** context: 'toggle' (rail click: re-clicking the active workspace collapses its panel), 'open', or 'keep'. */
@@ -80,6 +87,8 @@ export const useShellStore = create<ShellState>((set, get) => ({
   width: initialWidth,
   openProjectId: null,
   projectsTab: 'projects',
+  simulateTab: 'understand',
+  setSimulateTab: t => set({ simulateTab: t }),
 
   setWorkspace: (ws, opts) => {
     const s = get();
