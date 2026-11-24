@@ -212,4 +212,8 @@ describe('map key placement (P12 browser check)', () => {
     // An open drawer still wins (its rule comes after the hint's)
     expect(css.indexOf('.uos-shell:has(.uos-drawer.is-open) .uos-legend')).toBeGreaterThan(css.indexOf('.uos-shell:has([data-testid=drawing-hud]) .uos-legend'));
   });
+  it('on a tablet with the inspector open, is no wider than the map left of the inspector (27rem)', () => {
+    const tablet = css.slice(css.indexOf('@media (min-width: 768px) and (max-width: 1024.98px)'));
+    expect(tablet).toMatch(/\.uos-shell\[data-inspector=open\] \.uos-legend \{ max-width: max\(180px, calc\(100% - 27rem - 2 \* var\(--sp-3\)\)\); \}/);
+  });
 });

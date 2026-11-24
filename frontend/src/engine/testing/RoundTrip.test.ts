@@ -44,9 +44,17 @@ const bounds = { minLng: pt(-500, 0)[0], maxLng: pt(1300, 0)[0], minLat: pt(0, -
 // ── Engine-free model ─────────────────────────────────────────────────────
 
 describe('round trip model', () => {
+  it('an undo that writes the old values back with a new timestamp is no change (P12 Cancel → Undo them)', () => {
+    const was = { id: 'osm_1', type: 'road', updatedAt: 't1', laneCount: 2, trafficCapacity: 1500, coordinates: [[0, 0], [1, 1]] };
+    const a = proposalSnapshot([], new Map([['osm_1', was]]));
+    const edited = proposalSnapshot([], new Map([['osm_1', { ...was, laneCount: 3, updatedAt: 't2' }]]));
+    const undone = proposalSnapshot([], new Map([['osm_1', { updatedAt: 't3', coordinates: [[0, 0], [1, 1]], trafficCapacity: 1500, laneCount: 2, type: 'road', id: 'osm_1' }]]));
+    expect(changedSince(a, edited)).toEqual(['osm_1']);
+    expect(changedSince(a, undone)).toEqual([]);
+  });
   it('finds what changed in a proposal and where it is', () => {
     const a = proposalSnapshot([{ id: 'n1', type: 'road', updatedAt: '1', coordinates: [[0, 0], [1, 1]] }], new Map([['ew', { id: 'ew', type: 'road', updatedAt: '1' }]]));
-    const b = proposalSnapshot([{ id: 'n1', type: 'road', updatedAt: '2', coordinates: [[0, 0], [1, 1]] }, { id: 'u1', type: 'utility', updatedAt: '1' }], new Map([['ew', null]]));
+    const b = proposalSnapshot([{ id: 'n1', type: 'road', updatedAt: '2', coordinates: [[0, 0], [1, 2]] }, { id: 'u1', type: 'utility', updatedAt: '1' }], new Map([['ew', null]]));
     expect(changedSince(a, b)).toEqual(['ew', 'n1', 'u1']);
     expect(changedSince(a, a)).toEqual([]);
     const objs: Record<string, any> = {

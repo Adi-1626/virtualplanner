@@ -100,7 +100,18 @@ export function proposalSnapshot(own: readonly TripObject[], overlay: ReadonlyMa
   for (const [id, o] of overlay) out[id] = o === null ? '×' : stampOf(o);
   return out;
 }
-const stampOf = (o: TripObject) => `${o.updatedAt ?? ''}#${JSON.stringify(o.coordinates ?? null).length}`;
+/** A stamp of an object's content without its timestamps: an undo writes the old values back with a new updatedAt, and
+ *  that is no change (P12 browser check: Cancel → "Undo them" reported "1 change could not be undone" after undoing it). */
+const stable = (v: unknown): string => Array.isArray(v) ? `[${v.map(stable).join(',')}]`
+  : v !== null && typeof v === 'object' ? `{${Object.keys(v).sort().filter(k => (v as Record<string, unknown>)[k] !== undefined).map(k => `${JSON.stringify(k)}:${stable((v as Record<string, unknown>)[k])}`).join(',')}}`
+  : JSON.stringify(v) ?? 'null';
+const stampOf = (o: TripObject) => {
+  const { updatedAt: _u, createdAt: _c, ...rest } = o as TripObject & { createdAt?: unknown };
+  const text = stable(rest);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return `${(h >>> 0).toString(36)}#${text.length}`;
+};
 
 /** Ids added, changed or removed between two snapshots of a proposal's change set. */
 export function changedSince(before: Readonly<Record<string, string>>, after: Readonly<Record<string, string>>): string[] {

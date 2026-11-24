@@ -488,6 +488,8 @@ button.uos-row:hover { background: var(--surface-2); }
 @media (min-width: 768px) and (max-width: 1024.98px) {
   .uos-shell[data-inspector=open] .uos-legend { right: auto; left: var(--sp-3); bottom: calc(var(--sp-3) + 140px); }
   .uos-shell[data-inspector=open][data-context=open] .uos-legend { left: calc(var(--ctx-tablet-w) + var(--sp-3)); }
+  /* Narrower than the map left of the inspector (27rem wide): at 768 px only 264 px of map show and the key ran 12 px under it */
+  .uos-shell[data-inspector=open] .uos-legend { max-width: max(180px, calc(100% - 27rem - 2 * var(--sp-3))); }
 }
 /* Phone: above the open sheet, narrower */
 @media (max-width: 767.98px) {
