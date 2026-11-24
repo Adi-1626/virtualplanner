@@ -1,7 +1,6 @@
 import type { RoadAnalysisResult, Bottleneck, BindingSegment, DirectionFlow } from './RoadAnalysis';
 import type { AnalysisOutput } from './analysisJob';
 import type { DrivableObject } from './StudyAreaExplorer';
-import { isGenericRoadName } from './roadSection';
 import { comparisonTables, byRoad as roadAggregates, type ComparisonTables } from './comparisonTables';
 
 /**
