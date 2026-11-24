@@ -61,7 +61,12 @@ export function junctionOfRoad(objects: readonly CityObject[], road: DrivableObj
   const cs = road.coordinates;
   const mid = cs[Math.floor(cs.length / 2)];
   const local = junctionsAround(objects, mid, signalPoints, Math.max(LOCAL_RADIUS_M, lengthM(cs) / 2 + 250));
-  const inside = junctionsOfRoad(local.junctions, road.id, false).filter(j => j.nodeIds.length > 1);
+  // A road is part of a junction when the junction holds most of it: a 1.1 km stretch of Sinhagad Road whose 13 m
+  // piece crosses a U-turn opening was offered as "part of Sinhagad Road (junction)" (p11 user test, S3). A short
+  // road (under 60 m) inside one still is, as before.
+  const roadLen = lengthM(cs);
+  const internalLen = (j: LogicalJunction) => j.internalEdgeIds.reduce((n, id) => { const e = local.network.edges.get(id); return n + (e && e.roadId === road.id ? e.length : 0); }, 0);
+  const inside = junctionsOfRoad(local.junctions, road.id, false).filter(j => j.nodeIds.length > 1 && (roadLen <= 60 || internalLen(j) >= roadLen / 2));
   if (inside.length) return { junction: inside[0], local, inside: true };
   // A short piece (under 60 m) next to a junction: offer that junction
   if (lengthM(cs) <= 60) {

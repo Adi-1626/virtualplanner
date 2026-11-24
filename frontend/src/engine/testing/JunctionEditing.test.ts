@@ -120,6 +120,27 @@ const groupsOf = (roads: RoadObject[], signals: [number, number][] = []) => {
   return { net, js: groupJunctions(net, new Map(roads.map(r => [r.id, r])), { signalPoints: signals.map(([x, y]) => [pt(x, y)[0], pt(x, y)[1]] as [number, number]) }) };
 };
 
+describe('a long road through a junction is not "part of" it (p11 user test, S3 Sinhagad Road)', () => {
+  it('a 1 km carriageway whose 20 m piece lies inside a junction is not offered as part of it; its 20 m internal piece is', () => {
+    const a = { cls: 'arterial' as RoadClassification, oneWay: true, lanes: 3 };
+    const roads = [
+      road('eb', [[-500, -10], [-10, -10], [10, -10], [500, -10]], { ...a, name: 'Sinhagad Road' }),
+      road('wb', [[500, 10], [10, 10], [-10, 10], [-500, 10]], { ...a, name: 'Sinhagad Road' }),
+      road('nb', [[10, -300], [10, -10]], { ...a, name: 'Side Road' }),
+      road('nb2', [[10, -10], [10, 10]], { ...a, name: 'Side Road' }),
+      road('nb3', [[10, 10], [10, 300]], { ...a, name: 'Side Road' }),
+      road('sb', [[-10, 300], [-10, 10], [-10, -10], [-10, -300]], { ...a, name: 'Side Road' }),
+    ];
+    const js = groupsOf(roads).js.filter(j => j.nodeIds.length > 1);
+    expect(js.length).toBe(1);
+    expect(js[0].internalRoadIds).toContain('eb');
+    expect(junctionOfRoad(roads, roads[0])).toBeNull();
+    const hit = junctionOfRoad(roads, roads[3])!;
+    expect(hit.inside).toBe(true);
+    expect(hit.junction.id).toBe(js[0].id);
+  });
+});
+
 describe('grouping on synthetic layouts', () => {
   it('a divided road crossing a divided road (four one-way carriageways, 20 m apart) is one junction with four approaches and four exits', () => {
     const a = { cls: 'arterial' as RoadClassification, oneWay: true, lanes: 2 };
