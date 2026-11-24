@@ -214,3 +214,23 @@ describe('direction highlight state', () => {
     expect(((dirs[0].labelBearing - dirs[1].labelBearing) % 360 + 360) % 360).toBeCloseTo(180, 6);
   });
 });
+
+describe('a divided road\'s median crossover is not a direction of its own', () => {
+  it('leaves the 13 m crossovers between the carriageways out of the section (Sinhagad Road: "South-east, — / 36 km/h, 0 veh/h")', () => {
+    // (a middle vertex, as OSM ways have: a piece alongside is judged by its middle)
+    const one = (id: string, a: [number, number], b: [number, number]) => road(id, a, b, { name: 'Sinhagad Road', isOneWay: true, laneCount: 3, osmProvenance: osmTags('primary'),
+      coordinates: [pt(...a), pt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), pt(...b)] });
+    const roads: DrivableObject[] = [
+      one('osm_ne1', [0, 0], [0, 250]), one('osm_ne2', [0, 250], [0, 600]),
+      one('osm_sw1', [-13, 600], [-13, 250]), one('osm_sw2', [-13, 250], [-13, 0]),
+      // U-turn openings across the median, both ways
+      one('osm_x1', [0, 250], [-13, 250]), one('osm_x2', [-13, 250], [0, 250]),
+    ];
+    const map = new Map(roads.map(r => [r.id, r]));
+    const area = new StudyAreaExplorer().explore(roads, 1, { seedRoadIds: ['osm_ne1'], rangeMeters: 1500, direction: 'both' });
+    const section = roadSection(area, map, ['osm_ne1']);
+    expect(section.roadIds.sort()).toEqual(['osm_ne1', 'osm_ne2', 'osm_sw1', 'osm_sw2']);
+    const dirs = sectionDirections(area, section, map);
+    expect(dirs.map(d => d.compass).sort()).toEqual(['north', 'south']);
+  });
+});

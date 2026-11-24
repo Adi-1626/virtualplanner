@@ -24,6 +24,21 @@ export const isGenericRoadName = (name: string | undefined) =>
   || /^road \(unnamed\)$/i.test(name.trim());
 /** Another carriageway of the same road this close (m) runs alongside the section. */
 const ALONGSIDE_M = 45;
+/**
+ * A piece of the same road this short, running across the road (more than 50° off it), is a U-turn opening across a
+ * divided road's median, not part of either carriageway: taken in, it became a direction of its own ("South-east,
+ * — / 36 km/h, 0 veh/h" on Sinhagad Road's 13 m crossovers, p11 user test).
+ */
+const CROSSOVER_M = 40;
+const axis = (c: readonly (readonly number[])[]) => {
+  const a = c[0], b = c[c.length - 1];
+  return (Math.atan2((b[0] - a[0]) * Math.cos(a[1] * Math.PI / 180), b[1] - a[1]) * 180 / Math.PI + 360) % 180;
+};
+const isCrossover = (s: StudySegment, along: readonly (readonly number[])[]) => {
+  if (s.lengthM >= CROSSOVER_M) return false;
+  const d = Math.abs(axis(s.coordinates) - axis(along)) % 180;
+  return Math.min(d, 180 - d) > 50;
+};
 
 const SUFFIXES = /\b(road|rd|marg|path|rasta|rasta|street|st|avenue|ave|highway|hwy|chowk road)\b\.?/g;
 export const normaliseRoadName = (name: string) =>
@@ -110,11 +125,11 @@ export function roadSection(area: StudyArea, roads: ReadonlyMap<string, Drivable
   const chosen = new Map<string, StudySegment>(seedSegs.map(s => [s.key, s]));
   const endNames = new Set<string>();
   // Grow along the same road from each end of the seed pieces, up to a major junction or the length limit
-  const queue: { node: string; dist: number }[] = [];
-  for (const s of seedSegs) for (const n of nodesOf(s)) if (n) queue.push({ node: n, dist: 0 });
+  const queue: { node: string; dist: number; from: StudySegment }[] = [];
+  for (const s of seedSegs) for (const n of nodesOf(s)) if (n) queue.push({ node: n, dist: 0, from: s });
   const seen = new Set<string>();
   while (queue.length) {
-    const { node, dist } = queue.shift()!;
+    const { node, dist, from } = queue.shift()!;
     if (seen.has(node)) continue;
     seen.add(node);
     if (majorJunction(node)) {
@@ -125,11 +140,11 @@ export function roadSection(area: StudyArea, roads: ReadonlyMap<string, Drivable
       continue;
     }
     for (const s of byNode.get(node) ?? []) {
-      if (chosen.has(s.key) || !same(s)) continue;
+      if (chosen.has(s.key) || !same(s) || isCrossover(s, from.coordinates)) continue;
       const d = dist + s.lengthM;
       if (d > SECTION_MAX_M) continue;
       chosen.set(s.key, s);
-      for (const n of nodesOf(s)) if (n && n !== node) queue.push({ node: n, dist: d });
+      for (const n of nodesOf(s)) if (n && n !== node) queue.push({ node: n, dist: d, from: s });
     }
   }
   // The other carriageway of a divided road, running alongside. Alongside means beside the section's
@@ -143,12 +158,12 @@ export function roadSection(area: StudyArea, roads: ReadonlyMap<string, Drivable
   for (const s of segs) {
     if (chosen.has(s.key) || !same(s)) continue;
     const m = midpoint(s.coordinates);
-    let best = Infinity, atFreeEnd = false;
+    let best = Infinity, atFreeEnd = false, nearest: readonly (readonly number[])[] | null = null;
     for (const l of lines) {
       const { d, end } = pointToPolylineEnd(m, l);
-      if (d < best) { best = d; atFreeEnd = end !== null && freeEnds.has(endKey(end)); }
+      if (d < best) { best = d; atFreeEnd = end !== null && freeEnds.has(endKey(end)); nearest = l; }
     }
-    if (best < ALONGSIDE_M && !atFreeEnd) chosen.set(s.key, s);
+    if (best < ALONGSIDE_M && !atFreeEnd && !(nearest && isCrossover(s, nearest))) chosen.set(s.key, s);
   }
   const list = [...chosen.values()];
   const roadIds = [...new Set(list.map(s => s.roadId))];
