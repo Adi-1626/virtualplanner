@@ -86,9 +86,11 @@ export const DeltaRows: React.FC<{ rows: Delta[] }> = ({ rows }) => (
 export const DeltaKpi: React.FC<{ d: Delta; label?: string }> = ({ d, label }) => (
   <div className="rounded-xl border border-white/5 bg-white/[0.04] px-2.5 py-2 min-w-0 space-y-1" data-testid="delta-kpi" title={d.label}>
     <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 truncate">{label ?? d.label}</div>
-    <div className="flex items-baseline gap-1.5 tabular-nums whitespace-nowrap">
-      <span className="text-xs text-slate-400" title="Existing city">{fmtDeltaValue(d, d.before)}</span><span className="text-xs text-slate-600">→</span>
-      <span className={`text-lg font-semibold leading-none ${d.good === true ? 'text-emerald-300' : d.good === false ? 'text-rose-300' : 'text-white'}`} title="Proposal">{fmtDeltaValue(d, d.after)}</span>
+    {/* Wraps the proposal's figure under the existing one when the card is too narrow (e.g. "3,884 veh/h → 4,031 veh/h"
+        ran past the card's edge in a two-column grid, p11 user test) */}
+    <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 tabular-nums">
+      <span className="text-xs text-slate-400 whitespace-nowrap" title="Existing city">{fmtDeltaValue(d, d.before)}</span><span className="text-xs text-slate-600">→</span>
+      <span className={`text-lg font-semibold leading-none whitespace-nowrap ${d.good === true ? 'text-emerald-300' : d.good === false ? 'text-rose-300' : 'text-white'}`} title="Proposal">{fmtDeltaValue(d, d.after)}</span>
     </div>
     <div className="flex items-center gap-1 flex-wrap"><ChangePill d={d} /><AgreementChip d={d} /></div>
     {d.note && <p className="text-[10px] text-slate-500 leading-snug">{d.note}</p>}
