@@ -25,6 +25,16 @@ Status (updated 2026-11-22 IST):
 | 6 | [CURRENT_STATUS_AND_ROADMAP.md](CURRENT_STATUS_AND_ROADMAP.md) | What changed since 2026-11-14 (§0), what works, what is partial, the DEM and traffic verdicts, the Phase 3 plan | 20 min |
 | 7 | [LEARNING_GUIDE.md](LEARNING_GUIDE.md) | A step-by-step study plan with exact files and hands-on exercises | 1–2 weeks |
 
+## Traffic documents (Simulate)
+
+Read in this order; each phase re-runs the same 15-site validation (TAG M3.1).
+
+| Phase | Document | What it holds |
+|---|---|---|
+| P9 | [TRAFFIC_CALIBRATION_P9.md](TRAFFIC_CALIBRATION_P9.md) | The count sites, the calibration / hold-out split, edge-flow calibration and why it fails |
+| P10 | [TRAFFIC_ESTIMATED_P10.md](TRAFFIC_ESTIMATED_P10.md) | The city-wide ESTIMATED traffic dataset (project-level, not for decisions) and why it is not used for edge flows |
+| P11 | [SIM_USER_TEST_P11.md](SIM_USER_TEST_P11.md) | The planner workflow, the p11 validation record (zone demand and estimate match tried, not shipped), three scenarios end to end (Katraj flyover, Baba Bhide Bridge closure, Sinhagad Road widening), every bug fixed, the verdict and remaining gaps |
+
 ## Seven facts to remember
 1. **Seven workspaces**: Explore, Design, Underground, Environment, Simulate, Projects, Reports (`frontend/src/shell/workspaces.ts`).
 2. **The data has a paper trail.**
@@ -33,7 +43,7 @@ Status (updated 2026-11-22 IST):
    - The Dataset Registry (`ds_*` tables, `/api/datasets`, Reports → Data catalogue) records the status and licence of each one.
    - None of the data, the OSM index or `twincity.db` is in git: copy it from the dev machine or rebuild it (handbook §2.5).
 3. **Terrain is screening-grade.** DEM v3 is Copernicus 30 m, a surface model rather than bare earth. Use it to see trends, never for design levels.
-4. **The traffic model is not validated.** It fails UK TAG M3.1 (0 of 15 counts reach GEH < 5). Use it only to compare alternatives against each other.
+4. **The traffic model is not validated.** It fails UK TAG M3.1 (2 of 15 counts reach GEH < 5, hold-out 1 of 8; river screen line −26.5 %). Use it only to compare alternatives against each other.
 5. **Project facts are official-only.** `backend/updater/official.py` is the one allow-list (`*.gov.in`, `*.nic.in`, Maha-Metro, Parliament, MSRDC); news is never a source, and a named reviewer approves every change.
 6. **Much of the municipal data is licence-restricted** (OpenCity/PMC, IMD, AutoDCR). It must stay internal.
 7. **Never commit `twincity.db`, data or `.env`**, and never add two files whose names differ only by case (it breaks Windows).
