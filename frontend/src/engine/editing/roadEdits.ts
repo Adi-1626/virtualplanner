@@ -289,7 +289,7 @@ export function commitRoadFieldEdit(objects: RoadEditStore, history: RoadEditHis
       history.pushDiff({ type: 'batch', description: `Update ${selected.name || selected.id} lanes (${plan.length} pieces)`,
         diffs: plan.map((p, i) => ({ type: 'update' as const, id: p.id, before: before[i], after: { ...before[i], ...p.updates } as CityObject })) });
       for (const p of plan) objects.update(p.id, p.updates);
-      return { ids: plan.map(p => p.id), selected: { ...selected, ...plan[0].updates } as RoadObject };
+      return { ids: plan.map(p => p.id), selected: stored(objects, selected.id) ?? ({ ...selected, ...(plan.find(p => p.id === selected.id) ?? plan[0]).updates } as RoadObject) };
     }
   }
   const updates = roadFieldUpdates(selected, field, value, synthesize);
@@ -297,8 +297,14 @@ export function commitRoadFieldEdit(objects: RoadEditStore, history: RoadEditHis
   // Coalesce per object+field so typing or dragging a slider is one Undo step
   history.recordUpdate(selected, merged, `Update ${selected.name || selected.id} ${field}`, `${selected.id}:${field}`);
   objects.update(selected.id, updates);
-  return { ids: [selected.id], selected: merged };
+  return { ids: [selected.id], selected: stored(objects, selected.id) ?? merged };
 }
+/**
+ * The road as stored after the edit: in a proposal the edit makes the proposal's copy of a base road, so the edited
+ * object merged by hand kept scenarioId 'base' and the inspector said "BASE STATE" for a road just changed in the
+ * proposal until it was selected again (p11 user test, Sinhagad Road widening).
+ */
+const stored = (objects: RoadEditStore, id: string) => { const o = objects.getById(id); return o && o.type === 'road' ? ({ ...o } as RoadObject) : undefined; };
 
 /** The changes a Build properties edit of one field makes to a drawn flyover (moved from PropertiesPanel.tsx unchanged). */
 export function flyoverFieldUpdates(obj: CityObject, field: string, value: any): Partial<CityObject> {

@@ -57,8 +57,14 @@ describe('defect #1: editing a base road while a proposal is active', () => {
     const { om, history, calls } = setup();
     const base0 = viewKey(om, 'base');
     activate(om, 'P');
-    commitRoadFieldEdit(om, history, shown(om, 'osm_2'), 'lanesForward', 4, 'segment');
+    const done = commitRoadFieldEdit(om, history, shown(om, 'osm_2'), 'lanesForward', 4, 'segment');
     expect(byId(om, 'P', 'osm_2')!.laneCount).toBe(4);
+    // The inspector shows the road as stored: the proposal's copy ("PROPOSED STATE"), not the base road it came from
+    expect(done.selected.scenarioId).toBe(shown(om, 'osm_2').scenarioId);
+    expect(done.selected.scenarioId).not.toBe('base');
+    const whole = commitRoadFieldEdit(om, history, shown(om, 'osm_1'), 'lanesForward', 3, 'carriageway');
+    expect(whole.selected.scenarioId).not.toBe('base');
+    expect(whole.selected.laneCount).toBe(3);
     expect(viewKey(om, 'base')).toBe(base0);
     expect(calls.post.filter(o => o.scenarioId === 'base').map(o => o.id)).toEqual([]);
   });
