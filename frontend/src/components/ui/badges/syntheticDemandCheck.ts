@@ -27,7 +27,10 @@ export function syntheticDemandBannerLine(synthetic: boolean, supply: 'default' 
   const h = s.holdout;
   const o = P14_SYNTHETIC_RECORD?.official;
   const off = o ? ` Official-count check with it: ${o.gehAll}/${o.n} sites within GEH 5, river screen line ${pct(o.riverPct)}.` : '';
-  return `${head}. Project check with it, hold-out: journey times ${h.jt.ok}/${h.jt.n} within 15%, published counts ${h.counts.gehOk}/${h.counts.n} within GEH 5, river crossings ${pct(h.river.pct)}: ${s.pass ? 'passes' : 'fails'}.${off}`;
+  const plain = s.pass
+    ? ' In plain words: on records it was not fitted to, it matches the estimated travel times and counts well enough to pass.'
+    : ' In plain words: it does not match Pune\'s estimated travel times and counts well enough to quote its numbers; use it to explore the demo and to compare alternatives run on the same inputs.';
+  return `${head}. Project check with it, hold-out (records it was not fitted to): journey times ${h.jt.ok}/${h.jt.n} within 15%, published counts ${h.counts.gehOk}/${h.counts.n} within GEH 5, river crossings ${pct(h.river.pct)}: ${s.pass ? 'passes' : 'fails'}.${off}${plain}`;
 }
 
 export const SYNTHETIC_DEMAND_CHECK = {

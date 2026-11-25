@@ -5,7 +5,7 @@ import { StudyAreaExplorer } from '../simulation/StudyAreaExplorer';
 import { snapDemandPlan } from '../simulation/StudyDemand';
 import { decodeSyntheticDemand, odCell, rebalance, syntheticAreaPlan, cityHourTotals, modeProbs, type SyntheticDemandDoc, type SyntheticTripEnd } from '../demand/syntheticDemand';
 import { SyntheticDemandSource } from '../demand/syntheticDemandSource';
-import { decideSyntheticDefault } from '../calibration/syntheticDemandDecision';
+import { decideSyntheticDefault, PROJECT_SCORE_SYNTHETIC } from '../calibration/syntheticDemandDecision';
 import { scoreProjectCheck } from '../calibration/projectCheck';
 import { syntheticDemandBannerLine } from '../../components/ui/badges/syntheticDemandCheck';
 
@@ -159,6 +159,12 @@ describe('synthetic demand: default decision and banner', () => {
   it('the banner says synthetic, not measured, when it runs', () => {
     expect(syntheticDemandBannerLine(false, 'default')).toBeNull();
     expect(syntheticDemandBannerLine(true, 'tuned')).toMatch(/synthetic.*not measured.*Not checked/);
+  });
+  it('with a recorded run the banner gives the hold-out result and says in plain words what it means', () => {
+    const line = syntheticDemandBannerLine(true, 'default')!;
+    if (!PROJECT_SCORE_SYNTHETIC) { expect(line).toMatch(/Not checked/); return; }
+    expect(line).toContain(`journey times ${PROJECT_SCORE_SYNTHETIC.holdout.jt.ok}/${PROJECT_SCORE_SYNTHETIC.holdout.jt.n}`);
+    expect(line).toMatch(PROJECT_SCORE_SYNTHETIC.pass ? /passes\..*In plain words/ : /fails\..*In plain words: it does not match/);
   });
 });
 
