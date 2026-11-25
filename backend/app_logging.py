@@ -7,7 +7,7 @@ What it does
 - RequestLogMiddleware: one line per HTTP request (request id, method, path, redacted query, status, duration, client IP,
   response size, error code). Accepts an incoming X-Request-ID (if it is a safe token), else makes a UUID4, and returns it
   in the X-Request-ID response header. 4xx -> WARNING, 5xx -> ERROR, slower than URBANOS_SLOW_REQUEST_MS -> WARNING.
-  Noisy paths (status polls, tiles, PNG overlays, docs) are logged at DEBUG unless they fail or are slow.
+  Every request is logged (console + file, same line). Optional: URBANOS_LOG_QUIET_PATHS=QUIET_SUGGESTED moves noisy paths to DEBUG.
   An unhandled exception is logged with its traceback and answered with 500 JSON {error, code, request_id, detail};
   the client never sees the stack trace.
 - Exception handlers: HTTPException -> JSON {detail, code, request_id}; validation errors (422) -> {detail, code,
@@ -19,7 +19,7 @@ Environment variables (all optional)
   URBANOS_LOG_FORMAT          text (default) | json
   URBANOS_LOG_FILE            log file path (default backend/logs/urbanos.log); "off" or "" disables the file
   URBANOS_SLOW_REQUEST_MS     slow-request threshold in ms (default 2000)
-  URBANOS_LOG_QUIET_PATHS     comma-separated glob patterns logged at DEBUG when they succeed (default QUIET_DEFAULT)
+  URBANOS_LOG_QUIET_PATHS     comma-separated glob patterns logged at DEBUG when they succeed (default empty = log every request; QUIET_SUGGESTED lists noisy paths)
   URBANOS_LOG_QUIET_SAMPLE    fraction 0..1 of successful quiet requests still logged at INFO (default 0)
   URBANOS_UVICORN_ACCESS_LOG  1 keeps uvicorn's own access log (default: disabled, this middleware replaces it)
   URBANOS_RECENT_ERRORS_MAX   ring buffer size (default 200)
@@ -58,7 +58,8 @@ REQUEST_ID_HEADER = "X-Request-ID"
 HTTP_LOGGER = "urbanos.http"
 ERROR_LOGGER = "urbanos.errors"
 DEFAULT_LOG_FILE = Path(__file__).resolve().parent / "logs" / "urbanos.log"
-QUIET_DEFAULT = "/,/api/sim/status,/docs,/docs/*,/redoc,/openapi.json,/favicon.ico,*.png,*/tile,*/tiles/*"
+QUIET_DEFAULT = ""  # user 2026-11-25: every request on the console and in the file
+QUIET_SUGGESTED = "/,/api/sim/status,/docs,/docs/*,/redoc,/openapi.json,/favicon.ico,*.png,*/tile,*/tiles/*"
 _SAFE_ID = re.compile(r"^[A-Za-z0-9._:\-]{1,128}$")
 # query parameter names whose values never reach a log line
 _SENSITIVE_EXACT = {"key", "token", "password", "passwd", "pwd", "secret", "auth", "authorization", "code", "sig",

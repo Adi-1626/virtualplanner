@@ -154,16 +154,19 @@ def test_field_names():
     assert field_names(errs) == ["items.width", "bbox", "body"]
 
 
-def test_quiet_paths_logged_at_debug_only(c, caplog, monkeypatch):
-    with caplog.at_level(logging.INFO):
-        c.get("/api/sim/status")
-    assert _lines(caplog) == []
-    assert is_quiet_path("/api/terrain/overlays/hillshade.png") and is_quiet_path("/api/env-data/trees/tile")
-    assert not is_quiet_path("/api/objects")
-    monkeypatch.setenv("URBANOS_LOG_QUIET_PATHS", "")
+def test_every_request_logged_by_default_quiet_opt_in(c, caplog, monkeypatch):
+    monkeypatch.delenv("URBANOS_LOG_QUIET_PATHS", raising=False)
     with caplog.at_level(logging.INFO):
         c.get("/api/sim/status")
     assert len(_lines(caplog)) == 1
+    caplog.clear()
+    from app_logging import QUIET_SUGGESTED
+    monkeypatch.setenv("URBANOS_LOG_QUIET_PATHS", QUIET_SUGGESTED)
+    assert is_quiet_path("/api/terrain/overlays/hillshade.png") and is_quiet_path("/api/env-data/trees/tile")
+    assert not is_quiet_path("/api/objects")
+    with caplog.at_level(logging.INFO):
+        c.get("/api/sim/status")
+    assert _lines(caplog) == []
 
 
 def test_recent_errors_endpoint_guarded(c, monkeypatch):

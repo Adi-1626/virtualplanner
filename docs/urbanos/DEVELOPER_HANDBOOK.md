@@ -476,7 +476,7 @@ cmd.exe uses `set NAME=value` instead of `$env:NAME = "value"`. `osmium` is need
 - Time with its zone, level, logger, **request id** in brackets, then method, path and query, status, duration in ms, response size in bytes (before gzip), client IP, and for errors the `code`, the reason (the server's detail, paths removed, 200 characters) and for 422 the invalid `fields` (names only, never values or bodies).
 - Levels: INFO for 2xx/3xx, **WARNING** for 4xx and for requests slower than `URBANOS_SLOW_REQUEST_MS` (marked `slow(>2000ms)`), **ERROR** for 5xx. An unhandled exception is logged at ERROR with its full traceback right under the request line.
 - Query values of sensitive parameters (`token`, `key`, `*key`, `password`, `secret`, `auth*`, `session`, `signature`, `code`, …) are written as `***`.
-- Noisy paths are logged at DEBUG only (so not at the default INFO) unless they fail or are slow: `/`, `/api/sim/status` (the header's connection check), `/docs`, `/openapi.json`, `*.png` overlays, `*/tile`. Change the list with `URBANOS_LOG_QUIET_PATHS` (comma-separated globs; empty = log everything) or log a fraction of them with `URBANOS_LOG_QUIET_SAMPLE=0.01`.
+- Every request is logged at INFO, and the console shows exactly the same line as the log file. To hide noisy paths (`/`, `/api/sim/status`, `/docs`, `/openapi.json`, `*.png` overlays, `*/tile`), set `URBANOS_LOG_QUIET_PATHS` to the globs in `QUIET_SUGGESTED` (they then log at DEBUG unless they fail or are slow), or log a fraction with `URBANOS_LOG_QUIET_SAMPLE=0.01`.
 - Every other logger in the app (`sim_router`, `terrain_router`, startup seeds) goes to the same file with the request id of the request it ran in (`-` outside a request). uvicorn's startup and error lines are copied to the file too.
 
 **Request ids.** Every response carries `X-Request-ID` (exposed to the browser through CORS). A client may send its own `X-Request-ID` (letters, digits, `.`, `_`, `:`, `-`, at most 128 characters); otherwise the server makes a UUID4.
@@ -506,7 +506,7 @@ The request line and, for a 500, the traceback below it are what you need. With 
 | `URBANOS_LOG_FORMAT` | `text` | `json`: one JSON object per line |
 | `URBANOS_LOG_FILE` | `backend/logs/urbanos.log` | another path, or `off` for console only |
 | `URBANOS_SLOW_REQUEST_MS` | `2000` | slow-request WARNING threshold |
-| `URBANOS_LOG_QUIET_PATHS` | see above | comma-separated globs logged at DEBUG when they succeed |
+| `URBANOS_LOG_QUIET_PATHS` | empty (log every request) | comma-separated globs logged at DEBUG when they succeed |
 | `URBANOS_LOG_QUIET_SAMPLE` | `0` | fraction of quiet requests still logged at INFO |
 | `URBANOS_UVICORN_ACCESS_LOG` | off | `1` keeps uvicorn's access log |
 | `URBANOS_RECENT_ERRORS_MAX` | `200` | size of the in-memory buffer |
