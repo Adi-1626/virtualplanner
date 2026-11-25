@@ -47,7 +47,7 @@ export interface SyntheticDemandDoc {
   zones: SyntheticZone[];
   endWeights: Record<Purpose, { P: Coefs; A: Coefs }>;
   impedance: { n: number; timeS: string; distDam: string };
-  gravity: Record<Purpose, { alpha: number; beta: number; a: string; b: string; trips: number; targetMeanKm?: number; modelMeanKm?: number }>;
+  gravity: Record<Purpose, { constraint?: 'doubly' | 'production'; alpha: number; beta: number; a: string; b: string; trips: number; targetMeanKm?: number; modelMeanKm?: number }>;
   productions: Record<Purpose, string>;
   attractions: Record<Purpose, string>;
   modeSplit: { params: Record<string, { weight: Record<Mode, number>; lenKm: Record<Mode, number> }> };
@@ -61,7 +61,7 @@ export interface SyntheticDemandDoc {
 export interface SyntheticCity {
   id: string; label: typeof SYNTHETIC_LABEL; labelText: string; n: number; zones: SyntheticZone[];
   timeS: Uint16Array; distDam: Uint16Array;
-  gravity: Record<Purpose, { alpha: number; beta: number; a: Float64Array; b: Float64Array }>;
+  gravity: Record<Purpose, { constraint: 'doubly' | 'production'; alpha: number; beta: number; a: Float64Array; b: Float64Array }>;
   P: Record<Purpose, Float64Array>; A: Record<Purpose, Float64Array>;
   endWeights: SyntheticDemandDoc['endWeights'];
   mode: SyntheticDemandDoc['modeSplit']['params'];
@@ -109,7 +109,7 @@ export function decodeSyntheticDemand(doc: SyntheticDemandDoc): SyntheticCity {
   return {
     id: doc.id, label: SYNTHETIC_LABEL, labelText: doc.labelText, n, zones: doc.zones,
     timeS: u16(doc.impedance.timeS), distDam: u16(doc.impedance.distDam),
-    gravity: rec(p => ({ alpha: doc.gravity[p].alpha, beta: doc.gravity[p].beta, a: f64(doc.gravity[p].a), b: f64(doc.gravity[p].b) })),
+    gravity: rec(p => ({ constraint: doc.gravity[p].constraint ?? 'doubly', alpha: doc.gravity[p].alpha, beta: doc.gravity[p].beta, a: f64(doc.gravity[p].a), b: f64(doc.gravity[p].b) })),
     P: rec(p => f64(doc.productions[p])), A: rec(p => f64(doc.attractions[p])),
     endWeights: doc.endWeights, mode: doc.modeSplit.params, occupancy: doc.occupancy, hourly: doc.hourly,
     skeleton: { n: sk.n, lon, lat, from, to, time, cls: bytes(sk.cls), classes: sk.classes, outStart: out.start, outEdge: out.edge, inStart: inn.start, inEdge: inn.edge, connectors: sk.connectors },
@@ -138,16 +138,23 @@ export function rebalance(city: SyntheticCity, betaMult: number, iterations = 60
     const F = new Float64Array(n * n);
     for (let k = 0; k < n * n; k++) F[k] = deterrence(city.timeS[k] / 60, g.alpha, beta);
     const Pv = city.P[p], Av = city.A[p];
+    if (g.constraint === 'production') {
+      // Production-constrained (education): T_ij = P_i A_j F_ij / sum_k A_k F_ik
+      const a = new Float64Array(n);
+      for (let i = 0; i < n; i++) { let s = 0; for (let j = 0; j < n; j++) s += F[i * n + j] * Av[j]; a[i] = Pv[i] / Math.max(1e-30, s); }
+      gravity[p] = { constraint: g.constraint, alpha: g.alpha, beta, a, b: Float64Array.from(Av) };
+      continue;
+    }
     let a = new Float64Array(n).fill(1), b = new Float64Array(n).fill(1);
     for (let it = 0; it < iterations; it++) {
       const na = new Float64Array(n);
-      for (let i = 0; i < n; i++) { let s = 0; for (let j = 0; j < n; j++) s += F[i * n + j] * b[j] * Av[j]; na[i] = Pv[i] / Math.max(1e-30, s); }
+      for (let i = 0; i < n; i++) { let s = 0; for (let j = 0; j < n; j++) s += F[i * n + j] * b[j] * Av[j]; na[i] = 1 / Math.max(1e-30, s); }
       a = na;
       const nb = new Float64Array(n);
       for (let j = 0; j < n; j++) { let s = 0; for (let i = 0; i < n; i++) s += a[i] * Pv[i] * F[i * n + j]; nb[j] = 1 / Math.max(1e-30, s); }
       b = nb;
     }
-    gravity[p] = { alpha: g.alpha, beta, a: a.map((x, i) => x * Pv[i]), b: b.map((x, j) => x * Av[j]) };
+    gravity[p] = { constraint: g.constraint, alpha: g.alpha, beta, a: a.map((x, i) => x * Pv[i]), b: b.map((x, j) => x * Av[j]) };
   }
   return { ...city, gravity, vehPerPerson: undefined };
 }

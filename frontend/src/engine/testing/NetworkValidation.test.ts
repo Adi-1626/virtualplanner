@@ -152,13 +152,17 @@ describe.skipIf(!process.env.VAL24)('network-wide validation against observation
     if (process.env.VAL24_SEEDS) mode.analysisSeeds = process.env.VAL24_SEEDS.split(',').map(Number);
     // p14: VAL24_SUPPLY_MODEL=p14 runs the Indian urban supply model (supplyConfig.ts; building frontage from VAL24_API)
     if (process.env.VAL24_SUPPLY_MODEL === 'p14') mode.setSupplyModel('p14');
+    // p14-demand: VAL24_SYNTHETIC=1 runs the SYNTHETIC land-use demand (label synthetic; docs/urbanos/DEMAND_P14.md)
+    const synthetic = !!process.env.VAL24_SYNTHETIC;
+    if (synthetic) mode.setSyntheticDemand(true);
     mode.enter();
     if (process.env.VAL24_HYPO_SCALE) { hypo.demandScale = Number(process.env.VAL24_HYPO_SCALE); mode.setDemandSettings({ hypotheticalScale: hypo.demandScale }); }
     const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
     const settle = async () => {
       for (let i = 0; i < 600; i++) {
         const s = mode.getState();
-        if (s.osmRoads.status !== 'loading' && s.signals.status !== 'loading' && s.timeOfDay.status === 'ready' && s.edgeFlows.status !== 'loading' && s.estimatedTraffic.status !== 'loading' && s.area && s.section && s.screenlines) return true;
+        if (s.osmRoads.status !== 'loading' && s.signals.status !== 'loading' && s.timeOfDay.status === 'ready' && s.edgeFlows.status !== 'loading' && s.estimatedTraffic.status !== 'loading' && s.area && s.section && s.screenlines
+          && (!synthetic || (s.demandModel.status !== 'loading' && mode.studyPlan()?.provenance.source === 'synthetic'))) return true;
         await sleep(200);
       }
       return false;
@@ -183,8 +187,9 @@ describe.skipIf(!process.env.VAL24)('network-wide validation against observation
         const segs = new Set(area.segments.map(s => s.key));
         const sweep = [];
         for (const h of run.hours) {
-          const plan = mode.studyPlan(area, h < 12 ? 'AM_Peak' : 'PM_Peak')!;
-          const f = hourFactor(profile, h, COUNT_HOURS[h < 12 ? 'AM' : 'PM'], st.timeOfDay.day);
+          const plan = mode.studyPlan(area, h < 12 ? 'AM_Peak' : 'PM_Peak', false, h)!;
+          // A synthetic plan is already the demand of its clock hour
+          const f = plan.provenance.synthetic ? 1 : hourFactor(profile, h, COUNT_HOURS[h < 12 ? 'AM' : 'PM'], st.timeOfDay.day);
           const ds = supplySet?.params.demandScale ?? 1;
           const trips = snapDemandPlan(plan, area.network, 250, segs).map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * f * ds }));
           const a = assignTraffic(area, roadsMap, trips, { signalPoints: mode.mappedSignalPoints() ?? undefined, supply: supplySet?.params, supplyModel: mode.supplyModel });
