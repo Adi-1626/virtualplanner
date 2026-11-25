@@ -1,6 +1,8 @@
 import type { ProjectScore } from '../../../engine/calibration/projectCheck';
 import { PROJECT_SCORE_SYNTHETIC, SYNTHETIC_DECISION, SYNTHETIC_PARAMS } from '../../../engine/calibration/syntheticDemandDecision';
 import { P14_SYNTHETIC_RECORD } from '../../../engine/calibration/syntheticDemandRecord';
+import { P13_RECORD } from '../../../engine/calibration/projectValidationRecord';
+import { officialNotWorse } from '../../../engine/calibration/tunedSupply';
 
 /**
  * p14: what the panel says about the SYNTHETIC land-use demand (docs/urbanos/DEMAND_P14.md). Label `synthetic` wherever
@@ -26,7 +28,9 @@ export function syntheticDemandBannerLine(synthetic: boolean, supply: 'default' 
   if (!s) return `${head}. Not checked against the estimated data${supply === 'tuned' ? ' with the tuned parameters' : ''} yet: treat every number as unchecked.`;
   const h = s.holdout;
   const o = P14_SYNTHETIC_RECORD?.official;
-  const off = o ? ` Official-count check with it: ${o.gehAll}/${o.n} sites within GEH 5, river screen line ${pct(o.riverPct)}.` : '';
+  const b = P13_RECORD.officialDefault;
+  const cmp = o && b ? ` (area estimate: ${b.gehAll}/${b.n}, ${pct(b.riverPct)}; ${officialNotWorse(b, o) ? 'not worse' : 'worse'})` : '';
+  const off = o ? ` Official-count check with it: ${o.gehAll}/${o.n} sites within GEH 5, river screen line ${pct(o.riverPct)}${cmp}.` : '';
   const plain = s.pass
     ? ' In plain words: on records it was not fitted to, it matches the estimated travel times and counts well enough to pass.'
     : ' In plain words: it does not match Pune\'s estimated travel times and counts well enough to quote its numbers; use it to explore the demo and to compare alternatives run on the same inputs.';

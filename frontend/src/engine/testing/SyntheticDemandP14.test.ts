@@ -7,6 +7,9 @@ import { decodeSyntheticDemand, odCell, rebalance, syntheticAreaPlan, cityHourTo
 import { SyntheticDemandSource } from '../demand/syntheticDemandSource';
 import { decideSyntheticDefault, PROJECT_SCORE_SYNTHETIC } from '../calibration/syntheticDemandDecision';
 import { scoreProjectCheck } from '../calibration/projectCheck';
+import { P14_SYNTHETIC_RECORD } from '../calibration/syntheticDemandRecord';
+import { P13_RECORD } from '../calibration/projectValidationRecord';
+import { officialNotWorse } from '../calibration/tunedSupply';
 import { syntheticDemandBannerLine } from '../../components/ui/badges/syntheticDemandCheck';
 
 /** p14: the synthetic land-use demand (demand/syntheticDemand.ts, docs/urbanos/DEMAND_P14.md). */
@@ -165,6 +168,11 @@ describe('synthetic demand: default decision and banner', () => {
     if (!PROJECT_SCORE_SYNTHETIC) { expect(line).toMatch(/Not checked/); return; }
     expect(line).toContain(`journey times ${PROJECT_SCORE_SYNTHETIC.holdout.jt.ok}/${PROJECT_SCORE_SYNTHETIC.holdout.jt.n}`);
     expect(line).toMatch(PROJECT_SCORE_SYNTHETIC.pass ? /passes\..*In plain words/ : /fails\..*In plain words: it does not match/);
+    const o = P14_SYNTHETIC_RECORD?.official, b = P13_RECORD.officialDefault;
+    if (o && b) {
+      expect(line).toContain(`Official-count check with it: ${o.gehAll}/${o.n} sites within GEH 5`);
+      expect(line).toMatch(officialNotWorse(b, o) ? /; not worse\)/ : /; worse\)/);
+    }
   });
 });
 
