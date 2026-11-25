@@ -3,6 +3,7 @@ import { Eye, EyeOff, Loader2, X } from 'lucide-react';
 import { infraApi, type InfraCatalogue, type InfraLayer } from '../../lib/infraApi';
 import { inspectorRows, orderLayers, colorOf, featuresText } from './municipalModel';
 import { setMuniLayerVisible, useMuniStore } from './municipalOverlay';
+import { ErrorNotice } from '../ui/ErrorNotice';
 
 /**
  * Explore layer-tree groups "Municipal infrastructure (PMC via OpenCity)" and "Buildings (OSM + Microsoft + Google)",
@@ -36,7 +37,7 @@ const LayerRow: React.FC<{ l: InfraLayer }> = ({ l }) => {
         <span className="text-meta text-text-3 tabular-nums shrink-0" title="Features in the whole layer">{featuresText(l.feature_count)}</span>
       </button>
       {st?.status === 'shown' && st.line && <p className="pl-7 text-meta text-text-3" data-testid={`explore-muni-${l.id}-status`}>{st.line}</p>}
-      {st?.status === 'error' && <p className="pl-7 text-meta text-fail" role="status">{st.error}</p>}
+      {st?.status === 'error' && <ErrorNotice message={st.error} className="ml-7 mt-1" onRetry={() => void setMuniLayerVisible(l, true)} />}
     </li>
   );
 };

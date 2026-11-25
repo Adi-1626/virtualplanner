@@ -19,6 +19,7 @@ import {
 import { clearConflictHighlight, showConflictHighlight } from './conflictHighlight';
 import { gapCountText, groupGaps, type GapGroup } from './screeningGroups';
 import { plural } from '../../lib/plural';
+import { ErrorNotice } from '../ui/ErrorNotice';
 
 /** What the screening reads (coordination/screening.py SCREENED_TYPES): underground works, metro, and the decks whose piers go into the ground. */
 const SCREENED_TYPES = new Set(['underground_alignment', 'utility', 'metro_line', 'metro_station', 'flyover', 'metro_flyover']);
@@ -105,7 +106,7 @@ const VerifyForm: React.FC<{ f: ScreeningFinding }> = ({ f }) => {
         <input id={`v-w-${f.id}`} className={input} style={inputStyle} value={who} onChange={e => setWho(e.target.value)} /></div>
       <button type="button" className="uos-btn uos-btn-sm self-start" disabled={state === 'saving' || evidence.trim().length < 3 || !who.trim()} onClick={() => void save()}>Save verification</button>
       {state === 'saved' && <p className="text-meta text-text-2" role="status">Saved. Run the check again to see it.</p>}
-      {state !== 'idle' && state !== 'saving' && state !== 'saved' && <p className="text-meta text-fail" role="alert">{state}</p>}
+      {state !== 'idle' && state !== 'saving' && state !== 'saved' && <ErrorNotice message={state} prefix="Not saved:" onRetry={() => void save()} />}
     </div>
   );
 };
@@ -276,7 +277,7 @@ export const ConflictCheck: React.FC<{ a?: UndergroundAlignmentObject | null }> 
         <ShieldQuestion size={14} aria-hidden /> {busy ? 'Checking…' : restoring && !run ? 'Loading last check…' : run ? 'Check again' : `Check ${proposedCount} proposed object${proposedCount === 1 ? '' : 's'}`}
       </button>
       {proposedCount === 0 && <p className="text-meta text-text-2">Nothing to check: draw a proposed underground alignment or utility (objects marked existing or abandoned are what proposals are checked against).</p>}
-      {err && <p className="text-label text-fail" role="alert">The check could not run: {err}</p>}
+      {err && <ErrorNotice message={err} prefix="The check could not run:" onRetry={() => void check()} />}
       {run && (
         <div className="flex flex-col gap-2" data-testid="ug-conflict-results">
           {origin?.restored && (

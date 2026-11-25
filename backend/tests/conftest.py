@@ -12,6 +12,8 @@ _tmpdir = tempfile.mkdtemp(prefix="twincity-test-")
 os.environ["DATABASE_URL"] = f"sqlite:///{Path(_tmpdir) / 'test.db'}"
 # tests import synthetic data trees from the temp dir: allow it as an import root (the API refuses other paths)
 os.environ.setdefault("URBANOS_IMPORT_ROOTS", tempfile.gettempdir())
+# request/error log goes to the temp dir, never backend/logs/ (app_logging.py)
+os.environ.setdefault("URBANOS_LOG_FILE", str(Path(_tmpdir) / "urbanos-test.log"))
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 

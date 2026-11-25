@@ -3,8 +3,8 @@
  * datasets, server-rendered raster views, capped bbox vector/point APIs, air-quality station series, rainfall summaries.
  * No UI here.
  */
-import { API_BASE, trackedFetch } from './api';
-import { redactPaths } from './redactPaths';
+import { API_BASE, apiErrorFromResponse, networkFailureMessage, trackedFetch } from './api';
+import { describeFailure, friendlyText } from './errorCatalogue';
 import type { TreeTile } from '../components/environment/treeTiles';
 
 export type EnvDataStatus = 'available' | 'missing' | 'blocked' | 'rejected';
@@ -91,13 +91,9 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: unknown, can
     r = await trackedFetch(`${BASE}${path}`, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined, signal: timeoutOr(cancel) });
   } catch (e) {
     if (cancel?.aborted) throw new Cancelled();
-    throw new Error(e instanceof Error && e.name === 'TimeoutError' ? 'no answer from the data server within 60 s' : 'the data server did not answer (check that it is running, then try again)');
+    throw new Error(e instanceof Error && e.name === 'TimeoutError' ? friendlyText(describeFailure({ kind: 'timeout' })) : networkFailureMessage());
   }
-  if (!r.ok) {
-    let msg = `${r.status}`;
-    try { const j = await r.json(); msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail ?? j); } catch { /* keep status */ }
-    throw new Error(redactPaths(msg));
-  }
+  if (!r.ok) throw await apiErrorFromResponse(r, path);
   return r.json() as Promise<T>;
 }
 

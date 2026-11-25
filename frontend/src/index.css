@@ -443,3 +443,12 @@ button.uos-row:hover { background: var(--surface-2); }
 .uos-data-facts dd.is-unknown { color: var(--unknown, #9AA4B2); }
 .uos-data-footprint { margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .uos-data-chip { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border: 1px solid var(--border-strong); border-radius: 999px; font-size: 11px; color: var(--text-2); white-space: nowrap; }
+
+/* A failed request, shown calmly (components/ui/ErrorNotice.tsx; lib/errorCatalogue.ts): neutral surface, no red */
+.uos-notice { display: flex; gap: var(--sp-2); padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text-1); font-size: var(--fs-label); }
+.uos-notice-icon { color: var(--text-2); }
+.uos-notice-bare { display: flex; min-width: 0; color: var(--text-1); }
+.uos-notice-ref { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: var(--fs-meta); }
+.uos-notice-ref code { font-variant-numeric: tabular-nums; color: var(--text-1); }
+.uos-notice-btn { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface-1); color: var(--text-1); font-size: var(--fs-meta); cursor: pointer; }
+.uos-notice-btn:hover { background: var(--surface-3); }

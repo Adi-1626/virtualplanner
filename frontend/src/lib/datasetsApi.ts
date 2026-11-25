@@ -2,8 +2,7 @@
  * Typed client for /api/datasets (backend/api/datasets_router.py, docs/urbanos/DATA_QUALITY_AND_PROVENANCE.md).
  * Honesty carried by the types: a missing value is null (= UNKNOWN), never 0 or ''. Licence 'UNKNOWN' is a value.
  */
-import { API_BASE, trackedFetch } from './api';
-import { redactPaths } from './redactPaths';
+import { API_BASE, apiErrorFromResponse, trackedFetch } from './api';
 
 export type DataClass = 'observed' | 'inferred' | 'estimated' | 'derived' | 'synthetic';
 export type Suitability = 'visualisation' | 'screening' | 'engineering';
@@ -67,11 +66,7 @@ export interface Vocabulary { themes: Record<string, string>; pune_bbox: [number
 
 async function j<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await trackedFetch(`${API_BASE}${path}`, { headers: { 'Content-Type': 'application/json' }, ...init });
-  if (!r.ok) {
-    let msg = `${r.status} ${r.statusText}`;
-    try { const b = await r.json(); if (b?.detail) msg = typeof b.detail === 'string' ? b.detail : JSON.stringify(b.detail); } catch { /* keep status */ }
-    throw new Error(redactPaths(msg));
-  }
+  if (!r.ok) throw await apiErrorFromResponse(r, path);
   return r.json() as Promise<T>;
 }
 

@@ -26,6 +26,7 @@ import uuid
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from app_errors import ApiProblem
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
@@ -212,7 +213,7 @@ def upload_evidence(aid: str, body: EvidenceIn, db: Session = Depends(get_db)):
     if not data:
         raise HTTPException(400, "Empty file")
     if len(data) > MAX_EVIDENCE_BYTES:
-        raise HTTPException(413, f"File larger than {MAX_EVIDENCE_BYTES // (1024 * 1024)} MB")
+        raise ApiProblem(413, "FILE_TOO_LARGE", f"File larger than {MAX_EVIDENCE_BYTES // (1024 * 1024)} MB")
     if body.investigation_id:
         ids = {i["id"] for i in json.loads(a.assessment_json).get("plan", {}).get("investigations", [])}
         if body.investigation_id not in ids:

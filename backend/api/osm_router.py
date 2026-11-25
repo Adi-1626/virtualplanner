@@ -6,6 +6,7 @@ frontend imports them with the same code it uses for Overpass.
 """
 
 from fastapi import APIRouter, HTTPException, Query
+from app_errors import ApiProblem
 from fastapi.responses import JSONResponse
 
 from osm.index import OsmIndex, parse_boxes
@@ -26,9 +27,9 @@ def _boxes(bbox: str):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if not index.available():
-        raise HTTPException(status_code=404, detail="The local OpenStreetMap index has not been built. Run: python -m osm.build_index")
+        raise ApiProblem(404, "DATA_NOT_AVAILABLE", detail="The local OpenStreetMap index has not been built. Run: python -m osm.build_index")
     if not index.covers(boxes):
-        raise HTTPException(status_code=416, detail="The local OpenStreetMap index does not cover this area.")
+        raise ApiProblem(416, "AREA_NOT_COVERED", detail="The local OpenStreetMap index does not cover this area.")
     return boxes
 
 

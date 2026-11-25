@@ -30,8 +30,12 @@ import { SIMULATE_DRAWER_TABS } from './contexts/SimulateDrawer';
 import { ProjectsContext } from './contexts/ProjectsContext';
 import { ReportsContext } from './contexts/ReportsContext';
 import { DataCatalogueOverlay } from '../components/data/DataCatalogueView';
+import { ErrorNotice } from '../components/ui/ErrorNotice';
+import { isFriendlyErrorText, type ErrorContext } from '../lib/errorCatalogue';
+import { ERROR_TOAST_EVENT, type ErrorToastDetail } from '../lib/errorToast';
 
-type Toast = { message: string; type: 'success' | 'error' | 'info' };
+// 'notice': a failed request, shown neutrally with its reference (components/ui/ErrorNotice.tsx, lib/errorCatalogue.ts)
+type Toast = { message: string; type: 'success' | 'error' | 'info' | 'notice'; error?: unknown; context?: ErrorContext; retry?: () => void };
 
 const CONTEXTS: Record<WorkspaceId, React.FC> = {
   explore: ExploreContext,
@@ -75,12 +79,20 @@ export const AppShell: React.FC<{ trust?: React.ReactNode }> = ({ trust }) => {
   // Global toast helper, as before (components call window.showToast)
   useEffect(() => {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    (window as any).showToast = (message: string, type: Toast['type'] = 'info') => {
-      setToast({ message, type });
+    const show = (t: Toast) => {
+      setToast(t);
       if (timeoutId) clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => setToast(null), 5000);
+      timeoutId = setTimeout(() => setToast(null), t.type === 'notice' ? 10000 : 5000);  // time to copy the reference
     };
-    return () => { if (timeoutId) clearTimeout(timeoutId); delete (window as any).showToast; };
+    // a request failure that reached a string-only toast call is still shown the neutral way, with its reference
+    (window as any).showToast = (message: string, type: Toast['type'] = 'info') =>
+      show({ message, type: type === 'error' && isFriendlyErrorText(message) ? 'notice' : type });
+    const onErrorToast = (e: Event) => {
+      const d = (e as CustomEvent<ErrorToastDetail>).detail;
+      show({ message: '', type: 'notice', error: d.error, context: d.context, retry: d.retry });
+    };
+    window.addEventListener(ERROR_TOAST_EVENT, onErrorToast);
+    return () => { if (timeoutId) clearTimeout(timeoutId); delete (window as any).showToast; window.removeEventListener(ERROR_TOAST_EVENT, onErrorToast); };
   }, []);
 
   // Viewport class (phone / tablet / laptop / desktop)
@@ -191,7 +203,10 @@ export const AppShell: React.FC<{ trust?: React.ReactNode }> = ({ trust }) => {
         )}
         {toast && (
           <div className="uos-toast" role="status" aria-live="polite" data-type={toast.type}>
-            <span>{toast.message}</span>
+            {toast.type === 'notice'
+              ? <ErrorNotice bare error={toast.error} message={toast.message} context={toast.context}
+                  onRetry={toast.retry ? () => { const r = toast.retry!; setToast(null); r(); } : undefined} />
+              : <span>{toast.message}</span>}
             <button onClick={() => setToast(null)} aria-label="Dismiss notification" className="uos-toast-close"><X size={16} /></button>
           </div>
         )}

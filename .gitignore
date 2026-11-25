@@ -61,6 +61,8 @@ desktop.ini
 # ─── Logs ─────────────────────────────────────────────────────────────────────
 *.log
 logs/
+# request/error log written by backend/app_logging.py (also covered by logs/ above)
+backend/logs/
 npm-debug.log*
 
 # ─── TypeScript build cache ───────────────────────────────────────────────────

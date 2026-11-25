@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { connectionState, type ConnectionState } from '../../lib/api';
+import { connectionState, networkFailureMessage, type ConnectionState } from '../../lib/api';
+import { showErrorToast } from '../../lib/errorToast';
 import { RefreshCw, Wifi, WifiOff, Loader2 } from 'lucide-react';
 
 export const ConnectionBadge: React.FC = () => {
@@ -30,7 +31,7 @@ export const ConnectionBadge: React.FC = () => {
       if (ok) {
         (window as any).showToast?.('Connected to backend server', 'success');
       } else {
-        (window as any).showToast?.('Backend server is unreachable. Check if FastAPI is running.', 'error');
+        showErrorToast(new Error(networkFailureMessage()));
       }
     } finally {
       setIsRetrying(false);

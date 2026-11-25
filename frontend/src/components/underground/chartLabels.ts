@@ -24,7 +24,7 @@ export function flatDatumLabel(t: Loadable<unknown>): string {
   return FLAT_DATUM.idle;
 }
 
-const isUnreachable = (error: string) => /unreachable|could not be reached|failed to fetch|networkerror|load failed|no answer/i.test(error);
+const isUnreachable = (error: string) => /unreachable|could not be reached|failed to fetch|networkerror|load failed|no answer|isn't responding|you're offline/i.test(error);
 
 /** Plain reason for a failed terrain lookup, for inline text in the editors ("local DEM not loaded"). */
 export const terrainErrorReason = (error: string | null | undefined): string => (isUnreachable(error ?? '') ? 'terrain service unreachable' : 'local DEM not loaded');
