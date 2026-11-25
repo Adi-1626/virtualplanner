@@ -346,6 +346,8 @@ export function areaGateways(area: StudyArea, roads: ReadonlyMap<string, Drivabl
 }
 
 const SKELETON_RANK = (cls: string) => CLASS_RANK[osmRoadClass(cls)] ?? 2;
+/** A city path counts as through traffic only if it runs at least this far inside the area's outline (assumption). */
+export const MIN_THROUGH_INSIDE_M = 600;
 
 /** City paths (main-road skeleton) relative to the area: where each zone pair's path enters and leaves it. */
 export function areaPaths(city: SyntheticCity, outline: [number, number][], gateways: Gateway[]): AreaPaths {
@@ -388,11 +390,14 @@ export function areaPaths(city: SyntheticCity, outline: [number, number][], gate
   const zonePt = (z: number) => [city.zones[z].lon, city.zones[z].lat];
   const entry = new Int32Array(n * n).fill(-1), exit = new Int32Array(n * n).fill(-1);
   const inbound = new Int32Array(n).fill(-1), outbound = new Int32Array(n).fill(-1);
-  const dist = new Float64Array(N), ent = new Int32Array(N), ext = new Int32Array(N), done = new Uint8Array(N);
+  const dist = new Float64Array(N), ent = new Int32Array(N), ext = new Int32Array(N), done = new Uint8Array(N), inLen = new Float64Array(N);
+  // Length of each skeleton link (m), for how far a city path runs inside the area
+  const linkM = new Float64Array(sk.from.length);
+  for (let e = 0; e < linkM.length; e++) { const u = sk.from[e], v = sk.to[e]; linkM[e] = distM([sk.lon[u], sk.lat[u]], [sk.lon[v], sk.lat[v]]); }
   // Arrival at each zone through its connectors
   const conn = sk.connectors;
   for (let o = 0; o < n; o++) {
-    dist.fill(Infinity); ent.fill(-1); ext.fill(-1); done.fill(0);
+    dist.fill(Infinity); ent.fill(-1); ext.fill(-1); done.fill(0); inLen.fill(0);
     const heap = new MinHeap();
     let startsInside = false;
     for (const [node, t] of conn[o]) { if (t < dist[node]) { dist[node] = t; heap.push(t, node); } if (inside[node]) startsInside = true; }
@@ -408,6 +413,7 @@ export function areaPaths(city: SyntheticCity, outline: [number, number][], gate
           dist[v] = nd;
           ent[v] = ent[u] >= 0 ? ent[u] : (!inside[u] && inside[v] ? e : -1);
           ext[v] = inside[u] && !inside[v] ? e : ext[u];
+          inLen[v] = inLen[u] + linkM[e] * ((inside[u] + inside[v]) / 2);
           heap.push(nd, v);
         }
       }
@@ -420,7 +426,8 @@ export function areaPaths(city: SyntheticCity, outline: [number, number][], gate
       for (const [node, t] of conn[d]) if (dist[node] + t < bt) { bt = dist[node] + t; best = node; }
       if (best < 0) continue;
       const enters = startsInside || ent[best] >= 0;
-      if (!enters) continue;
+      // A path that only clips a corner of the area's outline does not use its roads: through traffic needs a real run inside
+      if (!enters || (!startsInside && !inside[best] && inLen[best] < MIN_THROUGH_INSIDE_M)) continue;
       entry[o * n + d] = startsInside ? pick(zonePt(o), 'in', 3) : crossingDist(ent[best], 'in');
       exit[o * n + d] = inside[best] ? pick(zonePt(d), 'out', 3) : ext[best] >= 0 ? crossingDist(ext[best], 'out') : pick(zonePt(d), 'out', 3);
     }
@@ -554,12 +561,16 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
   const canReach = reachability(fwd);
   const trips = new Map<string, { from: [number, number, number]; to: [number, number, number]; vehiclesPerHour: number; kind: VehicleKind; part: 'internal' | 'outbound' | 'inbound' | 'through' }>();
   const comp = { internal: 0, outbound: 0, inbound: 0, through: 0, noEdgeRoute: 0 };
+  const noRoute = { internal: 0, outbound: 0, inbound: 0, through: 0 };
   const gwDist = (id: number) => paths.dists[id] ?? [];
   const emit = (part: 'internal' | 'outbound' | 'inbound' | 'through', kind: VehicleKind, total: number,
     pieces: { from: [number, number, number]; to: [number, number, number]; fromNode: string; toNode: string; w: number }[]) => {
-    const ok = pieces.filter(x => x.fromNode !== x.toNode && canReach(x.fromNode, x.toNode));
+    let ok = pieces.filter(x => x.fromNode !== x.toNode && canReach(x.fromNode, x.toNode));
+    // A boundary road the area's roads cannot reach (or leave) from here, e.g. the other carriageway of a divided road:
+    // the nearest boundary roads to the intended ones that can (the trip keeps its side of the area)
+    if (!ok.length && part !== 'internal') ok = pieces.map(repairPiece(part)).filter((x): x is NonNullable<typeof x> => !!x);
     const sw = ok.reduce((s, x) => s + x.w, 0);
-    if (!(sw > 0)) { comp.noEdgeRoute += total; return; }
+    if (!(sw > 0)) { comp.noEdgeRoute += total; noRoute[part] += total; return; }
     // Small pieces are folded into the others of the group (the group's total is kept)
     let kept = ok.filter(x => total * x.w / sw >= minVph);
     if (!kept.length) kept = [ok.reduce((a, b) => (b.w > a.w ? b : a))];
@@ -571,6 +582,20 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
       if (t) t.vehiclesPerHour += v; else trips.set(key, { from: [...x.from], to: [...x.to], vehiclesPerHour: v, kind, part });
     }
     comp[part] += total;
+  };
+  type Piece = { from: [number, number, number]; to: [number, number, number]; fromNode: string; toNode: string; w: number };
+  const ins = paths.gateways.filter(g => g.inLanes > 0), outs = paths.gateways.filter(g => g.outLanes > 0);
+  const nearestTo = (list: Gateway[], p: readonly number[], k: number) => [...list].sort((a, b) => distM(a.point, p) - distM(b.point, p)).slice(0, k);
+  const repairPiece = (part: 'outbound' | 'inbound' | 'through') => (x: Piece): Piece | null => {
+    if (part === 'outbound') { const g = nearestTo(outs, x.to, 12).find(c => c.nodeId !== x.fromNode && canReach(x.fromNode, c.nodeId)); return g ? { ...x, to: g.point, toNode: g.nodeId } : null; }
+    if (part === 'inbound') { const g = nearestTo(ins, x.from, 12).find(c => c.nodeId !== x.toNode && canReach(c.nodeId, x.toNode)); return g ? { ...x, from: g.point, fromNode: g.nodeId } : null; }
+    let best: Piece | null = null, bd = Infinity;
+    for (const a of nearestTo(ins, x.from, 6)) for (const b of nearestTo(outs, x.to, 6)) {
+      if (a.nodeId === b.nodeId || !canReach(a.nodeId, b.nodeId)) continue;
+      const d = distM(a.point, x.from) + distM(b.point, x.to);
+      if (d < bd) { bd = d; best = { ...x, from: a.point, fromNode: a.nodeId, to: b.point, toNode: b.nodeId }; }
+    }
+    return best;
   };
   const cellsOf = (z: number, et: string) => cellShares.get(`${z}|${et}`) ?? [];
   const gwPieces = (id: number, side: 'in' | 'out') => gwDist(id).map(([gi, s]) => ({ g: paths.gateways[gi], s })).filter(x => (side === 'in' ? x.g.inLanes : x.g.outLanes) > 0);
@@ -618,7 +643,7 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
     provenance: {
       source: 'synthetic', label, period: opts.hour < 12 ? 'AM_Peak' : 'PM_Peak', vehiclesPerHour: vph, pairCount: list.length,
       components: { internal: comp.internal, outbound: comp.outbound, inbound: comp.inbound, through: comp.through, outsideArea: 0, noEdgeRoute: comp.noEdgeRoute, cordonPoints: gateways.length, throughIncluded: through },
-      synthetic: { datasetId: city.id, label: SYNTHETIC_LABEL, hour: ((Math.floor(opts.hour) % 24) + 24) % 24, buildingsIn, buildingsNoRoad, cells: [...cellsByZone.values()].reduce((s, l) => s + l.length, 0), zonesIn: cellsByZone.size, scale },
+      synthetic: { noRouteByPart: noRoute, datasetId: city.id, label: SYNTHETIC_LABEL, hour: ((Math.floor(opts.hour) % 24) + 24) % 24, buildingsIn, buildingsNoRoad, cells: [...cellsByZone.values()].reduce((s, l) => s + l.length, 0), zonesIn: cellsByZone.size, scale },
     },
   };
 }
