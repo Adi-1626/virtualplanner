@@ -86,7 +86,7 @@ final model. Pattern: nights pass (only N2 in the old city / near Sangam bridge 
 | Unwarranted signals / junction control. Every OSM signal plus every priority junction is controlled; low-volume legs of signalised junctions add 20-40 s per vehicle. | P16Diag cause split | model (K1-K5 IRC:93 volume-warranted signals) |
 | R2: trips left out ("no drivable way"). All of it is at plan level (the assignment routes everything it gets: unrouted 0), and almost all of it is *through* traffic (Nagar Rd 09:00: 4,194 of 4,198 veh/h). Fringe village p16_20: every left-out vehicle was a city path whose entry and exit resolve to the same boundary node: it grazes the area's corner and never drives on its roads, but was counted as left out (fixed run: 463 → 0 left out, 463 reported as edge-only). A first guess (buildings on small network fragments) was checked and is not the cause (fixchk.jsonl: unchanged left-out). | `p16-run/ends1.jsonl`, `fixchk*.jsonl` | bug, fixed (§7) |
 | R3: building ends far from their node. Trips load at junction nodes only (the network has no mid-link nodes). Buildings 30-100 m from a mapped road are 150-240 m from that road's nearest junction (ends1: road within 100 m for 88-95 % of activity, a junction node for 81-86 %). In fringe villages the lanes to the houses are not mapped. | ends1.jsonl | structural (zone connectors at junctions); not fixed (§9) |
-| M1 in an area that is not congested in the assignment (IT park, 09:00/19:00). A deadlock between junction nodes 20-25 m apart (above the 16 m at which the micro-simulation joins nodes into one junction): causes `blockedExit` + `crossingTraffic` (the harness now logs causes and sites). | `p16-run/m1d.jsonl` | micro-simulation; not fixed (§9) |
+| M1 in an area that is not congested in the assignment (IT park, 09:00/19:00). A deadlock between junction nodes 20-25 m apart (above the 16 m at which the micro-simulation joins nodes into one junction): causes `blockedExit` + `crossingTraffic` (the harness now logs causes and sites). Same pattern in MIDC Bhosari (09:00/14:00, nodes ~20 m apart); old city at 23:00: one vehicle per seed standing 270-310 s on `blockedExit` (exit lane full). | `p16-run/m1d.jsonl` | micro-simulation; not fixed (§9) |
 
 ## 6. Candidates and the selection rule
 
@@ -138,5 +138,7 @@ hold-out, official 15-site check, final harness with micro-simulation, default d
 
 - R3 in fringe villages and long-block areas: loading only at junction nodes; a fix needs access nodes on long links (the
   network builder), not attempted in p16.
-- M1 deadlocks between junctions 20-25 m apart in the micro-simulation (IT park); not fixed.
+- M1 deadlocks between junctions 20-25 m apart in the micro-simulation (IT park, MIDC); not fixed. Untested idea (not
+  pre-registered): join nodes up to ~24 m apart (JOIN_JUNCTION_M is 16 m; divided-road crossings in Hinjawadi/Bhosari are
+  wider), then re-run the junction tests and the harness M1 rows.
 - D2 in the old city: the band as written includes signal delay (misfire, §5); reported strictly.
