@@ -147,7 +147,7 @@ delay and congestion delay, and the most loaded links of the gridlocked routes):
 
 No real model bug was found in this step, so no model code was changed for it (only the harness gained the diagnostics).
 
-### 4.3 Tuned parameters, calibration vs hold-out (60 Frank–Wolfe iterations, every record)
+### 4.3 Tuned parameters, calibration vs hold-out (60 Frank–Wolfe iterations, every record; as run, before the §4.7 record fix)
 
 SPSA, 3 seeds × 20 iterations on the calibration records (a = 0.15, c = 0.1, A = 2, λ = 0.5). The tuned set is the seed
 with the lowest CALIBRATION objective: seed 1 (J 6.83 vs 7.49 at the defaults; seeds 2 and 3: 7.10 and 7.03). Seeds 2 and
@@ -223,6 +223,35 @@ default** (`TUNED_DECISION`: "the tuned set does not pass the project check on i
 setting labelled "tuned (estimated)".
 
 
+### 4.7 Record fix, 2026-11-25 (divided / twin carriageways; data correctness, applied to every model)
+
+Found during p14 (DEMAND_P14.md §2): the DPR 2021 screen-line counts are site totals over every carriageway, but two count
+records did not give the model every carriageway. **cnt_sl_21** Magarpatta (Mundhwa) River Bridge (calibration) was matched
+to OSM way 116839303 only, ONE northbound one-way carriageway of four (northbound 116839303 + 756417284, southbound
+568009405 + 756417279): a two-way total was compared with one direction of one bridge. **cnt_sl_23** Harris Bridge + New
+Harris Bridge (hold-out) had all its ways, but the two bridges are separate divided roads and the check took the busiest way
+per direction across both, i.e. one bridge. Fix in the data (`validation-v1/CHANGELOG.md`, `build_records.py` EXTRA_WAYS /
+CARRIAGEWAYS): the missing ways added and `count.carriageways` groups; the modelled count is the per-direction cross-section
+count per carriageway group, the groups added (`sectionCountGrouped`, projectCheck.ts; tested). Every count record was
+checked with two scripts (`/workspace/work/p14-final/dircheck.py`: ways covering one direction only; `parcheck.py`:
+same-direction ways side by side > 6 m apart); no other record has the problem (HK Firodia: a ramp; Spine Rd: service-road
+pieces; NDA Rd: pieces 2.2 km apart). Targets, split and criteria are unchanged.
+
+The recorded p13 run (`projectValidationRecord.ts`) was re-scored: the two records re-run with the same cached areas,
+parameters and 60 iterations (`p13rescore.jsonl`, harness on branch p14 with the p13 supply model), every other value as run
+(`p13_record_patch.py`). tuned_s2 / s3 were not re-run (they are not used anywhere).
+
+| Set | Records | Counts GEH < 5 | Mean GEH | Count bias | River crossings | cnt_sl_21 model (obs 10,963) | cnt_sl_23 model (obs 14,948) |
+|---|---|---|---|---|---|---|---|
+| default, before | calibration | 1/16 | 74.5 | −44.2 % | 11,894/38,499 (−69.1 %) | 2,195 | |
+| default, after | calibration | 2/16 | 67.6 | −38.1 % | 20,723/38,499 (−46.2 %) | 10,788 (GEH 1.7) | |
+| default, before | holdout | 1/16 | 48.9 | −32.3 % | 24,704/53,407 (−53.7 %) | | 4,860 |
+| default, after | holdout | 1/16 | 47.1 | −30.6 % | 27,139/53,407 (−49.2 %) | | 7,084 |
+| tuned_s1, before | holdout | 0/16 | 53.9 | −24.8 % | 26,132/53,407 (−51.1 %) | | 4,648 |
+| tuned_s1, after | holdout | 0/16 | 51.8 | −22.7 % | 29,137/53,407 (−45.4 %) | | 7,865 |
+
+Journey times are unaffected. The p13 verdict does not change (every criterion still fails on the hold-out).
+
 ## 5. In the app
 
 - **Two results, kept apart.** The official-count check (`trafficValidation.ts`, TAG M3.1 on the 15 CMP 2008 / Gunjan 2017
@@ -267,10 +296,10 @@ setting labelled "tuned (estimated)".
   parameters in use; the headline/meaning lines of `bannerText` then become the banner's summary line.
 - **Current state in the app**: both checks fail, so the banner reads "Traffic model fails the official-count check and the
   project check against estimated data", with the line "Project check (estimated data), default parameters, hold-out:
-  journey times 3/28 within 15% (85% needed), published counts 1/16 within GEH 5 (85% needed), river crossings −53.7%
-  (5% needed): fails." and the meaning "Use it to see the direction of a change and the trade-offs between alternatives
+  journey times 3/28 within 15% (85% needed), published counts 1/16 within GEH 5 (85% needed), river crossings −49.2%
+  (5% needed; −53.7% before the 2026-11-25 record fix, §4.7): fails." and the meaning "Use it to see the direction of a change and the trade-offs between alternatives
   run on the same inputs; do not quote its volumes, times or percentages." With the tuned box ticked the project line
-  shows the tuned numbers (9/28, 0/16, −51.1 %); the state stays "both fail".
+  shows the tuned numbers (9/28, 0/16, −45.4 %; −51.1 % before §4.7); the state stays "both fail".
 
 ## 6. Scenarios S1 and S3
 
