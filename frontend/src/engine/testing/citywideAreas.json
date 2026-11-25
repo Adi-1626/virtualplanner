@@ -1,0 +1,1256 @@
+{
+ "schema": "urbanos.citywide_areas/v1",
+ "seed": 16,
+ "hours": [
+  9,
+  14,
+  19,
+  23
+ ],
+ "built": "sample_areas.py (frontend/src/engine/testing/citywide)",
+ "osmIndex": "db_osm_index.db (western-zone-latest.osm.pbf, 2026-11-02)",
+ "strata": [
+  "arterial",
+  "bridge",
+  "collector",
+  "flyover",
+  "fringe",
+  "itpark",
+  "local",
+  "midc",
+  "oldcity",
+  "subarterial"
+ ],
+ "areas": [
+  {
+   "id": "p16_01_bridge",
+   "stratum": "bridge",
+   "roadClass": "bridge",
+   "osmHighway": "tertiary",
+   "roadName": "Pawana Bridge",
+   "seedRoadIds": [
+    "osm_54937082"
+   ],
+   "centre": [
+    73.796991,
+    18.619234
+   ],
+   "jurisdiction": "PCMC",
+   "nearestZone": "Pimpri Vadhre",
+   "loadBox": {
+    "minLng": 73.79429646647502,
+    "minLat": 18.616210866475026,
+    "maxLng": 73.80079483352498,
+    "maxLat": 18.621928833524976
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "river bridge over the Pavana: Pawana Bridge"
+  },
+  {
+   "id": "p16_02_bridge",
+   "stratum": "bridge",
+   "roadClass": "bridge",
+   "osmHighway": "primary",
+   "roadName": "New Holkar Bridge",
+   "seedRoadIds": [
+    "osm_169701639"
+   ],
+   "centre": [
+    73.863581,
+    18.553635
+   ],
+   "jurisdiction": "Cantonment",
+   "nearestZone": "Rajiv Gandhi Zoo",
+   "loadBox": {
+    "minLng": 73.85958416647502,
+    "minLat": 18.550940266475024,
+    "maxLng": 73.86627603352498,
+    "maxLat": 18.557481133524973
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "river bridge over the Mula/Mutha (crosses the PMC river polygon): New Holkar Bridge"
+  },
+  {
+   "id": "p16_03_bridge",
+   "stratum": "bridge",
+   "roadClass": "bridge",
+   "osmHighway": "primary",
+   "roadName": "Rajiv Gandhi Bridge",
+   "seedRoadIds": [
+    "osm_42557240"
+   ],
+   "centre": [
+    73.811452,
+    18.56852
+   ],
+   "jurisdiction": "PMR",
+   "nearestZone": "Aundh Gaon",
+   "loadBox": {
+    "minLng": 73.80875686647502,
+    "minLat": 18.564596366475026,
+    "maxLng": 73.81423273352497,
+    "maxLat": 18.571214833524973
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "river bridge over the Mula/Mutha (crosses the PMC river polygon): Rajiv Gandhi Bridge"
+  },
+  {
+   "id": "p16_04_bridge",
+   "stratum": "bridge",
+   "roadClass": "bridge",
+   "osmHighway": "tertiary",
+   "roadName": "Maharshi Vitthal Ramji Shinde Bridge",
+   "seedRoadIds": [
+    "osm_23028078"
+   ],
+   "centre": [
+    73.84966,
+    18.520131
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "New English School (Ramanbaug)",
+   "loadBox": {
+    "minLng": 73.84665056647502,
+    "minLat": 18.517436466475026,
+    "maxLng": 73.85235443352498,
+    "maxLat": 18.524574133524975
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "river bridge over the Mula/Mutha (crosses the PMC river polygon): Maharshi Vitthal Ramji Shinde Bridge"
+  },
+  {
+   "id": "p16_05_bridge",
+   "stratum": "bridge",
+   "roadClass": "bridge",
+   "osmHighway": "primary",
+   "roadName": "Sangam Bridge",
+   "seedRoadIds": [
+    "osm_23028035"
+   ],
+   "centre": [
+    73.861586,
+    18.528524
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Juna Bazaar",
+   "loadBox": {
+    "minLng": 73.85661786647502,
+    "minLat": 18.525730466475025,
+    "maxLng": 73.86428043352498,
+    "maxLat": 18.531219433524974
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "river bridge over the Mula/Mutha (crosses the PMC river polygon): Sangam Bridge"
+  },
+  {
+   "id": "p16_06_flyover",
+   "stratum": "flyover",
+   "roadClass": "flyover",
+   "osmHighway": "trunk",
+   "roadName": "Sadguru Shankar Maharaj Uddanpul",
+   "seedRoadIds": [
+    "osm_216972750"
+   ],
+   "centre": [
+    73.85769,
+    18.467941
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Khadkale (CT)",
+   "loadBox": {
+    "minLng": 73.85362906647502,
+    "minLat": 18.459839266475026,
+    "maxLng": 73.86082013352498,
+    "maxLat": 18.475969233524975
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "flyover / road over-bridge (trunk, 1216 m) Sadguru Shankar Maharaj Uddanpul"
+  },
+  {
+   "id": "p16_07_flyover",
+   "stratum": "flyover",
+   "roadClass": "flyover",
+   "osmHighway": "primary",
+   "roadName": "Sant Dyaneshwar Marg Flyover",
+   "seedRoadIds": [
+    "osm_814138940"
+   ],
+   "centre": [
+    73.878107,
+    18.641303
+   ],
+   "jurisdiction": "PMR",
+   "nearestZone": "Dighi",
+   "loadBox": {
+    "minLng": 73.87409896647502,
+    "minLat": 18.637344666475027,
+    "maxLng": 73.88196323352498,
+    "maxLat": 18.645848633524974
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "flyover / road over-bridge (primary, 437 m) Sant Dyaneshwar Marg Flyover"
+  },
+  {
+   "id": "p16_08_flyover",
+   "stratum": "flyover",
+   "roadClass": "flyover",
+   "osmHighway": "secondary",
+   "roadName": "New DP Road",
+   "seedRoadIds": [
+    "osm_250300546"
+   ],
+   "centre": [
+    73.790578,
+    18.571905
+   ],
+   "jurisdiction": "PCMC",
+   "nearestZone": "Pimple Nilakh",
+   "loadBox": {
+    "minLng": 73.78715326647502,
+    "minLat": 18.569135266475026,
+    "maxLng": 73.79329773352498,
+    "maxLat": 18.576754133524975
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "flyover / road over-bridge (secondary, 261 m) New DP Road"
+  },
+  {
+   "id": "p16_09_oldcity",
+   "stratum": "oldcity",
+   "roadClass": "old-city lane",
+   "osmHighway": "residential",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_1117985106"
+   ],
+   "centre": [
+    73.857536,
+    18.52224
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Juna Bazaar",
+   "loadBox": {
+    "minLng": 73.85482306647502,
+    "minLat": 18.519146166475025,
+    "maxLng": 73.86024823352498,
+    "maxLat": 18.525422933524975
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "old-city (Peth) street (residential) unnamed"
+  },
+  {
+   "id": "p16_10_oldcity",
+   "stratum": "oldcity",
+   "roadClass": "old-city lane",
+   "osmHighway": "living_street",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_436207996"
+   ],
+   "centre": [
+    73.871645,
+    18.505304
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Nehru Nagar",
+   "loadBox": {
+    "minLng": 73.86848056647503,
+    "minLat": 18.502129466475026,
+    "maxLng": 73.87452263352498,
+    "maxLat": 18.508015733524974
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "old-city (Peth) street (living_street) unnamed"
+  },
+  {
+   "id": "p16_11_oldcity",
+   "stratum": "oldcity",
+   "roadClass": "old-city lane",
+   "osmHighway": "residential",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_1061973861"
+   ],
+   "centre": [
+    73.870989,
+    18.512714
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Swami Samarth Mandir - Ganesh Peth",
+   "loadBox": {
+    "minLng": 73.86818726647502,
+    "minLat": 18.509356266475024,
+    "maxLng": 73.87383523352497,
+    "maxLat": 18.515879233524974
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "old-city (Peth) street (residential) unnamed"
+  },
+  {
+   "id": "p16_12_oldcity",
+   "stratum": "oldcity",
+   "roadClass": "old-city lane",
+   "osmHighway": "residential",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_476915663"
+   ],
+   "centre": [
+    73.86125,
+    18.51786
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Ganesh Peth Gurudwara",
+   "loadBox": {
+    "minLng": 73.85853536647502,
+    "minLat": 18.514752966475026,
+    "maxLng": 73.86404003352497,
+    "maxLat": 18.520656833524974
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "old-city (Peth) street (residential) unnamed"
+  },
+  {
+   "id": "p16_13_itpark",
+   "stratum": "itpark",
+   "roadClass": "IT park",
+   "osmHighway": "residential",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_761395842"
+   ],
+   "centre": [
+    73.738199,
+    18.590649
+   ],
+   "jurisdiction": "PMR",
+   "nearestZone": "Hinjawadi (CT)",
+   "loadBox": {
+    "minLng": 73.73514756647502,
+    "minLat": 18.587953266475026,
+    "maxLng": 73.74135363352498,
+    "maxLat": 18.593344033524975
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "IT park: Hinjawadi Phase 1 (Rajiv Gandhi Infotech Park) (residential unnamed)"
+  },
+  {
+   "id": "p16_14_itpark",
+   "stratum": "itpark",
+   "roadClass": "IT park",
+   "osmHighway": "tertiary",
+   "roadName": "Dholepatil Farms Road",
+   "seedRoadIds": [
+    "osm_901916045"
+   ],
+   "centre": [
+    73.949991,
+    18.553715
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Kharadi Gaon",
+   "loadBox": {
+    "minLng": 73.94729626647502,
+    "minLat": 18.551019866475027,
+    "maxLng": 73.95277823352498,
+    "maxLat": 18.556554633524975
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "IT park: Kharadi (EON IT Park) (tertiary Dholepatil Farms Road)"
+  },
+  {
+   "id": "p16_15_itpark",
+   "stratum": "itpark",
+   "roadClass": "IT park",
+   "osmHighway": "residential",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_1120498503"
+   ],
+   "centre": [
+    73.784239,
+    18.677263
+   ],
+   "jurisdiction": "PCMC",
+   "nearestZone": "Triveni Nagar",
+   "loadBox": {
+    "minLng": 73.78115196647502,
+    "minLat": 18.674568066475025,
+    "maxLng": 73.78693393352498,
+    "maxLat": 18.680019033524975
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "IT park: Talawade IT Park (residential unnamed)"
+  },
+  {
+   "id": "p16_16_midc",
+   "stratum": "midc",
+   "roadClass": "MIDC",
+   "osmHighway": "residential",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_251882409"
+   ],
+   "centre": [
+    73.846779,
+    18.632417
+   ],
+   "jurisdiction": "PCMC",
+   "nearestZone": "Bhosari Gaothan",
+   "loadBox": {
+    "minLng": 73.84381316647502,
+    "minLat": 18.629721666475024,
+    "maxLng": 73.84947413352498,
+    "maxLat": 18.635180333524975
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "industrial: Bhosari MIDC (residential unnamed)"
+  },
+  {
+   "id": "p16_17_midc",
+   "stratum": "midc",
+   "roadClass": "MIDC",
+   "osmHighway": "residential",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_1319569986"
+   ],
+   "centre": [
+    73.77498,
+    18.653243
+   ],
+   "jurisdiction": "PCMC",
+   "nearestZone": "Nigdi Gaothan",
+   "loadBox": {
+    "minLng": 73.77216656647502,
+    "minLat": 18.650529366475027,
+    "maxLng": 73.77771133352498,
+    "maxLat": 18.656069833524974
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "industrial: Chinchwad MIDC (Thermax Chowk) (residential unnamed)"
+  },
+  {
+   "id": "p16_18_midc",
+   "stratum": "midc",
+   "roadClass": "MIDC",
+   "osmHighway": "secondary",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_191165940"
+   ],
+   "centre": [
+    73.80633,
+    18.639057
+   ],
+   "jurisdiction": "PCMC",
+   "nearestZone": "Morwadi",
+   "loadBox": {
+    "minLng": 73.80274436647503,
+    "minLat": 18.634625166475026,
+    "maxLng": 73.81043133352497,
+    "maxLat": 18.646887033524976
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "industrial: Pimpri-Chinchwad MIDC (Telco Rd) (secondary unnamed)"
+  },
+  {
+   "id": "p16_19_fringe",
+   "stratum": "fringe",
+   "roadClass": "fringe village",
+   "osmHighway": "residential",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_858496107"
+   ],
+   "centre": [
+    74.018615,
+    18.691173
+   ],
+   "jurisdiction": "PMR",
+   "nearestZone": "Fulgaon, Tulapur, Bhawadi",
+   "loadBox": {
+    "minLng": 74.01583866647502,
+    "minLat": 18.687523566475026,
+    "maxLng": 74.02180633352498,
+    "maxLat": 18.693926333524974
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "fringe village / PMR zone Fulgaon, Tulapur, Bhawadi (residential unnamed)"
+  },
+  {
+   "id": "p16_20_fringe",
+   "stratum": "fringe",
+   "roadClass": "fringe village",
+   "osmHighway": "residential",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_855362192"
+   ],
+   "centre": [
+    73.873375,
+    18.687707
+   ],
+   "jurisdiction": "PMR",
+   "nearestZone": "Chimbali, Kelgaon",
+   "loadBox": {
+    "minLng": 73.87067996647502,
+    "minLat": 18.685011766475025,
+    "maxLng": 73.87629823352498,
+    "maxLat": 18.691793333524974
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "fringe village / PMR zone Chimbali, Kelgaon (residential unnamed)"
+  },
+  {
+   "id": "p16_21_fringe",
+   "stratum": "fringe",
+   "roadClass": "fringe village",
+   "osmHighway": "residential",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_859678004"
+   ],
+   "centre": [
+    73.958882,
+    18.636541
+   ],
+   "jurisdiction": "PMR",
+   "nearestZone": "Khed, Shiwapur",
+   "loadBox": {
+    "minLng": 73.95618676647503,
+    "minLat": 18.633846066475027,
+    "maxLng": 73.96165313352498,
+    "maxLat": 18.639425533524975
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "fringe village / PMR zone Khed, Shiwapur (residential unnamed)"
+  },
+  {
+   "id": "p16_22_fringe",
+   "stratum": "fringe",
+   "roadClass": "fringe village",
+   "osmHighway": "residential",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_1224735553"
+   ],
+   "centre": [
+    73.692493,
+    18.706159
+   ],
+   "jurisdiction": "PMR",
+   "nearestZone": "Somatane, Shirgaon",
+   "loadBox": {
+    "minLng": 73.68979086647502,
+    "minLat": 18.703412266475027,
+    "maxLng": 73.69525843352498,
+    "maxLat": 18.709404233524975
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "fringe village / PMR zone Somatane, Shirgaon (residential unnamed)"
+  },
+  {
+   "id": "p16_23_arterial",
+   "stratum": "arterial",
+   "roadClass": "arterial",
+   "osmHighway": "trunk",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_1502752714"
+   ],
+   "centre": [
+    73.924794,
+    18.453085
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Mohammedwadi",
+   "loadBox": {
+    "minLng": 73.92026956647503,
+    "minLat": 18.449849366475025,
+    "maxLng": 73.92829673352497,
+    "maxLat": 18.455872433524974
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "arterial (trunk) unnamed: random draw from 2957 arterial ways"
+  },
+  {
+   "id": "p16_24_arterial",
+   "stratum": "arterial",
+   "roadClass": "arterial",
+   "osmHighway": "primary",
+   "roadName": "Karve Road",
+   "seedRoadIds": [
+    "osm_246580196"
+   ],
+   "centre": [
+    73.828453,
+    18.507134
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Dinanath Mangeshkar Hospital",
+   "loadBox": {
+    "minLng": 73.82505496647502,
+    "minLat": 18.504142466475024,
+    "maxLng": 73.83194883352498,
+    "maxLat": 18.510229633524975
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "arterial (primary) Karve Road: random draw from 2957 arterial ways"
+  },
+  {
+   "id": "p16_25_arterial",
+   "stratum": "arterial",
+   "roadClass": "arterial",
+   "osmHighway": "primary",
+   "roadName": "Ganeshkhind Road",
+   "seedRoadIds": [
+    "osm_208049746"
+   ],
+   "centre": [
+    73.832437,
+    18.539517
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Modern College",
+   "loadBox": {
+    "minLng": 73.82793706647502,
+    "minLat": 18.536394666475026,
+    "maxLng": 73.83574903352498,
+    "maxLat": 18.543425733524973
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "arterial (primary) Ganeshkhind Road: random draw from 2957 arterial ways"
+  },
+  {
+   "id": "p16_26_arterial",
+   "stratum": "arterial",
+   "roadClass": "arterial",
+   "osmHighway": "primary",
+   "roadName": "NDA Road",
+   "seedRoadIds": [
+    "osm_435766844"
+   ],
+   "centre": [
+    73.772291,
+    18.460405
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Nanded (N.V.)",
+   "loadBox": {
+    "minLng": 73.76760566647502,
+    "minLat": 18.454642066475024,
+    "maxLng": 73.77628263352497,
+    "maxLat": 18.467277133524973
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "arterial (primary) NDA Road: random draw from 2957 arterial ways"
+  },
+  {
+   "id": "p16_27_arterial",
+   "stratum": "arterial",
+   "roadClass": "arterial",
+   "osmHighway": "trunk",
+   "roadName": "Nagar Road",
+   "seedRoadIds": [
+    "osm_701885341"
+   ],
+   "centre": [
+    73.89244,
+    18.548736
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Netaji Subhash Chandra Bose School",
+   "loadBox": {
+    "minLng": 73.88614456647502,
+    "minLat": 18.543233266475024,
+    "maxLng": 73.89908703352498,
+    "maxLat": 18.554968233524974
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "arterial (trunk) Nagar Road: random draw from 2957 arterial ways"
+  },
+  {
+   "id": "p16_28_subarterial",
+   "stratum": "subarterial",
+   "roadClass": "sub-arterial",
+   "osmHighway": "secondary",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_106751418"
+   ],
+   "centre": [
+    73.893699,
+    18.674864
+   ],
+   "jurisdiction": "PMR",
+   "nearestZone": "Alandi Rural, Dhanore, Charholi.",
+   "loadBox": {
+    "minLng": 73.89045876647502,
+    "minLat": 18.670993166475025,
+    "maxLng": 73.89702573352498,
+    "maxLat": 18.679149933524975
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "sub-arterial (secondary) unnamed"
+  },
+  {
+   "id": "p16_29_subarterial",
+   "stratum": "subarterial",
+   "roadClass": "sub-arterial",
+   "osmHighway": "secondary",
+   "roadName": "Pashan-Bavdhan Road",
+   "seedRoadIds": [
+    "osm_22841830"
+   ],
+   "centre": [
+    73.79215,
+    18.530796
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Pashan",
+   "loadBox": {
+    "minLng": 73.78599796647502,
+    "minLat": 18.523581466475026,
+    "maxLng": 73.79888053352498,
+    "maxLat": 18.540118533524975
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "sub-arterial (secondary) Pashan-Bavdhan Road"
+  },
+  {
+   "id": "p16_30_subarterial",
+   "stratum": "subarterial",
+   "roadClass": "sub-arterial",
+   "osmHighway": "secondary",
+   "roadName": "Amanora Park Town Main Road",
+   "seedRoadIds": [
+    "osm_567676618"
+   ],
+   "centre": [
+    73.932824,
+    18.52331
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Hadapsar Gaon",
+   "loadBox": {
+    "minLng": 73.92955236647502,
+    "minLat": 18.519981966475026,
+    "maxLng": 73.93699523352498,
+    "maxLat": 18.526244233524974
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "sub-arterial (secondary) Amanora Park Town Main Road"
+  },
+  {
+   "id": "p16_31_subarterial",
+   "stratum": "subarterial",
+   "roadClass": "sub-arterial",
+   "osmHighway": "secondary",
+   "roadName": "Datta Mandir Road",
+   "seedRoadIds": [
+    "osm_1231602817"
+   ],
+   "centre": [
+    73.763679,
+    18.596231
+   ],
+   "jurisdiction": "PCMC",
+   "nearestZone": "Rajbhavan",
+   "loadBox": {
+    "minLng": 73.76072466647503,
+    "minLat": 18.592159866475026,
+    "maxLng": 73.76641093352498,
+    "maxLat": 18.600596233524975
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "sub-arterial (secondary) Datta Mandir Road"
+  },
+  {
+   "id": "p16_32_collector",
+   "stratum": "collector",
+   "roadClass": "collector",
+   "osmHighway": "tertiary",
+   "roadName": "Sunset Boulevard",
+   "seedRoadIds": [
+    "osm_1432523003"
+   ],
+   "centre": [
+    73.906733,
+    18.575428
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Vidya Nagar",
+   "loadBox": {
+    "minLng": 73.90198856647503,
+    "minLat": 18.572663366475027,
+    "maxLng": 73.91042193352497,
+    "maxLat": 18.578697033524975
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "collector (tertiary) Sunset Boulevard"
+  },
+  {
+   "id": "p16_33_collector",
+   "stratum": "collector",
+   "roadClass": "collector",
+   "osmHighway": "tertiary",
+   "roadName": "Rohan Seher Lane",
+   "seedRoadIds": [
+    "osm_958663044"
+   ],
+   "centre": [
+    73.773297,
+    18.555744
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Baner Balewadi",
+   "loadBox": {
+    "minLng": 73.77028046647503,
+    "minLat": 18.550644866475025,
+    "maxLng": 73.77723243352497,
+    "maxLat": 18.560308033524976
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "collector (tertiary) Rohan Seher Lane"
+  },
+  {
+   "id": "p16_34_collector",
+   "stratum": "collector",
+   "roadClass": "collector",
+   "osmHighway": "tertiary",
+   "roadName": "Atal Bihari Vajpayee Marg",
+   "seedRoadIds": [
+    "osm_1561704799"
+   ],
+   "centre": [
+    73.808322,
+    18.663734
+   ],
+   "jurisdiction": "PCMC",
+   "nearestZone": "Sambhaji Nagar",
+   "loadBox": {
+    "minLng": 73.80551976647502,
+    "minLat": 18.660468466475024,
+    "maxLng": 73.81111883352497,
+    "maxLat": 18.666969733524976
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "collector (tertiary) Atal Bihari Vajpayee Marg"
+  },
+  {
+   "id": "p16_35_collector",
+   "stratum": "collector",
+   "roadClass": "collector",
+   "osmHighway": "tertiary",
+   "roadName": "Bhagwan Tatyasaheb Kawade Marg",
+   "seedRoadIds": [
+    "osm_48061121"
+   ],
+   "centre": [
+    73.906425,
+    18.522663
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Vikasnagar-Ghorpadi",
+   "loadBox": {
+    "minLng": 73.90351206647502,
+    "minLat": 18.516099166475026,
+    "maxLng": 73.90936593352498,
+    "maxLat": 18.531892533524974
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "collector (tertiary) Bhagwan Tatyasaheb Kawade Marg"
+  },
+  {
+   "id": "p16_36_local",
+   "stratum": "local",
+   "roadClass": "local",
+   "osmHighway": "residential",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_436821702"
+   ],
+   "centre": [
+    73.887629,
+    18.475761
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Kondhwa - Khurd",
+   "loadBox": {
+    "minLng": 73.88406266647502,
+    "minLat": 18.473060266475024,
+    "maxLng": 73.89093453352498,
+    "maxLat": 18.478471133524973
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "local street (residential) unnamed, PMC"
+  },
+  {
+   "id": "p16_37_local",
+   "stratum": "local",
+   "roadClass": "local",
+   "osmHighway": "residential",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_858383322"
+   ],
+   "centre": [
+    73.795826,
+    18.471438
+   ],
+   "jurisdiction": "PMC",
+   "nearestZone": "Popular Nagar - Warje",
+   "loadBox": {
+    "minLng": 73.79278716647502,
+    "minLat": 18.468712766475026,
+    "maxLng": 73.79899903352498,
+    "maxLat": 18.474207733524974
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "local street (residential) unnamed, PMC"
+  },
+  {
+   "id": "p16_38_local",
+   "stratum": "local",
+   "roadClass": "local",
+   "osmHighway": "residential",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_236178692"
+   ],
+   "centre": [
+    73.827503,
+    18.661294
+   ],
+   "jurisdiction": "PCMC",
+   "nearestZone": "Chikhali",
+   "loadBox": {
+    "minLng": 73.82436976647502,
+    "minLat": 18.658092066475024,
+    "maxLng": 73.83120913352498,
+    "maxLat": 18.665226333524974
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "local street (residential) unnamed, PCMC"
+  },
+  {
+   "id": "p16_39_local",
+   "stratum": "local",
+   "roadClass": "local",
+   "osmHighway": "residential",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_1119804076"
+   ],
+   "centre": [
+    73.779045,
+    18.625045
+   ],
+   "jurisdiction": "PCMC",
+   "nearestZone": "Chinchwade Nagar",
+   "loadBox": {
+    "minLng": 73.77591006647502,
+    "minLat": 18.622338666475024,
+    "maxLng": 73.78227883352498,
+    "maxLat": 18.627847833524974
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "local street (residential) unnamed, PCMC"
+  },
+  {
+   "id": "p16_40_local",
+   "stratum": "local",
+   "roadClass": "local",
+   "osmHighway": "residential",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_447389029"
+   ],
+   "centre": [
+    73.850226,
+    18.570312
+   ],
+   "jurisdiction": "Cantonment",
+   "nearestZone": "Kirkee Cantonemnt",
+   "loadBox": {
+    "minLng": 73.84613976647502,
+    "minLat": 18.566867966475026,
+    "maxLng": 73.85390543352497,
+    "maxLat": 18.573076533524976
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "local street (residential) unnamed, Cantonment"
+  },
+  {
+   "id": "p16_41_local",
+   "stratum": "local",
+   "roadClass": "local",
+   "osmHighway": "residential",
+   "roadName": null,
+   "seedRoadIds": [
+    "osm_1220424608"
+   ],
+   "centre": [
+    73.959838,
+    18.701559
+   ],
+   "jurisdiction": "PMR",
+   "nearestZone": "Fulgaon, Tulapur, Bhawadi",
+   "loadBox": {
+    "minLng": 73.95596126647501,
+    "minLat": 18.698719466475026,
+    "maxLng": 73.96265583352498,
+    "maxLat": 18.704254033524975
+   },
+   "range": 2000,
+   "hours": [
+    9,
+    14,
+    19,
+    23
+   ],
+   "why": "local street (residential) unnamed, PMR"
+  }
+ ]
+}
