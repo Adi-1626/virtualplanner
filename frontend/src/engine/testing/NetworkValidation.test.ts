@@ -45,6 +45,8 @@ import type { SupplyParams } from '../simulation/supplyParams';
  *   VAL24_HYPO_EDGE      multiply the edge (cordon) flow per lane of every road class by this factor (AreaDemand EDGE_FLOW_PER_LANE_VPH)
  *   VAL24_SUPPLY         p13: JSON file {name, params} of a tuned (estimated) supply set (supplyParams.ts) for the assignment-only sweep;
  *                        recorded under `supply` (docs/urbanos/VALIDATION_P13.md: the official-count check of a tuned set)
+ *   VAL24_SUPPLY_MODEL   p14: 'p14' runs the Indian urban supply model (supplyConfig.ts, docs/urbanos/SUPPLY_P14.md) in the whole
+ *                        analysis (area assignment and the corridor's desired speeds); recorded under `supplyModel`
  *
  * Runs with `hours` (assignment-only sweep) also report, per hour, the section's assigned speed and, with `ways`, the assigned
  * volume of each way group and its distance to the nearest cordon point (where edge demand enters), plus the plan's components.
@@ -148,6 +150,8 @@ describe.skipIf(!process.env.VAL24)('network-wide validation against observation
     if (process.env.VAL24_EST_LANDUSE === '0') mode.estimatedLandUse = false;
     if (process.env.VAL24_EST_MATCH === '0') mode.estimatedMatch = false;
     if (process.env.VAL24_SEEDS) mode.analysisSeeds = process.env.VAL24_SEEDS.split(',').map(Number);
+    // p14: VAL24_SUPPLY_MODEL=p14 runs the Indian urban supply model (supplyConfig.ts; building frontage from VAL24_API)
+    if (process.env.VAL24_SUPPLY_MODEL === 'p14') mode.setSupplyModel('p14');
     mode.enter();
     if (process.env.VAL24_HYPO_SCALE) { hypo.demandScale = Number(process.env.VAL24_HYPO_SCALE); mode.setDemandSettings({ hypotheticalScale: hypo.demandScale }); }
     const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -171,7 +175,7 @@ describe.skipIf(!process.env.VAL24)('network-wide validation against observation
       await sleep(800);
       await settle();
       const st = mode.getState();
-      const row: Record<string, unknown> = { id: run.id, supply: supplySet?.name ?? null, hypothetical: Object.keys(hypo).length ? hypo : null, hour: run.hour, settled: ok, seeds: mode.analysisSeeds, osmRoads: st.osmRoads, signals: st.signals, areaSegments: st.area?.segments.length, sectionName: st.section?.name };
+      const row: Record<string, unknown> = { id: run.id, supply: supplySet?.name ?? null, supplyModel: mode.supplyModel, hypothetical: Object.keys(hypo).length ? hypo : null, hour: run.hour, settled: ok, seeds: mode.analysisSeeds, osmRoads: st.osmRoads, signals: st.signals, areaSegments: st.area?.segments.length, sectionName: st.section?.name };
       const roadsMap = new Map((mode as unknown as { getRoads: () => DrivableObject[] }).getRoads().map(r => [r.id, r]));
       if (run.hours && st.area) {
         // Assignment-only sweep over hours: network-wide (area) speed from the user-equilibrium assignment
@@ -183,7 +187,7 @@ describe.skipIf(!process.env.VAL24)('network-wide validation against observation
           const f = hourFactor(profile, h, COUNT_HOURS[h < 12 ? 'AM' : 'PM'], st.timeOfDay.day);
           const ds = supplySet?.params.demandScale ?? 1;
           const trips = snapDemandPlan(plan, area.network, 250, segs).map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * f * ds }));
-          const a = assignTraffic(area, roadsMap, trips, { signalPoints: mode.mappedSignalPoints() ?? undefined, supply: supplySet?.params });
+          const a = assignTraffic(area, roadsMap, trips, { signalPoints: mode.mappedSignalPoints() ?? undefined, supply: supplySet?.params, supplyModel: mode.supplyModel });
           const byClass: Record<string, { vkm: number; vh: number; vh0: number; km: number }> = {};
           let vkm = 0, vh = 0, vh0 = 0;
           a.links.forEach((l, i) => {

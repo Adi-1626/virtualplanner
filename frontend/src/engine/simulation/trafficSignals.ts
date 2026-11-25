@@ -2,6 +2,7 @@ import type { Bounds } from './StudyAreaExplorer';
 import { OverpassClient } from '../editing/OverpassClient';
 import type { LocalOsmIndex } from '../editing/LocalOsmIndex';
 import { cacheGetMany, cachePutMany } from '../storage/localCache';
+import { buildingPointsFromOsm, type BuildingPoint } from './indianSupply';
 
 /**
  * Where the real traffic signals are, from OpenStreetMap (highway=traffic_signals
@@ -32,6 +33,20 @@ export class TrafficSignalSource {
   constructor(local: LocalOsmIndex | null = null, overpass = new OverpassClient()) {
     this.local = local;
     this.overpass = overpass;
+  }
+
+  /**
+   * p14: OSM building centroids inside `bounds` for the side-friction inference (indianSupply.frictionByRoad), from the
+   * backend's local OSM index only (no Overpass fallback: thousands of footprints per area). Null when the index does not
+   * cover the area or cannot be reached: the friction then rests on access points alone.
+   */
+  public async buildingPointsIn(bounds: Bounds, signal?: AbortSignal): Promise<BuildingPoint[] | null> {
+    try {
+      if (!this.local || !(await this.local.supports('buildings', [bounds]))) return null;
+      const els = await this.local.infrastructure('buildings', [bounds]);
+      if (signal?.aborted) return null;
+      return buildingPointsFromOsm(els);
+    } catch { return null; }
   }
 
   /** Signals inside `bounds`. Rejects if OpenStreetMap cannot be reached and nothing is cached. */

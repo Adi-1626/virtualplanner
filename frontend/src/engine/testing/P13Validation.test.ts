@@ -21,6 +21,8 @@ import { DEFAULT_SUPPLY, SUPPLY_BOUNDS, SUPPLY_KEYS, supplyToVector, vectorToSup
 import { scoreProjectCheck, geh, sectionCount, sectionDirections, wayBearing, type ProjectObs } from '../calibration/projectCheck';
 import { areaOdProblem } from '../demand/odmeAssignment';
 import { estimateOd, matrixChangeStats, type OdmeCount } from '../demand/odme';
+import type { SupplyModel } from '../simulation/supplyConfig';
+import type { BuildingPoint } from '../simulation/indianSupply';
 
 /**
  * Opt-in harness for the p13 project-level validation (docs/urbanos/VALIDATION_P13.md): P13=1.
@@ -40,6 +42,9 @@ import { estimateOd, matrixChangeStats, type OdmeCount } from '../demand/odme';
  *   P13_ONLY     comma-separated record ids
  *   P13_CACHE    file holding the built areas (v8-serialised); built and written when missing, read when present
  *   P13_CACHE_READ comma-separated cache files to read (areas built in chunks)
+ *   P13_PARAMS sets may carry "model": "p14" (the Indian urban supply model, supplyConfig.ts, docs/urbanos/SUPPLY_P14.md);
+ *              for those, each area's OSM building centroids are read from P13_API through the app's own loader
+ *              (TrafficSignalSource.buildingPointsIn, as Simulate does) for the side-friction inference.
  */
 if (process.env.P13 && process.env.P13_API) {
   const base = new URL(process.env.P13_API);
@@ -73,7 +78,7 @@ interface RecordSpec {
   jt?: { o: [number, number]; d: [number, number]; googleKm: Record<string, number>; targetMin: Record<string, number>; rangeMin: Record<string, [number, number]> };
   count?: { ways: number[]; target: number; target2021: number; hour: number; overlapsOfficial: string };
 }
-interface Built { rec: RecordSpec; area: StudyArea; roads: Map<string, DrivableObject>; signals: readonly (readonly [number, number])[] | undefined; trips: Map<number, MicroDemandTrip[]> }
+interface Built { rec: RecordSpec; area: StudyArea; roads: Map<string, DrivableObject>; signals: readonly (readonly [number, number])[] | undefined; trips: Map<number, MicroDemandTrip[]>; buildings?: readonly BuildingPoint[] | null }
 
 /** Keep only what the area assignment reads: the network edges of the area's segments, their end nodes and their roads. */
 function trimBuilt(b: Built): Built {
@@ -92,9 +97,9 @@ const countBearing = (b: Built, linkId: string) => wayBearing(b.roads.get(linkId
 const distM = (a: readonly number[], b: readonly number[]) => Math.hypot((a[0] - b[0]) * 111320 * Math.cos(a[1] * Math.PI / 180), (a[1] - b[1]) * 111320);
 
 /** Evaluate one record at one hour under a parameter set. */
-function evaluate(b: Built, hour: number, p: Readonly<SupplyParams>, iters: number): ProjectObs | null {
+function evaluate(b: Built, hour: number, p: Readonly<SupplyParams>, iters: number, model: SupplyModel = 'p13'): ProjectObs | null {
   const trips = (b.trips.get(hour) ?? []).map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * p.demandScale }));
-  const a = assignTraffic(b.area, b.roads, trips, { signalPoints: b.signals, supply: p, maxIterations: iters, maxMs: 1e9, targetGap: 1e-3 });
+  const a = assignTraffic(b.area, b.roads, trips, { signalPoints: b.signals, supply: p, maxIterations: iters, maxMs: 1e9, targetGap: 1e-3, supplyModel: model, buildings: model === 'p14' ? b.buildings : undefined });
   const base = { id: `${b.rec.id}@${hour}`, record: b.rec.id, split: b.rec.split, roadClass: b.rec.roadClass, area: b.rec.area, hour };
   if (b.rec.kind === 'count' && b.rec.count) {
     // One cross-section per direction of travel (busiest piece of the counted stretch in each direction, both added),
@@ -130,15 +135,25 @@ function evaluate(b: Built, hour: number, p: Readonly<SupplyParams>, iters: numb
     }
     if (!Number.isFinite(dist[d.i])) return { ...base, kind: 'jt', observed: b.rec.jt.targetMin[String(hour)], model: null, note: 'no route in the area network' };
     // Where the modelled time goes along the route: running at free-flow speed, signal delay (in t0), congestion (BPR above t0)
-    const diag = { runS: 0, signalS: 0, congS: 0, stopLines: 0, links: 0, maxVc: 0, ffKmh: 0, junctions: 0 };
+    const diag = { runS: 0, signalS: 0, congS: 0, junctionS: 0, stopLines: 0, links: 0, maxVc: 0, ffKmh: 0, junctions: 0, friction: {} as Record<string, number> };
     for (let v = d.i; predL[v] >= 0; v = a.links[predL[v]].from) {
-      const li = predL[v], l = a.links[li], run = l.lengthM / (l.freeSpeedKmh / 3.6);
-      diag.runS += run; diag.signalS += l.t0 - run; diag.congS += a.timeS[li] - l.t0; diag.links++;
+      const li = predL[v], l = a.links[li], run = l.lengthM / (l.freeSpeedKmh / 3.6), jd = a.junctionDelayS?.[li] ?? 0;
+      diag.runS += run; diag.signalS += l.t0 - run; diag.junctionS += jd; diag.congS += a.timeS[li] - l.t0 - jd; diag.links++;
+      if (l.friction) diag.friction[l.friction] = (diag.friction[l.friction] ?? 0) + l.lengthM;
       if (l.gC !== null) diag.stopLines++;
       if (outs[l.to].length >= 2) diag.junctions++;
       diag.maxVc = Math.max(diag.maxVc, a.volPcu[li] / Math.max(1, l.capacityPcu));
     }
     diag.ffKmh = len[d.i] / 1000 / Math.max(1e-9, diag.runS / 3600);
+    // p14: the route's three largest junction delays (which control, its capacity and flow)
+    if (a.junctionDelayS) {
+      const onPath: number[] = [];
+      for (let v = d.i; predL[v] >= 0; v = a.links[predL[v]].from) onPath.push(predL[v]);
+      (diag as Record<string, unknown>).worstJunctions = onPath.sort((x, y) => a.junctionDelayS![y] - a.junctionDelayS![x]).slice(0, 3).filter(li => a.junctionDelayS![li] > 0).map(li => {
+        const l = a.links[li], r = b.roads.get(l.roadId) as (DrivableObject & { osmProvenance?: { originalTags?: Record<string, string> } }) | undefined;
+        return { id: l.id, name: r?.name, hw: r?.osmProvenance?.originalTags?.highway, j: l.junction, dS: Math.round(a.junctionDelayS![li]), capPcu: Math.round(a.junctionCapacityPcu![li]), volPcu: Math.round(a.volPcu[li]) };
+      });
+    }
     // P13_DIAG_LINKS: the route's most loaded links (what a gridlocked route queues on)
     const worst: unknown[] = [];
     if (process.env.P13_DIAG_LINKS) {
@@ -247,18 +262,28 @@ describe.skipIf(!process.env.P13)('p13 project-level validation against estimate
     mode.exit();
     if (cacheFile && !fs.existsSync(cacheFile)) fs.writeFileSync(cacheFile, v8.serialize(built));
 
-    const evalAll = (p: Readonly<SupplyParams>, which: (b: Built) => boolean) => {
+    const evalAll = (p: Readonly<SupplyParams>, which: (b: Built) => boolean, model: SupplyModel = 'p13') => {
       const obs: ProjectObs[] = [];
-      for (const b of built) if (which(b)) for (const h of b.rec.hours) { const r = evaluate(b, h, p, iters); if (r) obs.push(r); }
+      for (const b of built) if (which(b)) for (const h of b.rec.hours) { const r = evaluate(b, h, p, iters, model); if (r) obs.push(r); }
       return obs;
+    };
+    // p14: each area's building centroids, read once through the app's loader (the cached areas predate p14)
+    const loadBuildings = async () => {
+      const src = new TrafficSignalSource(localOsm);
+      for (const b of built) {
+        if (b.buildings !== undefined) continue;
+        b.buildings = await src.buildingPointsIn(b.area.bounds);
+        log({ buildings: b.rec.id, n: b.buildings?.length ?? null });
+      }
     };
     const modeName = process.env.P13_MODE ?? 'eval';
     if (modeName === 'eval') {
-      const sets = process.env.P13_PARAMS ? JSON.parse(fs.readFileSync(process.env.P13_PARAMS, 'utf8')) as { name: string; params: SupplyParams }[] : [{ name: 'default', params: { ...DEFAULT_SUPPLY } }];
+      const sets = process.env.P13_PARAMS ? JSON.parse(fs.readFileSync(process.env.P13_PARAMS, 'utf8')) as { name: string; params: SupplyParams; model?: SupplyModel }[] : [{ name: 'default', params: { ...DEFAULT_SUPPLY } }];
+      if (sets.some(s => s.model === 'p14')) await loadBuildings();
       for (const s of sets) {
         const t0 = Date.now();
-        const obs = evalAll(s.params, () => true);
-        log({ eval: s.name, params: s.params, ms: Date.now() - t0, obs, score: scoreProjectCheck(obs) });
+        const obs = evalAll(s.params, () => true, s.model ?? 'p13');
+        log({ eval: s.name, model: s.model ?? 'p13', params: s.params, ms: Date.now() - t0, obs, score: scoreProjectCheck(obs) });
       }
     } else if (modeName === 'odme') {
       // Spiess (1990) gradient ODME (demand/odme.ts) on each CALIBRATION count's own area matrix, cell factors bounded, optional
