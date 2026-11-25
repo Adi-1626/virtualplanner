@@ -7,7 +7,7 @@ import { snapDemandPlan } from '../simulation/StudyDemand';
 import { assignTraffic, selectLink } from '../simulation/staticAssignment';
 import type { MicroDemandTrip } from '../simulation/TrafficMicroSim';
 import { DEFAULT_SUPPLY } from '../simulation/supplyParams';
-import { scoreProjectCheck, sectionCount, wayBearing, type ProjectObs } from '../calibration/projectCheck';
+import { scoreProjectCheck, sectionCount, sectionCountGrouped, wayBearing, type ProjectObs } from '../calibration/projectCheck';
 import http from 'http';
 import { LocalOsmIndex } from '../editing/LocalOsmIndex';
 import { TrafficSignalSource } from '../simulation/trafficSignals';
@@ -55,7 +55,7 @@ if (process.env.P14 && process.env.P14_API) {
 interface RecordSpec {
   id: string; kind: 'jt' | 'count'; split: 'calibration' | 'holdout'; roadClass: string; area: string; hours: number[];
   jt?: { o: [number, number]; d: [number, number]; googleKm: Record<string, number>; targetMin: Record<string, number>; rangeMin: Record<string, [number, number]> };
-  count?: { ways: number[]; target: number };
+  count?: { ways: number[]; target: number; carriageways?: number[][] };
 }
 interface Built { rec: RecordSpec; area: StudyArea; roads: Map<string, DrivableObject>; signals: readonly (readonly [number, number])[] | undefined; trips: Map<number, MicroDemandTrip[]>; oldVph?: Record<number, number>; buildings?: unknown }
 
@@ -77,10 +77,10 @@ function evaluate(b: Built, hour: number, trips: MicroDemandTrip[], iters: numbe
   const base = { id: `${b.rec.id}@${hour}`, record: b.rec.id, split: b.rec.split, roadClass: b.rec.roadClass, area: b.rec.area, hour };
   if (b.rec.kind === 'count' && b.rec.count) {
     const ways = new Set(b.rec.count.ways);
-    const flows: { bearing: number; vph: number }[] = [];
-    a.links.forEach((l, i) => { const w = wayOf(l.id); if (w === null || !ways.has(w)) return; flows.push({ bearing: countBearing(b, l.id), vph: a.volVeh[i] }); });
+    const flows: { way: number; bearing: number; vph: number }[] = [];
+    a.links.forEach((l, i) => { const w = wayOf(l.id); if (w === null || !ways.has(w)) return; flows.push({ way: w, bearing: countBearing(b, l.id), vph: a.volVeh[i] }); });
     if (!flows.length) return null;
-    return { ...base, kind: 'count', observed: b.rec.count.target, model: sectionCount(flows) };
+    return { ...base, kind: 'count', observed: b.rec.count.target, model: sectionCountGrouped(flows, b.rec.count.carriageways) };
   }
   if (b.rec.kind === 'jt' && b.rec.jt) {
     const N = a.nodes.length;

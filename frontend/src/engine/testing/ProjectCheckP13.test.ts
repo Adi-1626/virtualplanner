@@ -3,7 +3,7 @@ import type { RoadObject, RoadClassification } from '../objects/types';
 import { StudyAreaExplorer } from '../simulation/StudyAreaExplorer';
 import { buildAssignmentNetwork, assignTraffic } from '../simulation/staticAssignment';
 import { DEFAULT_SUPPLY, SUPPLY_BOUNDS, isDefaultSupply, supplyToVector, vectorToSupply } from '../simulation/supplyParams';
-import { geh, jtOk, scoreProjectCheck, scoreGroup, projectLoss, PROJECT_CRITERIA, sectionCount, sectionDirections, wayBearing, type ProjectObs } from '../calibration/projectCheck';
+import { geh, jtOk, scoreProjectCheck, scoreGroup, projectLoss, PROJECT_CRITERIA, sectionCount, sectionCountGrouped, sectionDirections, wayBearing, type ProjectObs } from '../calibration/projectCheck';
 import { decideTunedDefault, officialNotWorse } from '../calibration/tunedSupply';
 import { bannerState, bannerText, projectRows, projectValidationCheck, PROJECT_CHECK, PROJECT_CHECK_TITLE } from '../../components/ui/badges/projectValidation';
 import { TRAFFIC_VALIDATION } from '../../components/ui/badges/trafficValidation';
@@ -77,6 +77,13 @@ describe('count matching: one cross-section per direction, never the sum over th
     const bend: [number, number][] = [[73.85, 18.51], [73.855, 18.515]]; // north-east, 45 degrees off
     expect(sectionCount([{ bearing: wayBearing(N, false), vph: 700 }, { bearing: wayBearing(bend, false), vph: 900 }])).toBe(900);
     expect(sectionCount([])).toBe(0);
+  });
+  it('twin bridges (validation-v1 2026-11-25): each carriageway group is one cross-section per direction, the groups added', () => {
+    const f = [{ way: 1, bearing: wayBearing(N, false), vph: 1500 }, { way: 2, bearing: wayBearing(S, false), vph: 1300 },
+      { way: 3, bearing: wayBearing(N, false), vph: 900 }, { way: 4, bearing: wayBearing(S, false), vph: 700 }];
+    expect(sectionCountGrouped(f)).toBe(1500 + 1300);
+    expect(sectionCountGrouped(f, [[1, 2], [3, 4]])).toBe(1500 + 1300 + 900 + 700);
+    expect(sectionCountGrouped(f, [[1, 2]])).toBe(2800);
   });
 });
 

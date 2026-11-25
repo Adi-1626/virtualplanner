@@ -18,7 +18,7 @@ import { hourFactor, COUNT_HOURS } from '../simulation/timeOfDay';
 import type { MicroDemandTrip } from '../simulation/TrafficMicroSim';
 import type { TimePeriod } from '../objects/demandTypes';
 import { DEFAULT_SUPPLY, SUPPLY_BOUNDS, SUPPLY_KEYS, supplyToVector, vectorToSupply, type SupplyParams } from '../simulation/supplyParams';
-import { scoreProjectCheck, geh, sectionCount, sectionDirections, wayBearing, type ProjectObs } from '../calibration/projectCheck';
+import { scoreProjectCheck, geh, sectionCount, sectionCountGrouped, sectionDirections, wayBearing, type ProjectObs } from '../calibration/projectCheck';
 import { areaOdProblem } from '../demand/odmeAssignment';
 import { estimateOd, matrixChangeStats, type OdmeCount } from '../demand/odme';
 import type { SupplyModel } from '../simulation/supplyConfig';
@@ -76,7 +76,7 @@ interface RecordSpec {
   id: string; kind: 'jt' | 'count'; split: 'calibration' | 'holdout'; roadClass: string; area: string; seedRoadIds: string[];
   loadBox: { minLng: number; minLat: number; maxLng: number; maxLat: number } | null; range: number; hours: number[];
   jt?: { o: [number, number]; d: [number, number]; googleKm: Record<string, number>; targetMin: Record<string, number>; rangeMin: Record<string, [number, number]> };
-  count?: { ways: number[]; target: number; target2021: number; hour: number; overlapsOfficial: string };
+  count?: { ways: number[]; target: number; target2021: number; hour: number; overlapsOfficial: string; carriageways?: number[][] };
 }
 interface Built { rec: RecordSpec; area: StudyArea; roads: Map<string, DrivableObject>; signals: readonly (readonly [number, number])[] | undefined; trips: Map<number, MicroDemandTrip[]>; buildings?: readonly BuildingPoint[] | null }
 
@@ -105,10 +105,10 @@ function evaluate(b: Built, hour: number, p: Readonly<SupplyParams>, iters: numb
     // One cross-section per direction of travel (busiest piece of the counted stretch in each direction, both added),
     // never the sum over the stretch's OSM ways (p13 fix: a site matched to 19 ways read up to 38 pieces added).
     const ways = new Set(b.rec.count.ways);
-    const flows: { bearing: number; vph: number }[] = [];
-    a.links.forEach((l, i) => { const w = wayOf(l.id); if (w === null || !ways.has(w)) return; flows.push({ bearing: countBearing(b, l.id), vph: a.volVeh[i] }); });
+    const flows: { way: number; bearing: number; vph: number }[] = [];
+    a.links.forEach((l, i) => { const w = wayOf(l.id); if (w === null || !ways.has(w)) return; flows.push({ way: w, bearing: countBearing(b, l.id), vph: a.volVeh[i] }); });
     if (!flows.length) return null;
-    const model = sectionCount(flows);
+    const model = sectionCountGrouped(flows, b.rec.count.carriageways);
     return { ...base, kind: 'count', observed: b.rec.count.target, model };
   }
   if (b.rec.kind === 'jt' && b.rec.jt) {

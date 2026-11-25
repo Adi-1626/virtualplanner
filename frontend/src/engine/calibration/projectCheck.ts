@@ -122,3 +122,14 @@ export function sectionCount(flows: readonly { bearing: number; vph: number }[])
   const mx = (ix: number[]) => ix.reduce((m, i) => Math.max(m, flows[i].vph), 0);
   return mx(along) + mx(against);
 }
+
+/**
+ * Modelled count at a site made of physically separate carriageway groups (twin bridges, a divided road whose two
+ * carriageways are matched as separate groups): per group the per-direction cross-section count (sectionCount), the groups
+ * added. Without groups it is sectionCount over all flows (validation-v1 CHANGELOG 2026-11-25). Flows on ways outside every
+ * group are ignored.
+ */
+export function sectionCountGrouped(flows: readonly { way: number; bearing: number; vph: number }[], groups?: readonly (readonly number[])[]): number {
+  if (!groups?.length) return sectionCount(flows);
+  return groups.reduce((sum, g) => { const set = new Set(g); return sum + sectionCount(flows.filter(f => set.has(f.way))); }, 0);
+}
