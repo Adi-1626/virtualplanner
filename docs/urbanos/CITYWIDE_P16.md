@@ -75,7 +75,36 @@ not a band.
 
 Run `p16-run/base.jsonl` (`eval.sh base P16_MICRO=1`, wt-p16 at 8d141c8, recorded S10gb1k4, 60 iterations, micro-simulation
 on). Table regenerated with `frontend/src/engine/testing/citywide/summarize.py`; see §8 for the full table next to the
-final model. Pattern: nights pass (only N2 in the old city / near Sangam bridge fails), days fail D1/D2/M1/M2.
+final model. Pattern: nights mostly pass, days fail D2 (nearly everywhere), M1/M2 (micro-simulation queues), D1 (inner
+areas) and R3 (about a third of areas at every hour).
+
+**Baseline: 36 / 164 area-hours pass** (09:00 5/41, 14:00 6/41, 19:00 5/41, 23:00 20/41).
+
+| Stratum | 09:00 | 14:00 | 19:00 | 23:00 | All |
+|---|---|---|---|---|---|
+| arterial | 2/5 | 2/5 | 2/5 | 3/5 | 9/20 |
+| subarterial | 0/4 | 0/4 | 0/4 | 2/4 | 2/16 |
+| collector | 0/4 | 0/4 | 0/4 | 2/4 | 2/16 |
+| local | 0/6 | 0/6 | 0/6 | 1/6 | 1/24 |
+| bridge | 1/5 | 1/5 | 0/5 | 2/5 | 4/20 |
+| flyover | 1/3 | 1/3 | 1/3 | 3/3 | 6/12 |
+| oldcity | 0/4 | 0/4 | 0/4 | 2/4 | 2/16 |
+| itpark | 0/3 | 0/3 | 0/3 | 2/3 | 2/12 |
+| midc | 0/3 | 1/3 | 1/3 | 2/3 | 4/12 |
+| fringe | 1/4 | 1/4 | 1/4 | 1/4 | 4/16 |
+| **all** | **5/41** | **6/41** | **5/41** | **20/41** | **36/164** |
+
+| Band | 09:00 | 14:00 | 19:00 | 23:00 |
+|---|---|---|---|---|
+| D1 | 14 | 6 | 15 | 0 |
+| D2 | 28 | 26 | 29 | 0 |
+| M1 | 25 | 18 | 24 | 4 |
+| M2 | 25 | 17 | 23 | 1 |
+| N2 | 0 | 0 | 0 | 4 |
+| R2 | 2 | 2 | 2 | 2 |
+| R3 | 15 | 19 | 15 | 15 |
+
+Band table = number of areas failing that band at that hour.
 
 ## 5. What the baseline failures are (diagnosis before any fix)
 
