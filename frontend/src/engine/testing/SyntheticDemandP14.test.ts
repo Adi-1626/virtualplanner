@@ -3,7 +3,7 @@ import fs from 'fs';
 import type { RoadObject } from '../objects/types';
 import { StudyAreaExplorer } from '../simulation/StudyAreaExplorer';
 import { snapDemandPlan } from '../simulation/StudyDemand';
-import { decodeSyntheticDemand, odCell, rebalance, syntheticAreaPlan, cityHourTotals, modeProbs, type SyntheticDemandDoc, type SyntheticTripEnd } from '../demand/syntheticDemand';
+import { decodeSyntheticDemand, odCell, rebalance, syntheticAreaPlan, cityHourTotals, modeProbs, congestedSkeletonTimes, skeletonCapacityPcu, balanceGateways, type SyntheticDemandDoc, type SyntheticTripEnd } from '../demand/syntheticDemand';
 import { SyntheticDemandSource } from '../demand/syntheticDemandSource';
 import { decideSyntheticDefault, PROJECT_SCORE_SYNTHETIC } from '../calibration/syntheticDemandDecision';
 import { scoreProjectCheck } from '../calibration/projectCheck';
@@ -144,6 +144,49 @@ describe('synthetic demand: study-area cut', () => {
     const bad = new SyntheticDemandSource('x', async () => { throw new Error('not installed'); });
     await bad.load();
     expect(bad.status).toBe('none');
+  });
+});
+
+describe('p15: gateway loading and congestion-aware city paths', () => {
+  const c = decodeSyntheticDemand(doc());
+  const tot = (pl: ReturnType<typeof syntheticAreaPlan>) => pl!.trips.reduce((x, t) => x + t.vehiclesPerHour, 0);
+  it('moves traffic from an over-capacity boundary road to nearby ones without losing any', () => {
+    // Two entry roads 1 km apart (one lane each, arterial: 1,350 PCU/h) and one 5 km away; 2,000 two-wheelers/h (440 PCU)
+    // enter at A with factor 0.2 (capacity 270 PCU/h): the excess goes to B (near), none to C (too far)
+    const g = (id: string, x: number) => ({ nodeId: id, point: pt(x), inLanes: 1, outLanes: 1, rank: 3, weight: 1, roadName: id });
+    const gws = [g('A', 0), g('B', 1000), g('C', 5000)];
+    const trips = new Map([['t', { from: pt(0), to: pt(500, 300), vehiclesPerHour: 2000, kind: 'two_wheeler' as const, part: 'inbound' as const, fromNode: 'A', toNode: 'J' }]]);
+    const r = balanceGateways(trips, gws, () => true, 0.2);
+    const by = (n: string) => [...trips.values()].filter(t => t.fromNode === n).reduce((x, t) => x + t.vehiclesPerHour, 0);
+    expect(by('A') + by('B') + by('C')).toBeCloseTo(2000, 6);
+    expect(by('A') * 0.22).toBeCloseTo(270, 0);
+    expect(by('B')).toBeGreaterThan(0);
+    expect(by('C')).toBe(0);
+    expect(r.overloadedIn).toBe(1);
+    // A road that cannot reach the trip's end takes nothing
+    const t2 = new Map([['t', { ...trips.get('t')!, vehiclesPerHour: 2000, fromNode: 'A', from: pt(0) }]]);
+    balanceGateways(t2, gws, (a) => a !== 'B', 0.2);
+    expect([...t2.values()].filter(t => t.fromNode === 'B')).toHaveLength(0);
+    // In the area plan it is off unless asked for, and totals are kept when on
+    const base = syntheticAreaPlan(c, area(), roadMap, ends, { hour: 9 })!;
+    const bal = syntheticAreaPlan(c, area(), roadMap, ends, { hour: 9, gatewayBalance: 0.5 })!;
+    expect(base.provenance.synthetic?.gatewayBalance).toBeUndefined();
+    expect(tot(bal)).toBeCloseTo(tot(base), 3);
+  });
+  it('MSA on the skeleton: iteration 0 is the uncongested time, later ones are slower where loaded; a single route keeps the plan', () => {
+    const times = congestedSkeletonTimes(c, 9, 4);
+    expect(times).toHaveLength(4);
+    expect(times[0]).toBe(c.skeleton.time);
+    expect(times[3].some((t, e) => t > c.skeleton.time[e] * 1.01)).toBe(true);
+    expect(times[3].every((t, e) => t >= c.skeleton.time[e])).toBe(true);
+    expect(congestedSkeletonTimes(c, 9, 4)).toBe(times); // cached per city and hour
+    // One corridor: every iteration's path is the same, so the parts are those of the p14 plan
+    const base = syntheticAreaPlan(c, area(), roadMap, ends, { hour: 9 })!;
+    const cc = syntheticAreaPlan(c, area(), roadMap, ends, { hour: 9, cityCongestion: 4 })!;
+    const a = base.provenance.components!, b = cc.provenance.components!;
+    expect(b.through).toBeCloseTo(a.through, 3);
+    expect(b.inbound).toBeCloseTo(a.inbound, 3);
+    expect(skeletonCapacityPcu('trunk')).toBeGreaterThan(skeletonCapacityPcu('tertiary'));
   });
 });
 

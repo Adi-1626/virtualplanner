@@ -24,6 +24,7 @@ import type { VehicleKind } from '../simulation/TrafficMicroSim';
 import type { DemandPlan } from '../simulation/StudyDemand';
 import { reachability } from '../simulation/AreaDemand';
 import { osmRoadClass } from '../simulation/networkCorrections';
+import { P14 } from '../simulation/supplyConfig';
 
 export const SYNTHETIC_LABEL = 'synthetic' as const;
 /** v2: beta by jurisdiction (CMP-2024 Table 2-38) and the outer-cordon traffic (DEMAND_P14.md §4); v1 stays installed for reproduction. */
@@ -273,7 +274,30 @@ export interface SyntheticAreaOptions {
   maxCellsPerZone?: number;
   /** Trips below this (veh/h) are folded into the others of their group. */
   minTripVph?: number;
+  /**
+   * p15 gateway loading: when set, a boundary road whose entering (or leaving) traffic exceeds this multiple of its
+   * capacity hands the excess to the other boundary roads near it with spare capacity that reach the trip's other end
+   * (see `balanceGateways`). Absent: the p14 behaviour (each city path enters at the boundary road nearest its crossing).
+   */
+  gatewayBalance?: number;
+  /**
+   * p15 congestion-aware city paths: when set (iterations, e.g. 4), the city paths that decide where traffic from beyond
+   * enters and leaves the area, and which zone pairs pass through it, come from a city-wide capacity-restrained
+   * assignment of the hour's OD on the main-road skeleton (method of successive averages, `congestedSkeletonTimes`):
+   * a zone pair's traffic is split over the paths of the iterations. Absent: the p14 behaviour (one uncongested path).
+   */
+  cityCongestion?: number;
 }
+
+/** p15: capacity of a boundary road per lane (PCU/h) by its highest road class rank (4 highway, 3 arterial, 2 collector, 1 local). */
+export function gatewayLaneCapacityPcu(rank: number): number {
+  const c = P14.laneCapacityPcu.value;
+  // Indo-HCM 2017 Table 5.4: divided 4-lane for highways and arterials, two-lane undivided for collectors; local access
+  // roads at half the two-lane value (ASSUMED: no Indo-HCM value for access streets)
+  return rank >= 3 ? c.divided4 : rank === 2 ? c.undivided2 : c.undivided2 / 2;
+}
+/** p15: how far (m) traffic is moved from an over-capacity boundary road to another one, and the distance decay (ASSUMED). */
+export const GATEWAY_DIVERT_MAX_M = 3000, GATEWAY_DIVERT_DECAY_M = 1000;
 
 const M_PER_DEG = 111320;
 const distM = (a: readonly number[], b: readonly number[]) => Math.hypot((a[0] - b[0]) * M_PER_DEG * Math.cos(a[1] * Math.PI / 180), (a[1] - b[1]) * M_PER_DEG);
@@ -346,6 +370,10 @@ export interface AreaPaths {
   dists: Dist[];
   gateways: Gateway[];
   outline: [number, number][];
+  /** p15: share of the city-assignment iterations whose path crosses the area (absent: 1 where entry >= 0). */
+  entryW?: Float32Array;
+  /** Which skeleton times the paths were built on ('free' or `${hour}:${iterations}`). */
+  timesKey?: string;
 }
 
 /** Boundary roads of the area from its own (included) links: lanes entering and leaving at each boundary node. */
@@ -386,8 +414,88 @@ const SKELETON_RANK = (cls: string) => CLASS_RANK[osmRoadClass(cls)] ?? 2;
 /** A city path counts as through traffic only if it runs at least this far inside the area's outline (assumption). */
 export const MIN_THROUGH_INSIDE_M = 600;
 
+/**
+ * p15: capacity per direction (PCU/h) of a main-road skeleton link by OSM class (ASSUMED typical Pune carriageways:
+ * motorway / trunk 3 lanes, primary 2, secondary 1.5, tertiary 1, at Indo-HCM 2017 Table 5.4 lane capacities).
+ */
+export function skeletonCapacityPcu(cls: string): number {
+  const c = P14.laneCapacityPcu.value;
+  if (cls.endsWith('_link')) return c.undivided2;
+  if (cls === 'motorway' || cls === 'trunk') return 3 * c.divided6;
+  if (cls === 'primary') return 2 * c.divided4;
+  if (cls === 'secondary') return 1.5 * c.divided4;
+  return c.undivided2;
+}
+/** BPR (US BPR 1964, international; ASSUMED here) on the skeleton's peak running time: t = t_peak (1 + 0.15 (v/c)^4). */
+const SKELETON_BPR = { alpha: 0.15, beta: 4 };
+const congestedCache = new WeakMap<SyntheticCity, Map<string, Float64Array[]>>();
+
+/** One all-or-nothing loading of the zone OD (PCU/h, n x n) on the skeleton with link times `t`; returns link flows. */
+function skeletonAon(city: SyntheticCity, od: Float64Array, t: Float64Array): Float64Array {
+  const sk = city.skeleton, n = city.n, N = sk.n, flow = new Float64Array(sk.from.length);
+  const dist = new Float64Array(N), pred = new Int32Array(N), done = new Uint8Array(N), load = new Float64Array(N);
+  const order: number[] = [];
+  for (let o = 0; o < n; o++) {
+    let any = false;
+    for (let d = 0; d < n; d++) if (od[o * n + d] > 0 && d !== o) { any = true; break; }
+    if (!any) continue;
+    dist.fill(Infinity); pred.fill(-1); done.fill(0); load.fill(0); order.length = 0;
+    const heap = new MinHeap();
+    for (const [node, c] of city.skeleton.connectors[o]) if (c < dist[node]) { dist[node] = c; heap.push(c, node); }
+    while (heap.size) {
+      const [du, u] = heap.pop();
+      if (done[u] || du > dist[u]) continue;
+      done[u] = 1; order.push(u);
+      for (let k = sk.outStart[u]; k < sk.outStart[u + 1]; k++) {
+        const e = sk.outEdge[k], v = sk.to[e], nd = du + t[e];
+        if (nd < dist[v]) { dist[v] = nd; pred[v] = e; heap.push(nd, v); }
+      }
+    }
+    for (let d = 0; d < n; d++) {
+      const q = od[o * n + d];
+      if (!(q > 0) || d === o) continue;
+      let best = -1, bt = Infinity;
+      for (const [node, c] of city.skeleton.connectors[d]) if (dist[node] + c < bt) { bt = dist[node] + c; best = node; }
+      if (best >= 0) load[best] += q;
+    }
+    for (let k = order.length - 1; k >= 0; k--) {
+      const v = order[k], e = pred[v];
+      if (e < 0 || !(load[v] > 0)) continue;
+      flow[e] += load[v]; load[sk.from[e]] += load[v];
+    }
+  }
+  return flow;
+}
+
+/**
+ * p15: link times of the main-road skeleton for each iteration of a city-wide method-of-successive-averages assignment of
+ * the hour's vehicle OD (PCU, Indo-HCM mid-block PCUs; intrazonal trips not loaded). Element k is the times iteration k's
+ * all-or-nothing paths used (element 0: the uncongested peak running times), so the MSA flows are the average of the
+ * iterations' path flows and each zone pair's traffic splits evenly over its iteration paths. Cached per city and hour.
+ */
+export function congestedSkeletonTimes(city: SyntheticCity, hour: number, iterations: number): Float64Array[] {
+  const h = ((Math.floor(hour) % 24) + 24) % 24, key = `${h}:${iterations}`;
+  let m = congestedCache.get(city);
+  if (!m) { m = new Map(); congestedCache.set(city, m); }
+  const hit = m.get(key);
+  if (hit) return hit;
+  const sk = city.skeleton, n = city.n, pcu = P14.pcuMidblock.value as Record<string, number>;
+  const od = new Float64Array(n * n);
+  forEachHourlyFlow(city, h, (o, d, _p, _oe, _de, kind, v) => { if (o !== d) od[o * n + d] += v * (pcu[kind] ?? 1); });
+  const cap = Float64Array.from(sk.cls, c => skeletonCapacityPcu(sk.classes[c] ?? 'tertiary'));
+  const times: Float64Array[] = [sk.time];
+  const x = new Float64Array(sk.from.length);
+  for (let k = 1; k < Math.max(1, iterations); k++) {
+    const y = skeletonAon(city, od, times[k - 1]);
+    for (let e = 0; e < x.length; e++) x[e] += (y[e] - x[e]) / k;
+    times.push(Float64Array.from(sk.time, (t0, e) => t0 * (1 + SKELETON_BPR.alpha * Math.pow(x[e] / cap[e], SKELETON_BPR.beta))));
+  }
+  m.set(key, times);
+  return times;
+}
+
 /** City paths (main-road skeleton) relative to the area: where each zone pair's path enters and leaves it. */
-export function areaPaths(city: SyntheticCity, outline: [number, number][], gateways: Gateway[]): AreaPaths {
+export function areaPaths(city: SyntheticCity, outline: [number, number][], gateways: Gateway[], timesList: readonly Float64Array[] = [city.skeleton.time], timesKey = 'free'): AreaPaths {
   const sk = city.skeleton, n = city.n, N = sk.n;
   const inside = new Uint8Array(N);
   for (let v = 0; v < N; v++) inside[v] = inPolygon(sk.lon[v], sk.lat[v], outline) ? 1 : 0;
@@ -425,12 +533,13 @@ export function areaPaths(city: SyntheticCity, outline: [number, number][], gate
     return id;
   };
   const zonePt = (z: number) => [city.zones[z].lon, city.zones[z].lat];
-  const entry = new Int32Array(n * n).fill(-1), exit = new Int32Array(n * n).fill(-1);
-  const inbound = new Int32Array(n).fill(-1), outbound = new Int32Array(n).fill(-1);
-  const dist = new Float64Array(N), ent = new Int32Array(N), ext = new Int32Array(N), done = new Uint8Array(N), inLen = new Float64Array(N);
   // Length of each skeleton link (m), for how far a city path runs inside the area
   const linkM = new Float64Array(sk.from.length);
   for (let e = 0; e < linkM.length; e++) { const u = sk.from[e], v = sk.to[e]; linkM[e] = distM([sk.lon[u], sk.lat[u]], [sk.lon[v], sk.lat[v]]); }
+  const one = (tm: Float64Array) => {
+  const entry = new Int32Array(n * n).fill(-1), exit = new Int32Array(n * n).fill(-1);
+  const inbound = new Int32Array(n).fill(-1), outbound = new Int32Array(n).fill(-1);
+  const dist = new Float64Array(N), ent = new Int32Array(N), ext = new Int32Array(N), done = new Uint8Array(N), inLen = new Float64Array(N);
   // Arrival at each zone through its connectors
   const conn = sk.connectors;
   for (let o = 0; o < n; o++) {
@@ -445,7 +554,7 @@ export function areaPaths(city: SyntheticCity, outline: [number, number][], gate
       done[u] = 1;
       if (firstInside < 0 && inside[u]) firstInside = u;
       for (let k = sk.outStart[u]; k < sk.outStart[u + 1]; k++) {
-        const e = sk.outEdge[k], v = sk.to[e], nd = du + sk.time[e];
+        const e = sk.outEdge[k], v = sk.to[e], nd = du + tm[e];
         if (nd < dist[v]) {
           dist[v] = nd;
           ent[v] = ent[u] >= 0 ? ent[u] : (!inside[u] && inside[v] ? e : -1);
@@ -482,13 +591,48 @@ export function areaPaths(city: SyntheticCity, outline: [number, number][], gate
       done[u] = 1;
       if (inside[u]) { found = u; break; }
       for (let k = sk.inStart[u]; k < sk.inStart[u + 1]; k++) {
-        const e = sk.inEdge[k], v = sk.from[e], nd = du + sk.time[e];
+        const e = sk.inEdge[k], v = sk.from[e], nd = du + tm[e];
         if (nd < dist[v]) { dist[v] = nd; ext[v] = e; heap.push(nd, v); }
       }
     }
     outbound[d] = found >= 0 && ext[found] >= 0 ? crossingDist(ext[found], 'out') : pick(zonePt(d), 'out', 3);
   }
-  return { entry, exit, inbound, outbound, dists, gateways, outline };
+  return { entry, exit, inbound, outbound };
+  };
+  const runs = timesList.map(one);
+  if (runs.length === 1) return { ...runs[0], dists, gateways, outline, timesKey };
+  // p15: a zone pair's traffic splits evenly over the iterations' paths (MSA); through traffic only for the iterations
+  // whose path crosses the area (entryW), entry and exit mixed separately
+  const K = runs.length, mixMemo = new Map<string, number>();
+  const mix = (ids: number[]): number => {
+    if (!ids.length) return -1;
+    if (ids.every(x => x === ids[0])) return ids[0];
+    const key = [...ids].sort((x, y) => x - y).join(',');
+    const m = mixMemo.get(key);
+    if (m !== undefined) return m;
+    const acc = new Map<number, number>();
+    for (const id of ids) for (const [gi, sh] of dists[id] ?? []) acc.set(gi, (acc.get(gi) ?? 0) + sh / ids.length);
+    const id = dists.length;
+    dists.push([...acc.entries()]);
+    mixMemo.set(key, id);
+    return id;
+  };
+  const entry = new Int32Array(n * n).fill(-1), exit = new Int32Array(n * n).fill(-1), entryW = new Float32Array(n * n);
+  const inbound = new Int32Array(n), outbound = new Int32Array(n);
+  const ids: number[] = [], xs: number[] = [];
+  for (let z = 0; z < n; z++) {
+    ids.length = 0; for (const r of runs) if (r.inbound[z] >= 0) ids.push(r.inbound[z]);
+    inbound[z] = mix(ids);
+    ids.length = 0; for (const r of runs) if (r.outbound[z] >= 0) ids.push(r.outbound[z]);
+    outbound[z] = mix(ids);
+  }
+  for (let c = 0; c < n * n; c++) {
+    ids.length = 0; xs.length = 0;
+    for (const r of runs) if (r.entry[c] >= 0 && r.exit[c] >= 0) { ids.push(r.entry[c]); xs.push(r.exit[c]); }
+    if (!ids.length) continue;
+    entry[c] = mix(ids); exit[c] = mix(xs); entryW[c] = ids.length / K;
+  }
+  return { entry, exit, entryW, inbound, outbound, dists, gateways, outline, timesKey };
 }
 
 type EndType = string; // a purpose end's coefficient signature, e.g. "res:1"
@@ -570,7 +714,10 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
   }
 
   // 2. City paths relative to the area
-  const paths = cache?.paths && cache.paths.outline.length === outline.length && cache.paths.outline.every((p, i) => p[0] === outline[i][0] && p[1] === outline[i][1]) ? cache.paths : areaPaths(city, outline, gateways);
+  const cc = opts.cityCongestion && opts.cityCongestion > 1 ? Math.round(opts.cityCongestion) : 0;
+  const timesKey = cc ? `${((Math.floor(opts.hour) % 24) + 24) % 24}:${cc}` : 'free';
+  const paths = cache?.paths && (cache.paths.timesKey ?? 'free') === timesKey && cache.paths.outline.length === outline.length && cache.paths.outline.every((p, i) => p[0] === outline[i][0] && p[1] === outline[i][1]) ? cache.paths
+    : areaPaths(city, outline, gateways, cc ? congestedSkeletonTimes(city, opts.hour, cc) : [city.skeleton.time], timesKey);
   if (cache) cache.paths = paths;
 
   // 3. Flows of the hour, split by where their ends are
@@ -588,7 +735,7 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
     if (sd > 0 && so < 1) add(EI, `${paths.inbound[o]}|${d}|${ed}|${kind}`, v * (1 - so) * sd);
     if (through && so < 1 && sd < 1 && o !== d) {
       const en = paths.entry[o * n + d], ex = paths.exit[o * n + d];
-      if (en >= 0 && ex >= 0) add(EE, `${en}|${ex}|${kind}`, v * (1 - so) * (1 - sd));
+      if (en >= 0 && ex >= 0) add(EE, `${en}|${ex}|${kind}`, v * (1 - so) * (1 - sd) * (paths.entryW ? paths.entryW[o * n + d] : 1));
     }
   });
 
@@ -596,7 +743,7 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
   const fwd = new Map<string, string[]>();
   for (const e of net.edges.values()) if (included.has(segKey(e.id))) (fwd.get(e.fromNodeId) ?? fwd.set(e.fromNodeId, []).get(e.fromNodeId)!).push(e.toNodeId);
   const canReach = reachability(fwd);
-  const trips = new Map<string, { from: [number, number, number]; to: [number, number, number]; vehiclesPerHour: number; kind: VehicleKind; part: 'internal' | 'outbound' | 'inbound' | 'through' }>();
+  const trips = new Map<string, PlanTrip>();
   const comp = { internal: 0, outbound: 0, inbound: 0, through: 0, noEdgeRoute: 0 };
   const noRoute = { internal: 0, outbound: 0, inbound: 0, through: 0 };
   const gwDist = (id: number) => paths.dists[id] ?? [];
@@ -616,7 +763,7 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
       const v = total * x.w / kw;
       const key = `${x.from.join(',')}>${x.to.join(',')}>${kind}`;
       const t = trips.get(key);
-      if (t) t.vehiclesPerHour += v; else trips.set(key, { from: [...x.from], to: [...x.to], vehiclesPerHour: v, kind, part });
+      if (t) t.vehiclesPerHour += v; else trips.set(key, { from: [...x.from], to: [...x.to], vehiclesPerHour: v, kind, part, fromNode: x.fromNode, toNode: x.toNode });
     }
     comp[part] += total;
   };
@@ -664,7 +811,8 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
     }
     emit('through', kind as VehicleKind, v, pieces);
   }
-  const list = [...trips.values()].filter(t => t.vehiclesPerHour > 1e-6);
+  const balance = opts.gatewayBalance && opts.gatewayBalance > 0 ? balanceGateways(trips, paths.gateways, canReach, opts.gatewayBalance) : null;
+  const list = [...trips.values()].filter(t => t.vehiclesPerHour > 1e-6).map(({ fromNode: _f, toNode: _t, ...t }) => t);
   const vph = list.reduce((s, t) => s + t.vehiclesPerHour, 0);
   if (!(vph > 0)) return null;
   const f = (x: number) => Math.round(x).toLocaleString('en-IN');
@@ -674,15 +822,93 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
     + `${f(vph)} veh/h, ${f(comp.internal)} between the area's buildings (${pct(comp.internal)}%), ${f(comp.outbound + comp.inbound)} between its buildings and beyond its edge (${pct(comp.outbound + comp.inbound)}%), `
     + (through ? `${f(comp.through)} through, crossing it on its city route (${pct(comp.through)}%).` : 'through traffic switched off.')
     + (comp.noEdgeRoute >= 1 ? ` ${f(comp.noEdgeRoute)} veh/h left out (no drivable way on the area's roads).` : '')
-    + (scale !== 1 ? ` Scaled ×${scale.toFixed(2)} (calibration parameter).` : '');
+    + (scale !== 1 ? ` Scaled ×${scale.toFixed(2)} (calibration parameter).` : '')
+    + (balance && balance.movedVph >= 1 ? ` ${f(balance.movedVph)} veh/h moved from over-capacity boundary roads to nearby ones.` : '');
   return {
     trips: list,
     provenance: {
       source: 'synthetic', label, period: opts.hour < 12 ? 'AM_Peak' : 'PM_Peak', vehiclesPerHour: vph, pairCount: list.length,
       components: { internal: comp.internal, outbound: comp.outbound, inbound: comp.inbound, through: comp.through, outsideArea: 0, noEdgeRoute: comp.noEdgeRoute, cordonPoints: gateways.length, throughIncluded: through },
-      synthetic: { noRouteByPart: noRoute, datasetId: city.id, label: SYNTHETIC_LABEL, hour: ((Math.floor(opts.hour) % 24) + 24) % 24, buildingsIn, buildingsNoRoad, cells: [...cellsByZone.values()].reduce((s, l) => s + l.length, 0), zonesIn: cellsByZone.size, scale },
+      synthetic: { ...(balance ? { gatewayBalance: balance } : {}), noRouteByPart: noRoute, datasetId: city.id, label: SYNTHETIC_LABEL, hour: ((Math.floor(opts.hour) % 24) + 24) % 24, buildingsIn, buildingsNoRoad, cells: [...cellsByZone.values()].reduce((s, l) => s + l.length, 0), zonesIn: cellsByZone.size, scale },
     },
   };
+}
+
+type PlanTrip = { from: [number, number, number]; to: [number, number, number]; vehiclesPerHour: number; kind: VehicleKind; part: 'internal' | 'outbound' | 'inbound' | 'through'; fromNode: string; toNode: string };
+
+/**
+ * p15 gateway loading (DEMO_P15.md): the city path is an uncongested shortest path on the main-road skeleton, so every
+ * zone pair whose path crosses the area at one place enters at the same boundary road (at Hinjewadi 19,275 of 35,395
+ * veh/h at one point). Upstream of the area that traffic would spread over the parallel roads as the main one fills. Here:
+ * per side (entering, leaving), a boundary road loaded above `factor` × its capacity (lanes × gatewayLaneCapacityPcu)
+ * keeps traffic up to that and hands the excess to the other boundary roads within GATEWAY_DIVERT_MAX_M with spare
+ * capacity, in proportion to spare capacity × exp(−distance / GATEWAY_DIVERT_DECAY_M), only where the area's roads lead
+ * from the new boundary road to the trip's other end. Traffic with nowhere to go stays (no trip is dropped; totals kept).
+ */
+export function balanceGateways(trips: Map<string, PlanTrip>, gateways: readonly Gateway[], canReach: (a: string, b: string) => boolean, factor: number, passes = 3): { movedVph: number; overloadedIn: number; overloadedOut: number } {
+  const pcu = P14.pcuMidblock.value as Record<string, number>;
+  const byNode = new Map<string, Gateway>();
+  for (const g of gateways) byNode.set(g.nodeId, g);
+  let movedVph = 0;
+  const over = { in: 0, out: 0 };
+  for (const side of ['in', 'out'] as const) {
+    const capOf = (g: Gateway) => factor * (side === 'in' ? g.inLanes : g.outLanes) * gatewayLaneCapacityPcu(g.rank);
+    const endOf = (t: PlanTrip) => (side === 'in' ? (t.part === 'inbound' || t.part === 'through' ? t.fromNode : null) : (t.part === 'outbound' || t.part === 'through' ? t.toNode : null));
+    for (let pass = 0; pass < passes; pass++) {
+      const load = new Map<string, number>(), at = new Map<string, PlanTrip[]>();
+      for (const t of trips.values()) {
+        const n = endOf(t);
+        if (!n || !byNode.has(n) || !(t.vehiclesPerHour > 0)) continue;
+        load.set(n, (load.get(n) ?? 0) + t.vehiclesPerHour * (pcu[t.kind] ?? 1));
+        (at.get(n) ?? at.set(n, []).get(n)!).push(t);
+      }
+      const spare = new Map<string, number>();
+      for (const g of gateways) { const c = capOf(g); if (c > 0) spare.set(g.nodeId, c - (load.get(g.nodeId) ?? 0)); }
+      const overloaded = [...load.entries()].map(([n, l]) => ({ g: byNode.get(n)!, l })).filter(x => x.l > capOf(x.g) + 1).sort((a, b) => (b.l - capOf(b.g)) - (a.l - capOf(a.g)));
+      if (pass === 0) over[side] = overloaded.length;
+      if (!overloaded.length) break;
+      let movedThisPass = 0;
+      for (const { g, l } of overloaded) {
+        const cands = gateways.filter(c => c !== g && (spare.get(c.nodeId) ?? 0) > 0 && distM(c.point, g.point) <= GATEWAY_DIVERT_MAX_M);
+        if (!cands.length) continue;
+        let excess = l - Math.max(0, capOf(g)); // PCU/h to move
+        const keep = Math.max(0, capOf(g)) / l;
+        for (const t of at.get(g.nodeId) ?? []) {
+          if (!(excess > 0)) break;
+          const other = side === 'in' ? t.toNode : t.fromNode;
+          const ok = cands.filter(c => c.nodeId !== other && (spare.get(c.nodeId) ?? 0) > 0 && (side === 'in' ? canReach(c.nodeId, other) : canReach(other, c.nodeId)));
+          if (!ok.length) continue;
+          const p = pcu[t.kind] ?? 1;
+          const w = ok.map(c => (spare.get(c.nodeId) ?? 0) * Math.exp(-distM(c.point, g.point) / GATEWAY_DIVERT_DECAY_M));
+          const sw = w.reduce((a, b) => a + b, 0);
+          if (!(sw > 0)) continue;
+          // Move this trip's share of the excess, never more than the candidates' spare capacity
+          const room = ok.reduce((a, c) => a + (spare.get(c.nodeId) ?? 0), 0);
+          let mv = Math.min(t.vehiclesPerHour * (1 - keep), excess / p, room / p);
+          if (!(mv > 1e-6)) continue;
+          let done = 0;
+          ok.forEach((c, k) => {
+            const v = Math.min(mv * w[k] / sw, (spare.get(c.nodeId) ?? 0) / p);
+            if (!(v > 1e-9)) return;
+            spare.set(c.nodeId, (spare.get(c.nodeId) ?? 0) - v * p);
+            const from = side === 'in' ? c.point : t.from, to = side === 'in' ? t.to : c.point;
+            const fromNode = side === 'in' ? c.nodeId : t.fromNode, toNode = side === 'in' ? t.toNode : c.nodeId;
+            const key = `${from.join(',')}>${to.join(',')}>${t.kind}`;
+            const e = trips.get(key);
+            if (e) e.vehiclesPerHour += v; else trips.set(key, { from: [...from], to: [...to], vehiclesPerHour: v, kind: t.kind, part: t.part, fromNode, toNode });
+            done += v;
+          });
+          mv = done;
+          t.vehiclesPerHour -= mv;
+          excess -= mv * p;
+          movedThisPass += mv;
+        }
+      }
+      movedVph += movedThisPass;
+      if (movedThisPass < 1) break;
+    }
+  }
+  return { movedVph, overloadedIn: over.in, overloadedOut: over.out };
 }
 
 /** Where a zone's path gives no boundary road with lanes on that side: the boundary roads of that side, nearest first. */
