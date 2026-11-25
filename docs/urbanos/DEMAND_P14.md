@@ -132,3 +132,28 @@ Loss J = the p13 project-check objective on the calibration records (lower is be
 saturation flow × 1.3, local-road factor 1.5. The four best sets (S10, S9, S3, S7) lie within 0.04 of each other, which is
 within what 15 iterations resolve: the parameters are weakly identified, as in p13. Every candidate's supply factors are
 inside SUPPLY_BOUNDS. Width-based capacity (SUPPLY_P14.md §1.6) was not applied, so no re-screen was needed for it.
+
+## 6. Evaluation: S10 on every record, 60 Frank–Wolfe iterations
+
+`P14_MODE=eval`, demand v2 (`P14_ASSET=…/demand-v1/out/pune_synthetic_demand_v2.json`), `P14_SUPPLY_MODEL=p14`, 60
+iterations, fixed records (§4); `/workspace/work/p14-joint-run/eval60.jsonl` (run id `p14-joint-eval60-S10`, 38 min).
+Baseline: the p13 default (area-estimate demand, p13 supply) re-scored after the record fix (VALIDATION_P13.md §4.7).
+
+| Model | Records | Journey times within 15 % / 1 min | 09:00 | 23:00 | JT median error | Counts GEH < 5 | Mean GEH | R² | Count bias | River crossings | Verdict |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| p13 default (re-scored) | calibration | 3/28 | | | −43.1 % | 2/16 | 67.6 | | −38.1 % | 20,723/38,499 (−46.2 %) | (not used) |
+| p13 default (re-scored) | hold-out | 3/28 | 2/14 | 1/14 | −37.1 % | 1/16 | 47.1 | | −30.6 % | 27,139/53,407 (−49.2 %) | **FAIL** |
+| p14 synthetic S10 | calibration | 6/28 | 3/14 | 3/14 | +10.9 % | 3/16 | 42.2 | −0.38 | −25.7 % | 30,919/38,499 (−19.7 %) | (not used) |
+| p14 synthetic S10 | hold-out | 8/28 | 1/14 | 7/14 | +39.0 % | 2/16 | 38.6 | −1.05 | +20.2 % | 62,681/53,407 (+17.4 %) | **FAIL** |
+
+Criteria (unchanged, TAG M3.1 as in p13): ≥ 85 % of journey times within 15 % (or 1 min), ≥ 85 % of counts within GEH 5,
+river screen line within 5 %. **The hold-out fails all three**, as p13 did, though every hold-out figure is closer than the
+p13 baseline: journey times 3 → 8 of 28, counts 1 → 2 of 16 (mean GEH 47.1 → 38.6), river −49.2 % → +17.4 % (the error
+is now an overshoot). By hour: at 23:00 half the hold-out corridors are within 15 % (7/14, p13 1/14); at 09:00 only 1/14.
+The 09:00 failure is congestion, not distance: routes match Google's length (except jt01, jt04, jt10, jt16, jt25, where
+the shortest converged-time path detours), but modelled times are 2–9 × Google's on Satara Rd (65.8 vs 16 min), FC Rd,
+Ganeshkhind Rd, Bund Garden Rd and Hinjewadi (54.7 vs 9 min). The static assignment sends more 09:00 vehicles through the
+mapped bottlenecks than their lane-based capacity carries (SUPPLY_P14.md §1.6), and BPR times explode above v/c ≈ 1.5.
+Counts swing from too low on the calibration side (−25.7 %) to too high on the hold-out (+20.2 %; cnt_oc_05 15,073 vs
+5,624, cnt_mb_07 15,278 vs 7,183, cnt_sl_23 24,964 vs 14,948): the error is spatial (where the synthetic land use puts
+trips), not a global scale that one factor could fix.
