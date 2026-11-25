@@ -4,16 +4,21 @@ import { TRUST_COLOR, TRUST_HELP, TRUST_LABEL, type Trust } from './honesty';
 import { TRAFFIC_VALIDATION } from './trafficValidation';
 import { ValidationSummary } from './ValidationSummary';
 import { AnchoredPopover } from '../AnchoredPopover';
+import { useDemoMode } from '../../../hooks/useDemoMode';
 
 const ICON = { fails_validation: OctagonX, not_validated: TriangleAlert, stale: TriangleAlert, validated: CircleCheck } as const;
 
 /**
  * Trust of a MODEL OUTPUT (PUX §5.7 axis 2). Not dismissable. For the traffic model the
- * default label is "Fails validation (TAG M3.1)" and the badge opens the recorded results.
+ * default label is "Fails validation (TAG M3.1)" (amber: a known model limitation, not an app error) and the badge opens
+ * the recorded results. Hidden in demo mode (p15).
  */
-export const TrustBadge: React.FC<{ trust: Trust; label?: string; testId?: string; className?: string }> = ({ trust, label, testId = 'trust-badge', className = '' }) => {
+export const TrustBadge: React.FC<{ trust: Trust; label?: string; testId?: string; className?: string; demo?: boolean }> = ({ trust, label, testId = 'trust-badge', className = '', demo }) => {
+  const live = useDemoMode();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [open, setOpen] = useState(false);
+  // p15 demo mode: no validation badge on the main screens (DEMO_P15.md); a stale badge is about inputs, not the model, and stays
+  if ((demo ?? live) && trust !== 'stale') return null;
   const Icon = ICON[trust];
   const color = TRUST_COLOR[trust];
   const text = label ?? (trust === 'fails_validation' ? `${TRUST_LABEL[trust]} (${TRAFFIC_VALIDATION.standard})` : TRUST_LABEL[trust]);

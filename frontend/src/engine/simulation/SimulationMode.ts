@@ -45,6 +45,7 @@ import { fetchDiurnalProfile, hourFactor, COUNT_HOURS, type DiurnalProfile, type
 import { compileAreaDemand, fetchCalibratedEdgeFlows, type CalibratedEdgeFlows } from './AreaDemand';
 import { matchPlanToEstimates } from './AreaDemandMatch';
 import { SyntheticDemandSource } from '../demand/syntheticDemandSource';
+import { demoModeStore } from './demoMode';
 import { SYNTHETIC_DEMAND_DEFAULT_ON, SYNTHETIC_DECISION, SYNTHETIC_PARAMS, SYNTHETIC_DATASET_ID } from '../calibration/syntheticDemandDecision';
 import { DEFAULT_SUPPLY } from './supplyParams';
 import { roadSection, type RoadSection } from './roadSection';
@@ -58,6 +59,9 @@ import { estimateAreaDemand, constraintsToCounts, countsBeforeAfter, type OdmePr
 import { countsToConstraints } from '../data/odmeConstraints';
 import type { EngineCountRow } from '../data/trafficData';
 import type { OdmeFit, OdmeIteration, OdmeOptions } from '../demand/odme';
+
+// p15: the demo-mode store follows the active demand model from the start (see demoMode.ts)
+demoModeStore.set(SYNTHETIC_DEMAND_DEFAULT_ON);
 
 /**
  * Live view lifecycle: idle (stopped, nothing computing), preparing (waiting
@@ -1357,6 +1361,7 @@ export class SimulationMode {
     // The synthetic demo model is the demand AND the supply model it was evaluated with (p14), as one switch
     this.setSupplyModel(on ? SYNTHETIC_PARAMS.supplyModel : SUPPLY_MODEL_DEFAULT);
     this.useSyntheticDemand = on;
+    demoModeStore.set(on);
     this.planCache = null;
     this.invalidateComparison(STUDY_CHANGED.demand);
     this.setState({ demandModel: { ...this.state.demandModel, model: on ? 'synthetic' : 'area-estimate' } });
@@ -1417,7 +1422,7 @@ export class SimulationMode {
       if (this.planCache?.key !== key) {
         const roads = new Map(this.getRoads().map(r => [r.id, r]));
         const areaKey = contentKey({ rev: this.revision, seeds: area.seedRoadIds, range: area.rangeMeters, dir: area.direction, corr: this.correctionsEnabled, b: area.bounds });
-        this.planCache = { key, plan: this.synthetic.plan(area, roads, hour, settings.through !== false, areaKey, SYNTHETIC_PARAMS.scale) };
+        this.planCache = { key, plan: this.synthetic.plan(area, roads, hour, settings.through !== false, areaKey, SYNTHETIC_PARAMS.scale, { gatewayBalance: SYNTHETIC_PARAMS.gatewayBalance, cityCongestion: SYNTHETIC_PARAMS.cityCongestion }) };
       }
       plan = this.planCache.plan;
     } else {

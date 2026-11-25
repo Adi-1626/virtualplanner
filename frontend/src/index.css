@@ -443,3 +443,6 @@ button.uos-row:hover { background: var(--surface-2); }
 .uos-data-facts dd.is-unknown { color: var(--unknown, #9AA4B2); }
 .uos-data-footprint { margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .uos-data-chip { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border: 1px solid var(--border-strong); border-radius: 999px; font-size: 11px; color: var(--text-2); white-space: nowrap; }
+/* p15: a known, disclosed model limitation (amber); .uos-banner-fail stays for app errors */
+.uos-banner-warn { display: flex; gap: var(--sp-2); padding: 8px 10px; border-radius: var(--r-md); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); background: color-mix(in srgb, var(--warn) 7%, var(--surface-1)); color: var(--text-1); font-size: var(--fs-label); }
+.uos-banner-warn > svg { color: var(--warn); }

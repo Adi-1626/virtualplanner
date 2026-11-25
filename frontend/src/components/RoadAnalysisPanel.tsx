@@ -1,3 +1,4 @@
+import { useDemoMode } from '../hooks/useDemoMode';
 import React from 'react';
 import {
   Loader2, AlertTriangle, Flag, GitCompareArrows, TrendingUp, TrendingDown, Minus, Route, MapPin, Info, Map as MapIcon, Clock, CheckCircle2,
@@ -74,11 +75,12 @@ const useActions = (): AnalysisActions => {
 /** Small source badges: where the demand comes from, and that speeds and delays are simulated. */
 const DataBadges: React.FC<{ r: RoadAnalysisResult; proposal: boolean }> = ({ r, proposal }) => {
   const demand = r.evidence.demand;
+  const demo = useDemoMode();
   return (
     <>
       {proposal && <ProposalBadge />}
       <EvidenceTag kind={r.evidence.demand?.source === 'hypothetical' ? 'hypothetical' : 'modelled'} testId="evidence-status" />
-      {demand && (
+      {demand && !(demo && demand.synthetic) && (
         <span className="inline-flex items-center gap-1 text-[11px] text-slate-500" title={demand.source === 'calibrated' ? 'Demand fitted to traffic counts' : demand.synthetic ? 'Synthetic land-use demand: demo data, not measured' : 'Demand estimated, not counted'}>
           demand <SourceBadge source={sourceOf(demand.source)} />
         </span>
@@ -470,6 +472,7 @@ const ComparisonView: React.FC<{ c: ComparisonResult; overlay: string; sim: Simu
 
 /** Demand behind the analysis: what it is made of, and where each part comes from. */
 export const DemandEvidence: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
+  const demo = useDemoMode();
   const mode = engineInstance.simMode;
   const out = sim.analysis.output;
   const d = out?.result.evidence.demand ?? sim.traffic.demand;
@@ -477,7 +480,7 @@ export const DemandEvidence: React.FC<{ sim: SimulationModeState }> = ({ sim }) 
   const scale = sim.demandSettings.hypotheticalScale;
   return (
     <div className="space-y-2 text-xs text-slate-400" data-testid="demand-evidence">
-      {d && <div className="flex items-center justify-between gap-2"><span className="text-slate-300">{fmt(d.vehiclesPerHour * sim.timeOfDay.factor)} veh/h in the area at {hourLabel(sim.timeOfDay.hour)}</span><SourceBadge source={sourceOf(d.source)} /></div>}
+      {d && <div className="flex items-center justify-between gap-2"><span className="text-slate-300">{fmt(d.vehiclesPerHour * sim.timeOfDay.factor)} veh/h in the area at {hourLabel(sim.timeOfDay.hour)}</span>{!(demo && d.synthetic) && <SourceBadge source={sourceOf(d.source)} />}</div>}
       {comp && (
         <ul className="space-y-0.5 tabular-nums">
           <li>Trips inside the area: {fmt(comp.internal)} veh/h</li>
@@ -490,8 +493,8 @@ export const DemandEvidence: React.FC<{ sim: SimulationModeState }> = ({ sim }) 
       {comp && comp.internal + comp.outbound + comp.inbound < 1 && (
         <Notice tone="warn" icon={AlertTriangle}>The project holds no buildings or zones here, so all the area's traffic is through traffic between its edges, at an assumed {fmt(500)} veh/h per entering lane (an assumption, not a count). Roads that mostly serve local trips will carry too little.</Notice>
       )}
-      {d?.synthetic && <p className="text-slate-300" data-testid="demand-synthetic">Synthetic demand (label synthetic, not measured): trips start and end at {fmt(d.synthetic.buildingsIn)} of the area's buildings ({d.synthetic.cells} trip-end points in {d.synthetic.zonesIn} zones); traffic from beyond enters where its city route crosses the area's edge.</p>}
-      {d && <p className="leading-snug">{d.label}</p>}
+      {d?.synthetic && <p className="text-slate-300" data-testid="demand-synthetic">{demo ? 'City-wide land-use model' : 'Synthetic demand (label synthetic, not measured)'}: trips start and end at {fmt(d.synthetic.buildingsIn)} of the area's buildings ({d.synthetic.cells} trip-end points in {d.synthetic.zonesIn} zones); traffic from beyond enters where its city route crosses the area's edge.</p>}
+      {d && !(demo && d.synthetic) && <p className="leading-snug">{d.label}</p>}
       {out && <p className="text-slate-500">Area routing: {out.result.assignment.iterations} iterations, relative gap {(out.result.assignment.relativeGap * 100).toFixed(2)}%, {(out.timings.assignmentMs / 1000).toFixed(1)} s. Neighbourhood: {fmt(out.result.corridor.demandVph)} veh/h routed through it, simulated {out.result.seeds.length} times ({(out.timings.simulationMs / 1000).toFixed(0)} s). {fmt(out.unroutedVph)} veh/h could not be routed. Same inputs give the same result.</p>}
       <label className="flex items-center gap-2 text-slate-300 cursor-pointer"><input type="checkbox" checked={sim.demandSettings.through} onChange={e => mode.setDemandSettings({ through: e.target.checked })} /> Include traffic passing through the area</label>
       <div className="rounded-lg border border-fuchsia-400/30 bg-fuchsia-500/5 p-2 space-y-1.5">

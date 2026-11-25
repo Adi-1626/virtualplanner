@@ -47,7 +47,8 @@ export const TRUST_HELP: Record<Trust, string> = {
 };
 
 export const TRUST_COLOR: Record<Trust, string> = {
-  fails_validation: 'var(--fail, #FF6B61)',
+  // p15: amber — a known, disclosed model limitation; red is kept for app errors
+  fails_validation: 'var(--warn, #E8833A)',
   not_validated: 'var(--warn, #E8833A)',
   stale: 'var(--warn, #E8833A)',
   validated: 'var(--measured, #3FB950)',
