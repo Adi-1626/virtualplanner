@@ -36,7 +36,7 @@ export type SupplyModel = 'p13' | 'p14';
 
 /**
  * The supply model Simulate runs by default. Stays 'p13' until the p14 model is checked against the official counts and
- * the project check (docs/urbanos/SUPPLY_P14.md §6); the harnesses and SimulationMode.setSupplyModel('p14') run p14.
+ * the project check (docs/urbanos/SUPPLY_P14.md §3.5); the harnesses and SimulationMode.setSupplyModel('p14') run p14.
  */
 export const SUPPLY_MODEL_DEFAULT: SupplyModel = 'p13';
 

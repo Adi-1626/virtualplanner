@@ -211,7 +211,7 @@ Both fail TAG M3.1. By the p13 rule (a set may become the default only if it pas
 official check worse: no fewer sites, no larger river error) p14 does not qualify: it fails the project hold-out and its river
 error is larger.
 
-### 3.5 Decision
+### 3.5 Decision (the default)
 
 `SUPPLY_MODEL_DEFAULT` stays `'p13'`, so the app, its banner and its recorded validation numbers (VALIDATION_P13.md) still
 describe what Simulate runs. p14 runs with `SimulationMode.setSupplyModel('p14')` (engine) and in both harnesses. It is the
@@ -232,7 +232,13 @@ UI switch was added (the banner would otherwise show p13 numbers for a p14 run).
   approach yields to all others) is a simplification of Indian practice.
 - The p14 model was not tuned to the data (no parameter was fitted to Google or the counts).
 
-## 5. Reproducing
+## 5. Gates (2026-11-25, at a44d88f)
+
+`tsc -p tsconfig.app.json` clean; `oxlint` 0 errors (17 warnings, all in files this branch does not touch); full Vitest
+162 files passed, 9 skipped (1,355 tests passed, 10 skipped; includes SupplyP14.test.ts 19/19); backend unchanged, pytest
+`tests/test_osm_index.py` 5 passed (the building endpoint the friction inference reads). Logs: `/workspace/work/p14-run/gate_*.log`.
+
+## 6. Reproducing
 
 `/workspace/work/p14-run/` (outside the repo): `start_backend.sh` (port 8414, a copy of the project DB in `db/`, OSM index
 `/workspace/work/vp-int-e2e/db_osm_index.db`, Python deps in `pydeps/`; `backend/twincity.db` is never touched);
