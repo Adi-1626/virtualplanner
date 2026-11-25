@@ -8,6 +8,9 @@ import { assignTraffic } from '../simulation/staticAssignment';
 import type { MicroDemandTrip } from '../simulation/TrafficMicroSim';
 import { DEFAULT_SUPPLY } from '../simulation/supplyParams';
 import { scoreProjectCheck, sectionCount, wayBearing, type ProjectObs } from '../calibration/projectCheck';
+import http from 'http';
+import { LocalOsmIndex } from '../editing/LocalOsmIndex';
+import { TrafficSignalSource } from '../simulation/trafficSignals';
 import { decodeSyntheticDemand, rebalance, syntheticAreaPlan, type AreaPaths, type SyntheticCity, type SyntheticTripEnd } from '../demand/syntheticDemand';
 
 /**
@@ -28,13 +31,33 @@ import { decodeSyntheticDemand, rebalance, syntheticAreaPlan, type AreaPaths, ty
  *   P14_ITERS       assignment iterations (default 30)
  *   P14_OUT         JSON-lines output (appended)
  *   P14_ONLY        comma-separated record ids
+ *   P14_SUPPLY_MODEL p14: run the area assignment with the p14-supply branch's Indian urban supply model (only on a branch
+ *                   that has it merged); its side-friction inference reads each area's OSM building centroids from P14_API
+ *                   (a backend serving the OSM index) through the app's own loader, as the p13 harness on p14-supply does.
  */
+if (process.env.P14 && process.env.P14_API) {
+  const base = new URL(process.env.P14_API);
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => new Promise((resolve, reject) => {
+    const u = new URL(String(input instanceof Request ? input.url : input), base);
+    const req = http.request({ host: base.hostname, port: base.port, path: u.pathname + u.search, method: 'GET' }, res => {
+      const chunks: Buffer[] = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8'), status = res.statusCode ?? 0;
+        resolve({ ok: status >= 200 && status < 300, status, statusText: res.statusMessage ?? '', text: async () => body, json: async () => JSON.parse(body), headers: { get: (k: string) => (res.headers[k.toLowerCase()] as string) ?? null } } as unknown as Response);
+      });
+    });
+    req.on('error', reject);
+    if (init?.signal) init.signal.addEventListener('abort', () => req.destroy(new Error('aborted')));
+    req.end();
+  })) as typeof fetch;
+}
 interface RecordSpec {
   id: string; kind: 'jt' | 'count'; split: 'calibration' | 'holdout'; roadClass: string; area: string; hours: number[];
   jt?: { o: [number, number]; d: [number, number]; googleKm: Record<string, number>; targetMin: Record<string, number>; rangeMin: Record<string, [number, number]> };
   count?: { ways: number[]; target: number };
 }
-interface Built { rec: RecordSpec; area: StudyArea; roads: Map<string, DrivableObject>; signals: readonly (readonly [number, number])[] | undefined; trips: Map<number, MicroDemandTrip[]>; oldVph?: Record<number, number> }
+interface Built { rec: RecordSpec; area: StudyArea; roads: Map<string, DrivableObject>; signals: readonly (readonly [number, number])[] | undefined; trips: Map<number, MicroDemandTrip[]>; oldVph?: Record<number, number>; buildings?: unknown }
 
 const wayOf = (id: string) => { const m = /^osm_(\d+)/.exec(id); return m ? Number(m[1]) : null; };
 const countBearing = (b: Built, linkId: string) => wayBearing(b.roads.get(linkId.replace(/_seg_\d+_(fwd|bwd)$/, '').replace(/_(fwd|bwd)$/, ''))?.coordinates as number[][] | undefined, linkId.endsWith('_bwd'));
@@ -42,7 +65,9 @@ const distM = (a: readonly number[], b: readonly number[]) => Math.hypot((a[0] -
 
 /** As P13Validation.test.ts evaluate(): one cross-section per direction for counts, the shortest converged-time path for journey times. */
 function evaluate(b: Built, hour: number, trips: MicroDemandTrip[], iters: number): ProjectObs | null {
-  const a = assignTraffic(b.area, b.roads, trips, { signalPoints: b.signals, supply: DEFAULT_SUPPLY, maxIterations: iters, maxMs: 1e9, targetGap: 1e-3 });
+  // p14-supply's model where merged (P14_SUPPLY_MODEL=p14); passed untyped so this file also compiles on the demand branch alone
+  const extra: Record<string, unknown> = process.env.P14_SUPPLY_MODEL === 'p14' ? { supplyModel: 'p14', buildings: b.buildings ?? null } : {};
+  const a = assignTraffic(b.area, b.roads, trips, { signalPoints: b.signals, supply: DEFAULT_SUPPLY, maxIterations: iters, maxMs: 1e9, targetGap: 1e-3, ...extra });
   const base = { id: `${b.rec.id}@${hour}`, record: b.rec.id, split: b.rec.split, roadClass: b.rec.roadClass, area: b.rec.area, hour };
   if (b.rec.kind === 'count' && b.rec.count) {
     const ways = new Set(b.rec.count.ways);
@@ -90,7 +115,7 @@ function readEnds(file: string): SyntheticTripEnd[] {
 }
 
 describe.skipIf(!process.env.P14)('p14 project check with the synthetic land-use demand (opt-in)', () => {
-  it('evaluates / tunes', () => {
+  it('evaluates / tunes', async () => {
     const out = process.env.P14_OUT!;
     const log = (o: unknown) => fs.appendFileSync(out, JSON.stringify(o) + '\n');
     const iters = Number(process.env.P14_ITERS ?? 30);
@@ -106,7 +131,12 @@ describe.skipIf(!process.env.P14)('p14 project check with the synthetic land-use
         if (rec) built.push({ ...b, rec, trips: new Map(), oldVph: Object.fromEntries([...b.trips].map(([h, t]) => [h, Math.round(t.reduce((n, x) => n + x.vehiclesPerHour, 0))])) });
       }
     }
-    log({ records: built.length, asset: city0.id });
+    log({ records: built.length, asset: city0.id, supplyModel: process.env.P14_SUPPLY_MODEL ?? 'p13' });
+    if (process.env.P14_SUPPLY_MODEL === 'p14') {
+      const src = new TrafficSignalSource(new LocalOsmIndex()) as unknown as { buildingPointsIn?: (b: StudyArea['bounds']) => Promise<unknown> };
+      if (!src.buildingPointsIn) throw new Error('P14_SUPPLY_MODEL=p14 needs the p14-supply branch merged');
+      for (const b of built) { b.buildings = await src.buildingPointsIn(b.area.bounds); log({ buildings: b.rec.id, n: (b.buildings as unknown[] | null)?.length ?? null }); }
+    }
     const pathsCache = new Map<string, { paths?: AreaPaths }>();
     const cities = new Map<number, SyntheticCity>();
     const cityFor = (m: number) => { let c = cities.get(m); if (!c) { c = rebalance(city0, m); cities.set(m, c); } return c; };
