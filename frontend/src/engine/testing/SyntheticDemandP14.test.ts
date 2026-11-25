@@ -267,3 +267,17 @@ describe.skipIf(!fs.existsSync(ASSET + 'parity_fixture_v2.json'))('synthetic dem
     for (const cell of fx.cells.slice(0, 10)) for (const p of ['HBW', 'EXT'] as const) expect(odCell(r, p, cell.i, cell.j)).toBeCloseTo(odCell(c, p, cell.i, cell.j), 3);
   }, 120000);
 });
+
+describe.skipIf(!fs.existsSync(ASSET + 'parity_fixture_v3.json'))('synthetic demand v3 (p15): parity with the build script', () => {
+  it('purpose split by jurisdiction and the motorised-length beta: cells and hourly city totals equal the build', () => {
+    const c = decodeSyntheticDemand(JSON.parse(fs.readFileSync(ASSET + 'pune_synthetic_demand_v3.json', 'utf8')));
+    const fx = JSON.parse(fs.readFileSync(ASSET + 'parity_fixture_v3.json', 'utf8')) as { cells: Record<string, number>[]; hourlyVehicleTrips: number[]; hourlyPcu: number[] };
+    for (const cell of fx.cells) for (const p of ['HBW', 'HBE', 'HBO', 'NHB', 'FRT', 'EXT'] as const) expect(odCell(c, p, cell.i, cell.j)).toBeCloseTo(cell[p], 5);
+    const pcu = { two_wheeler: 0.75, car: 1, auto: 2, bus: 2.2, truck: 2.2 };
+    for (const h of [9, 23]) {
+      const t = cityHourTotals(c, h, pcu);
+      expect(t.veh / fx.hourlyVehicleTrips[h]).toBeCloseTo(1, 4);
+      expect(t.pcu / fx.hourlyPcu[h]).toBeCloseTo(1, 4);
+    }
+  }, 120000);
+});

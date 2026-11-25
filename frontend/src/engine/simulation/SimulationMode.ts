@@ -1182,6 +1182,7 @@ export class SimulationMode {
         demandLevel: this.state.traffic.demandLevel, seed: this.state.traffic.seed,
         watchRoadIds: area.seedRoadIds, watchSegmentKeys: this.state.section?.segmentKeys,
         signalPoints: this.signalPoints ?? undefined, signalTiming: this.signalTiming,
+        ...(this.supplyModel === 'p14' ? { pcuSet: 'indo-hcm' as const } : {}),
         ...junctionOptions(context.junctions),
       },
     };

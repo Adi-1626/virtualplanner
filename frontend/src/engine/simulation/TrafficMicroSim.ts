@@ -11,6 +11,7 @@ import type { Cardinal } from '../calibration/observedCounts';
 import { compileJunctionEdits, simJunctionSetups, turnBansFor, outRows, defaultEdit, type JunctionEditSpec, type TurnBans } from './junctionControl';
 import { groupJunctions, nodeKey } from './junctionGroups';
 import { EmissionAccumulator } from '../emissions/emissions';
+import { P14 } from './supplyConfig';
 
 /**
  * Microscopic traffic simulation on a study area.
@@ -312,6 +313,14 @@ export interface MicroSimOptions {
    * phase SIGNAL_GREEN_S (the earlier plan, kept for comparison).
    */
   signalTiming?: 'webster' | 'equal';
+  /**
+   * p15: which PCU set the run counts in. 'irc' (default): IRC:106-1990 (VEHICLE_TYPES pcu, two-wheeler 0.75), as before.
+   * 'indo-hcm' (the p14 Indian road supply): Webster design flows in Indo-HCM 2017 signal PCUs (Table 6.3, two-wheeler
+   * 0.4), the unit of the Indo-HCM saturation flow they are divided by, and counted link PCUs in Indo-HCM mid-block PCUs
+   * (Table 5.2, two-wheeler 0.22), the unit of the p14 link capacities they are read against. The static assignment
+   * already uses these sets (staticAssignment.ts PCU_P14, SIGNAL_TO_MIDBLOCK_PCU). Driving is unaffected.
+   */
+  pcuSet?: 'irc' | 'indo-hcm';
   /** Two-wheelers ride two abreast in a lane (lateral filtering). Default true. */
   twoWheelersAbreast?: boolean;
   /**
@@ -761,6 +770,9 @@ export class TrafficMicroSim {
   private readonly seed: number;
   private demandLevel: number;
   private readonly signalTimingMode: 'webster' | 'equal';
+  /** PCU per vehicle kind for Webster design flows and for counted link PCUs (MicroSimOptions.pcuSet). */
+  private signalPcu: (kind: string) => number = k => VEHICLE_TYPES.find(t => t.kind === k)?.pcu ?? 1;
+  private countPcu: (kind: string) => number = k => VEHICLE_TYPES.find(t => t.kind === k)?.pcu ?? 1;
   /** Road-analysis counters since startAnalysis(): link entries, and those by vehicles routed over a watched link. */
   private analysis: { fromT: number; entries: Uint32Array; selectEntries: Uint32Array; selectOd: Map<string, number>; timeSum0: Float64Array; timeN0: Uint32Array; released: number; capSteps: number; steps0: number; gridlock0: number; unroutable0: number; completed0: number;
     /** Queued vehicle-seconds behind a stopped front vehicle, by why the front vehicle was held: signal, blocked (no room ahead), give-way, conflict. */
@@ -828,6 +840,11 @@ export class TrafficMicroSim {
     this.seed = options.seed >>> 0;
     this.demandLevel = Math.max(0, Math.min(1, options.demandLevel));
     this.signalTimingMode = options.signalTiming ?? 'webster';
+    if (options.pcuSet === 'indo-hcm') {
+      const sig = P14.pcuSignal.value as Record<string, number>, mid = P14.pcuMidblock.value as Record<string, number>;
+      this.signalPcu = k => sig[k] ?? 1;
+      this.countPcu = k => mid[k] ?? 1;
+    }
     this.abreastEnabled = options.twoWheelersAbreast ?? true;
     this.stopLineCounting = options.stopLineCounting ?? true;
     this.removeStuck = options.removeStuckVehicles ?? false;
@@ -1125,7 +1142,7 @@ export class TrafficMicroSim {
     if (this.analysis) {
       const a = this.analysis;
       a.entries[linkIndex]++;
-      a.pcuEntries[linkIndex] += veh.type.pcu;
+      a.pcuEntries[linkIndex] += this.countPcu(veh.type.kind);
       if (veh.focus) {
         a.selectEntries[linkIndex]++;
         // Select-link origin and destination: counted once per vehicle, when it enters the area
@@ -1777,11 +1794,11 @@ export class TrafficMicroSim {
   /** PCU/h the assigned OD demand sends along each link at the current demand level and hour. */
   private assignedLinkPcu(): Float64Array {
     const q = new Float64Array(this.links.length);
-    const meanPcu = VEHICLE_TYPES.reduce((n, t) => n + t.share * t.pcu, 0);
+    const meanPcu = VEHICLE_TYPES.reduce((n, t) => n + t.share * this.signalPcu(t.kind), 0);
     const scale = this.demandLevel * this.hourFactor / OD_REFERENCE_LEVEL;
     for (const a of this.odArrivals) {
       if (!a.route.length) continue;
-      const pcu = VEHICLE_TYPES.find(t => t.kind === a.trip.kind)?.pcu ?? meanPcu;
+      const pcu = VEHICLE_TYPES.some(t => t.kind === a.trip.kind) ? this.signalPcu(a.trip.kind) : meanPcu;
       const v = a.trip.vehiclesPerHour * scale * pcu;
       for (const i of a.route) q[i] += v;
     }
@@ -3129,7 +3146,7 @@ export class TrafficMicroSim {
     const driven = Math.max(0, veh.pos - (veh.linkEnterPos ?? 0));
     perf.controlDelayS += Math.max(0, this.t - (veh.linkEnterT ?? this.t) - driven / Math.max(1, fromLink.speed * veh.speedFactor));
     perf.vehicles++;
-    perf.pcu += veh.type.pcu;
+    perf.pcu += this.signalPcu(veh.type.kind);
     perf.lastCrossT = this.t;
     // Link travel time for assignment feedback: time on the link scaled to its full length
     if (driven > 0.5 * fromLink.length) {

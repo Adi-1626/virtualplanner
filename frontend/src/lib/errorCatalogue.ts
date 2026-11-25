@@ -177,3 +177,19 @@ export function friendlyFrom(error: unknown, message: string | null | undefined,
   const { text, reference } = splitReference(message ?? '');
   return { message: text, action: '', reference, requestId: reference, retryable: true, key: 'TEXT' };
 }
+
+/** Text a JavaScript runtime writes for a code fault (never shown to a planner). */
+const INTERNAL_FAULT_TEXT = /\b(undefined|null) is not|cannot read propert|cannot set propert|is not a function|is not defined|is not iterable|maximum call stack|out of memory|unexpected token|invalid array length|\bat [\w.$<>]+ \(|\.(ts|tsx|js|mjs):\d+/i;
+
+/**
+ * p15: an error string that has travelled through string-only state (a simulation or analysis failure) → what the
+ * notice shows. Our own words (catalogue text, app-authored sentences, "… Reference: x.") pass unchanged; a runtime
+ * fault's raw text is replaced by the catalogue message for what the app was doing.
+ */
+export function userErrorText(text: string | null | undefined, context: ErrorContext = 'simulate'): string {
+  const t = (text ?? '').trim();
+  if (!t) return friendlyText(describeFailure({ kind: 'http', status: 500, context }));
+  if (isFriendlyErrorText(t)) return t;
+  if (INTERNAL_FAULT_TEXT.test(t)) return friendlyText(describeFailure({ kind: 'http', status: 500, context }));
+  return t;
+}

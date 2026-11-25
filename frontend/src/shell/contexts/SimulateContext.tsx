@@ -1,6 +1,8 @@
 import React from 'react';
 import { TriangleAlert, MousePointerClick } from 'lucide-react';
 import { PanelSection } from '../../components/ui/Panel';
+import { ErrorNotice } from '../../components/ui/ErrorNotice';
+import { userErrorText } from '../../lib/errorCatalogue';
 import { Disclosure } from '../../components/ui/Disclosure';
 import { useSimulationMode } from '../../hooks/useSimulationMode';
 import { useShellStore } from '../useShellStore';
@@ -51,10 +53,7 @@ export const SimulateContext: React.FC<{ demo?: boolean }> = ({ demo: demoProp }
         </div>
       )}
       {sim.demandModel.model === 'synthetic' && sim.demandModel.status === 'none' && (
-        <div className="uos-banner-fail" role="alert" data-testid="city-model-error">
-          <TriangleAlert size={15} aria-hidden className="shrink-0 mt-0.5" />
-          <p>The city-wide model could not be loaded ({sim.demandModel.error ?? 'no data'}): the area estimate runs instead.</p>
-        </div>
+        <ErrorNotice prefix="The city-wide model could not be loaded, so the area estimate runs instead." message={userErrorText(sim.demandModel.error, 'load')} context="load" />
       )}
       <PanelSection title="Study">
         {sim.seedRoadIds.length === 0

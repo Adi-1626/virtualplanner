@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Pause, Play, RotateCcw, Square, Loader2, AlertTriangle, AlertOctagon, CheckCircle2, Maximize2, Eye, Hammer, ChevronDown, Crosshair, X, Info,
+  Pause, Play, RotateCcw, Square, Loader2, AlertTriangle, CheckCircle2, Maximize2, Eye, Hammer, ChevronDown, Crosshair, X, Info,
 } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import { useSimulationMode } from '../hooks/useSimulationMode';
@@ -21,6 +21,8 @@ import { UnderstandView, ImproveView, DemandEvidence } from './RoadAnalysisPanel
 import { openSimulateDrawer, type SimulateDrawerTabId } from '../shell/contexts/SimulateDrawerNav';
 import { GetStartedCard } from './simulate/SimulatePieces';
 import { readableLoadError, studySubtitle } from './simulate/format';
+import { ErrorNotice } from './ui/ErrorNotice';
+import { userErrorText } from '../lib/errorCatalogue';
 const capitalise = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 const roadName = (id: string) => engineInstance.objects.getById(id)?.name || 'Unnamed road';
@@ -157,7 +159,7 @@ const RunBar: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
         </div>
       )}
       {t.status === 'running' && t.behind && <p className="text-[11px] text-amber-300/90" role="status" data-testid="live-behind">This computer cannot step the traffic at {t.speed}×, so the live view runs slower than that. The figures are not affected; a lower speed plays smoothly.</p>}
-      {t.error && <p className="text-xs text-amber-300">{t.error}</p>}
+      {t.error && <ErrorNotice message={userErrorText(t.error)} context="simulate" />}
       {a.status === 'running' && <p className="text-xs text-cyan-200 flex items-center gap-1.5" role="status"><Loader2 size={12} className="animate-spin" />Analysing {hourLabel(sim.timeOfDay.hour)}: {Math.round(a.progress * 100)}% ({mode.analysisSeeds.length} runs)</p>}
     </div>
   );
@@ -187,7 +189,7 @@ const Study: React.FC<{ sim: SimulationModeState; tab: Tab; setTab: (t: Tab) => 
           Some roads around this area could not be loaded, so it may stop short. {capitalise(readableLoadError(osmRoads.error))}
         </Notice>
       )}
-      {sim.error && <Notice tone="bad" icon={AlertOctagon}>{sim.error}</Notice>}
+      {sim.error && <ErrorNotice message={userErrorText(sim.error)} context="simulate" />}
       {area && tab === 'understand' && <UnderstandView sim={sim} goImprove={() => setTab('improve')} goDetails={() => setTab('details')} />}
       {area && tab === 'improve' && <ImproveView sim={sim} onThroughTheDay={() => openSimulateDrawer('day')} />}
       {area && tab === 'details' && <DetailsView sim={sim} />}

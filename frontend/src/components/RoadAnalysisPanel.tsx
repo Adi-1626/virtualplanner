@@ -18,6 +18,8 @@ import { OdmeCard, EmissionsCompare } from './OdmeAndEmissions';
 import { TrustBadge } from './ui/badges/TrustBadge';
 import { hourLabel } from '../engine/simulation/timeOfDay';
 import { Button, Notice } from './ui/kit';
+import { ErrorNotice } from './ui/ErrorNotice';
+import { userErrorText } from '../lib/errorCatalogue';
 import { Card, Chip, Disclosure, InfoToggle, Meter } from './ui/viz';
 import { TONE_FILL, TONE_TEXT, type Tone } from './ui/vizTones';
 import { STATUS } from './roadAnalysisView';
@@ -49,7 +51,7 @@ const fmt = (n: number) => Math.round(n).toLocaleString();
 /** Progress / error / stale states shared by both tabs; null when a result is ready to show. */
 const AnalysisGate: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
   const a = sim.analysis;
-  if (a.status === 'error') return <Notice tone="bad" icon={AlertTriangle}>The analysis could not run: {a.error}</Notice>;
+  if (a.status === 'error') return <ErrorNotice prefix="The analysis could not run." message={userErrorText(a.error)} context="simulate" />;
   if (!a.output) return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-2" role="status">
       <p className="text-sm text-slate-200 flex items-center gap-2"><Loader2 size={15} className="animate-spin text-cyan-300" />Analysing {hourLabel(sim.timeOfDay.hour)}…</p>
@@ -277,7 +279,7 @@ export const TimesOfDay: React.FC<{ sim: SimulationModeState }> = ({ sim }) => {
           </ul>
         )}
         {summary.length > 0 && <div className="text-[11px] text-slate-200 space-y-1 border-t border-white/10 pt-2" data-testid="timeline-summary">{summary.map(t => <p key={t}>{t}</p>)}</div>}
-        {tl.status === 'error' && <p className="text-xs text-rose-300">{tl.error}</p>}
+        {tl.status === 'error' && <ErrorNotice prefix="The day could not be analysed." message={userErrorText(tl.error)} context="simulate" />}
         {(() => { const am = tl.rows.find(r => r.period === 'am'), pm = tl.rows.find(r => r.period === 'pm');
           return am?.result && pm?.result && Math.abs(am.demandVph - pm.demandVph) < 1
             ? <div className="text-[11px] text-amber-200/90 space-y-1" data-testid="peaks-identical"><p className="flex items-center gap-1"><AlertTriangle size={12} />Morning and evening peaks match: same estimated demand.</p><InfoToggle label="Why"><p>The morning and evening peaks carry the same estimated demand here, so their results match: the traffic crossing the area's edge is estimated per lane from counts, without a morning or evening direction pattern (see Details). Each peak is taken as the peak of its half of the day (09:00 and 19:00), so both get factor 1. Real tidal flows would make them differ.</p></InfoToggle></div>

@@ -119,7 +119,7 @@ export async function runAnalysisJob(job: AnalysisJob, onProgress?: (share: numb
   let counts: CountCheck[] = [];
   const t1 = Date.now();
   for (const seed of job.seeds) {
-    const sim = new TrafficMicroSim(job.corridor, job.roads, { ...job.options, signalPoints: simSignals, seed, watchSegmentKeys: job.section.segmentKeys, demandTrips: microTrips, ...(desiredSpeedKmh ? { desiredSpeedKmh } : {}) });
+    const sim = new TrafficMicroSim(job.corridor, job.roads, { ...job.options, signalPoints: simSignals, seed, watchSegmentKeys: job.section.segmentKeys, demandTrips: microTrips, ...(desiredSpeedKmh ? { desiredSpeedKmh, pcuSet: 'indo-hcm' as const } : {}) });
     sim.setHourFactor(1);
     const layouts = job.countJunctions?.length && seed === job.seeds[0] ? sim.setCountZones(job.countJunctions.map(j => ({ id: j.id, lng: j.location.lon, lat: j.location.lat, radiusM: j.location.matched?.kind === 'roundabout' ? 70 : 60 }))) : [];
     const warm = Math.round(job.warmupS / STEP_S);
