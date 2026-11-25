@@ -850,13 +850,18 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
     for (const g of gwPieces(+gid, 'in')) for (const b of cellsOf(+d, ed)) pieces.push({ from: g.g.point, to: b.cell.point, fromNode: g.g.nodeId, toNode: b.cell.nodeId, w: g.s * b.s });
     emit('inbound', kind as VehicleKind, v, pieces.length ? pieces : fallbackPieces(cellsOf(+d, ed), paths.gateways, 'in'));
   }
+  // p16: a city path whose entry and exit both resolve to the same boundary node only grazes the area's edge (it never
+  // drives on the area's roads): not an area trip, reported as edgeOnly (it was counted as "left out, no drivable way")
+  let edgeOnly = 0;
   for (const [k, v] of EE) {
     const [ein, eout, kind] = k.split('|');
     const pieces = [];
+    let same = 0;
     for (const a of gwPieces(+ein, 'in')) for (const b of gwPieces(+eout, 'out')) {
-      if (a.g.nodeId === b.g.nodeId) continue;
+      if (a.g.nodeId === b.g.nodeId) { same++; continue; }
       pieces.push({ from: a.g.point, to: b.g.point, fromNode: a.g.nodeId, toNode: b.g.nodeId, w: a.s * b.s });
     }
+    if (!pieces.length && same > 0) { edgeOnly += v; continue; }
     emit('through', kind as VehicleKind, v, pieces);
   }
   const balance = opts.gatewayBalance && opts.gatewayBalance > 0 ? balanceGateways(trips, paths.gateways, canReach, opts.gatewayBalance, 3, opts.gatewayReachM ?? GATEWAY_DIVERT_MAX_M) : null;
@@ -879,7 +884,7 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
     provenance: {
       source: 'synthetic', label, period: opts.hour < 12 ? 'AM_Peak' : 'PM_Peak', vehiclesPerHour: vph, pairCount: list.length,
       components: { internal: comp.internal, outbound: comp.outbound, inbound: comp.inbound, through: comp.through, outsideArea: 0, noEdgeRoute: comp.noEdgeRoute, cordonPoints: gateways.length, throughIncluded: through },
-      synthetic: { ...(balance ? { gatewayBalance: balance } : {}), ...(held ? { heldOutsideVph: held.heldVph, meteredGateways: held.gateways } : {}), intrazonalEdgeVph: intrazonalEdge, noRouteByPart: noRoute, datasetId: city.id, label: SYNTHETIC_LABEL, hour: ((Math.floor(opts.hour) % 24) + 24) % 24, buildingsIn, buildingsNoRoad, cells: [...cellsByZone.values()].reduce((s, l) => s + l.length, 0), zonesIn: cellsByZone.size, scale },
+      synthetic: { ...(balance ? { gatewayBalance: balance } : {}), ...(held ? { heldOutsideVph: held.heldVph, meteredGateways: held.gateways } : {}), intrazonalEdgeVph: intrazonalEdge, noRouteByPart: noRoute, edgeOnlyVph: edgeOnly, datasetId: city.id, label: SYNTHETIC_LABEL, hour: ((Math.floor(opts.hour) % 24) + 24) % 24, buildingsIn, buildingsNoRoad, cells: [...cellsByZone.values()].reduce((s, l) => s + l.length, 0), zonesIn: cellsByZone.size, scale },
     },
   };
 }
