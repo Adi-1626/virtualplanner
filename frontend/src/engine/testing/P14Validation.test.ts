@@ -4,7 +4,7 @@ import v8 from 'v8';
 import zlib from 'zlib';
 import type { DrivableObject, StudyArea } from '../simulation/StudyAreaExplorer';
 import { snapDemandPlan } from '../simulation/StudyDemand';
-import { assignTraffic } from '../simulation/staticAssignment';
+import { assignTraffic, selectLink } from '../simulation/staticAssignment';
 import type { MicroDemandTrip } from '../simulation/TrafficMicroSim';
 import { DEFAULT_SUPPLY } from '../simulation/supplyParams';
 import { scoreProjectCheck, sectionCount, wayBearing, type ProjectObs } from '../calibration/projectCheck';
@@ -64,10 +64,16 @@ const countBearing = (b: Built, linkId: string) => wayBearing(b.roads.get(linkId
 const distM = (a: readonly number[], b: readonly number[]) => Math.hypot((a[0] - b[0]) * 111320 * Math.cos(a[1] * Math.PI / 180), (a[1] - b[1]) * 111320);
 
 /** As P13Validation.test.ts evaluate(): one cross-section per direction for counts, the shortest converged-time path for journey times. */
+/** A candidate model: demand scale and beta multiplier, and supply parameters (p13 SupplyParams within SUPPLY_BOUNDS) and the local-road route-choice factor. */
+interface CandidateSet { name: string; scale: number; betaMult: number; capacityFactor?: number; signalSatFactor?: number; speedFactor?: [number, number, number]; localCostFactor?: number }
+let CURRENT: CandidateSet | null = null;
 function evaluate(b: Built, hour: number, trips: MicroDemandTrip[], iters: number): ProjectObs | null {
   // p14-supply's model where merged (P14_SUPPLY_MODEL=p14); passed untyped so this file also compiles on the demand branch alone
   const extra: Record<string, unknown> = process.env.P14_SUPPLY_MODEL === 'p14' ? { supplyModel: 'p14', buildings: b.buildings ?? null } : {};
-  const a = assignTraffic(b.area, b.roads, trips, { signalPoints: b.signals, supply: DEFAULT_SUPPLY, maxIterations: iters, maxMs: 1e9, targetGap: 1e-3, ...extra });
+  if (process.env.P14_LOCAL_FACTOR) extra.localCostFactor = Number(process.env.P14_LOCAL_FACTOR);
+  if (CURRENT?.localCostFactor) extra.localCostFactor = CURRENT.localCostFactor;
+  const supply = { ...DEFAULT_SUPPLY, ...(CURRENT?.capacityFactor ? { capacityFactor: CURRENT.capacityFactor } : {}), ...(CURRENT?.signalSatFactor ? { signalSatFactor: CURRENT.signalSatFactor } : {}), ...(CURRENT?.speedFactor ? { speedFactor: CURRENT.speedFactor } : {}) };
+  const a = assignTraffic(b.area, b.roads, trips, { signalPoints: b.signals, supply, maxIterations: iters, maxMs: 1e9, targetGap: 1e-3, ...extra });
   const base = { id: `${b.rec.id}@${hour}`, record: b.rec.id, split: b.rec.split, roadClass: b.rec.roadClass, area: b.rec.area, hour };
   if (b.rec.kind === 'count' && b.rec.count) {
     const ways = new Set(b.rec.count.ways);
@@ -98,6 +104,25 @@ function evaluate(b: Built, hour: number, trips: MicroDemandTrip[], iters: numbe
       for (const li of outs[u]) { const l = a.links[li]; const nd = du + a.timeS[li]; if (nd < dist[l.to]) { dist[l.to] = nd; len[l.to] = len[u] + l.lengthM; heap.push([nd, l.to]); } }
     }
     if (!Number.isFinite(dist[d.i])) return { ...base, kind: 'jt', observed: b.rec.jt.targetMin[String(hour)], model: null, note: 'no route' };
+    if (process.env.P14_ROUTE_DIAG) {
+      // Where the route's time goes: free running, congestion (speed-flow), junction delay; the worst links by v/c
+      const path: number[] = []; let u = d.i;
+      const predL = new Int32Array(N).fill(-1);
+      { const dd = new Float64Array(N).fill(Infinity), dn = new Uint8Array(N); dd[o.i] = 0; const hp: [number, number][] = [[0, o.i]];
+        while (hp.length) { let m = 0; for (let k = 1; k < hp.length; k++) if (hp[k][0] < hp[m][0]) m = k; const [du, x] = hp[m]; hp[m] = hp[hp.length - 1]; hp.pop(); if (dn[x]) continue; dn[x] = 1; if (x === d.i) break;
+          for (const li of outs[x]) { const l = a.links[li]; const nd = du + a.timeS[li]; if (nd < dd[l.to]) { dd[l.to] = nd; predL[l.to] = li; hp.push([nd, l.to]); } } } }
+      while (u !== o.i && predL[u] >= 0) { path.push(predL[u]); u = a.links[predL[u]].from; }
+      let free = 0, junc = 0, tot = 0, sig = 0;
+      const worst: { id: string; vc: number; tr: number; cap: number; pcu: number; j: number; jn?: string; hw?: string; lanes: number }[] = [];
+      for (const li of path) {
+        const l = a.links[li], j = a.junctionDelayS?.[li] ?? 0;
+        free += l.lengthM / (l.freeSpeedKmh / 3.6); sig += l.t0 - l.lengthM / (l.freeSpeedKmh / 3.6); junc += j; tot += a.timeS[li];
+        const r = b.roads.get(l.roadId);
+        worst.push({ id: l.id, vc: +(a.volPcu[li] / Math.max(1, l.capacityPcu)).toFixed(2), tr: +((a.timeS[li] - j) / l.t0).toFixed(2), cap: Math.round(l.capacityPcu), pcu: Math.round(a.volPcu[li]), j: Math.round(j), jn: l.junction, hw: r?.type === 'road' ? r.osmProvenance?.originalTags?.highway : undefined, lanes: l.lanes });
+      }
+      worst.sort((x, y) => y.vc - x.vc);
+      (globalThis as unknown as { __routeDiag?: unknown[] }).__routeDiag = [{ id: base.id, totS: Math.round(tot), freeS: Math.round(free), signalS: Math.round(sig), junctionS: Math.round(junc), congestionS: Math.round(tot - free - sig - junc), links: path.length, worst: worst.slice(0, 8) }];
+    }
     return { ...base, kind: 'jt', observed: b.rec.jt.targetMin[String(hour)], model: dist[d.i] / 60, routeKm: len[d.i] / 1000, googleKm: b.rec.jt.googleKm[String(hour)] };
   }
   return null;
@@ -149,7 +174,7 @@ describe.skipIf(!process.env.P14)('p14 project check with the synthetic land-use
         const cache = pathsCache.get(b.rec.id) ?? pathsCache.set(b.rec.id, {}).get(b.rec.id)!;
         const plan = syntheticAreaPlan(cityFor(betaMult), b.area, b.roads, ends, { hour }, cache);
         const segs = new Set(b.area.segments.map(s => s.key));
-        const trips = plan ? snapDemandPlan(plan, b.area.network, 250, segs).filter(x => x.fromNodeId && x.toNodeId) : [];
+        const trips = plan ? snapDemandPlan(plan, b.area.network, 250, segs).map((x, i) => ({ ...x, part: (plan.trips[i] as { part?: string }).part })).filter(x => x.fromNodeId && x.toNodeId) : [];
         t = { trips, vph: plan?.provenance.vehiclesPerHour ?? 0, comp: plan?.provenance.components };
         tripsMemo.set(key, t);
       }
@@ -169,11 +194,57 @@ describe.skipIf(!process.env.P14)('p14 project check with the synthetic land-use
     };
     const mode = process.env.P14_MODE ?? 'eval';
     if (mode === 'eval') {
-      const sets = process.env.P14_SETS ? JSON.parse(fs.readFileSync(process.env.P14_SETS, 'utf8')) as { name: string; scale: number; betaMult: number }[] : [{ name: 'synthetic', scale: 1, betaMult: 1 }];
+      const sets = process.env.P14_SETS ? JSON.parse(fs.readFileSync(process.env.P14_SETS, 'utf8')) as CandidateSet[] : [{ name: 'synthetic', scale: 1, betaMult: 1 }];
       for (const s of sets) {
+        CURRENT = s;
         const t0 = Date.now();
         const { obs, demand } = evalAll(s.scale, s.betaMult, () => true);
         log({ eval: s.name, set: s, iters, ms: Date.now() - t0, obs, demand, score: scoreProjectCheck(obs) });
+      }
+    } else if (mode === 'diag') {
+      // Structural diagnosis (DEMAND_P14.md §4): vehicle-km by OSM class, trip parts, and who loads each counted section
+      if (process.env.P14_DIAG_SET) CURRENT = JSON.parse(process.env.P14_DIAG_SET) as CandidateSet;
+      const scale = CURRENT?.scale ?? Number(process.env.P14_SCALE ?? 1), betaMult = CURRENT?.betaMult ?? Number(process.env.P14_BETA ?? 1);
+      const extra: Record<string, unknown> = process.env.P14_SUPPLY_MODEL === 'p14' ? { supplyModel: 'p14' } : {};
+      if (process.env.P14_LOCAL_FACTOR) extra.localCostFactor = Number(process.env.P14_LOCAL_FACTOR);
+      if (CURRENT?.localCostFactor) extra.localCostFactor = CURRENT.localCostFactor;
+      const dsupply = { ...DEFAULT_SUPPLY, ...(CURRENT?.capacityFactor ? { capacityFactor: CURRENT.capacityFactor } : {}), ...(CURRENT?.signalSatFactor ? { signalSatFactor: CURRENT.signalSatFactor } : {}) };
+      for (const b of built) for (const h of b.rec.hours) {
+        const t = tripsFor(b, h, betaMult);
+        const trips = t.trips.map(x => ({ ...x, vehiclesPerHour: x.vehiclesPerHour * scale }));
+        const a = assignTraffic(b.area, b.roads, trips, { signalPoints: b.signals, supply: dsupply, maxIterations: iters, maxMs: 1e9, targetGap: 1e-3, ...extra, ...(extra.supplyModel ? { buildings: b.buildings ?? null } : {}) });
+        const hwOf = (roadId: string) => { const r = b.roads.get(roadId); return (r?.type === 'road' ? r.osmProvenance?.originalTags?.highway : undefined) ?? 'drawn'; };
+        const vkt: Record<string, number> = {}, km: Record<string, number> = {};
+        a.links.forEach((l, i) => { const c = hwOf(l.roadId).replace(/_link$/, ''); vkt[c] = (vkt[c] ?? 0) + a.volVeh[i] * l.lengthM / 1000; km[c] = (km[c] ?? 0) + l.lengthM / 1000; });
+        const ob = evaluate(b, h, trips, iters);
+        let sel: unknown = null;
+        if (b.rec.kind === 'count' && b.rec.count) {
+          // Parts of the trips crossing the counted section (by OD node pair; plan.trips and snapped trips share order before filtering)
+          const ways = new Set(b.rec.count.ways);
+          const set = new Set<number>(); a.links.forEach((l, i) => { const w = wayOf(l.id); if (w !== null && ways.has(w)) set.add(i); });
+          const sl = selectLink(a, set);
+          const partOf = new Map<string, Record<string, number>>();
+          for (const x of trips as (MicroDemandTrip & { part?: string })[]) { const k = x.fromNodeId + '>' + x.toNodeId; const m = partOf.get(k) ?? partOf.set(k, {}).get(k)!; m[x.part ?? '?'] = (m[x.part ?? '?'] ?? 0) + x.vehiclesPerHour; }
+          const byPart: Record<string, number> = {};
+          for (const { od, veh } of sl.byOd) { const o = a.ods[od]; const m = partOf.get(a.nodes[o.from] + '>' + a.nodes[o.to]) ?? { '?': 1 }; const s = Object.values(m).reduce((x, y) => x + y, 0); for (const [p, v] of Object.entries(m)) byPart[p] = (byPart[p] ?? 0) + veh * v / s; }
+          // Section links: flow, capacity, free speed, final time ratio
+          const linksInfo = [...set].map(i => ({ id: a.links[i].id, hw: hwOf(a.links[i].roadId), vph: Math.round(a.volVeh[i]), pcu: Math.round(a.volPcu[i]), cap: Math.round(a.links[i].capacityPcu), ff: Math.round(a.links[i].freeSpeedKmh), tr: +(a.timeS[i] / a.links[i].t0).toFixed(2) }));
+          sel = { byPart, links: linksInfo };
+        }
+        const totVkt = Object.values(vkt).reduce((x, y) => x + y, 0);
+        const rd = (globalThis as unknown as { __routeDiag?: unknown[] }).__routeDiag; (globalThis as unknown as { __routeDiag?: unknown[] }).__routeDiag = undefined;
+        log({ diag: `${b.rec.id}@${h}`, route: rd ?? null, split: b.rec.split, kind: b.rec.kind, scale, betaMult, obs: ob, vph: Math.round(t.vph * scale), comp: t.comp, vkt: Object.fromEntries(Object.entries(vkt).map(([k, v]) => [k, Math.round(v)])), km: Object.fromEntries(Object.entries(km).map(([k, v]) => [k, Math.round(v)])), totVkt: Math.round(totVkt), meanKm: +(totVkt / Math.max(1, trips.reduce((s, x) => s + x.vehiclesPerHour, 0))).toFixed(2), unrouted: Math.round(a.unroutedVeh), gap: a.relativeGap, sel });
+      }
+    } else if (mode === 'screen') {
+      // Candidate sets (P14_SETS) scored on the CALIBRATION records only (the hold-out is never evaluated here)
+      const sets = JSON.parse(fs.readFileSync(process.env.P14_SETS!, 'utf8')) as CandidateSet[];
+      const cal = (b: Built) => b.rec.split === 'calibration';
+      for (const s of sets) {
+        CURRENT = s;
+        const t0 = Date.now();
+        const { obs } = evalAll(s.scale, s.betaMult, cal);
+        const sc = scoreProjectCheck(obs);
+        log({ screen: s, J: sc.loss, cal: sc.calibration, obs, ms: Date.now() - t0 });
       }
     } else if (mode === 'tune') {
       // Grid over the two demand parameters on the CALIBRATION records only (the hold-out is never evaluated here)

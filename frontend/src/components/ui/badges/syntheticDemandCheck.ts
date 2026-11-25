@@ -7,8 +7,8 @@ import { P14_SYNTHETIC_RECORD } from '../../../engine/calibration/syntheticDeman
  * the demand is shown: demo data from assumptions and web sources, never measured, never mixed with official or
  * estimated data.
  */
-export const SYNTHETIC_DEMAND_NAME = 'Synthetic land-use demand';
-export const SYNTHETIC_DEMAND_NOTE = 'Label: synthetic. A 4-step demand model (trip generation, gravity distribution, mode split, hourly profiles) run on synthetic land use: every OSM building given residents and jobs reconciled to the CMP-2024 zone totals. Demo data from assumptions and web sources; not measured and not for decisions. Trips start and end at the area\'s buildings; traffic from beyond enters where its city route crosses the area\'s edge.';
+export const SYNTHETIC_DEMAND_NAME = 'Synthetic demo model';
+export const SYNTHETIC_DEMAND_NOTE = 'Label: synthetic. A 4-step demand model (trip generation, gravity distribution with trip lengths by jurisdiction from CMP-2024, mode split, hourly profiles, and highway traffic from the CMP-2024 outer-cordon counts) run on synthetic land use: every OSM building given residents and jobs reconciled to the CMP-2024 zone totals; it runs on the Indian urban road supply model (Indo-HCM speeds, capacities and junction delays) with the parameters fitted to the calibration records. Demo data from assumptions and web sources; not measured and not for decisions. Trips start and end at the area\'s buildings; traffic from beyond enters where its city route crosses the area\'s edge.';
 
 const pct = (x: number | null) => (x === null ? 'n/a' : `${x >= 0 ? '+' : '−'}${Math.abs(x * 100).toFixed(1)}%`);
 
@@ -22,10 +22,12 @@ export function demandProjectScore(synthetic: boolean, supply: 'default' | 'tune
 export function syntheticDemandBannerLine(synthetic: boolean, supply: 'default' | 'tuned'): string | null {
   if (!synthetic) return null;
   const s = demandProjectScore(true, supply);
-  const head = `Demand: ${SYNTHETIC_DEMAND_NAME.toLowerCase()} (label synthetic: demo data, not measured)`;
+  const head = `Model: ${SYNTHETIC_DEMAND_NAME.toLowerCase()} (label synthetic: synthetic demand on the Indian urban road supply model; demo data, not measured)`;
   if (!s) return `${head}. Not checked against the estimated data${supply === 'tuned' ? ' with the tuned parameters' : ''} yet: treat every number as unchecked.`;
   const h = s.holdout;
-  return `${head}. Project check with it, hold-out: journey times ${h.jt.ok}/${h.jt.n} within 15%, published counts ${h.counts.gehOk}/${h.counts.n} within GEH 5, river crossings ${pct(h.river.pct)}: ${s.pass ? 'passes' : 'fails'}.`;
+  const o = P14_SYNTHETIC_RECORD?.official;
+  const off = o ? ` Official-count check with it: ${o.gehAll}/${o.n} sites within GEH 5, river screen line ${pct(o.riverPct)}.` : '';
+  return `${head}. Project check with it, hold-out: journey times ${h.jt.ok}/${h.jt.n} within 15%, published counts ${h.counts.gehOk}/${h.counts.n} within GEH 5, river crossings ${pct(h.river.pct)}: ${s.pass ? 'passes' : 'fails'}.${off}`;
 }
 
 export const SYNTHETIC_DEMAND_CHECK = {

@@ -45,7 +45,8 @@ import { fetchDiurnalProfile, hourFactor, COUNT_HOURS, type DiurnalProfile, type
 import { compileAreaDemand, fetchCalibratedEdgeFlows, type CalibratedEdgeFlows } from './AreaDemand';
 import { matchPlanToEstimates } from './AreaDemandMatch';
 import { SyntheticDemandSource } from '../demand/syntheticDemandSource';
-import { SYNTHETIC_DEMAND_DEFAULT_ON, SYNTHETIC_DECISION, SYNTHETIC_PARAMS } from '../calibration/syntheticDemandDecision';
+import { SYNTHETIC_DEMAND_DEFAULT_ON, SYNTHETIC_DECISION, SYNTHETIC_PARAMS, SYNTHETIC_DATASET_ID } from '../calibration/syntheticDemandDecision';
+import { DEFAULT_SUPPLY } from './supplyParams';
 import { roadSection, type RoadSection } from './roadSection';
 import { startAnalysisJob, type RunningAnalysis } from './analysisRunner';
 import { DEFAULT_ANALYSIS, CORRIDOR_RANGE_M, type AnalysisJob, type AnalysisOutput } from './analysisJob';
@@ -473,7 +474,7 @@ export class SimulationMode {
     calibration: EMPTY_CALIBRATION,
     supplySet: TUNED_SUPPLY_DEFAULT_ON && TUNED_SUPPLY ? 'tuned' : 'default',
     demandModel: { model: SYNTHETIC_DEMAND_DEFAULT_ON ? 'synthetic' : 'area-estimate', status: 'off', defaultOn: SYNTHETIC_DEMAND_DEFAULT_ON, why: SYNTHETIC_DECISION.reason, error: null },
-    supplyModel: SUPPLY_MODEL_DEFAULT,
+    supplyModel: SYNTHETIC_DEMAND_DEFAULT_ON ? SYNTHETIC_PARAMS.supplyModel : SUPPLY_MODEL_DEFAULT,
     timeOfDay: { status: 'idle', error: null, profile: null, hour: COUNT_HOURS.AM, day: 'weekday', countPeak: 'PM', factor: 1 },
     section: null,
     corridor: null,
@@ -1328,7 +1329,7 @@ export class SimulationMode {
     if (this.state.area) { this.analysisStale = true; this.scheduleAnalysis(); }
   }
   /** p14: the supply model of the area assignment (supplyConfig.ts). SUPPLY_MODEL_DEFAULT decides the default. */
-  public supplyModel: SupplyModel = SUPPLY_MODEL_DEFAULT;
+  public supplyModel: SupplyModel = SYNTHETIC_DEMAND_DEFAULT_ON ? SYNTHETIC_PARAMS.supplyModel : SUPPLY_MODEL_DEFAULT;
   /** Switches the supply model: a saved baseline made with the other model can no longer be compared. */
   public setSupplyModel(model: SupplyModel) {
     if (this.supplyModel === model) return;
@@ -1343,14 +1344,18 @@ export class SimulationMode {
   }
   /** The supply set an analysis uses now (null: the defaults). */
   public activeSupply(): SupplyParams | null {
+    // p14: the synthetic demo model runs with the supply parameters it was evaluated with (the p13 tuned set is not combined with it)
+    if (this.useSyntheticDemand) return SYNTHETIC_PARAMS.supply ? { ...DEFAULT_SUPPLY, ...SYNTHETIC_PARAMS.supply } : null;
     return this.useTunedSupply ? TUNED_SUPPLY : null;
   }
   /** p14: the SYNTHETIC land-use demand (demand/syntheticDemand.ts): on by default only when the recorded hold-out check passed. */
   public useSyntheticDemand = SYNTHETIC_DEMAND_DEFAULT_ON;
-  private synthetic = new SyntheticDemandSource();
+  private synthetic = new SyntheticDemandSource(SYNTHETIC_DATASET_ID);
   /** Switches the demand between the area estimate and the synthetic demand: a saved baseline made with the other can no longer be compared. */
   public setSyntheticDemand(on: boolean) {
     if (this.useSyntheticDemand === on) return;
+    // The synthetic demo model is the demand AND the supply model it was evaluated with (p14), as one switch
+    this.setSupplyModel(on ? SYNTHETIC_PARAMS.supplyModel : SUPPLY_MODEL_DEFAULT);
     this.useSyntheticDemand = on;
     this.planCache = null;
     this.invalidateComparison(STUDY_CHANGED.demand);
@@ -1469,6 +1474,7 @@ export class SimulationMode {
     const corridor = this.state.corridor ?? area;
     return { area, corridor, roads: new Map(structuredClone(this.getRoads()).map(r => [r.id, r])), options: this.simOptions(), supply: this.activeSupply(),
       supplyModel: this.supplyModel, buildings: this.supplyModel === 'p14' ? this.buildingPoints : undefined, plan: structuredClone(plan), section,
+      ...(this.useSyntheticDemand && SYNTHETIC_PARAMS.localCostFactor ? { localCostFactor: SYNTHETIC_PARAMS.localCostFactor } : {}),
       hourFactor: o.hourFactor ?? this.state.timeOfDay.factor, seeds: o.seeds ?? this.analysisSeeds, warmupS: DEFAULT_ANALYSIS.warmupS, measureS,
       countJunctions: ds ? junctionsIn(ds, corridor.bounds) : undefined };
   }

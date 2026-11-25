@@ -2,6 +2,7 @@ import { scoreProjectCheck, type ProjectScore } from './projectCheck';
 import { officialNotWorse, type OfficialCheckNumbers } from './tunedSupply';
 import { P13_RECORD } from './projectValidationRecord';
 import { P14_SYNTHETIC_RECORD } from './syntheticDemandRecord';
+import { DEFAULT_SYNTHETIC_DEMAND } from '../demand/syntheticDemand';
 
 /**
  * p14: whether the SYNTHETIC land-use demand (demand/syntheticDemand.ts) replaces the area estimate by default.
@@ -21,5 +22,8 @@ export function decideSyntheticDefault(project: ProjectScore | null, base: Offic
 export const PROJECT_SCORE_SYNTHETIC: ProjectScore | null = P14_SYNTHETIC_RECORD ? scoreProjectCheck(P14_SYNTHETIC_RECORD.obs) : null;
 export const SYNTHETIC_DECISION = decideSyntheticDefault(PROJECT_SCORE_SYNTHETIC, P13_RECORD.officialDefault, P14_SYNTHETIC_RECORD?.official ?? null);
 export const SYNTHETIC_DEMAND_DEFAULT_ON = SYNTHETIC_DECISION.on;
-/** The synthetic demand's calibration parameters as recorded (scale 1, beta as built when nothing was tuned). */
-export const SYNTHETIC_PARAMS = P14_SYNTHETIC_RECORD?.params ?? { scale: 1, betaMult: 1 };
+/** The synthetic demo model's parameters as recorded (as built, on the p14 supply model, when nothing was recorded). */
+export const SYNTHETIC_PARAMS: Required<Pick<NonNullable<typeof P14_SYNTHETIC_RECORD>['params'], 'scale' | 'betaMult' | 'supplyModel'>> & NonNullable<typeof P14_SYNTHETIC_RECORD>['params'] =
+  { supplyModel: 'p14', ...(P14_SYNTHETIC_RECORD?.params ?? { scale: 1, betaMult: 1 }) };
+/** The synthetic city model the demo model loads (the recorded run's dataset). */
+export const SYNTHETIC_DATASET_ID = P14_SYNTHETIC_RECORD?.datasetId ?? DEFAULT_SYNTHETIC_DEMAND;

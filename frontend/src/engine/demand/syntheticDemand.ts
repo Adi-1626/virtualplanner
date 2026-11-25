@@ -26,10 +26,21 @@ import { reachability } from '../simulation/AreaDemand';
 import { osmRoadClass } from '../simulation/networkCorrections';
 
 export const SYNTHETIC_LABEL = 'synthetic' as const;
-export const DEFAULT_SYNTHETIC_DEMAND = 'pune_synthetic_demand_v1';
+/** v2: beta by jurisdiction (CMP-2024 Table 2-38) and the outer-cordon traffic (DEMAND_P14.md §4); v1 stays installed for reproduction. */
+export const DEFAULT_SYNTHETIC_DEMAND = 'pune_synthetic_demand_v2';
 
-export type Purpose = 'HBW' | 'HBE' | 'HBO' | 'NHB' | 'FRT';
-export const PURPOSES: readonly Purpose[] = ['HBW', 'HBE', 'HBO', 'NHB', 'FRT'];
+/**
+ * HBW..NHB person trips, FRT freight vehicle trips; v2 assets add the outer cordon (CMP-2024 Table 2-44): EXT external-
+ * internal vehicle trips (factored, production-constrained from the cordon stations) and THR external-external through
+ * vehicle trips (a fixed station-pair matrix, `fixedDaily`).
+ */
+export type Purpose = 'HBW' | 'HBE' | 'HBO' | 'NHB' | 'FRT' | 'EXT' | 'THR';
+export const PURPOSES: readonly Purpose[] = ['HBW', 'HBE', 'HBO', 'NHB', 'FRT', 'EXT', 'THR'];
+/** Purposes held in factored gravity form (a v1 asset has no EXT). */
+type GravityPurpose = Exclude<Purpose, 'THR'>;
+const GRAVITY_PURPOSES: readonly GravityPurpose[] = ['HBW', 'HBE', 'HBO', 'NHB', 'FRT', 'EXT'];
+/** Purposes whose cells are vehicle trips already (split by `kindShares`, or all trucks for FRT). */
+const VEHICLE_PURPOSES = new Set<Purpose>(['FRT', 'EXT', 'THR']);
 export type EndAttr = 'res' | 'jobs' | 'svc' | 'seats' | 'ind';
 const END_ATTRS: readonly EndAttr[] = ['res', 'jobs', 'svc', 'seats', 'ind'];
 const MODES = ['walk', 'cycle', 'two_wheeler', 'auto', 'car', 'bus', 'metro'] as const;
@@ -38,22 +49,27 @@ type Mode = (typeof MODES)[number];
 export const ROAD_KINDS = ['two_wheeler', 'car', 'auto', 'bus'] as const;
 type RoadKind = (typeof ROAD_KINDS)[number];
 
-export interface SyntheticZone { id: string; name: string; kind: 'internal' | 'external'; lon: number; lat: number; juris: string; res: number; jobs: number; svc: number; seats: number; ind: number }
+export interface SyntheticZone { id: string; name: string; kind: 'internal' | 'external' | 'cordon'; lon: number; lat: number; juris: string; res: number; jobs: number; svc: number; seats: number; ind: number }
 type Coefs = Partial<Record<EndAttr, number>>;
 
 /** The JSON asset as served (backend/observed/synthetic_demand.py). */
 export interface SyntheticDemandDoc {
   schema: string; id: string; label: string; status: string; labelText: string; built: string; baseYear: number;
   zones: SyntheticZone[];
-  endWeights: Record<Purpose, { P: Coefs; A: Coefs }>;
+  endWeights: Partial<Record<Purpose, { P: Coefs; A: Coefs }>>;
   impedance: { n: number; timeS: string; distDam: string };
-  gravity: Record<Purpose, { constraint?: 'doubly' | 'production'; alpha: number; beta: number; a: string; b: string; trips: number; targetMeanKm?: number; modelMeanKm?: number }>;
-  productions: Record<Purpose, string>;
-  attractions: Record<Purpose, string>;
+  /** betaZ (v2): beta per production zone (CMP-2024 Table 2-38 trip length by jurisdiction); absent = beta everywhere */
+  gravity: Partial<Record<GravityPurpose, { constraint?: 'doubly' | 'production'; alpha: number; beta: number; betaZ?: string; a: string; b: string; trips: number; targetMeanKm?: number; modelMeanKm?: number }>>;
+  productions: Partial<Record<Purpose, string>>;
+  attractions: Partial<Record<Purpose, string>>;
+  /** v2: daily directed vehicle trips [from zone, to zone, vehicles] of purposes held as a fixed matrix (THR). */
+  fixedDaily?: Partial<Record<Purpose, [number, number, number][]>>;
+  /** v2: vehicle-kind shares of EXT / THR vehicle trips (CMP-2024 Tables 3-4 / 3-7 outer cordon mix). */
+  kindShares?: Partial<Record<Purpose, Partial<Record<VehicleKind, number>>>>;
   modeSplit: { params: Record<string, { weight: Record<Mode, number>; lenKm: Record<Mode, number> }> };
   occupancy: Record<RoadKind, number>;
   pcu: Record<string, number>;
-  hourly: Record<Purpose, { out: number[]; ret: number[] }>;
+  hourly: Partial<Record<Purpose, { out: number[]; ret: number[] }>>;
   skeleton: { n: number; lon: string; lat: string; from: string; to: string; timeDs: string; cls: string; classes: string[]; connectors: [number, number][][] };
   checks?: { hourlyVehicleTrips?: number[]; hourlyPcu?: number[] };
 }
@@ -61,12 +77,14 @@ export interface SyntheticDemandDoc {
 export interface SyntheticCity {
   id: string; label: typeof SYNTHETIC_LABEL; labelText: string; n: number; zones: SyntheticZone[];
   timeS: Uint16Array; distDam: Uint16Array;
-  gravity: Record<Purpose, { constraint: 'doubly' | 'production'; alpha: number; beta: number; a: Float64Array; b: Float64Array }>;
-  P: Record<Purpose, Float64Array>; A: Record<Purpose, Float64Array>;
-  endWeights: SyntheticDemandDoc['endWeights'];
+  gravity: Partial<Record<GravityPurpose, { constraint: 'doubly' | 'production'; alpha: number; beta: number; betaZ: Float64Array | null; a: Float64Array; b: Float64Array }>>;
+  P: Partial<Record<Purpose, Float64Array>>; A: Partial<Record<Purpose, Float64Array>>;
+  endWeights: Partial<Record<Purpose, { P: Coefs; A: Coefs }>>;
+  fixed: Partial<Record<Purpose, [number, number, number][]>>;
+  kindShares: Partial<Record<Purpose, Partial<Record<VehicleKind, number>>>>;
   mode: SyntheticDemandDoc['modeSplit']['params'];
   occupancy: Record<RoadKind, number>;
-  hourly: Record<Purpose, { out: number[]; ret: number[] }>;
+  hourly: Partial<Record<Purpose, { out: number[]; ret: number[] }>>;
   skeleton: Skeleton;
   /** Road-vehicle trips per person trip by kind for each OD cell (from the mode split and occupancy), built on first use. */
   vehPerPerson?: Float32Array;
@@ -105,12 +123,15 @@ export function decodeSyntheticDemand(doc: SyntheticDemandDoc): SyntheticCity {
   const time = new Float64Array(tds.length);
   for (let e = 0; e < tds.length; e++) time[e] = tds[e] / 10;
   const lon = Float64Array.from(i32(sk.lon), v => v / 1e6), lat = Float64Array.from(i32(sk.lat), v => v / 1e6);
-  const rec = <T,>(f: (p: Purpose) => T) => Object.fromEntries(PURPOSES.map(p => [p, f(p)])) as Record<Purpose, T>;
+  const gp = GRAVITY_PURPOSES.filter(p => doc.gravity[p]);
+  const rec = <T,>(ps: readonly Purpose[], f: (p: Purpose) => T) => Object.fromEntries(ps.map(p => [p, f(p)])) as Partial<Record<Purpose, T>>;
+  const withEnds = PURPOSES.filter(p => doc.productions[p]);
   return {
     id: doc.id, label: SYNTHETIC_LABEL, labelText: doc.labelText, n, zones: doc.zones,
     timeS: u16(doc.impedance.timeS), distDam: u16(doc.impedance.distDam),
-    gravity: rec(p => ({ constraint: doc.gravity[p].constraint ?? 'doubly', alpha: doc.gravity[p].alpha, beta: doc.gravity[p].beta, a: f64(doc.gravity[p].a), b: f64(doc.gravity[p].b) })),
-    P: rec(p => f64(doc.productions[p])), A: rec(p => f64(doc.attractions[p])),
+    gravity: Object.fromEntries(gp.map(p => { const g = doc.gravity[p]!; return [p, { constraint: g.constraint ?? 'doubly', alpha: g.alpha, beta: g.beta, betaZ: g.betaZ ? f64(g.betaZ) : null, a: f64(g.a), b: f64(g.b) }]; })),
+    P: rec(withEnds, p => f64(doc.productions[p]!)), A: rec(withEnds, p => f64(doc.attractions[p]!)),
+    fixed: doc.fixedDaily ?? {}, kindShares: doc.kindShares ?? {},
     endWeights: doc.endWeights, mode: doc.modeSplit.params, occupancy: doc.occupancy, hourly: doc.hourly,
     skeleton: { n: sk.n, lon, lat, from, to, time, cls: bytes(sk.cls), classes: sk.classes, outStart: out.start, outEdge: out.edge, inStart: inn.start, inEdge: inn.edge, connectors: sk.connectors },
   };
@@ -121,8 +142,9 @@ export const deterrence = (tMin: number, alpha: number, beta: number) => { const
 
 /** Daily trips of one OD cell (person trips production -> attraction; FRT: truck trips). */
 export function odCell(city: SyntheticCity, p: Purpose, i: number, j: number): number {
-  const g = city.gravity[p];
-  return g.a[i] * g.b[j] * deterrence(city.timeS[i * city.n + j] / 60, g.alpha, g.beta);
+  const g = city.gravity[p as GravityPurpose];
+  if (!g) return 0;
+  return g.a[i] * g.b[j] * deterrence(city.timeS[i * city.n + j] / 60, g.alpha, g.betaZ ? g.betaZ[i] : g.beta);
 }
 
 /**
@@ -133,16 +155,19 @@ export function rebalance(city: SyntheticCity, betaMult: number, iterations = 60
   if (betaMult === 1) return city;
   const n = city.n;
   const gravity = { ...city.gravity };
-  for (const p of PURPOSES) {
-    const g = city.gravity[p], beta = g.beta * betaMult;
+  for (const p of GRAVITY_PURPOSES) {
+    // The outer-cordon traffic (EXT) is anchored to the cordon counts, not a calibration parameter
+    const g = city.gravity[p];
+    if (!g || p === 'EXT') continue;
+    const beta = g.beta * betaMult, betaZ = g.betaZ ? g.betaZ.map(x => x * betaMult) : null;
     const F = new Float64Array(n * n);
-    for (let k = 0; k < n * n; k++) F[k] = deterrence(city.timeS[k] / 60, g.alpha, beta);
-    const Pv = city.P[p], Av = city.A[p];
+    for (let k = 0; k < n * n; k++) F[k] = deterrence(city.timeS[k] / 60, g.alpha, betaZ ? betaZ[Math.floor(k / n)] : beta);
+    const Pv = city.P[p]!, Av = city.A[p]!;
     if (g.constraint === 'production') {
       // Production-constrained (education): T_ij = P_i A_j F_ij / sum_k A_k F_ik
       const a = new Float64Array(n);
       for (let i = 0; i < n; i++) { let s = 0; for (let j = 0; j < n; j++) s += F[i * n + j] * Av[j]; a[i] = Pv[i] / Math.max(1e-30, s); }
-      gravity[p] = { constraint: g.constraint, alpha: g.alpha, beta, a, b: Float64Array.from(Av) };
+      gravity[p] = { constraint: g.constraint, alpha: g.alpha, beta, betaZ, a, b: Float64Array.from(Av) };
       continue;
     }
     let a = new Float64Array(n).fill(1), b = new Float64Array(n).fill(1);
@@ -154,7 +179,7 @@ export function rebalance(city: SyntheticCity, betaMult: number, iterations = 60
       for (let j = 0; j < n; j++) { let s = 0; for (let i = 0; i < n; i++) s += a[i] * Pv[i] * F[i * n + j]; nb[j] = 1 / Math.max(1e-30, s); }
       b = nb;
     }
-    gravity[p] = { constraint: g.constraint, alpha: g.alpha, beta, a: a.map((x, i) => x * Pv[i]), b: b.map((x, j) => x * Av[j]) };
+    gravity[p] = { constraint: g.constraint, alpha: g.alpha, beta, betaZ, a: a.map((x, i) => x * Pv[i]), b: b.map((x, j) => x * Av[j]) };
   }
   return { ...city, gravity, vehPerPerson: undefined };
 }
@@ -189,14 +214,26 @@ function vehPerPerson(city: SyntheticCity): Float32Array {
 export function forEachHourlyFlow(city: SyntheticCity, hour: number, cb: (from: number, to: number, p: Purpose, oEnd: 'P' | 'A', dEnd: 'P' | 'A', kind: VehicleKind, vph: number) => void, minVph = 1e-4) {
   const h = ((Math.floor(hour) % 24) + 24) % 24, n = city.n, K = ROAD_KINDS.length;
   const vpp = vehPerPerson(city);
+  // Fixed matrices (THR): daily directed vehicle trips x the hour's share of the day, split by kind
   for (const p of PURPOSES) {
-    const out = 0.5 * city.hourly[p].out[h], ret = 0.5 * city.hourly[p].ret[h];
+    const list = city.fixed[p], hp = city.hourly[p];
+    if (!list || !hp) continue;
+    const share = hp.out[h];
+    const ks = Object.entries(city.kindShares[p] ?? { car: 1 }) as [VehicleKind, number][];
+    for (const [i, j, daily] of list) for (const [k, s] of ks) { const v = daily * share * s; if (v >= minVph) cb(i, j, p, 'P', 'A', k, v); }
+  }
+  for (const p of GRAVITY_PURPOSES) {
+    if (!city.gravity[p] || !city.hourly[p]) continue;
+    const out = 0.5 * city.hourly[p]!.out[h], ret = 0.5 * city.hourly[p]!.ret[h];
+    const ks = VEHICLE_PURPOSES.has(p) ? (p === 'FRT' && !city.kindShares.FRT ? [['truck', 1]] as [VehicleKind, number][] : Object.entries(city.kindShares[p] ?? { truck: 1 }) as [VehicleKind, number][]) : null;
     for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
       const T = odCell(city, p, i, j);
       if (!(T > 0)) continue;
-      if (p === 'FRT') {
-        if (T * out >= minVph) cb(i, j, p, 'P', 'A', 'truck', T * out);
-        if (T * ret >= minVph) cb(j, i, p, 'A', 'P', 'truck', T * ret);
+      if (ks) {
+        for (const [k, s] of ks) {
+          if (T * out * s >= minVph) cb(i, j, p, 'P', 'A', k, T * out * s);
+          if (T * ret * s >= minVph) cb(j, i, p, 'A', 'P', k, T * ret * s);
+        }
         continue;
       }
       for (let x = 0; x < K; x++) {
@@ -520,7 +557,7 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
   const wOf = (attrs: Record<EndAttr, number>, c: Coefs) => END_ATTRS.reduce((s, a) => s + (c[a] ?? 0) * attrs[a], 0);
   const sig = (c: Coefs): EndType => END_ATTRS.filter(a => c[a]).map(a => `${a}:${c[a]}`).join(',');
   const endTypes = new Map<EndType, Coefs>();
-  for (const p of PURPOSES) for (const side of ['P', 'A'] as const) endTypes.set(sig(city.endWeights[p][side]), city.endWeights[p][side]);
+  for (const p of PURPOSES) for (const side of ['P', 'A'] as const) { const c = city.endWeights[p]?.[side]; if (c) endTypes.set(sig(c), c); }
   // Share of each zone's end weight inside the area, and the cells that carry it
   const share = new Map<string, number>(); // `${zone}|${endType}`
   const cellShares = new Map<string, { cell: Cell; s: number }[]>();
@@ -540,7 +577,7 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
   const n = city.n;
   const II = new Map<string, number>(), IE = new Map<string, number>(), EI = new Map<string, number>(), EE = new Map<string, number>();
   const add = (m: Map<string, number>, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v);
-  const etOf = (p: Purpose, side: 'P' | 'A') => sig(city.endWeights[p][side]);
+  const etOf = (p: Purpose, side: 'P' | 'A') => sig(city.endWeights[p]?.[side] ?? {});
   const through = opts.through !== false;
   forEachHourlyFlow(city, opts.hour, (o, d, p, oEnd, dEnd, kind, vph) => {
     const eo = etOf(p, oEnd), ed = etOf(p, dEnd);

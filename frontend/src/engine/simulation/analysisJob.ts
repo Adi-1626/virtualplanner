@@ -37,6 +37,8 @@ export interface AnalysisJob {
   supply?: SupplyParams | null;
   /** p14: the Indian urban supply model for the area assignment and the corridor's desired speeds (supplyConfig.ts); absent = 'p13'. */
   supplyModel?: SupplyModel;
+  /** p14 synthetic demo model: local-road route-choice factor (staticAssignment AssignmentOptions.localCostFactor). */
+  localCostFactor?: number;
   /** p14: OSM building centroids of the area for the side-friction inference (null: access points only). */
   buildings?: readonly BuildingPoint[] | null;
   plan: DemandPlan;
@@ -82,7 +84,7 @@ export async function runAnalysisJob(job: AnalysisJob, onProgress?: (share: numb
   const ds = job.supply?.demandScale ?? 1;
   const trips = snapDemandPlan(job.plan, job.area.network, 250, segs).map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * job.hourFactor * ds }));
   const assignment = assignTraffic(job.area, job.roads, trips, { signalPoints: job.options.signalPoints, junctionEdits: job.options.junctionEdits, supply: job.supply ?? undefined,
-    supplyModel: job.supplyModel, buildings: job.buildings });
+    supplyModel: job.supplyModel, buildings: job.buildings, localCostFactor: job.localCostFactor });
   // p14: the corridor's vehicles take the same car free-flow speeds as their desired speeds
   const desiredSpeedKmh = assignment.supplyModel === 'p14' ? Object.fromEntries(assignment.links.filter(l => l.carFfsKmh).map(l => [l.id, l.carFfsKmh!])) : undefined;
   // p14: junctions the assignment takes as signalised with no mapped signal are signalised in the corridor too (with mapped

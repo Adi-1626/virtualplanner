@@ -137,7 +137,16 @@ export interface AssignmentOptions {
   supplyModel?: SupplyModel;
   /** p14: OSM building centroids for the side-friction inference (indianSupply.frictionByRoad); absent = access points only. */
   buildings?: readonly BuildingPoint[] | null;
+  /**
+   * p14 (DEMAND_P14.md §4): perceived-cost factor on residential, living_street and service roads in ROUTE CHOICE only
+   * (a link-type generalised-cost factor, as SATURN / VISUM link types carry): through routes prefer the road hierarchy,
+   * trips that start or end on such a street still use it. Reported link times stay real times. Absent or 1 = off.
+   */
+  localCostFactor?: number;
 }
+
+/** OSM classes the local-road perceived-cost factor applies to. */
+export const LOCAL_ACCESS_HIGHWAYS: ReadonlySet<string> = new Set(['residential', 'living_street', 'service']);
 
 const M_PER_DEG_LAT = 111320;
 const distM = (a: readonly number[], b: readonly number[]) =>
@@ -517,7 +526,11 @@ export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, Drivab
   const linkCost = p14
     ? (i: number, v: number) => base[i] * p14TimeRatio(v / Math.max(1, cap[i])) * s0 + junctionDelay(i, v)
     : (i: number, v: number) => bprTime(base[i], v, cap[i], alpha, beta);
-  const setCosts = (flow: Float64Array) => { for (let i = 0; i < L; i++) cost[i] = linkCost(i, flow[i]); };
+  // Route choice runs on perceived cost (real time x the local-road factor); results report real times
+  const lf = o.localCostFactor && o.localCostFactor !== 1 ? o.localCostFactor : 1;
+  const perc = new Float64Array(L).fill(1);
+  if (lf !== 1) links.forEach((l, i) => { const r = roads.get(l.roadId); const hw = r?.type === 'road' ? r.osmProvenance?.originalTags?.highway ?? '' : ''; if (LOCAL_ACCESS_HIGHWAYS.has(hw)) perc[i] = lf; });
+  const setCosts = (flow: Float64Array) => { for (let i = 0; i < L; i++) cost[i] = linkCost(i, flow[i]) * perc[i]; };
 
   // Initial all-or-nothing on free-flow costs
   updateJunctions(x);
@@ -542,7 +555,7 @@ export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, Drivab
     for (let s = 0; s < 24; s++) {
       const m = (lo + hi) / 2;
       let g = 0;
-      for (let i = 0; i < L; i++) { const d = y[i] - x[i]; if (d !== 0) g += d * linkCost(i, x[i] + m * d); }
+      for (let i = 0; i < L; i++) { const d = y[i] - x[i]; if (d !== 0) g += d * linkCost(i, x[i] + m * d) * perc[i]; }
       if (g > 0) hi = m; else lo = m;
     }
     const lambda = (lo + hi) / 2;
@@ -560,7 +573,7 @@ export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, Drivab
   if (jDelay) for (let i = 0; i < L; i++) jDelay[i] = junctionDelay(i, x[i]);
   ods.forEach((od, oi) => { if (!reachable[oi]) unroutedVeh += od.veh; });
   return {
-    nodes, nodeCoords: net.nodeCoords, links, volPcu: x, volVeh: xv, timeS: Float64Array.from(cost), ods,
+    nodes, nodeCoords: net.nodeCoords, links, volPcu: x, volVeh: xv, timeS: lf === 1 ? Float64Array.from(cost) : Float64Array.from(cost, (c, i) => c / perc[i]), ods,
     paths, odPaths: odPaths.map(m => [...m].filter(([, w]) => w > 1e-4).map(([pathId, share]) => ({ pathId, share }))),
     iterations: Math.min(it, maxIt), relativeGap: gap, gapHistory, unroutedVeh, elapsedMs: Date.now() - t0,
     supplyModel: p14 ? 'p14' : 'p13', ...(jDelay ? { junctionDelayS: jDelay, junctionCapacityPcu: jCap } : {}), ...(inferred ? { inferredSignalPoints: inferred } : {}),

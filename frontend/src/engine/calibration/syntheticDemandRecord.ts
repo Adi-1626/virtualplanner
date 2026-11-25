@@ -5,8 +5,12 @@ import type { OfficialCheckNumbers } from './tunedSupply';
 export interface SyntheticDemandRecord {
   runId: string;
   datasetId: string;
-  /** The synthetic demand's parameters as evaluated (scale and beta multiplier; tuned on the calibration records only). */
-  params: { scale: number; betaMult: number };
+  /**
+   * The synthetic demo model's parameters as evaluated (tuned on the calibration records only): demand scale and beta
+   * multiplier; p14 adds the supply model it runs with, the supply parameters changed from the defaults (SupplyParams,
+   * within SUPPLY_BOUNDS) and the local-road route-choice factor (staticAssignment localCostFactor).
+   */
+  params: { scale: number; betaMult: number; supplyModel?: 'p13' | 'p14'; supply?: { capacityFactor?: number; signalSatFactor?: number }; localCostFactor?: number };
   /** Every record of the p13 project check (same split, same criteria) with the synthetic demand. */
   obs: ProjectObs[];
   /** The official 15-site check with the synthetic demand (null: not run). */

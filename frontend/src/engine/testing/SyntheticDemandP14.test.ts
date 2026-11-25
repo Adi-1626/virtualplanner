@@ -183,3 +183,22 @@ describe.skipIf(!fs.existsSync(ASSET + 'parity_fixture.json'))('synthetic demand
     }
   }, 60000);
 });
+
+// v2 (p14 structural fixes): beta by production jurisdiction and the outer-cordon traffic (EXT factored, THR fixed matrix)
+describe.skipIf(!fs.existsSync(ASSET + 'parity_fixture_v2.json'))('synthetic demand v2: parity with the build script', () => {
+  it('zone-segmented beta, cordon cells and hourly city totals equal the build', () => {
+    const c = decodeSyntheticDemand(JSON.parse(fs.readFileSync(ASSET + 'pune_synthetic_demand_v2.json', 'utf8')));
+    const fx = JSON.parse(fs.readFileSync(ASSET + 'parity_fixture_v2.json', 'utf8')) as { cells: Record<string, number>[]; hourlyVehicleTrips: number[]; hourlyPcu: number[] };
+    expect(c.zones.some(z => z.kind === 'cordon')).toBe(true);
+    for (const cell of fx.cells) for (const p of ['HBW', 'HBE', 'HBO', 'NHB', 'FRT', 'EXT'] as const) expect(odCell(c, p, cell.i, cell.j)).toBeCloseTo(cell[p], 5);
+    const pcu = { two_wheeler: 0.75, car: 1, auto: 2, bus: 2.2, truck: 2.2 };
+    for (const h of [9, 23]) {
+      const t = cityHourTotals(c, h, pcu);
+      expect(t.veh / fx.hourlyVehicleTrips[h]).toBeCloseTo(1, 4);
+      expect(t.pcu / fx.hourlyPcu[h]).toBeCloseTo(1, 4);
+    }
+    // Re-balancing keeps the cordon traffic and the zone-segmented betas (identity at multiplier ~1)
+    const r = rebalance(c, 1 + 1e-12, 400);
+    for (const cell of fx.cells.slice(0, 10)) for (const p of ['HBW', 'EXT'] as const) expect(odCell(r, p, cell.i, cell.j)).toBeCloseTo(odCell(c, p, cell.i, cell.j), 3);
+  }, 120000);
+});

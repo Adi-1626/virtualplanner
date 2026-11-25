@@ -1,3 +1,4 @@
+import { SYNTHETIC_PARAMS } from '../calibration/syntheticDemandDecision';
 import { describe, it } from 'vitest';
 import fs from 'fs';
 import http from 'http';
@@ -192,7 +193,9 @@ describe.skipIf(!process.env.VAL24)('network-wide validation against observation
           const f = plan.provenance.synthetic ? 1 : hourFactor(profile, h, COUNT_HOURS[h < 12 ? 'AM' : 'PM'], st.timeOfDay.day);
           const ds = supplySet?.params.demandScale ?? 1;
           const trips = snapDemandPlan(plan, area.network, 250, segs).map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * f * ds }));
-          const a = assignTraffic(area, roadsMap, trips, { signalPoints: mode.mappedSignalPoints() ?? undefined, supply: supplySet?.params, supplyModel: mode.supplyModel });
+          // p14: the synthetic demo model carries its own supply parameters and local-road route-choice factor (SYNTHETIC_PARAMS)
+          const a = assignTraffic(area, roadsMap, trips, { signalPoints: mode.mappedSignalPoints() ?? undefined, supply: synthetic ? mode.activeSupply() ?? undefined : supplySet?.params, supplyModel: mode.supplyModel,
+            ...(synthetic && SYNTHETIC_PARAMS.localCostFactor ? { localCostFactor: SYNTHETIC_PARAMS.localCostFactor } : {}) });
           const byClass: Record<string, { vkm: number; vh: number; vh0: number; km: number }> = {};
           let vkm = 0, vh = 0, vh0 = 0;
           a.links.forEach((l, i) => {

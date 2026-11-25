@@ -19,9 +19,10 @@ export const SimulateContext: React.FC = () => {
   const sim = useSimulationMode();
   const setInspectorOpen = useShellStore(s => s.setInspectorOpen);
   const inspectorOpen = useShellStore(s => s.inspectorOpen);
-  const using = sim.supplySet;
-  // p14: with the synthetic demand in use the project check is the one run with it (unchecked counts as failing)
+  // p14: with the synthetic demo model in use the project check is the one run with it (unchecked counts as failing); it
+  // carries its own supply parameters, so the p13 tuned set does not apply to it
   const synthetic = sim.demandModel.model === 'synthetic';
+  const using = synthetic ? 'default' : sim.supplySet;
   const demandScore = demandProjectScore(synthetic, using);
   const projectScore = demandScore === undefined ? projectScoreFor(using) : demandScore ?? { ...projectScoreFor(using), pass: false };
   const banner = bannerText(TRAFFIC_VALIDATION.verdict === 'meets_criteria', projectScore, using);
@@ -54,13 +55,13 @@ export const SimulateContext: React.FC = () => {
       {PROJECT_CHECK.tunedAvailable && (
         <PanelSection title="Traffic parameters">
           <label className="flex items-start gap-2 text-label text-text-1">
-            <input type="checkbox" data-testid="tuned-supply-toggle" checked={using === 'tuned'} onChange={e => engineInstance.simMode.setTunedSupply(e.target.checked)} />
+            <input type="checkbox" data-testid="tuned-supply-toggle" checked={using === 'tuned'} disabled={synthetic} onChange={e => engineInstance.simMode.setTunedSupply(e.target.checked)} />
             <span>Tuned parameters (estimated): speeds, capacities and demand fitted to Google journey times and published counts.</span>
           </label>
           <p className="text-meta text-text-3 mt-1.5">{PROJECT_CHECK.tunedDecision.on ? 'On by default: ' : 'Off by default: '}{PROJECT_CHECK.tunedDecision.reason}. Changing it needs a new baseline.</p>
         </PanelSection>
       )}
-      <PanelSection title="Demand">
+      <PanelSection title="Demo model">
         <label className="flex items-start gap-2 text-label text-text-1">
           <input type="checkbox" data-testid="synthetic-demand-toggle" checked={synthetic} onChange={e => engineInstance.simMode.setSyntheticDemand(e.target.checked)} />
           <span className="flex-1">{SYNTHETIC_DEMAND_NAME} <SourceBadge source="synthetic" /></span>
@@ -68,7 +69,7 @@ export const SimulateContext: React.FC = () => {
         <p className="text-meta text-text-3 mt-1.5">{SYNTHETIC_DEMAND_NOTE}</p>
         {synthetic && sim.demandModel.status === 'loading' && <p className="text-meta text-text-2 mt-1.5" data-testid="synthetic-demand-status">Loading the synthetic demand; the area estimate runs until it is ready.</p>}
         {synthetic && sim.demandModel.status === 'none' && <p className="text-meta text-warn mt-1.5" data-testid="synthetic-demand-status">The synthetic demand is not installed here ({sim.demandModel.error ?? 'no data'}): the area estimate runs instead.</p>}
-        <p className="text-meta text-text-3 mt-1.5">{SYNTHETIC_DEMAND_CHECK.decision.on ? 'On by default: ' : 'Off by default (area estimate): '}{SYNTHETIC_DEMAND_CHECK.decision.reason}. Changing it needs a new baseline.</p>
+        <p className="text-meta text-text-3 mt-1.5" data-testid="synthetic-demand-decision">{SYNTHETIC_DEMAND_CHECK.decision.on ? 'On by default: ' : 'Off by default (area estimate, p13 roads): '}{SYNTHETIC_DEMAND_CHECK.decision.reason}. Changing it needs a new baseline.</p>
       </PanelSection>
       <PanelSection title="Data">
         <TrafficCountsNotice compact />
