@@ -8,6 +8,8 @@ import type { SupplyParams } from './supplyParams';
 import { assignTraffic, subareaDemand } from './staticAssignment';
 import { summarizeEmissions, araiAreaEstimate, type EmissionAccumulator } from '../emissions/emissions';
 import type { VehicleKind } from './TrafficMicroSim';
+import type { SupplyModel } from './supplyConfig';
+import type { BuildingPoint } from './indianSupply';
 
 /**
  * One repeatable analysis of a selected road (docs/OVERHAUL.md §9):
@@ -33,6 +35,10 @@ export interface AnalysisJob {
   options: Omit<MicroSimOptions, 'demandTrips' | 'linkCostFactors' | 'watchRoadIds' | 'watchSegmentKeys' | 'seed'> & { seed?: number };
   /** p13 tuned (estimated) supply set for the area assignment (supplyParams.ts); absent: the defaults. The micro-simulation's own speeds are not tuned. */
   supply?: SupplyParams | null;
+  /** p14: the Indian urban supply model for the area assignment and the corridor's desired speeds (supplyConfig.ts); absent = 'p13'. */
+  supplyModel?: SupplyModel;
+  /** p14: OSM building centroids of the area for the side-friction inference (null: access points only). */
+  buildings?: readonly BuildingPoint[] | null;
   plan: DemandPlan;
   section: RoadSection;
   hourFactor: number;
@@ -75,7 +81,13 @@ export async function runAnalysisJob(job: AnalysisJob, onProgress?: (share: numb
   const segs = new Set(job.area.segments.map(s => s.key));
   const ds = job.supply?.demandScale ?? 1;
   const trips = snapDemandPlan(job.plan, job.area.network, 250, segs).map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * job.hourFactor * ds }));
-  const assignment = assignTraffic(job.area, job.roads, trips, { signalPoints: job.options.signalPoints, junctionEdits: job.options.junctionEdits, supply: job.supply ?? undefined });
+  const assignment = assignTraffic(job.area, job.roads, trips, { signalPoints: job.options.signalPoints, junctionEdits: job.options.junctionEdits, supply: job.supply ?? undefined,
+    supplyModel: job.supplyModel, buildings: job.buildings });
+  // p14: the corridor's vehicles take the same car free-flow speeds as their desired speeds
+  const desiredSpeedKmh = assignment.supplyModel === 'p14' ? Object.fromEntries(assignment.links.filter(l => l.carFfsKmh).map(l => [l.id, l.carFfsKmh!])) : undefined;
+  // p14: junctions the assignment takes as signalised with no mapped signal are signalised in the corridor too (with mapped
+  // signals given; without them the micro-simulation estimates signals from the road classes itself)
+  const simSignals = assignment.inferredSignalPoints?.length && job.options.signalPoints ? [...job.options.signalPoints, ...assignment.inferredSignalPoints] : job.options.signalPoints;
   const assignmentMs = Date.now() - t0;
   await new Promise<void>(r => setTimeout(r, 0));
   if (cancelled?.()) throw new Error('cancelled');
@@ -105,7 +117,7 @@ export async function runAnalysisJob(job: AnalysisJob, onProgress?: (share: numb
   let counts: CountCheck[] = [];
   const t1 = Date.now();
   for (const seed of job.seeds) {
-    const sim = new TrafficMicroSim(job.corridor, job.roads, { ...job.options, seed, watchSegmentKeys: job.section.segmentKeys, demandTrips: microTrips });
+    const sim = new TrafficMicroSim(job.corridor, job.roads, { ...job.options, signalPoints: simSignals, seed, watchSegmentKeys: job.section.segmentKeys, demandTrips: microTrips, ...(desiredSpeedKmh ? { desiredSpeedKmh } : {}) });
     sim.setHourFactor(1);
     const layouts = job.countJunctions?.length && seed === job.seeds[0] ? sim.setCountZones(job.countJunctions.map(j => ({ id: j.id, lng: j.location.lon, lat: j.location.lat, radiusM: j.location.matched?.kind === 'roundabout' ? 70 : 60 }))) : [];
     const warm = Math.round(job.warmupS / STEP_S);

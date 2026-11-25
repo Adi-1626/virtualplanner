@@ -10,6 +10,8 @@ import { STARTUP_LOST_S } from './signalTiming';
 import { nodeKey } from './junctionGroups';
 import { entryCapacityPcu } from '../streetDesign/roundabout';
 import type { RoundaboutEffect } from '../streetDesign/network';
+import { P14, type SupplyModel, type FrictionClass } from './supplyConfig';
+import { p14LinkSupply, p14TimeRatio, SIGNAL_TO_MIDBLOCK_PCU, frictionByRoad, gapCapacityPcu, controlDelayS, roundaboutEntryPcu, inferredSignalPoints, approachRank, type BuildingPoint } from './indianSupply';
 
 /**
  * Area-wide static traffic assignment (deterministic user equilibrium).
@@ -64,6 +66,8 @@ const LANE_WIDTH_M = 3.5;
 
 /** PCU per vehicle kind in the assignment (exported read-only use; the validation harness's hypothetical PCU option swaps values in its own process). */
 export const PCU: Record<string, number> = Object.fromEntries(VEHICLE_TYPES.map(t => [t.kind, t.pcu]));
+/** p14: mid-block PCU per vehicle kind (Indo-HCM 2017 Table 5.2, supplyConfig.ts). */
+export const PCU_P14: Record<string, number> = { ...PCU, ...P14.pcuMidblock.value };
 
 export interface AssignLink {
   index: number;
@@ -84,6 +88,11 @@ export interface AssignLink {
   capacityPcu: number;
   /** On a road open only for local access (isAccessRestricted): usable at the start or end of a trip, not through. */
   restricted: boolean;
+  /** p14 only: the road's side-friction level and the car free-flow speed (km/h) before the mixed-stream share (freeSpeedKmh is the stream speed). */
+  friction?: FrictionClass;
+  carFfsKmh?: number;
+  /** p14 only: control at the junction this link enters when it has no signal: give-way from a minor road, right turn from the major road, roundabout entry. */
+  junction?: 'minor' | 'majorRight' | 'roundabout';
 }
 
 export interface AssignOd { from: number; to: number; veh: number; pcu: number; kinds: Map<VehicleKind, number> }
@@ -104,6 +113,14 @@ export interface AssignmentResult {
   gapHistory: number[];
   unroutedVeh: number;
   elapsedMs: number;
+  /** Which supply model ran (supplyConfig.ts). */
+  supplyModel: SupplyModel;
+  /** p14: delay at the unsignalised junction or roundabout each link enters (s/veh, included in timeS). */
+  junctionDelayS?: Float64Array;
+  /** p14: capacity of the junction movement each link enters (PCU/h; 0 where none), from the final conflicting flows. */
+  junctionCapacityPcu?: Float64Array;
+  /** p14: junctions taken as signalised with no mapped signal (indianSupply.inferredSignalPoints), as [lng, lat]. */
+  inferredSignalPoints?: [number, number][];
 }
 
 export interface AssignmentOptions {
@@ -116,6 +133,10 @@ export interface AssignmentOptions {
   maxMs?: number;
   /** p13 tuned (estimated) supply parameters; absent = the defaults (DEFAULT_SUPPLY), the pre-p13 behaviour. */
   supply?: Readonly<SupplyParams> | null;
+  /** p14: the Indian urban supply model (supplyConfig.ts, docs/urbanos/SUPPLY_P14.md); absent or 'p13' = the model as before. */
+  supplyModel?: SupplyModel;
+  /** p14: OSM building centroids for the side-friction inference (indianSupply.frictionByRoad); absent = access points only. */
+  buildings?: readonly BuildingPoint[] | null;
 }
 
 const M_PER_DEG_LAT = 111320;
@@ -143,7 +164,8 @@ function pointSegM(p: readonly number[], a: readonly number[], b: readonly numbe
 export const bprTime = (t0: number, x: number, c: number, alpha = BPR_ALPHA, beta = BPR_BETA) => t0 * (1 + alpha * Math.pow(Math.max(0, x) / Math.max(1, c), beta));
 
 /** The area's links as an assignment network, with free-flow times and capacities. */
-export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, signalPoints?: readonly (readonly [number, number])[], junctionEdits?: readonly JunctionEditSpec[], supply: Readonly<SupplyParams> = DEFAULT_SUPPLY) {
+export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, signalPoints?: readonly (readonly [number, number])[], junctionEdits?: readonly JunctionEditSpec[], supply: Readonly<SupplyParams> = DEFAULT_SUPPLY,
+  p14: { buildings?: readonly BuildingPoint[] | null } | null = null) {
   const included = new Set(area.segments.map(s => s.key));
   const edges = [...area.network.edges.values()].filter(e => included.has(segKey(e.id)));
   const nodeIndex = new Map<string, number>();
@@ -189,6 +211,9 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
   const approaches = new Map<string, number>();
   for (const e of edges) if (signalised.has(e.toNodeId) && !signalised.has(e.fromNodeId)) approaches.set(e.toNodeId, (approaches.get(e.toNodeId) ?? 0) + 1);
 
+  const friction = p14 ? frictionByRoad(area, roads, p14.buildings) : null;
+  // p14: Indo-HCM saturation flows are in signal PCUs (Table 6.3); the link flows are in mid-block PCUs (Table 5.2)
+  const satPcu = p14 ? SIGNAL_TO_MIDBLOCK_PCU : 1;
   const links: AssignLink[] = edges.map((e, index) => {
     const road = roads.get(e.roadId);
     const lanes = Math.max(1, e.lanes || 1);
@@ -200,8 +225,10 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
     // One-way main roads are taken to be carriageways of divided roads (OSM maps those as two one-way ways); one-way minor roads as one-way streets (assumption).
     // A two-way road or deck with a median (a drawn arterial, a divided cross-section template, a deck with a divider) is a divided carriageway pair.
     const divided = oneWay ? /^(motorway|trunk|primary|secondary)/.test(hw) : hasMedian(road);
-    const midblockPcu = midblockCapacityPcu(road, lanes, !oneWay && !divided, divided) * supply.capacityFactor;
-    const speed = Math.max(10, (e.speedLimit || 30) * supply.speedFactor[ircCategory(road)]);
+    const sup = friction ? p14LinkSupply(road, lanes, !oneWay && !divided, e.speedLimit || 30, friction.get(e.roadId)?.cls ?? 'low') : null;
+    const midblockPcu = (sup ? sup.capacityPcu : midblockCapacityPcu(road, lanes, !oneWay && !divided, divided)) * supply.capacityFactor;
+    // p14: the link's free-flow speed is the mixed stream's (car FFS x s0); its running time t0 is at that speed
+    const speed = sup ? Math.max(8, sup.streamKmh * supply.speedFactor[ircCategory(road)]) : Math.max(10, (e.speedLimit || 30) * supply.speedFactor[ircCategory(road)]);
     let stopLinePcu: number | null = null, gC: number | null = null, sigDelay = 0;
     const edited = editedAt.get(e.toNodeId);
     if (edited) {
@@ -214,14 +241,14 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
         const cyc = cycleOf(plan);
         const phasesServing = plan.phases.filter(p => p.arms.includes(arm)).length;
         gC = Math.max(0.02, Math.min(1, ratio + phasesServing * (plan.amberS - STARTUP_LOST_S) / cyc));
-        stopLinePcu = indoHcmSaturationFlow(connectedEntryLanes(edited.spec, arm, lanes) * LANE_WIDTH_M) * gC * supply.signalSatFactor;
+        stopLinePcu = indoHcmSaturationFlow(connectedEntryLanes(edited.spec, arm, lanes) * LANE_WIDTH_M) * gC * supply.signalSatFactor * satPcu;
         sigDelay = cyc * (1 - gC) ** 2 / 2;
       }
     } else if (signalised.has(e.toNodeId) && !signalised.has(e.fromNodeId)) {
       const n = Math.min(4, Math.max(2, approaches.get(e.toNodeId) ?? 2));
       const cyc = supply.cycleS;
       gC = Math.max(0.1, (cyc - n * ASSIGN_LOST_PER_PHASE_S) / cyc / n);
-      stopLinePcu = indoHcmSaturationFlow(lanes * LANE_WIDTH_M) * gC * supply.signalSatFactor;
+      stopLinePcu = indoHcmSaturationFlow(lanes * LANE_WIDTH_M) * gC * supply.signalSatFactor * satPcu;
       sigDelay = cyc * (1 - gC) ** 2 / 2;
     }
     // Roundabout entry (IRC:65 Table 9.1, Qc assumed): capacity per entry lane x entry lanes (no more than the approach has)
@@ -234,14 +261,16 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
     const mid = (road as { streetEffects?: { midblockSignals?: { point: [number, number]; gC: number; cycleS: number }[] } } | undefined)?.streetEffects?.midblockSignals;
     if (mid?.length) for (const m of mid) {
       if (!e.coordinates.some((c, i) => i > 0 && pointSegM(m.point, e.coordinates[i - 1], c) < MIDBLOCK_MATCH_M)) continue;
-      stopLinePcu = Math.min(stopLinePcu ?? Infinity, indoHcmSaturationFlow(lanes * LANE_WIDTH_M) * m.gC);
+      stopLinePcu = Math.min(stopLinePcu ?? Infinity, indoHcmSaturationFlow(lanes * LANE_WIDTH_M) * m.gC * satPcu);
       gC = Math.min(gC ?? 1, m.gC);
       sigDelay += m.cycleS * (1 - m.gC) ** 2 / 2;
     }
     const t0 = e.length / (speed / 3.6) + sigDelay;
     return { index, id: e.id, segmentKey: segKey(e.id), roadId: e.roadId, from: idx(e.fromNodeId), to: idx(e.toNodeId), lengthM: e.length, lanes,
-      t0, freeSpeedKmh: speed, midblockPcu, stopLinePcu, gC, capacityPcu: Math.min(midblockPcu, stopLinePcu ?? Infinity), restricted: isAccessRestricted(road) };
+      t0, freeSpeedKmh: speed, midblockPcu, stopLinePcu, gC, capacityPcu: Math.min(midblockPcu, stopLinePcu ?? Infinity), restricted: isAccessRestricted(road),
+      ...(sup ? { friction: sup.friction, carFfsKmh: sup.carFfsKmh } : {}) };
   });
+  const control = p14 ? junctionControlP14(area, roads, edges, links, arms, signalised, editedAt, rbAt) : null;
   // Outgoing links per node (CSR)
   const outStart = new Int32Array(nodes.length + 1);
   for (const l of links) outStart[l.from + 1]++;
@@ -251,7 +280,89 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
   for (const l of links) outLinks[fill[l.from]++] = l.index;
   // Banned turns of edited junctions, over the numbered graph
   const bans = turnBansFor(compiled, nodes, links.map(l => l.id), Int32Array.from(links, l => l.from), Int32Array.from(links, l => l.to));
-  return { nodes, nodeIndex, nodeCoords, links, outStart, outLinks, signalised, bans: bans && !bans.empty ? bans : null };
+  return { nodes, nodeIndex, nodeCoords, links, outStart, outLinks, signalised, bans: bans && !bans.empty ? bans : null, control, friction };
+}
+
+/**
+ * p14: control at junctions without a signal (docs/urbanos/SUPPLY_P14.md §3). A node where 3+ stretches meet, with no
+ * signal, no edited control and no drawn roundabout, is
+ *  - a roundabout entry when a mapped junction=roundabout ring passes it: every link entering it from outside the ring
+ *    gives way to the ring flow arriving there (IRC:65 Table 9.1, ICD from the ring's length / pi);
+ *  - else a priority junction: the approaches of the best IRC category are the major road (their right-turning share
+ *    yields to the opposing major flow), the others are minor approaches yielding to all major flow; when every approach
+ *    has the same category the junction is uncontrolled and each approach yields to the others' flow.
+ * Conflicting flows are read from the current link flows at each assignment iteration (diagonalisation: Sheffi 1985 §8.2).
+ */
+function junctionControlP14(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, edges: readonly { id: string; roadId: string; fromNodeId: string; toNodeId: string; length: number }[], links: AssignLink[],
+  arms: Map<string, Set<string>>, signalised: Set<string>, editedAt: Map<string, unknown>, rbAt: Map<string, unknown>) {
+  const L = links.length;
+  const kind = new Int8Array(L); // 0 none, 1 minor, 2 major right, 3 roundabout entry
+  const conflicts: number[][] = Array.from({ length: L }, () => []);
+  const icd = new Float64Array(L);
+  const merge = new Uint8Array(L);
+  const isRing = (roadId: string) => { const r = roads.get(roadId); return r?.type === 'road' && !!r.osmProvenance?.roundabout; };
+  // Rings: OSM roundabout ways joined at shared ends; ICD = ring length / pi
+  const ringOfRoad = new Map<string, number>(), ringLen: number[] = [];
+  {
+    const parent = new Map<string, string>();
+    const find = (a: string): string => { let p = parent.get(a) ?? a; while (p !== (parent.get(p) ?? p)) p = parent.get(p)!; parent.set(a, p); return p; };
+    const roadIds = [...new Set(edges.filter(e => isRing(e.roadId)).map(e => e.roadId))];
+    const endKey = (c: readonly number[]) => `${c[0].toFixed(6)},${c[1].toFixed(6)}`;
+    const byEnd = new Map<string, string>();
+    for (const id of roadIds) {
+      const c = roads.get(id)!.coordinates;
+      for (const p of [c[0], c[c.length - 1]]) { const k = endKey(p); const o = byEnd.get(k); if (o) parent.set(find(id), find(o)); else byEnd.set(k, id); }
+    }
+    const idx = new Map<string, number>();
+    for (const id of roadIds) {
+      const root = find(id);
+      if (!idx.has(root)) { idx.set(root, ringLen.length); ringLen.push(0); }
+      const c = roads.get(id)!.coordinates;
+      let m = 0;
+      for (let i = 1; i < c.length; i++) m += Math.hypot((c[i][0] - c[i - 1][0]) * 111320 * Math.cos(c[i][1] * Math.PI / 180), (c[i][1] - c[i - 1][1]) * 111320);
+      ringLen[idx.get(root)!] += m;
+      ringOfRoad.set(id, idx.get(root)!);
+    }
+  }
+  const incoming = new Map<string, number[]>();
+  edges.forEach((e, i) => (incoming.get(e.toNodeId) ?? incoming.set(e.toNodeId, []).get(e.toNodeId)!).push(i));
+  for (const [node, ins] of incoming) {
+    if ((arms.get(node)?.size ?? 0) < 3 || signalised.has(node) || editedAt.has(node) || rbAt.has(node)) continue;
+    const ring = ins.filter(i => isRing(edges[i].roadId));
+    if (ring.length) {
+      const ringId = ringOfRoad.get(edges[ring[0]].roadId) ?? -1;
+      for (const i of ins) {
+        if (isRing(edges[i].roadId)) continue;
+        kind[i] = 3; conflicts[i] = ring; icd[i] = ringId >= 0 ? ringLen[ringId] / Math.PI : 30;
+      }
+      continue;
+    }
+    // Priority: the approaches of the best rank (IRC category, ramps below their class) are the major road
+    const rank = ins.map(i => approachRank(roads.get(edges[i].roadId)));
+    const best = Math.min(...rank);
+    const majors = ins.filter((_, k) => rank[k] === best);
+    const oneWay = (i: number) => { const r = roads.get(edges[i].roadId); return r ? !!r.isOneWay : true; };
+    if (majors.length === ins.length) {
+      // Equal roads: two one-way carriageways merging are not a crossing (no control); otherwise uncontrolled, each yields to the others
+      if (ins.length <= 2 && ins.every(oneWay)) continue;
+      for (const i of ins) { kind[i] = 1; conflicts[i] = ins.filter(j => j !== i); }
+      continue;
+    }
+    for (const i of ins) {
+      if (majors.includes(i)) {
+        // A right turn across the opposing major flow: only where an opposing major approach exists
+        const opp = majors.filter(j => j !== i);
+        if (opp.length) { kind[i] = 2; conflicts[i] = opp; }
+      } else {
+        kind[i] = 1; conflicts[i] = majors;
+        // Merging into one one-way carriageway, crossing nothing
+        if (majors.length === 1 && oneWay(majors[0])) merge[i] = 1;
+      }
+    }
+  }
+  kind.forEach((k, i) => { if (k) links[i].junction = k === 1 ? 'minor' : k === 2 ? 'majorRight' : 'roundabout'; });
+  void area;
+  return { kind, conflicts, icd, merge };
 }
 
 class Heap {
@@ -279,8 +390,12 @@ class Heap {
 export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, trips: readonly MicroDemandTrip[], o: AssignmentOptions = {}): AssignmentResult {
   const t0 = Date.now();
   const supply = o.supply ?? DEFAULT_SUPPLY;
-  const net = buildAssignmentNetwork(area, roads, o.signalPoints, o.junctionEdits, supply);
+  const p14 = o.supplyModel === 'p14';
+  const inferred = p14 ? inferredSignalPoints(area, roads, o.signalPoints) : null;
+  const signalPoints = inferred?.length ? [...(o.signalPoints ?? []), ...inferred] : o.signalPoints;
+  const net = buildAssignmentNetwork(area, roads, signalPoints, o.junctionEdits, supply, p14 ? { buildings: o.buildings } : null);
   const alpha = supply.bprAlpha, beta = supply.bprBeta;
+  const pcuOf = p14 ? PCU_P14 : PCU;
   const { links, outStart, outLinks, nodes } = net;
   const L = links.length, N = nodes.length;
   // OD pairs (by node), vehicles and PCU, kinds kept for the corridor demand
@@ -294,7 +409,7 @@ export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, Drivab
     let i = odIndex.get(key);
     if (i === undefined) { i = ods.length; odIndex.set(key, i); ods.push({ from: f, to: d, veh: 0, pcu: 0, kinds: new Map() }); }
     const od = ods[i];
-    od.veh += t.vehiclesPerHour; od.pcu += t.vehiclesPerHour * (PCU[t.kind] ?? 1);
+    od.veh += t.vehiclesPerHour; od.pcu += t.vehiclesPerHour * (pcuOf[t.kind] ?? 1);
     od.kinds.set(t.kind, (od.kinds.get(t.kind) ?? 0) + t.vehiclesPerHour);
   }
   const byOrigin = new Map<number, number[]>();
@@ -377,9 +492,35 @@ export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, Drivab
     }
     return chosen;
   };
-  const setCosts = (flow: Float64Array) => { for (let i = 0; i < L; i++) cost[i] = bprTime(base[i], flow[i], cap[i], alpha, beta); };
+  // p14: free-flow time (running at the stream's free speed + signal delay) x the Indo-HCM curve, plus the delay at
+  // the unsignalised junction or roundabout the link enters (capacity from the conflicting flows of the current iteration)
+  const ctl = net.control;
+  const s0 = P14.vdf.value.s0, rShare = P14.majorRightShare.value;
+  const mergeParams = { ...P14.unsigMinor.value, tcBase: P14.unsigMinor.value.tcBase * P14.mergeGapRatio.value, fLV: P14.unsigMinor.value.fLV * P14.mergeGapRatio.value };
+  const jCap = new Float64Array(L), jDelay = p14 ? new Float64Array(L) : undefined;
+  const updateJunctions = (flow: Float64Array) => {
+    if (!ctl) return;
+    for (let i = 0; i < L; i++) {
+      const k = ctl.kind[i];
+      if (!k) continue;
+      let vc = 0;
+      for (const j of ctl.conflicts[i]) vc += flow[j];
+      jCap[i] = k === 1 ? gapCapacityPcu(vc, ctl.merge[i] ? mergeParams : P14.unsigMinor.value) : k === 2 ? gapCapacityPcu(vc, P14.unsigMajorRight.value) : roundaboutEntryPcu(ctl.icd[i], vc) * Math.min(2, Math.max(1, links[i].lanes));
+    }
+  };
+  const junctionDelay = (i: number, v: number) => {
+    const k = ctl ? ctl.kind[i] : 0;
+    if (!k) return 0;
+    return k === 2 ? rShare * controlDelayS(rShare * v, jCap[i]) : controlDelayS(v, jCap[i]);
+  };
+  // t0 runs at the stream's free speed (car FFS x s0), so the Indo-HCM ratio (relative to car FFS) times s0 is its congestion part
+  const linkCost = p14
+    ? (i: number, v: number) => base[i] * p14TimeRatio(v / Math.max(1, cap[i])) * s0 + junctionDelay(i, v)
+    : (i: number, v: number) => bprTime(base[i], v, cap[i], alpha, beta);
+  const setCosts = (flow: Float64Array) => { for (let i = 0; i < L; i++) cost[i] = linkCost(i, flow[i]); };
 
   // Initial all-or-nothing on free-flow costs
+  updateJunctions(x);
   setCosts(x);
   const first = allOrNothing(x, xv);
   first.forEach((pid, oi) => { if (pid >= 0) odPaths[oi].set(pid, 1); });
@@ -387,6 +528,7 @@ export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, Drivab
   const gapHistory: number[] = [];
   let it = 0, gap = Infinity;
   for (it = 1; it <= maxIt; it++) {
+    updateJunctions(x);
     setCosts(x);
     const chosen = allOrNothing(y, yv);
     // Relative gap: (current total cost - shortest-path cost) / current total cost
@@ -400,7 +542,7 @@ export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, Drivab
     for (let s = 0; s < 24; s++) {
       const m = (lo + hi) / 2;
       let g = 0;
-      for (let i = 0; i < L; i++) { const d = y[i] - x[i]; if (d !== 0) g += d * bprTime(base[i], x[i] + m * d, cap[i], alpha, beta); }
+      for (let i = 0; i < L; i++) { const d = y[i] - x[i]; if (d !== 0) g += d * linkCost(i, x[i] + m * d); }
       if (g > 0) hi = m; else lo = m;
     }
     const lambda = (lo + hi) / 2;
@@ -413,12 +555,15 @@ export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, Drivab
       m.set(pid, (m.get(pid) ?? 0) + lambda);
     });
   }
+  updateJunctions(x);
   setCosts(x);
+  if (jDelay) for (let i = 0; i < L; i++) jDelay[i] = junctionDelay(i, x[i]);
   ods.forEach((od, oi) => { if (!reachable[oi]) unroutedVeh += od.veh; });
   return {
     nodes, nodeCoords: net.nodeCoords, links, volPcu: x, volVeh: xv, timeS: Float64Array.from(cost), ods,
     paths, odPaths: odPaths.map(m => [...m].filter(([, w]) => w > 1e-4).map(([pathId, share]) => ({ pathId, share }))),
     iterations: Math.min(it, maxIt), relativeGap: gap, gapHistory, unroutedVeh, elapsedMs: Date.now() - t0,
+    supplyModel: p14 ? 'p14' : 'p13', ...(jDelay ? { junctionDelayS: jDelay, junctionCapacityPcu: jCap } : {}), ...(inferred ? { inferredSignalPoints: inferred } : {}),
   };
 }
 

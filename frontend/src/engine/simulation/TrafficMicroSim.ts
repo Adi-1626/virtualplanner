@@ -276,6 +276,12 @@ const FOCUS_MAX_DETOUR = 2.0;
 export const ROUTE_SPEED_FACTOR: Record<string, number> = { highway: 1.0, arterial: 0.9, collector: 0.7, local: 0.45 };
 
 export interface MicroSimOptions {
+  /**
+   * p14 (supplyConfig.ts): desired speed per network edge id (km/h), the Indian urban supply model's car free-flow speed
+   * (class and typology operating speed capped by the posted limit, lane width, side friction). Edges not listed keep
+   * their speed limit. Each vehicle's own speed factor still varies it.
+   */
+  desiredSpeedKmh?: Readonly<Record<string, number>>;
   /** Demand at the area edge as a share of the entering roads' capacity (0-1). */
   demandLevel: number;
   seed: number;
@@ -840,7 +846,7 @@ export class TrafficMicroSim {
       const from = this.junction(e.fromNodeId), to = this.junction(e.toNodeId);
       if (from === to) { this.internalLinkIds.add(e.id); continue; }
       this.linkById.set(e.id, this.links.length);
-      this.links.push(this.makeLink(e, this.links.length, rankOf(e.roadId), from, to, roads.get(e.roadId)));
+      this.links.push(this.makeLink(e, this.links.length, rankOf(e.roadId), from, to, roads.get(e.roadId), options.desiredSpeedKmh?.[e.id]));
     }
 
     // The area's graph between junctions, for routing
@@ -1160,7 +1166,7 @@ export class TrafficMicroSim {
     }
   }
 
-  private makeLink(e: TrafficEdge, index: number, rank: number, from: string, to: string, road: DrivableObject | undefined): Link {
+  private makeLink(e: TrafficEdge, index: number, rank: number, from: string, to: string, road: DrivableObject | undefined, desiredKmh?: number): Link {
     const pts = e.coordinates;
     const cum = [0];
     for (let i = 1; i < pts.length; i++) {
@@ -1176,7 +1182,7 @@ export class TrafficMicroSim {
       from,
       to,
       length: cum[cum.length - 1],
-      speed: Math.max(10, e.speedLimit || 50) / 3.6,
+      speed: Math.max(10, desiredKmh ?? (e.speedLimit || 50)) / 3.6,
       rank,
       twoWay: e.direction !== 'forward',
       lanes: Array.from({ length: Math.max(1, Math.min(6, e.lanes || 1)) }, () => []),

@@ -1,6 +1,8 @@
 import type { Viewer } from 'cesium';
 import { TUNED_SUPPLY, TUNED_SUPPLY_DEFAULT_ON } from '../calibration/tunedSupply';
 import type { SupplyParams } from './supplyParams';
+import { SUPPLY_MODEL_DEFAULT, type SupplyModel } from './supplyConfig';
+import type { BuildingPoint } from './indianSupply';
 import {
   StudyAreaExplorer,
   clampRangeM,
@@ -349,6 +351,8 @@ export interface SimulationModeState {
   calibration: CalibrationState;
   /** p13: which assignment parameters run: the defaults or the tuned (estimated) set (calibration/tunedSupply.ts). */
   supplySet: 'default' | 'tuned';
+  /** p14: the supply model of the area assignment: 'p13' (as before) or 'p14' (Indian urban roads, supplyConfig.ts; docs/urbanos/SUPPLY_P14.md). */
+  supplyModel: SupplyModel;
   timeOfDay: TimeOfDayState;
   /** The road section the click stands for (both carriageways, between main junctions). */
   section: RoadSection | null;
@@ -460,6 +464,7 @@ export class SimulationMode {
     selectedVehicleId: null,
     calibration: EMPTY_CALIBRATION,
     supplySet: TUNED_SUPPLY_DEFAULT_ON && TUNED_SUPPLY ? 'tuned' : 'default',
+    supplyModel: SUPPLY_MODEL_DEFAULT,
     timeOfDay: { status: 'idle', error: null, profile: null, hour: COUNT_HOURS.AM, day: 'weekday', countPeak: 'PM', factor: 1 },
     section: null,
     corridor: null,
@@ -662,6 +667,7 @@ export class SimulationMode {
     this.stopAllComputation('');
     this.osmLoad?.abort();
     this.signalLoad?.abort();
+    this.buildingLoad?.abort();
     this.visualizer.dispose();
     this.arrows.dispose();
     this.trafficVisualizer.dispose();
@@ -936,6 +942,7 @@ export class SimulationMode {
     }
     this.ensureOsmRoads();
     this.ensureSignals();
+    this.ensureBuildings();
     this.maybeAutoStart();
   }
 
@@ -970,7 +977,7 @@ export class SimulationMode {
 
   /** Runs the analysis once a road has been picked and its area is fully mapped (the live view only starts on request). */
   private maybeAutoStart() {
-    if (!this.state.area || this.osmLoad || this.signalLoad || this.recomputeTimer) return; // roads or signals still arriving
+    if (!this.state.area || this.osmLoad || this.signalLoad || this.buildingLoad || this.recomputeTimer) return; // roads, signals or (p14) buildings still arriving
     // A run in flight (or one waiting for its counts or time profile) finishes on its own. A 'running' status with
     // no run behind it (its run was cancelled by an area, scenario or road change) must not block this road's run:
     // it left Simulate at "Analysing… 22 %" for good (p11 browser check, scenario switch then road click)
@@ -990,6 +997,38 @@ export class SimulationMode {
     this.keptResults.delete(key);
     this.keptResults.set(key, { networkKey, analysis });
     while (this.keptResults.size > KEPT_RESULTS) this.keptResults.delete(this.keptResults.keys().next().value!);
+  }
+
+  // ── p14: building frontage for the side-friction inference ───────────────
+
+  /** p14: OSM building centroids of the current area (null: not loaded, not covered, or the p13 model). */
+  private buildingPoints: BuildingPoint[] | null = null;
+  private buildingBoundsKey = '';
+  private buildingLoad: AbortController | null = null;
+  /** Loads the area's OSM building centroids from the backend's OSM index when the p14 supply model runs. */
+  private ensureBuildings() {
+    const source = this.signalSource, area = this.state.area;
+    if (!source || !area || this.supplyModel !== 'p14') return;
+    const b = area.bounds;
+    const key = [b.minLng, b.minLat, b.maxLng, b.maxLat].map(v => v.toFixed(4)).join(',');
+    if (key === this.buildingBoundsKey) return;
+    this.buildingLoad?.abort();
+    this.buildingBoundsKey = key;
+    this.buildingPoints = null;
+    const load = (this.buildingLoad = new AbortController());
+    source.buildingPointsIn(b, load.signal)
+      .then(points => {
+        if (load !== this.buildingLoad) return;
+        this.buildingPoints = points;
+        const c = this.state.comparison;
+        this.invalidateComparison(c.result || c.running ? 'Building frontage for the road side friction changed. Run the comparison again.' : null);
+      })
+      .finally(() => {
+        if (load !== this.buildingLoad) return;
+        this.buildingLoad = null;
+        this.analysisStale = true;
+        this.maybeAutoStart();
+      });
   }
 
   // ── Real traffic signals ──────────────────────────────────────────────────
@@ -1226,7 +1265,9 @@ export class SimulationMode {
   private studyKey() {
     // p13: the tuned (estimated) supply set is part of the study, so a baseline made with the other setting is never
     // compared against (nor restored onto) this one; the default set adds nothing, so keys of baselines saved before p13 hold
-    return contentKey({ roads: this.state.seedRoadIds, range: this.state.rangeMeters, direction: this.state.direction, ...(this.useTunedSupply ? { supply: 'tuned' } : {}) });
+    // p14: so is the supply model (p13 adds nothing, so keys of earlier baselines hold)
+    return contentKey({ roads: this.state.seedRoadIds, range: this.state.rangeMeters, direction: this.state.direction, ...(this.useTunedSupply ? { supply: 'tuned' } : {}),
+      ...(this.supplyModel === 'p14' ? { model: 'p14' } : {}) });
   }
 
   private demandContextKey() {
@@ -1275,6 +1316,20 @@ export class SimulationMode {
     // Switched back to the baseline's setting (same roads, range and direction): its notice no longer applies
     const c = this.state.comparison;
     if (c.baseline && c.staleReason && STUDY_REASONS.has(c.staleReason) && this.baselineStudyKey === this.studyKey()) this.setState({ comparison: { ...c, staleReason: null } });
+    if (this.state.area) { this.analysisStale = true; this.scheduleAnalysis(); }
+  }
+  /** p14: the supply model of the area assignment (supplyConfig.ts). SUPPLY_MODEL_DEFAULT decides the default. */
+  public supplyModel: SupplyModel = SUPPLY_MODEL_DEFAULT;
+  /** Switches the supply model: a saved baseline made with the other model can no longer be compared. */
+  public setSupplyModel(model: SupplyModel) {
+    if (this.supplyModel === model) return;
+    this.supplyModel = model;
+    this.invalidateComparison(STUDY_CHANGED.supplyModel);
+    this.setState({ supplyModel: model });
+    const c = this.state.comparison;
+    if (c.baseline && c.staleReason && STUDY_REASONS.has(c.staleReason) && this.baselineStudyKey === this.studyKey()) this.setState({ comparison: { ...c, staleReason: null } });
+    this.buildingBoundsKey = '';
+    this.ensureBuildings();
     if (this.state.area) { this.analysisStale = true; this.scheduleAnalysis(); }
   }
   /** The supply set an analysis uses now (null: the defaults). */
@@ -1358,7 +1413,8 @@ export class SimulationMode {
   private analysisJob(plan: DemandPlan, area: StudyArea, section: RoadSection, measureS: number = DEFAULT_ANALYSIS.measureS, o: { hourFactor?: number; seeds?: readonly number[] } = {}): AnalysisJob {
     const ds = this.state.calibration.dataset;
     const corridor = this.state.corridor ?? area;
-    return { area, corridor, roads: new Map(structuredClone(this.getRoads()).map(r => [r.id, r])), options: this.simOptions(), supply: this.activeSupply(), plan: structuredClone(plan), section,
+    return { area, corridor, roads: new Map(structuredClone(this.getRoads()).map(r => [r.id, r])), options: this.simOptions(), supply: this.activeSupply(),
+      supplyModel: this.supplyModel, buildings: this.supplyModel === 'p14' ? this.buildingPoints : undefined, plan: structuredClone(plan), section,
       hourFactor: o.hourFactor ?? this.state.timeOfDay.factor, seeds: o.seeds ?? this.analysisSeeds, warmupS: DEFAULT_ANALYSIS.warmupS, measureS,
       countJunctions: ds ? junctionsIn(ds, corridor.bounds) : undefined };
   }
@@ -1393,7 +1449,9 @@ export class SimulationMode {
       // A result computed without the profile is never taken for one computed with it
       profile: this.state.timeOfDay.status === 'ready',
       // Signal timing (Webster or equal split) is not part of the roads: a run under the other timing is another case (docs/OVERHAUL.md §25)
-      signalTiming: this.signalTiming });
+      signalTiming: this.signalTiming,
+      // p14: the supply model and the building frontage it read (p13 adds nothing)
+      ...(this.supplyModel === 'p14' ? { supplyModel: 'p14', buildings: this.buildingPoints?.length ?? null } : {}) });
   }
 
   /** Re-runs the road analysis shortly (settings settle first). */
@@ -2301,6 +2359,7 @@ export const STUDY_CHANGED = {
   range: 'The study range changed since the baseline. Save again for a new baseline, or set the range back.',
   direction: 'The study direction changed since the baseline. Save again for a new baseline, or set the direction back.',
   supply: 'The traffic parameters changed since the baseline (defaults vs tuned, estimated). Save again for a new baseline, or switch them back.',
+  supplyModel: 'The road supply model changed since the baseline (p13 vs Indian urban roads, p14). Save again for a new baseline, or switch it back.',
 } as const;
 const STUDY_REASONS = new Set<string>(Object.values(STUDY_CHANGED));
 
