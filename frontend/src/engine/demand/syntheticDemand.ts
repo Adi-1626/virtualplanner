@@ -570,7 +570,7 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
     // the nearest boundary roads to the intended ones that can (the trip keeps its side of the area)
     if (!ok.length && part !== 'internal') ok = pieces.map(repairPiece(part)).filter((x): x is NonNullable<typeof x> => !!x);
     const sw = ok.reduce((s, x) => s + x.w, 0);
-    if (!(sw > 0)) { comp.noEdgeRoute += total; noRoute[part] += total; if (typeof process !== 'undefined' && process.env?.P14DBG && total > 50) console.log('NOROUTE', part, Math.round(total), JSON.stringify(pieces.slice(0, 3).map(x => [x.from.map(v => +v.toFixed(4)), x.to.map(v => +v.toFixed(4))]))); return; }
+    if (!(sw > 0)) { comp.noEdgeRoute += total; noRoute[part] += total; return; }
     // Small pieces are folded into the others of the group (the group's total is kept)
     let kept = ok.filter(x => total * x.w / sw >= minVph);
     if (!kept.length) kept = [ok.reduce((a, b) => (b.w > a.w ? b : a))];
