@@ -204,6 +204,10 @@ All in `/workspace/work/urbanos/shots/p12/` (driver: `/workspace/work/p12-e2e`, 
 | `p12k-explore-1440.png` | Map key in Explore |
 | `p12k-simulate-compare-1440/1366/1024/768.png` | Simulate with a comparison: Directions, Study area, demand, city model; at 1024 and 768 the key sits left above the compass, at 768 narrowed to the map left of the inspector |
 
+Gates at the wrap-up (commit 0c8dba1 code): oxlint 0 errors (17 warnings, none in P12 files); `tsc -p
+tsconfig.app.json` clean; vite build OK; vitest 162 files passed, 8 skipped — 1,347 tests passed, 9 skipped; pytest 475
+passed, 3 skipped.
+
 ## 10. Remaining gaps
 
 - Environment layers (land cover, tree census, flow paths, air monitors) are explained in the Environment panel, not in
