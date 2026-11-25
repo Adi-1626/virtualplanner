@@ -147,12 +147,70 @@ with units and colour scales; each entry has a tooltip, and hovering (mouse) or 
 what it is. Colours come from the renderers' own constants (tests check them against the drawing code). Open/closed is
 remembered; it opens by default from 1280 px wide.
 
-(Symbol table: see §8.1 below.)
+Placement (browser check, P12 wrap-up): 46 px above the map's bottom edge (clear of Cesium's fullscreen button, 12 px
+up and 29 px tall), 86 px with the drawer's tab strip closed, drawer height + 46 px with it open, and 112 px while a
+drawing tool's hint is showing (bottom centre, ~80 px tall). On a tablet (768–1024 px) with the inspector open the key
+moves to the left above the compass and is no wider than the map left of the 27rem inspector (at 768 px it ran 12 px
+under it). `MapLegend.test.ts` checks these rules in `index.css`.
+
+### 8.1 Every map symbol and its key entry
+
+Each map symbol is listed under the key group that names it, with the code that sets the group (`mapLegend.set(id, …)`).
+A group is shown only while its layer is drawn.
+
+| Where it is drawn | Map symbol | Key group → entry | Set by |
+|---|---|---|---|
+| All 3D workspaces | Road carriageway; lane and centre lines; yellow edge line of a divided road | City model → Road; Lane and centre lines; Edge line of a divided road | `cityLegend.ts` |
+| All | Flyover / bridge deck on piers; elevated metro viaduct; double-deck | City model → Flyover or bridge deck; Elevated metro viaduct; Double-deck (road over metro) | `cityLegend.ts` |
+| All | Buildings (realistic: one plaster colour; schematic: commercial / industrial / residential) | City model → Building (or the three Building, … entries) | `cityLegend.ts` |
+| All | Street tree; streetlight; selected object outline | City model → Street tree; Streetlight; Selected object | `cityLegend.ts` |
+| Design, Simulate | Demand zone outline (rose; cyan selected); gateway dot (amber; "(not connected)" label); gateway link (cyan) | Traffic demand inputs (estimated) → Demand zone; Gateway; Gateway link | `TwinCityEngine` `demand` |
+| Design (drawing) | Snap markers (road end, onto a road, junction/node); line being drawn; alignment guide | While drawing → five entries | `TwinCityEngine` `design-draw` |
+| Design (Connect) | Dashed link Connect would add | Connect preview → Link Connect would add | `TwinCityEngine` `road-gap` |
+| Design (Junction tool) | Drawn junction (cyan), selected (amber), not placeable (rose) | Junctions you drew → three entries | `JunctionEditorOverlay.ts` |
+| Design (junction edit) | Approach / exit / inside-junction arrows; arm being edited | Junction being edited → four entries | `JunctionHighlight.ts` |
+| Design / Simulate (road edit) | Binding stretch; lanes the edit changes | Highlight → Binding stretch; Lanes this edit changes | `RoadHighlight.ts` |
+| Design (street design) | Crossing, bus stop, streetlights, trees, roundabout, footpath placeholders | Street elements (placeholders) → one entry per kind shown | `streetDesign/placeholders.ts` |
+| Design (Map → Junction points) | T junction, crossroads, 5+ roads, roundabout, dead end dots | Junction points (traffic network) → five entries | `TrafficNetworkVisualizer.ts` |
+| Simulate (study) | Studied road glow; downstream / upstream / both-ways roads; junction, roundabout, dead-end dots; enter / leave / both markers; roads crossing without meeting; network error / warning; cut road at the mapped edge | Study area → one entry each | `simLegend.ts` `studyLegend` |
+| Simulate (live) | Speed lines (free / slow / stop-and-go / no vehicles); vehicles; signal heads | Live traffic (simulated) → one entry each | `simLegend.ts` `liveLegend` |
+| Simulate (overlay: flows) | Share of the road's traffic, none → most | Where its traffic comes from and goes → colour scale | `simLegend.ts` |
+| Simulate (overlay: load) | V/C bands; faint under 30 %; worst stretches | How full each road is → scale and entries | `simLegend.ts` |
+| Simulate (overlay: why slow) | Studied road; queue traced back; queue start | Why it is slow → three entries | `simLegend.ts` |
+| Simulate (overlay: compare) | Less / more loaded; little change; new bottleneck | Proposal against the existing city → four entries | `simLegend.ts` |
+| Simulate (study) | Direction arrows, same colour as the panel | Directions of the studied road → one per direction | `simLegend.ts` `directionsLegend` |
+| Underground | PMC sewers / storm drains; OSM metro tunnel and station; proposed alignments by kind; utilities by type | Existing records (as published); Metro (OpenStreetMap); Proposed alignments (colour = kind); utilities | `UndergroundLegend.tsx` (also in the panel) |
+
+Not in the key: Environment layers (land cover, trees census, flow paths, air monitors) keep their own legends and
+evidence badges in the Environment panel beside their Show buttons; the key there lists only the city model and demand
+inputs (see §10). Map labels (zone and gateway names) and the Cesium imagery are not symbols and have no entry.
+
 
 ## 9. Screenshots
 
-(see §9 list below)
+All in `/workspace/work/urbanos/shots/p12/` (driver: `/workspace/work/p12-e2e`, 1440×900 unless named).
+
+| File | What it shows |
+|---|---|
+| `s1-01` … `s1-13` | S1 Satara Road (osm_367660757): study, suggestions, round-trip bar in Design, flyover drawn and built, re-test, compare overlay, "Improve this" signal, test 2 "since last test", badges |
+| `s1-14-cancel-question-undo.png` | Cancel with 1 road change (lanes 2 → 3): the question "Undo them and return / Keep them and return / Stay here" |
+| `s1-15-cancel-undo-comparison-kept.png` | After "Undo them and return": back in Simulate, lanes 2 again, the comparison (Mixed, medium) shown again and not stale; status "your changes … were undone" |
+| `s2-01` … `s2-06` | S2 signal retiming round trip |
+| `s3-01` … `s3-10` | S3 Sinhagad Road: no-change Done, outside-area question, widen and re-test, reload resume, cancel question, Keep |
+| `p12f-01-flyover-bar-wording.png`, `p12f-02-junction-tool-key-1440.png` | Bar wording after a flyover; key with the Junction tool group |
+| `p12k-design-1440.png` | Map key in Design: Junctions you drew, Traffic demand inputs, City model; clear of the fullscreen button |
+| `p12k-underground-1440.png` | Map key in Underground: adds Existing records, Metro (OSM), Proposed alignments |
+| `p12k-environment-1440.png` | Map key in Environment beside the drawn-works inspector: demand inputs and city model only |
+| `p12k-explore-1440.png` | Map key in Explore |
+| `p12k-simulate-compare-1440/1366/1024/768.png` | Simulate with a comparison: Directions, Study area, demand, city model; at 1024 and 768 the key sits left above the compass, at 768 narrowed to the map left of the inspector |
 
 ## 10. Remaining gaps
 
-(see below)
+- Environment layers (land cover, tree census, flow paths, air monitors) are explained in the Environment panel, not in
+  the map key; with a layer shown the key does not list its colours.
+- At 768–1024 px with the inspector open only ~240–260 px of map is left; the key (open) covers most of it. It is
+  collapsible and remembers that, but there is no automatic collapse at tablet widths.
+- The Underground group truncates long entries ("Underground station — depth not m…"); the full text is in the tooltip.
+- Flyover drawing in the headless browser needs exact clicks on road ends; the Cancel → Undo check used a lane change.
+- An undo that cannot reach the leg's start (history cleared, or edits made outside the undo stack) still leaves those
+  changes in the proposal and says so; this is by design, not tested in the browser.
