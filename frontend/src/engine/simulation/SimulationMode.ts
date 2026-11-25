@@ -1424,7 +1424,7 @@ export class SimulationMode {
       if (this.planCache?.key !== key) {
         const roads = new Map(this.getRoads().map(r => [r.id, r]));
         const areaKey = contentKey({ rev: this.revision, seeds: area.seedRoadIds, range: area.rangeMeters, dir: area.direction, corr: this.correctionsEnabled, b: area.bounds });
-        this.planCache = { key, plan: this.synthetic.plan(area, roads, hour, settings.through !== false, areaKey, SYNTHETIC_PARAMS.scale, { gatewayBalance: SYNTHETIC_PARAMS.gatewayBalance, gatewayReachM: SYNTHETIC_PARAMS.gatewayReachM, cityCongestion: SYNTHETIC_PARAMS.cityCongestion, cityVdf: SYNTHETIC_PARAMS.cityVdf }) };
+        this.planCache = { key, plan: this.synthetic.plan(area, roads, hour, settings.through !== false, areaKey, SYNTHETIC_PARAMS.scale, { gatewayBalance: SYNTHETIC_PARAMS.gatewayBalance, gatewayReachM: SYNTHETIC_PARAMS.gatewayReachM, cityCongestion: SYNTHETIC_PARAMS.cityCongestion, cityVdf: SYNTHETIC_PARAMS.cityVdf, gatewayMeter: SYNTHETIC_PARAMS.gatewayMeter }) };
       }
       plan = this.planCache.plan;
     } else {

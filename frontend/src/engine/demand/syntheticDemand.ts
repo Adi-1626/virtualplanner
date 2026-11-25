@@ -316,6 +316,13 @@ export interface SyntheticAreaOptions {
    * CMP-2024 network speed of 25 km/h against urban free-flow speeds: the assumed reference load of those times).
    */
   cityVdf?: 'bpr' | 'p14';
+  /**
+   * p16 gateway metering: a boundary road delivers into the area at most this multiple of its capacity (lanes x
+   * gatewayLaneCapacityPcu) per hour; the excess entering traffic (inbound and through) is held outside the area this hour
+   * (it queues upstream, beyond the area, as it would on the real network) and reported as `heldOutsideVph`. Applied after
+   * gateway loading. Absent: everything is loaded.
+   */
+  gatewayMeter?: number;
 }
 
 /** p15: capacity of a boundary road per lane (PCU/h) by its highest road class rank (4 highway, 3 arterial, 2 collector, 1 local). */
@@ -848,6 +855,7 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
     emit('through', kind as VehicleKind, v, pieces);
   }
   const balance = opts.gatewayBalance && opts.gatewayBalance > 0 ? balanceGateways(trips, paths.gateways, canReach, opts.gatewayBalance, 3, opts.gatewayReachM ?? GATEWAY_DIVERT_MAX_M) : null;
+  const held = opts.gatewayMeter && opts.gatewayMeter > 0 ? meterGateways(trips, paths.gateways, opts.gatewayMeter) : null;
   const list = [...trips.values()].filter(t => t.vehiclesPerHour > 1e-6).map(({ fromNode: _f, toNode: _t, ...t }) => t);
   const vph = list.reduce((s, t) => s + t.vehiclesPerHour, 0);
   if (!(vph > 0)) return null;
@@ -859,13 +867,14 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
     + (through ? `${f(comp.through)} through, crossing it on its city route (${pct(comp.through)}%).` : 'through traffic switched off.')
     + (comp.noEdgeRoute >= 1 ? ` ${f(comp.noEdgeRoute)} veh/h left out (no drivable way on the area's roads).` : '')
     + (scale !== 1 ? ` Scaled ×${scale.toFixed(2)} (calibration parameter).` : '')
+    + (held && held.heldVph >= 1 ? ` ${f(held.heldVph)} veh/h held beyond the area's edge (more than its boundary roads deliver in the hour).` : '')
     + (balance && balance.movedVph >= 1 ? ` ${f(balance.movedVph)} veh/h moved from over-capacity boundary roads to ${opts.gatewayReachM !== undefined && !(opts.gatewayReachM > 0 && Number.isFinite(opts.gatewayReachM)) ? 'other' : 'nearby'} ones.` : '');
   return {
     trips: list,
     provenance: {
       source: 'synthetic', label, period: opts.hour < 12 ? 'AM_Peak' : 'PM_Peak', vehiclesPerHour: vph, pairCount: list.length,
       components: { internal: comp.internal, outbound: comp.outbound, inbound: comp.inbound, through: comp.through, outsideArea: 0, noEdgeRoute: comp.noEdgeRoute, cordonPoints: gateways.length, throughIncluded: through },
-      synthetic: { ...(balance ? { gatewayBalance: balance } : {}), intrazonalEdgeVph: intrazonalEdge, noRouteByPart: noRoute, datasetId: city.id, label: SYNTHETIC_LABEL, hour: ((Math.floor(opts.hour) % 24) + 24) % 24, buildingsIn, buildingsNoRoad, cells: [...cellsByZone.values()].reduce((s, l) => s + l.length, 0), zonesIn: cellsByZone.size, scale },
+      synthetic: { ...(balance ? { gatewayBalance: balance } : {}), ...(held ? { heldOutsideVph: held.heldVph, meteredGateways: held.gateways } : {}), intrazonalEdgeVph: intrazonalEdge, noRouteByPart: noRoute, datasetId: city.id, label: SYNTHETIC_LABEL, hour: ((Math.floor(opts.hour) % 24) + 24) % 24, buildingsIn, buildingsNoRoad, cells: [...cellsByZone.values()].reduce((s, l) => s + l.length, 0), zonesIn: cellsByZone.size, scale },
     },
   };
 }
@@ -954,6 +963,32 @@ export function balanceGateways(trips: Map<string, PlanTrip>, gateways: readonly
     }
   }
   return { movedVph, overloadedIn: over.in, overloadedOut: over.out };
+}
+
+/**
+ * p16 gateway metering (SyntheticAreaOptions.gatewayMeter): entering traffic (inbound and through) above `factor` x a
+ * boundary road's capacity is held outside the area this hour, every trip entering there scaled by the same share.
+ */
+export function meterGateways(trips: Map<string, PlanTrip>, gateways: readonly Gateway[], factor: number): { heldVph: number; gateways: number } {
+  const pcu = P14.pcuMidblock.value as Record<string, number>;
+  const byNode = new Map<string, Gateway>();
+  for (const g of gateways) byNode.set(g.nodeId, g);
+  const load = new Map<string, number>(), at = new Map<string, PlanTrip[]>();
+  for (const t of trips.values()) {
+    if (t.part !== 'inbound' && t.part !== 'through') continue;
+    if (!byNode.has(t.fromNode) || !(t.vehiclesPerHour > 0)) continue;
+    load.set(t.fromNode, (load.get(t.fromNode) ?? 0) + t.vehiclesPerHour * (pcu[t.kind] ?? 1));
+    (at.get(t.fromNode) ?? at.set(t.fromNode, []).get(t.fromNode)!).push(t);
+  }
+  let heldVph = 0, n = 0;
+  for (const [node, l] of load) {
+    const g = byNode.get(node)!, cap = factor * g.inLanes * gatewayLaneCapacityPcu(g.rank);
+    if (!(cap > 0) || l <= cap) continue;
+    const keep = cap / l;
+    n++;
+    for (const t of at.get(node)!) { heldVph += t.vehiclesPerHour * (1 - keep); t.vehiclesPerHour *= keep; }
+  }
+  return { heldVph, gateways: n };
 }
 
 /** Where a zone's path gives no boundary road with lanes on that side: the boundary roads of that side, nearest first. */

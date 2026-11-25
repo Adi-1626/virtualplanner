@@ -31,7 +31,7 @@ export interface DemandProvenance {
    * dataset, its label (always `synthetic`: never measured, never mixed with official or estimated data) and the clock hour
    * the plan already represents (no further hour factor).
    */
-  synthetic?: { gatewayBalance?: { movedVph: number; overloadedIn: number; overloadedOut: number }; intrazonalEdgeVph?: number; noRouteByPart?: Record<'internal' | 'outbound' | 'inbound' | 'through', number>; datasetId: string; label: 'synthetic'; hour: number; buildingsIn: number; buildingsNoRoad: number; cells: number; zonesIn: number; scale: number };
+  synthetic?: { gatewayBalance?: { movedVph: number; overloadedIn: number; overloadedOut: number }; heldOutsideVph?: number; meteredGateways?: number; intrazonalEdgeVph?: number; noRouteByPart?: Record<'internal' | 'outbound' | 'inbound' | 'through', number>; datasetId: string; label: 'synthetic'; hour: number; buildingsIn: number; buildingsNoRoad: number; cells: number; zonesIn: number; scale: number };
 }
 /** Peak-hour vehicles per hour by part of the area demand. */
 export interface DemandComponents {

@@ -35,7 +35,7 @@ describe.skipIf(!env.P16DIAG)('p16 diagnosis (opt-in)', () => {
       const aopts = { signalPoints: b.signals, junctionEdits: b.simOptions.junctionEdits as never, supply, supplyModel: 'p14' as const, buildings: b.buildings as never, maxIterations: 60, maxMs: 1e9, targetGap: 1e-3,
         ...(set.localCostFactor ? { localCostFactor: set.localCostFactor } : {}), ...(set.p16 ? { p16: set.p16 } : {}) };
       for (const hour of hours) {
-        const plan = syntheticAreaPlan(city, b.area, b.roads, ends, { hour, scale: set.scale, gatewayBalance: set.gatewayBalance, gatewayReachM: set.gatewayReachM, ...(set.cityCongestion ? { cityCongestion: set.cityCongestion } : {}), ...(set.cityVdf ? { cityVdf: set.cityVdf } : {}), ...(set.p16demand ? { p16: set.p16demand } : {}) } as never, {});
+        const plan = syntheticAreaPlan(city, b.area, b.roads, ends, { hour, scale: set.scale, gatewayBalance: set.gatewayBalance, gatewayReachM: set.gatewayReachM, ...(set.cityCongestion ? { cityCongestion: set.cityCongestion } : {}), ...(set.cityVdf ? { cityVdf: set.cityVdf } : {}), ...(set.gatewayMeter ? { gatewayMeter: set.gatewayMeter } : {}), ...(set.p16demand ? { p16: set.p16demand } : {}) } as never, {});
         if (!plan) continue;
         const trips = snapDemandPlan(plan, b.area.network, 250, segs);
         const ws = set.signalWarrant ? eighthHourScale(city, hour) : null;

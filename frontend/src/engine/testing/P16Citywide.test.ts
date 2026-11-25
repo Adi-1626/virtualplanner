@@ -281,7 +281,7 @@ describe.skipIf(!env.P16)('p16 city-wide robustness harness (opt-in)', () => {
           const row: Record<string, unknown> = { area: b.rec.id, stratum: b.rec.stratum, roadClass: b.rec.roadClass, jurisdiction: b.rec.jurisdiction, hour, set: set.name };
           try {
             const plan = syntheticAreaPlan(city, b.area, b.roads, ends, { hour, scale: set.scale, ...(set.gatewayBalance ? { gatewayBalance: set.gatewayBalance } : {}),
-              ...(set.gatewayReachM !== undefined ? { gatewayReachM: set.gatewayReachM } : {}), ...(set.cityCongestion ? { cityCongestion: set.cityCongestion } : {}), ...(set.cityVdf ? { cityVdf: set.cityVdf } : {}), ...(set.p16demand ? { p16: set.p16demand } : {}) } as never, cache);
+              ...(set.gatewayReachM !== undefined ? { gatewayReachM: set.gatewayReachM } : {}), ...(set.cityCongestion ? { cityCongestion: set.cityCongestion } : {}), ...(set.cityVdf ? { cityVdf: set.cityVdf } : {}), ...(set.gatewayMeter ? { gatewayMeter: set.gatewayMeter } : {}), ...(set.p16demand ? { p16: set.p16demand } : {}) } as never, cache);
             if (!plan) { row.ok = false; row.error = 'no plan (no trip ends or no roads)'; log(row); continue; }
             const trips = snapDemandPlan(plan, b.area.network, 250, segs);
             const totVph = trips.reduce((s, t) => s + t.vehiclesPerHour, 0);
@@ -295,7 +295,7 @@ describe.skipIf(!env.P16)('p16 city-wide robustness harness (opt-in)', () => {
             const be = buildingEnds(plan, b.area);
             const comp = plan.provenance.components!;
             Object.assign(row, { ok: true, demandVph: Math.round(plan.provenance.vehiclesPerHour), snappedVph: Math.round(totVph), unroutedVph: Math.round(a.unroutedVeh),
-              noEdgeRouteVph: Math.round(comp.noEdgeRoute ?? 0), parts: { internal: Math.round(comp.internal), outbound: Math.round(comp.outbound), inbound: Math.round(comp.inbound), through: Math.round(comp.through) },
+              noEdgeRouteVph: Math.round(comp.noEdgeRoute ?? 0), heldOutsideVph: Math.round((plan.provenance.synthetic as { heldOutsideVph?: number } | undefined)?.heldOutsideVph ?? 0), noRouteByPart: Object.fromEntries(Object.entries((plan.provenance.synthetic as { noRouteByPart?: Record<string, number> } | undefined)?.noRouteByPart ?? {}).map(([k, v]) => [k, Math.round(v)])), parts: { internal: Math.round(comp.internal), outbound: Math.round(comp.outbound), inbound: Math.round(comp.inbound), through: Math.round(comp.through) },
               ...sm, buildingEnds: be, warranted: a.warrantedSignalPoints?.length ?? 0, assignMs: Date.now() - t0 });
             if (env.P16_MICRO === '1') {
               // The corridor run as analysisJob.ts does it, two seeds, a short warm-up and measured window
