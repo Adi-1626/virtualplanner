@@ -148,3 +148,31 @@ describe('p16 harness: bands and the test set', () => {
     for (const a of doc.areas) { expect(a.why.length).toBeGreaterThan(5); expect(a.seedRoadIds[0]).toMatch(/^osm_\d+$/); expect(a.hours).toEqual([9, 14, 19, 23]); }
   });
 });
+
+describe('p16 fix: area demand loads on the main network', () => {
+  it('mainComponent: the largest strongly connected component, none for a one-way chain', async () => {
+    const { mainComponent } = await import('../simulation/graphComponents');
+    const adj = new Map<string, string[]>([['a', ['b']], ['b', ['c']], ['c', ['a', 'x']], ['x', ['y']], ['y', []]]);
+    expect([...mainComponent(adj)!].sort()).toEqual(['a', 'b', 'c']);
+    expect(mainComponent(new Map([['a', ['b']], ['b', ['c']], ['c', []]]))).toBeNull();
+  });
+  it('a trip end nearest to a one-way spur off the network loads at the nearest node of the main network', () => {
+    // A two-way main road (W-E) and a one-way spur leaving it to the north: nothing comes back from the spur's end.
+    const roads = [
+      road('m1', [[-400, 0], [0, 0]], { highway: 'secondary' }, 'arterial', 2),
+      road('m2', [[0, 0], [400, 0]], { highway: 'secondary' }, 'arterial', 2),
+      road('sp', [[0, 0], [0, 150]], { highway: 'residential', oneway: 'yes' }, 'local', 1, true),
+    ];
+    const area = areaOf(roads, 'm1');
+    const segs = new Set(area.segments.map(s => s.key));
+    const p = plan([{ from: [10, 160], to: [400, 0], vph: 100 }]);
+    const plain = snapDemandPlan(p, area.network, 250, segs)[0];
+    const main = snapDemandPlan(p, area.network, 250, segs, { preferMainNetwork: true })[0];
+    const near = (id: string) => area.network.nodes.get(id)!.coordinates;
+    // plain: the spur's end (cannot reach anything); main: the junction on the main road
+    expect(Math.abs(near(plain.fromNodeId)[1] - pt(0, 150)[1])).toBeLessThan(1e-6);
+    expect(Math.abs(near(main.fromNodeId)[1] - pt(0, 0)[1])).toBeLessThan(1e-6);
+    const map = new Map(roads.map(r => [r.id, r]));
+    expect(assignTraffic(area, map, [main], { supplyModel: 'p14', signalPoints: [], maxIterations: 5 }).unroutedVeh).toBe(0);
+  });
+});
