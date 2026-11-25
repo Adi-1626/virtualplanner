@@ -10,7 +10,7 @@ export interface SyntheticDemandRecord {
    * multiplier; p14 adds the supply model it runs with, the supply parameters changed from the defaults (SupplyParams,
    * within SUPPLY_BOUNDS) and the local-road route-choice factor (staticAssignment localCostFactor).
    */
-  params: { scale: number; betaMult: number; supplyModel?: 'p13' | 'p14'; supply?: { capacityFactor?: number; signalSatFactor?: number }; localCostFactor?: number; gatewayBalance?: number; gatewayReachM?: number; cityCongestion?: number };
+  params: { scale: number; betaMult: number; supplyModel?: 'p13' | 'p14'; supply?: { capacityFactor?: number; signalSatFactor?: number }; localCostFactor?: number; gatewayBalance?: number; gatewayReachM?: number; cityCongestion?: number; cityVdf?: 'bpr' | 'p14'; signalWarrant?: boolean };
   /** Every record of the p13 project check (same split, same criteria) with the synthetic demand. */
   obs: ProjectObs[];
   /** The official 15-site check with the synthetic demand (null: not run). */

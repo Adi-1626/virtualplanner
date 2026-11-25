@@ -45,6 +45,7 @@ import { fetchDiurnalProfile, hourFactor, COUNT_HOURS, type DiurnalProfile, type
 import { compileAreaDemand, fetchCalibratedEdgeFlows, type CalibratedEdgeFlows } from './AreaDemand';
 import { matchPlanToEstimates } from './AreaDemandMatch';
 import { SyntheticDemandSource } from '../demand/syntheticDemandSource';
+import { eighthHourScale } from '../demand/syntheticDemand';
 import { demoModeStore } from './demoMode';
 import { SYNTHETIC_DEMAND_DEFAULT_ON, SYNTHETIC_DECISION, SYNTHETIC_PARAMS, SYNTHETIC_DATASET_ID } from '../calibration/syntheticDemandDecision';
 import { DEFAULT_SUPPLY } from './supplyParams';
@@ -1423,7 +1424,7 @@ export class SimulationMode {
       if (this.planCache?.key !== key) {
         const roads = new Map(this.getRoads().map(r => [r.id, r]));
         const areaKey = contentKey({ rev: this.revision, seeds: area.seedRoadIds, range: area.rangeMeters, dir: area.direction, corr: this.correctionsEnabled, b: area.bounds });
-        this.planCache = { key, plan: this.synthetic.plan(area, roads, hour, settings.through !== false, areaKey, SYNTHETIC_PARAMS.scale, { gatewayBalance: SYNTHETIC_PARAMS.gatewayBalance, gatewayReachM: SYNTHETIC_PARAMS.gatewayReachM, cityCongestion: SYNTHETIC_PARAMS.cityCongestion }) };
+        this.planCache = { key, plan: this.synthetic.plan(area, roads, hour, settings.through !== false, areaKey, SYNTHETIC_PARAMS.scale, { gatewayBalance: SYNTHETIC_PARAMS.gatewayBalance, gatewayReachM: SYNTHETIC_PARAMS.gatewayReachM, cityCongestion: SYNTHETIC_PARAMS.cityCongestion, cityVdf: SYNTHETIC_PARAMS.cityVdf }) };
       }
       plan = this.planCache.plan;
     } else {
@@ -1481,8 +1482,17 @@ export class SimulationMode {
     return { area, corridor, roads: new Map(structuredClone(this.getRoads()).map(r => [r.id, r])), options: this.simOptions(), supply: this.activeSupply(),
       supplyModel: this.supplyModel, buildings: this.supplyModel === 'p14' ? this.buildingPoints : undefined, plan: structuredClone(plan), section,
       ...(this.useSyntheticDemand && SYNTHETIC_PARAMS.localCostFactor ? { localCostFactor: SYNTHETIC_PARAMS.localCostFactor } : {}),
+      ...this.warrantOption(plan),
       hourFactor: o.hourFactor ?? this.state.timeOfDay.factor, seeds: o.seeds ?? this.analysisSeeds, warmupS: DEFAULT_ANALYSIS.warmupS, measureS,
       countJunctions: ds ? junctionsIn(ds, corridor.bounds) : undefined };
+  }
+
+  /** p16: IRC:93 volume-warranted signals for a synthetic plan of a clock hour (when the recorded model uses them). */
+  private warrantOption(plan: DemandPlan): { signalWarrantScale?: number } {
+    const hour = plan.provenance.synthetic?.hour;
+    if (!this.useSyntheticDemand || !SYNTHETIC_PARAMS.signalWarrant || plan.provenance.source !== 'synthetic' || hour === undefined || !this.synthetic.city) return {};
+    const s = eighthHourScale(this.synthetic.city, hour);
+    return s ? { signalWarrantScale: s } : {};
   }
 
   /**

@@ -11,7 +11,7 @@ import { nodeKey } from './junctionGroups';
 import { entryCapacityPcu } from '../streetDesign/roundabout';
 import type { RoundaboutEffect } from '../streetDesign/network';
 import { P14, type SupplyModel, type FrictionClass } from './supplyConfig';
-import { p14LinkSupply, p14TimeRatio, SIGNAL_TO_MIDBLOCK_PCU, frictionByRoad, gapCapacityPcu, controlDelayS, roundaboutEntryPcu, inferredSignalPoints, approachRank, type BuildingPoint } from './indianSupply';
+import { p14LinkSupply, p14TimeRatio, SIGNAL_TO_MIDBLOCK_PCU, frictionByRoad, gapCapacityPcu, controlDelayS, roundaboutEntryPcu, inferredSignalPoints, approachRank, roadGroupKey, type BuildingPoint } from './indianSupply';
 
 /**
  * Area-wide static traffic assignment (deterministic user equilibrium).
@@ -93,6 +93,8 @@ export interface AssignLink {
   carFfsKmh?: number;
   /** p14 only: control at the junction this link enters when it has no signal: give-way from a minor road, right turn from the major road, roundabout entry. */
   junction?: 'minor' | 'majorRight' | 'roundabout';
+  /** p16: a minor approach that only merges into one one-way carriageway (crosses nothing). */
+  junctionMerge?: boolean;
 }
 
 export interface AssignOd { from: number; to: number; veh: number; pcu: number; kinds: Map<VehicleKind, number> }
@@ -119,8 +121,10 @@ export interface AssignmentResult {
   junctionDelayS?: Float64Array;
   /** p14: capacity of the junction movement each link enters (PCU/h; 0 where none), from the final conflicting flows. */
   junctionCapacityPcu?: Float64Array;
-  /** p14: junctions taken as signalised with no mapped signal (indianSupply.inferredSignalPoints), as [lng, lat]. */
+  /** p14: junctions taken as signalised with no mapped signal (indianSupply.inferredSignalPoints, and p16's warranted ones), as [lng, lat]. */
   inferredSignalPoints?: [number, number][];
+  /** p16: of those, the junctions signalised by the IRC:93 volume warrant (signalWarrantScale). */
+  warrantedSignalPoints?: [number, number][];
 }
 
 export interface AssignmentOptions {
@@ -143,6 +147,12 @@ export interface AssignmentOptions {
    * trips that start or end on such a street still use it. Reported link times stay real times. Absent or 1 = off.
    */
   localCostFactor?: number;
+  /**
+   * p16 (p14 supply only): signals by IRC:93-1985 volume warrant (P14.signalWarrant). The factor from this hour's flows to
+   * the flows of the 8th busiest hour of the day (the warrant asks for its volumes in each of any 8 hours); absent or ≤ 0 =
+   * off. Unsignalised junctions whose scaled flows meet Warrant 1 or 2 are run as signalised, like the inferred signals.
+   */
+  signalWarrantScale?: number;
 }
 
 /** OSM classes the local-road perceived-cost factor applies to. */
@@ -293,6 +303,27 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
 }
 
 /**
+ * p16: an unnamed divided road becoming a two-way one (or splitting): exactly three stretches meet, two of them one-way
+ * (one arriving, one leaving) and one two-way, all of one OSM class. Nothing crosses there.
+ */
+function carriagewayTransition(node: string, edges: readonly { id: string; roadId: string; fromNodeId: string; toNodeId: string }[], roads: ReadonlyMap<string, DrivableObject>): boolean {
+  const touching = edges.filter(e => e.fromNodeId === node || e.toNodeId === node);
+  const byRoad = new Map<string, typeof touching>();
+  for (const e of touching) (byRoad.get(e.roadId) ?? byRoad.set(e.roadId, []).get(e.roadId)!).push(e);
+  if (byRoad.size !== 3) return false;
+  const cls = new Set<string>();
+  let inOneWay = 0, outOneWay = 0, twoWay = 0;
+  for (const [id, es] of byRoad) {
+    const r = roads.get(id);
+    cls.add(((r?.type === 'road' ? r.osmProvenance?.originalTags?.highway : undefined) ?? 'drawn').replace(/_link$/, ''));
+    if (r && !r.isOneWay) { twoWay++; continue; }
+    if (es.some(e => e.toNodeId === node)) inOneWay++;
+    if (es.some(e => e.fromNodeId === node)) outOneWay++;
+  }
+  return cls.size === 1 && twoWay === 1 && inOneWay === 1 && outOneWay === 1;
+}
+
+/**
  * p14: control at junctions without a signal (docs/urbanos/SUPPLY_P14.md §3). A node where 3+ stretches meet, with no
  * signal, no edited control and no drawn roundabout, is
  *  - a roundabout entry when a mapped junction=roundabout ring passes it: every link entering it from outside the ring
@@ -309,6 +340,9 @@ function junctionControlP14(area: StudyArea, roads: ReadonlyMap<string, Drivable
   const conflicts: number[][] = Array.from({ length: L }, () => []);
   const icd = new Float64Array(L);
   const merge = new Uint8Array(L);
+  const mergeOut = new Int32Array(L).fill(-1);
+  const outgoing = new Map<string, number[]>();
+  edges.forEach((e, i) => (outgoing.get(e.fromNodeId) ?? outgoing.set(e.fromNodeId, []).get(e.fromNodeId)!).push(i));
   const isRing = (roadId: string) => { const r = roads.get(roadId); return r?.type === 'road' && !!r.osmProvenance?.roundabout; };
   // Rings: OSM roundabout ways joined at shared ends; ICD = ring length / pi
   const ringOfRoad = new Map<string, number>(), ringLen: number[] = [];
@@ -335,8 +369,15 @@ function junctionControlP14(area: StudyArea, roads: ReadonlyMap<string, Drivable
   }
   const incoming = new Map<string, number[]>();
   edges.forEach((e, i) => (incoming.get(e.toNodeId) ?? incoming.set(e.toNodeId, []).get(e.toNodeId)!).push(i));
+  // p16: the roads (by name / ref) at each node: where only one road meets itself (a divided carriageway pair becoming one
+  // two-way road, a carriageway splitting) nothing crosses, so there is no junction control (before, Mula Rd and Station Rd
+  // at such a transition ran as an uncontrolled crossing whose approaches yielded to each other: hours of delay at 09:00)
+  const groupsAt = new Map<string, Set<string>>();
+  for (const e of edges) { const g = roadGroupKey(roads.get(e.roadId), e.roadId); for (const n of [e.fromNodeId, e.toNodeId]) (groupsAt.get(n) ?? groupsAt.set(n, new Set()).get(n)!).add(g); }
   for (const [node, ins] of incoming) {
     if ((arms.get(node)?.size ?? 0) < 3 || signalised.has(node) || editedAt.has(node) || rbAt.has(node)) continue;
+    if ((groupsAt.get(node)?.size ?? 0) === 1 && !groupsAt.get(node)!.values().next().value!.startsWith('id:')) continue;
+    if (carriagewayTransition(node, edges, roads)) continue;
     const ring = ins.filter(i => isRing(edges[i].roadId));
     if (ring.length) {
       const ringId = ringOfRoad.get(edges[ring[0]].roadId) ?? -1;
@@ -365,13 +406,17 @@ function junctionControlP14(area: StudyArea, roads: ReadonlyMap<string, Drivable
       } else {
         kind[i] = 1; conflicts[i] = majors;
         // Merging into one one-way carriageway, crossing nothing
-        if (majors.length === 1 && oneWay(majors[0])) merge[i] = 1;
+        if (majors.length === 1 && oneWay(majors[0])) {
+          merge[i] = 1;
+          const outs = outgoing.get(node) ?? [];
+          if (outs.length === 1) mergeOut[i] = outs[0];
+        }
       }
     }
   }
-  kind.forEach((k, i) => { if (k) links[i].junction = k === 1 ? 'minor' : k === 2 ? 'majorRight' : 'roundabout'; });
+  kind.forEach((k, i) => { if (k) links[i].junction = k === 1 ? 'minor' : k === 2 ? 'majorRight' : 'roundabout'; if (merge[i]) links[i].junctionMerge = true; });
   void area;
-  return { kind, conflicts, icd, merge };
+  return { kind, conflicts, icd, merge, mergeOut };
 }
 
 class Heap {
@@ -397,6 +442,58 @@ class Heap {
  * Deterministic: the same inputs give the same flows.
  */
 export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, trips: readonly MicroDemandTrip[], o: AssignmentOptions = {}): AssignmentResult {
+  if (o.supplyModel !== 'p14' || !(o.signalWarrantScale && o.signalWarrantScale > 0)) return assignOnce(area, roads, trips, o);
+  // p16: a short assignment, the junctions whose flows meet the IRC:93 warrant become signalised, again (up to `rounds`),
+  // then the full assignment with them
+  const t0 = Date.now();
+  const w = P14.signalWarrant.value;
+  const warranted: [number, number][] = [];
+  for (let round = 0; round < w.rounds; round++) {
+    const pts = [...(o.signalPoints ?? []), ...warranted];
+    const a = assignOnce(area, roads, trips, { ...o, signalPoints: pts, maxIterations: Math.min(w.afterIterations, o.maxIterations ?? 60) });
+    const add = warrantedJunctions(a, o.signalWarrantScale);
+    if (!add.length) break;
+    warranted.push(...add);
+  }
+  const r = assignOnce(area, roads, trips, { ...o, signalPoints: [...(o.signalPoints ?? []), ...warranted] });
+  return { ...r, elapsedMs: Date.now() - t0, inferredSignalPoints: [...(r.inferredSignalPoints ?? []), ...warranted], warrantedSignalPoints: warranted };
+}
+
+/**
+ * p16: unsignalised priority / uncontrolled junctions (p14 control) whose flows x `scale` meet IRC:93-1985 Warrant 1 or 2
+ * (P14.signalWarrant): major street = its approaches (or, where every approach ranks equally, the two busiest), minor =
+ * the busiest other approach; lanes from those approaches. Merges of one-way carriageways and roundabout entries are not
+ * candidates. Returns the junctions' points.
+ */
+export function warrantedJunctions(a: AssignmentResult, scale: number): [number, number][] {
+  const w = P14.signalWarrant.value;
+  const byNode = new Map<number, number[]>();
+  a.links.forEach(l => { if (l.junction === 'minor' || l.junction === 'majorRight') (byNode.get(l.to) ?? byNode.set(l.to, []).get(l.to)!).push(l.index); });
+  // Major approaches are the links that enter the node without a 'minor' control (majorRight or none)
+  const into = new Map<number, number[]>();
+  a.links.forEach(l => (into.get(l.to) ?? into.set(l.to, []).get(l.to)!).push(l.index));
+  const out: [number, number][] = [];
+  for (const [node] of byNode) {
+    const ins = into.get(node) ?? [];
+    if (ins.length < 2) continue;
+    const vol = (i: number) => a.volVeh[i] * scale;
+    const minors = ins.filter(i => a.links[i].junction === 'minor'), majors = ins.filter(i => a.links[i].junction !== 'minor');
+    let maj: number[], min: number[];
+    if (majors.length) { maj = majors; min = minors; }
+    else { const s = [...ins].sort((x, y) => vol(y) - vol(x)); maj = s.slice(0, 2); min = s.slice(2); }
+    // A slip road merging into one carriageway is not a signal candidate
+    if (!min.length || min.every(i => a.links[i].junctionMerge)) continue;
+    const majorVeh = maj.reduce((t, i) => t + vol(i), 0);
+    const mi = min.reduce((b, i) => (vol(i) > vol(b) ? i : b), min[0]);
+    const majorLanes = Math.max(...maj.map(i => a.links[i].lanes)) >= 2 ? 1 : 0, minorLanes = a.links[mi].lanes >= 2 ? 1 : 0;
+    const w1 = majorVeh >= w.w1Major[majorLanes] && vol(mi) >= w.w1Minor[minorLanes];
+    const w2 = majorVeh >= w.w2Major[majorLanes] && vol(mi) >= w.w2Minor[minorLanes];
+    if (w1 || w2) { const c = a.nodeCoords[node]; out.push([c[0], c[1]]); }
+  }
+  return out;
+}
+
+function assignOnce(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, trips: readonly MicroDemandTrip[], o: AssignmentOptions = {}): AssignmentResult {
   const t0 = Date.now();
   const supply = o.supply ?? DEFAULT_SUPPLY;
   const p14 = o.supplyModel === 'p14';
@@ -515,6 +612,13 @@ export function assignTraffic(area: StudyArea, roads: ReadonlyMap<string, Drivab
       let vc = 0;
       for (const j of ctl.conflicts[i]) vc += flow[j];
       jCap[i] = k === 1 ? gapCapacityPcu(vc, ctl.merge[i] ? mergeParams : P14.unsigMinor.value) : k === 2 ? gapCapacityPcu(vc, P14.unsigMajorRight.value) : roundaboutEntryPcu(ctl.icd[i], vc) * Math.min(2, Math.max(1, links[i].lanes));
+      // p16: a merge into one carriageway shares its downstream capacity when both streams are heavy (limited priority /
+      // zip merging: the merging stream is never starved below its share of the carriageway it joins)
+      const o = ctl.mergeOut[i];
+      if (k === 1 && ctl.merge[i] && o >= 0 && P14.mergeSharing.value) {
+        const vi = flow[i], tot = vi + vc;
+        if (tot > 0) jCap[i] = Math.max(jCap[i], cap[o] * vi / tot);
+      }
     }
   };
   const junctionDelay = (i: number, v: number) => {

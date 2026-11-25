@@ -21,7 +21,7 @@ import type { RoadSection } from '../simulation/roadSection';
 import type { BuildingPoint } from '../simulation/indianSupply';
 import { DEFAULT_SUPPLY } from '../simulation/supplyParams';
 import { SYNTHETIC_PARAMS } from '../calibration/syntheticDemandDecision';
-import { decodeSyntheticDemand, rebalance, syntheticAreaPlan, type AreaPaths, type SyntheticCity, type SyntheticTripEnd } from '../demand/syntheticDemand';
+import { decodeSyntheticDemand, eighthHourScale, rebalance, syntheticAreaPlan, type AreaPaths, type SyntheticCity, type SyntheticTripEnd } from '../demand/syntheticDemand';
 import { evaluateBands, type AreaHourMetrics } from './citywide/citywideBands';
 
 /**
@@ -276,28 +276,27 @@ describe.skipIf(!env.P16)('p16 city-wide robustness harness (opt-in)', () => {
         const segs = new Set(b.area.segments.map(s => s.key));
         const aopts = { signalPoints: b.signals, junctionEdits: b.simOptions.junctionEdits, supply, supplyModel: 'p14' as const, buildings: b.buildings, maxIterations: iters, maxMs: 1e9, targetGap: 1e-3,
           ...(set.localCostFactor ? { localCostFactor: set.localCostFactor } : {}), ...(set.p16 ? { p16: set.p16 } : {}) };
-        // Zero-flow reference: the same network with no traffic (free running, signal delay, junction control at zero flow)
-        let free: Float64Array | null = null;
         for (const hour of hoursOnly ?? b.rec.hours) {
           const t0 = Date.now();
           const row: Record<string, unknown> = { area: b.rec.id, stratum: b.rec.stratum, roadClass: b.rec.roadClass, jurisdiction: b.rec.jurisdiction, hour, set: set.name };
           try {
             const plan = syntheticAreaPlan(city, b.area, b.roads, ends, { hour, scale: set.scale, ...(set.gatewayBalance ? { gatewayBalance: set.gatewayBalance } : {}),
-              ...(set.gatewayReachM !== undefined ? { gatewayReachM: set.gatewayReachM } : {}), ...(set.cityCongestion ? { cityCongestion: set.cityCongestion } : {}), ...(set.p16demand ? { p16: set.p16demand } : {}) } as never, cache);
+              ...(set.gatewayReachM !== undefined ? { gatewayReachM: set.gatewayReachM } : {}), ...(set.cityCongestion ? { cityCongestion: set.cityCongestion } : {}), ...(set.cityVdf ? { cityVdf: set.cityVdf } : {}), ...(set.p16demand ? { p16: set.p16demand } : {}) } as never, cache);
             if (!plan) { row.ok = false; row.error = 'no plan (no trip ends or no roads)'; log(row); continue; }
             const trips = snapDemandPlan(plan, b.area.network, 250, segs);
             const totVph = trips.reduce((s, t) => s + t.vehiclesPerHour, 0);
-            if (!free) {
-              const z = assignTraffic(b.area, b.roads, trips.map(t => ({ ...t, vehiclesPerHour: 1e-6 })), { ...aopts, maxIterations: 2 });
-              free = Float64Array.from(z.timeS);
-            }
-            const a = assignTraffic(b.area, b.roads, trips, aopts);
+            const ws = set.signalWarrant ? eighthHourScale(city, hour) : null;
+            const a = assignTraffic(b.area, b.roads, trips, { ...aopts, ...(ws ? { signalWarrantScale: ws } : {}) });
+            // Zero-flow reference on the same network and the same signals (the hour's warranted signals included)
+            const zsig = a.warrantedSignalPoints?.length ? [...(b.signals ?? []), ...a.warrantedSignalPoints] : b.signals;
+            const z = assignTraffic(b.area, b.roads, trips.map(t => ({ ...t, vehiclesPerHour: 1e-6 })), { ...aopts, signalPoints: zsig, maxIterations: 2 });
+            const free = Float64Array.from(z.timeS);
             const sm = staticMetrics(a, free, b.roads, b.section);
             const be = buildingEnds(plan, b.area);
             const comp = plan.provenance.components!;
             Object.assign(row, { ok: true, demandVph: Math.round(plan.provenance.vehiclesPerHour), snappedVph: Math.round(totVph), unroutedVph: Math.round(a.unroutedVeh),
               noEdgeRouteVph: Math.round(comp.noEdgeRoute ?? 0), parts: { internal: Math.round(comp.internal), outbound: Math.round(comp.outbound), inbound: Math.round(comp.inbound), through: Math.round(comp.through) },
-              ...sm, buildingEnds: be, assignMs: Date.now() - t0 });
+              ...sm, buildingEnds: be, warranted: a.warrantedSignalPoints?.length ?? 0, assignMs: Date.now() - t0 });
             if (env.P16_MICRO === '1') {
               // The corridor run as analysisJob.ts does it, two seeds, a short warm-up and measured window
               const inside = new Set(b.corridor.segments.map(s => s.key));

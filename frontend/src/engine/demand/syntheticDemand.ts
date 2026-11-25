@@ -25,6 +25,7 @@ import type { DemandPlan } from '../simulation/StudyDemand';
 import { reachability } from '../simulation/AreaDemand';
 import { osmRoadClass } from '../simulation/networkCorrections';
 import { P14 } from '../simulation/supplyConfig';
+import { p14TimeRatio } from '../simulation/indianSupply';
 
 export const SYNTHETIC_LABEL = 'synthetic' as const;
 /** v2: beta by jurisdiction (CMP-2024 Table 2-38) and the outer-cordon traffic (DEMAND_P14.md §4); v1 stays installed for reproduction. */
@@ -89,6 +90,8 @@ export interface SyntheticCity {
   skeleton: Skeleton;
   /** Road-vehicle trips per person trip by kind for each OD cell (from the mode split and occupancy), built on first use. */
   vehPerPerson?: Float32Array;
+  /** City road-vehicle trips per clock hour (the asset's checks.hourlyVehicleTrips), when the asset has them. */
+  hourlyVeh?: number[];
 }
 interface Skeleton {
   n: number; lon: Float64Array; lat: Float64Array; from: Uint16Array; to: Uint16Array; time: Float64Array; cls: Uint8Array; classes: string[];
@@ -135,7 +138,20 @@ export function decodeSyntheticDemand(doc: SyntheticDemandDoc): SyntheticCity {
     fixed: doc.fixedDaily ?? {}, kindShares: doc.kindShares ?? {},
     endWeights: doc.endWeights, mode: doc.modeSplit.params, occupancy: doc.occupancy, hourly: doc.hourly,
     skeleton: { n: sk.n, lon, lat, from, to, time, cls: bytes(sk.cls), classes: sk.classes, outStart: out.start, outEdge: out.edge, inStart: inn.start, inEdge: inn.edge, connectors: sk.connectors },
+    ...(doc.checks?.hourlyVehicleTrips?.length === 24 ? { hourlyVeh: [...doc.checks.hourlyVehicleTrips] } : {}),
   };
+}
+
+/**
+ * p16: factor from the city's vehicle trips at `hour` to those of the 8th busiest hour of the day (IRC:93-1985 asks for its
+ * warrant volumes in each of any 8 hours of an average day; staticAssignment signalWarrantScale). Null without an hourly profile.
+ */
+export function eighthHourScale(city: SyntheticCity, hour: number): number | null {
+  const h = city.hourlyVeh;
+  if (!h || h.length !== 24) return null;
+  const v = h[((Math.floor(hour) % 24) + 24) % 24];
+  const eighth = [...h].sort((a, b) => b - a)[7];
+  return v > 0 ? eighth / v : null;
 }
 
 /** Gravity deterrence t^alpha exp(beta t), t the network time in minutes (at least 0.5). */
@@ -293,6 +309,13 @@ export interface SyntheticAreaOptions {
    * a zone pair's traffic is split over the paths of the iterations. Absent: the p14 behaviour (one uncongested path).
    */
   cityCongestion?: number;
+  /**
+   * p16: the speed-flow curve of the city-wide skeleton loading (`cityCongestion`): 'bpr' (default, the p15 assumption
+   * 0.15 / 4) or 'p14', the p14 Indo-HCM curve the area assignment itself uses (SUPPLY_P14.md §1.4), normalised so the
+   * skeleton's peak running time holds at v/c 0.75 (Indo-HCM Table 5.7 LOS C/D boundary, 59 % of FFS, about the
+   * CMP-2024 network speed of 25 km/h against urban free-flow speeds: the assumed reference load of those times).
+   */
+  cityVdf?: 'bpr' | 'p14';
 }
 
 /** p15: capacity of a boundary road per lane (PCU/h) by its highest road class rank (4 highway, 3 arterial, 2 collector, 1 local). */
@@ -436,6 +459,8 @@ export function skeletonCapacityPcu(cls: string): number {
 }
 /** BPR (US BPR 1964, international; ASSUMED here) on the skeleton's peak running time: t = t_peak (1 + 0.15 (v/c)^4). */
 const SKELETON_BPR = { alpha: 0.15, beta: 4 };
+/** p16: the p14 curve's time ratio at the skeleton's reference load v/c 0.75 (see SyntheticAreaOptions.cityVdf). */
+const P14_REF_RATIO = p14TimeRatio(0.75);
 const congestedCache = new WeakMap<SyntheticCity, Map<string, Float64Array[]>>();
 
 /** One all-or-nothing loading of the zone OD (PCU/h, n x n) on the skeleton with link times `t`; returns link flows. */
@@ -481,8 +506,8 @@ function skeletonAon(city: SyntheticCity, od: Float64Array, t: Float64Array): Fl
  * all-or-nothing paths used (element 0: the uncongested peak running times), so the MSA flows are the average of the
  * iterations' path flows and each zone pair's traffic splits evenly over its iteration paths. Cached per city and hour.
  */
-export function congestedSkeletonTimes(city: SyntheticCity, hour: number, iterations: number): Float64Array[] {
-  const h = ((Math.floor(hour) % 24) + 24) % 24, key = `${h}:${iterations}`;
+export function congestedSkeletonTimes(city: SyntheticCity, hour: number, iterations: number, vdf: 'bpr' | 'p14' = 'bpr'): Float64Array[] {
+  const h = ((Math.floor(hour) % 24) + 24) % 24, key = `${h}:${iterations}${vdf === 'p14' ? ':p14' : ''}`;
   let m = congestedCache.get(city);
   if (!m) { m = new Map(); congestedCache.set(city, m); }
   const hit = m.get(key);
@@ -496,7 +521,7 @@ export function congestedSkeletonTimes(city: SyntheticCity, hour: number, iterat
   for (let k = 1; k < Math.max(1, iterations); k++) {
     const y = skeletonAon(city, od, times[k - 1]);
     for (let e = 0; e < x.length; e++) x[e] += (y[e] - x[e]) / k;
-    times.push(Float64Array.from(sk.time, (t0, e) => t0 * (1 + SKELETON_BPR.alpha * Math.pow(x[e] / cap[e], SKELETON_BPR.beta))));
+    times.push(Float64Array.from(sk.time, (t0, e) => t0 * (vdf === 'p14' ? p14TimeRatio(x[e] / cap[e]) / P14_REF_RATIO : 1 + SKELETON_BPR.alpha * Math.pow(x[e] / cap[e], SKELETON_BPR.beta))));
   }
   m.set(key, times);
   return times;
@@ -723,9 +748,9 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
 
   // 2. City paths relative to the area
   const cc = opts.cityCongestion && opts.cityCongestion > 1 ? Math.round(opts.cityCongestion) : 0;
-  const timesKey = cc ? `${((Math.floor(opts.hour) % 24) + 24) % 24}:${cc}` : 'free';
+  const timesKey = cc ? `${((Math.floor(opts.hour) % 24) + 24) % 24}:${cc}${opts.cityVdf === 'p14' ? ':p14' : ''}` : 'free';
   const paths = cache?.paths && (cache.paths.timesKey ?? 'free') === timesKey && cache.paths.outline.length === outline.length && cache.paths.outline.every((p, i) => p[0] === outline[i][0] && p[1] === outline[i][1]) ? cache.paths
-    : areaPaths(city, outline, gateways, cc ? congestedSkeletonTimes(city, opts.hour, cc) : [city.skeleton.time], timesKey);
+    : areaPaths(city, outline, gateways, cc ? congestedSkeletonTimes(city, opts.hour, cc, opts.cityVdf ?? 'bpr') : [city.skeleton.time], timesKey);
   if (cache) cache.paths = paths;
 
   // 3. Flows of the hour, split by where their ends are
