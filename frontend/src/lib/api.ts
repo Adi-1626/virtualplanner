@@ -21,6 +21,7 @@
  */
 
 import { redactPaths } from './redactPaths';
+import { describeFailure, friendlyText, isNetworkFailureText, ERROR_CATALOGUE, type ErrorContext, type FriendlyError } from './errorCatalogue';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Base URL — read once at module load
@@ -36,18 +37,50 @@ export const API_BASE: string =
 export class ApiError extends Error {
   public readonly status: number;
   public readonly endpoint: string;
+  /** Backend machine code (backend/app_errors.py), e.g. NOT_FOUND, SIM_FAILED; null when the body had none. */
+  public readonly code: string | null;
+  /** X-Request-ID of the failed request (the same id is on its line in backend/logs/urbanos.log). */
+  public readonly requestId: string | null;
+  /** Invalid field names of a 422. */
+  public readonly fields: string[];
+  /** The server's own detail, path-redacted, for developers (console); never shown as the message. */
+  public readonly serverDetail: string;
+  /** What the planner reads (lib/errorCatalogue.ts). `message` is its one-line text. */
+  public readonly friendly: FriendlyError;
 
   constructor(
     status: number,
     endpoint: string,
-    message: string,
+    body: string,
+    requestId: string | null = null,
+    context?: ErrorContext,
   ) {
-    // the body can carry a server path (an exception text): never let it reach the UI
-    super(`[API ${status}] ${endpoint}: ${redactPaths(message)}`);
+    let parsed: { code?: unknown; request_id?: unknown; fields?: unknown; detail?: unknown } | null = null;
+    try { parsed = JSON.parse(body); } catch { /* not JSON */ }
+    const code = typeof parsed?.code === 'string' ? parsed.code : null;
+    const rid = requestId ?? (typeof parsed?.request_id === 'string' ? parsed.request_id : null);
+    const fields = Array.isArray(parsed?.fields) ? parsed!.fields.filter((f): f is string => typeof f === 'string') : [];
+    const friendly = describeFailure({ kind: 'http', status, code, fields, requestId: rid, context });
+    super(friendlyText(friendly));
     this.name = 'ApiError';
     this.status = status;
     this.endpoint = endpoint;
+    this.code = code;
+    this.requestId = rid;
+    this.fields = fields;
+    // the body can carry a server path (an exception text): keep it off the UI, redacted even for the console
+    const d = parsed?.detail;
+    this.serverDetail = redactPaths(typeof d === 'string' ? d : d != null ? JSON.stringify(d) : body).slice(0, 500);
+    this.friendly = friendly;
   }
+}
+
+/** An ApiError from a failed Response (reads the body; never throws itself). For the feature clients' own fetch helpers. */
+export async function apiErrorFromResponse(res: Response, endpoint: string, context?: ErrorContext): Promise<ApiError> {
+  const body = await res.text().catch(() => '');
+  const err = new ApiError(res.status, endpoint, body, res.headers.get('X-Request-ID'), context);
+  console.warn(`[API ${res.status}] ${endpoint} code=${err.code ?? '-'} request_id=${err.requestId ?? '-'}: ${err.serverDetail}`);
+  return err;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -122,14 +155,19 @@ class ConnectionStateStore {
 export const connectionState = new ConnectionStateStore();
 
 /** What a planner reads when the browser could not reach the UrbanOS server (instead of the browser's "Failed to fetch"). */
-export const SERVER_UNREACHABLE = 'The UrbanOS server could not be reached. Check that it is running, then try again.';
+export const SERVER_UNREACHABLE = `${ERROR_CATALOGUE.UNAVAILABLE.message} ${ERROR_CATALOGUE.UNAVAILABLE.action}`;
+
+/** What to say when fetch() threw: offline when the browser says so, else the server is not responding (errorCatalogue). */
+export function networkFailureMessage(): string {
+  return friendlyText(describeFailure({ kind: 'unreachable' }));
+}
 
 /** A cancelled or timed-out request is not the server being down. */
 const isAbortOrTimeout = (e: unknown) => ['AbortError', 'TimeoutError'].includes((e as Error)?.name);
 
 /** The browser's own network-failure messages (fetch threw before any HTTP response). */
 export const isNetworkFailure = (e: unknown) =>
-  e instanceof TypeError || /failed to fetch|networkerror|network request failed|load failed|err_connection|could not be reached/i.test(String((e as Error)?.message ?? e));
+  e instanceof TypeError || isNetworkFailureText(String((e as Error)?.message ?? e));
 
 /**
  * fetch() for the feature API clients (coordination, terrain, …) that do not go through request(): a network failure marks
@@ -143,7 +181,7 @@ export async function trackedFetch(url: string, init?: RequestInit): Promise<Res
   } catch (e) {
     if (isAbortOrTimeout(e)) throw e;
     connectionState.set('offline');
-    throw new Error(SERVER_UNREACHABLE);
+    throw new Error(networkFailureMessage());
   }
   if (connectionState.isCurrentlyOffline) connectionState.set('online');
   return res;
@@ -191,7 +229,7 @@ async function request<T = void>(
     connectionState.set('offline');
     // The browser's own "Failed to fetch" means nothing to a planner (Final QA 2026-11-21: it was on screen in
     // Explore, Projects → Data, Reports and the Data catalogue with the server stopped).
-    throw new Error(SERVER_UNREACHABLE);
+    throw new Error(networkFailureMessage());
   }
 
   writeDone();
@@ -201,10 +239,7 @@ async function request<T = void>(
     connectionState.set(activeWrites === 0 ? 'online' : 'saving');
   }
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => '(no body)');
-    throw new ApiError(res.status, path, body);
-  }
+  if (!res.ok) throw await apiErrorFromResponse(res, path);
 
   const text = await res.text();
   if (!text) {

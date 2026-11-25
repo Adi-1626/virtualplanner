@@ -6,6 +6,7 @@ import type { CityObject, RoadClassification, BuildingUsage, UtilityType, Area, 
 import { ObjectManager } from '../objects/ObjectManager';
 import { HistoryManager, type HistoryDiff } from '../history/HistoryManager';
 import { apiGet, apiPost, apiDelete } from '../../lib/api';
+import { showErrorToast } from '../../lib/errorToast';
 import { SnapManager, SAME_LEVEL_SNAP_M, type SnapResult } from './SnapManager';
 import { OverpassCancelledError, OverpassClient } from './OverpassClient';
 import { LocalOsmIndex } from './LocalOsmIndex';
@@ -1450,7 +1451,7 @@ export class EditingEngine {
       this.notify();
     } catch (e) {
       console.warn('[EditingEngine] fetchSavedAreas failed:', e);
-      (window as any).showToast?.('Failed to load saved areas: Backend server may be offline.', 'error');
+      showErrorToast(e, { context: 'load', retry: () => void this.fetchSavedAreas() });
     } finally {
       this.savedAreasFetched = true;
     }

@@ -11,6 +11,7 @@ import { STUDY_AREA_ROADS_PREFIX } from '../../engine/simulation/osmCoverage';
 import { BASE_SCENARIO_ID } from '../../engine/scenarios/ScenarioManager';
 import { API_BASE, trackedFetch } from '../../lib/api';
 import { CertaintyBadge } from '../ui/badges/CertaintyBadge';
+import { ErrorNotice } from '../ui/ErrorNotice';
 
 const CATEGORY_LABEL: Record<InfrastructureCategory, string> = {
   roads: 'Roads (junctions derive from them)',
@@ -296,12 +297,13 @@ export const ImportAreaPanel: React.FC = () => {
 
       {/* Error */}
       {!busy && failure && (
-        <div className="uos-banner-fail flex-col" role="alert" data-testid="study-error">
-          <div className="flex items-start gap-2"><AlertTriangle size={14} aria-hidden className="shrink-0 mt-0.5" /><span>Could not load data: {failure}</span></div>
-          {status && status !== 'offline' && !status.available && (
-            <span className="text-meta text-text-2">Overpass servers are often busy; try again in a minute. For reliable imports build the local index once: <code>{status.buildCommand ?? 'cd backend && python -m osm.build_index'}</code></span>
-          )}
-          {selectedArea && <button type="button" className="uos-btn uos-btn-sm self-start" onClick={() => void runImport(selectedArea, categories, !wholeFeatures)}><RefreshCw size={12} aria-hidden /> Try again</button>}
+        <div data-testid="study-error">
+          <ErrorNotice message={failure} prefix="Could not load data:"
+            onRetry={selectedArea ? () => void runImport(selectedArea, categories, !wholeFeatures) : undefined}>
+            {status && status !== 'offline' && !status.available && (
+              <span className="text-meta text-text-2">Overpass servers are often busy; try again in a minute. For reliable imports build the local index once: <code>{status.buildCommand ?? 'cd backend && python -m osm.build_index'}</code></span>
+            )}
+          </ErrorNotice>
         </div>
       )}
 

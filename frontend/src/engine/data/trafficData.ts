@@ -7,7 +7,7 @@
  * validation evidence (countValidation.ts) and as constraints for a future
  * matrix estimator (odmeConstraints.ts).
  */
-import { apiGet, apiPost, apiDelete, API_BASE, trackedFetch } from '../../lib/api';
+import { apiGet, apiPost, apiDelete, API_BASE, ApiError, trackedFetch } from '../../lib/api';
 import { redactPaths } from '../../lib/redactPaths';
 
 export type DatasetKind = 'measured' | 'estimated' | 'manual';
@@ -112,6 +112,8 @@ export class TrafficApiError extends Error {
 async function apiSend<T>(method: string, path: string, body: unknown): Promise<T> {
   const res = await trackedFetch(`${API_BASE}${path}`, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const json = await res.json().catch(() => null);
+  // 5xx: the catalogue's words and the request reference (lib/errorCatalogue.ts); 4xx keep the row/field problems
+  if (!res.ok && res.status >= 500) throw new ApiError(res.status, path, JSON.stringify(json ?? ''), res.headers.get('X-Request-ID'));
   if (!res.ok) throw new TrafficApiError(res.status, json?.detail ?? json);
   return json as T;
 }

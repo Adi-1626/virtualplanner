@@ -447,6 +447,7 @@ cmd.exe uses `set NAME=value` instead of `$env:NAME = "value"`. `osmium` is need
 | `TWINCITY_PDF_FONT_DIR` | TTF fonts for PDF (else Latin-1 fallback) | `feasibility/docgen.py` |
 | `UPDATER_WATCHLIST`, `UPDATER_SEED`, `UPDATER_CACHE_DIR`, `UPDATER_LLM_URL/KEY/MODEL` | updater, §3 | `backend/updater/*` |
 | `SUMO_HOME` | only for `POST /api/sim/spike` | `sumo/spike.py` |
+| `LOG_LEVEL`, `URBANOS_LOG_FORMAT`, `URBANOS_LOG_FILE`, `URBANOS_SLOW_REQUEST_MS`, `URBANOS_LOG_QUIET_PATHS`, `URBANOS_LOG_QUIET_SAMPLE`, `URBANOS_UVICORN_ACCESS_LOG`, `URBANOS_RECENT_ERRORS_MAX`, `URBANOS_DEBUG` | request log and error visibility, §5.7 | `app_logging.py` |
 | `VITE_API_BASE`, `VITE_CESIUM_ION_TOKEN` | frontend `.env` | `lib/api.ts`, `lib/cesiumToken.ts` |
 
 ### 5.5 Tests and checks
@@ -459,9 +460,57 @@ cmd.exe uses `set NAME=value` instead of `$env:NAME = "value"`. `osmium` is need
 | Backend tests | `python -m pytest tests -q` (`backend/`); pipelines: `python -m pytest datasets/tests -q` |
 | Updater only | `python -m pytest tests/test_updater.py tests/test_update_monitor.py -q`; offline golden check `python -m updater evaluate` |
 | Environment data only | `python -m pytest tests/test_envdata.py -q` |
+| Request log and error bodies | `python -m pytest tests/test_request_logging.py -q`; frontend messages `npx vitest run src/engine/testing/ErrorCatalogue.test.ts` |
 | Underground screening | `python -m pytest tests/test_underground_screening.py tests/test_underground_final_pass.py -q` |
 
 `backend/tests/conftest.py` points `DATABASE_URL` at a temporary file before the app is imported, so tests never touch your `twincity.db`. CI (`.github/workflows/ci.yml`) runs tsc + oxlint + vitest and `python seed.py` + pytest on pushes to `main`, `p0`, `phase/*` and PRs to `main`. On the shared dev machine, wrap heavy runs in `flock /workspace/work/heavy.lock …`.
+
+### 5.7 Logs and errors
+
+**Where the log is.** The backend writes one log, to the console and to `backend/logs/urbanos.log` (rotated at 5 MB, five old files `urbanos.log.1` … `.5`; `logs/` is git-ignored). Setup: `backend/app_logging.py`, called at the top of `main.py`. Tests write theirs to a temporary folder (`tests/conftest.py`).
+
+**One line per request.** Example (text format):
+```
+2026-11-25T20:41:07.512+05:30 WARNING urbanos.http [3f2a9c1e-7b4d-4c1a-9e2f-0123456789ab] GET /api/objects/abc status=404 dur_ms=3.1 size=96 ip=127.0.0.1 code=NOT_FOUND reason='Object not found'
+```
+- Time with its zone, level, logger, **request id** in brackets, then method, path and query, status, duration in ms, response size in bytes (before gzip), client IP, and for errors the `code`, the reason (the server's detail, paths removed, 200 characters) and for 422 the invalid `fields` (names only, never values or bodies).
+- Levels: INFO for 2xx/3xx, **WARNING** for 4xx and for requests slower than `URBANOS_SLOW_REQUEST_MS` (marked `slow(>2000ms)`), **ERROR** for 5xx. An unhandled exception is logged at ERROR with its full traceback right under the request line.
+- Query values of sensitive parameters (`token`, `key`, `*key`, `password`, `secret`, `auth*`, `session`, `signature`, `code`, …) are written as `***`.
+- Every request is logged at INFO, and the console shows exactly the same line as the log file. To hide noisy paths (`/`, `/api/sim/status`, `/docs`, `/openapi.json`, `*.png` overlays, `*/tile`), set `URBANOS_LOG_QUIET_PATHS` to the globs in `QUIET_SUGGESTED` (they then log at DEBUG unless they fail or are slow), or log a fraction with `URBANOS_LOG_QUIET_SAMPLE=0.01`.
+- Every other logger in the app (`sim_router`, `terrain_router`, startup seeds) goes to the same file with the request id of the request it ran in (`-` outside a request). uvicorn's startup and error lines are copied to the file too.
+
+**Request ids.** Every response carries `X-Request-ID` (exposed to the browser through CORS). A client may send its own `X-Request-ID` (letters, digits, `.`, `_`, `:`, `-`, at most 128 characters); otherwise the server makes a UUID4.
+
+**Error bodies.** Every error answer is JSON with a stable machine `code` (list and meaning in `backend/app_errors.py` `ERROR_CODES`) and the `request_id`; `detail` is kept as before so existing clients still work:
+- `HTTPException` → `{detail, code, request_id}`; the code is the route's own (`ApiProblem(503, "SIM_UNAVAILABLE", …)`) or the generic one for the status (`NOT_FOUND`, `CONFLICT`, …).
+- 422 → `{detail, code: "VALIDATION_ERROR", fields: ["width_m", …], request_id}`.
+- Unhandled exception → 500 `{error: "Internal server error", code: "INTERNAL", request_id, detail: "Internal server error"}`. No stack trace or exception text reaches the client.
+- Routes that already use domain codes: `/api/sim/spike` (`SIM_UNAVAILABLE`, `SIM_FAILED`), `/api/osm/*` (`DATA_NOT_AVAILABLE` index not built, `AREA_NOT_COVERED`), `/api/terrain/*` (`DATA_NOT_AVAILABLE` DEM not loaded), feasibility evidence upload (`FILE_TOO_LARGE`). To add one: put it in `ERROR_CODES` (never rename a code), raise `ApiProblem(status, "CODE", detail)`, and add its words to the frontend catalogue.
+
+**What the planner sees.** `frontend/src/lib/errorCatalogue.ts` maps each failure (offline, timeout, server not responding, status, `code`, 422 fields, and what the app was doing: save, export, load, simulate, tiles) to a short message and an action, e.g. "You're offline. Check your internet connection.", "We couldn't find that item. It may have been moved or deleted.", "Please check width.", "Your changes weren't saved. Try again." Server text never reaches the screen; it stays on the error object (`ApiError.serverDetail`) and in the browser console. `components/ui/ErrorNotice.tsx` shows it calmly (no red) with **Reference: 3f2a9c1e** and a Copy button, and Try again where retrying can help; the app's toast uses the same notice (`lib/errorToast.ts` `showErrorToast(err, { context, retry })`). The reference is the first 8 characters of the request id.
+
+**Matching a UI error to the log.** Copy the reference from the notice, then:
+```bash
+grep 3f2a9c1e backend/logs/urbanos.log*          # Linux / macOS (all rotated files)
+Select-String 3f2a9c1e backend\logs\urbanos.log* # Windows PowerShell
+```
+The request line and, for a 500, the traceback below it are what you need. With `URBANOS_LOG_FORMAT=json` each line is one JSON object (`ts, level, logger, request_id, msg, method, path, query, status, duration_ms, size, client_ip, code, slow`, plus `exc_type` and `traceback`), e.g. `jq 'select(.level=="ERROR")' backend/logs/urbanos.log`.
+
+**Recent errors without the file.** Start the backend with `URBANOS_DEBUG=1` and open `GET /api/admin/recent-errors?limit=50` (add `&include_warnings=true` for 4xx and slow requests). It returns the newest records from memory (last 200, `URBANOS_RECENT_ERRORS_MAX`): time, level, request id, method, path, redacted query, status, duration, code, exception type and message (paths removed) and the last code line (`file.py:123 in func`). No headers, bodies or tracebacks. Without `URBANOS_DEBUG=1` the endpoint answers 404; do not enable it on a shared server (there is no authentication).
+
+**uvicorn's access log is off.** The request line above replaces it (`app_logging.py` disables `uvicorn.access`, and `python main.py` passes `access_log=False`). Set `URBANOS_UVICORN_ACCESS_LOG=1` to get uvicorn's own lines as well, or start with `uvicorn main:app --no-access-log` to be explicit.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `LOG_LEVEL` | `INFO` | `DEBUG` also logs the quiet paths and debug lines |
+| `URBANOS_LOG_FORMAT` | `text` | `json`: one JSON object per line |
+| `URBANOS_LOG_FILE` | `backend/logs/urbanos.log` | another path, or `off` for console only |
+| `URBANOS_SLOW_REQUEST_MS` | `2000` | slow-request WARNING threshold |
+| `URBANOS_LOG_QUIET_PATHS` | empty (log every request) | comma-separated globs logged at DEBUG when they succeed |
+| `URBANOS_LOG_QUIET_SAMPLE` | `0` | fraction of quiet requests still logged at INFO |
+| `URBANOS_UVICORN_ACCESS_LOG` | off | `1` keeps uvicorn's access log |
+| `URBANOS_RECENT_ERRORS_MAX` | `200` | size of the in-memory buffer |
+| `URBANOS_DEBUG` | off | `1` enables `GET /api/admin/recent-errors` |
 
 ### 5.6 Common pitfalls
 - **Case-only filename differences break Windows and default macOS.** `validationSummary.ts` vs `ValidationSummary.tsx` once resolved to the wrong module and gave a white screen (fixed in `b5df4d1` by renaming to `trafficValidation.ts`). Never add two files whose names differ only by case; check with `git ls-files | tr A-Z a-z | sort | uniq -d`.

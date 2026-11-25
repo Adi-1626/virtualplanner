@@ -2,8 +2,7 @@
  * Typed client for /api/infra (backend/api/infra_router.py, docs/urbanos/INFRASTRUCTURE_DATA.md): municipal layers
  * (PMC via OpenCity) and merged building footprints from the spatial index. A missing value is null (= UNKNOWN).
  */
-import { API_BASE, trackedFetch } from './api';
-import { redactPaths } from './redactPaths';
+import { API_BASE, apiErrorFromResponse, trackedFetch } from './api';
 import type { DataClass, Suitability } from './datasetsApi';
 
 export interface InfraLayer {
@@ -34,11 +33,7 @@ export interface InfraFeatureCollection {
 
 async function get<T>(path: string): Promise<T> {
   const r = await trackedFetch(`${API_BASE}/api/infra${path}`);
-  if (!r.ok) {
-    let msg = `${r.status} ${r.statusText}`;
-    try { const j = await r.json(); if (j?.detail) msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail); } catch { /* not json */ }
-    throw new Error(redactPaths(msg));
-  }
+  if (!r.ok) throw await apiErrorFromResponse(r, `/api/infra${path}`);
   return r.json() as Promise<T>;
 }
 

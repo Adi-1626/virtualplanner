@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { FileDown, FileText, Loader2, RefreshCw } from 'lucide-react';
 import { API_BASE, trackedFetch } from '../../lib/api';
+import { showErrorToast } from '../../lib/errorToast';
 import { planningApi, STATUS_LABEL, type Project } from '../../engine/planning/planningApi';
 import { documentUrl, generateDocument, listDocuments, type DocumentRecord, type StoredAssessment } from '../../engine/feasibility/feasibilityApi';
 import { coordinationApi, type StaleVerdict } from '../../lib/coordinationApi';
@@ -77,7 +78,7 @@ export const ReportsContext: React.FC = () => {
       setDocs(m => ({ ...m, [id]: d }));
       (window as any).showToast?.(`${format.toUpperCase()} generated`, 'success');
     } catch (e) {
-      (window as any).showToast?.(`Could not generate: ${(e as Error).message}`, 'error');
+      showErrorToast(e, { context: 'export', retry: () => void generate(id, format) });
     } finally { setBusy(null); }
   };
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, HTTPException
+from app_errors import ApiProblem
 from pydantic import BaseModel, Field
 
 from sumo.spike import (
@@ -127,18 +128,18 @@ async def run_spike(request: SpikeRequest) -> SpikeResponse:
             cleanup_on_success=True,
         )
     except SumoNotInstalledError as e:
-        raise HTTPException(
-            status_code=503,
+        raise ApiProblem(
+            503, "SIM_UNAVAILABLE",
             detail=f"SUMO not installed: {e}. See SUMO_SETUP.md.",
         ) from e
     except SumoConversionError as e:
-        raise HTTPException(
-            status_code=422,
+        raise ApiProblem(
+            422, "SIM_FAILED",
             detail=f"netconvert failed: {e}",
         ) from e
     except SumoSimulationError as e:
-        raise HTTPException(
-            status_code=500,
+        raise ApiProblem(
+            500, "SIM_FAILED",
             detail=f"SUMO simulation error: {e}",
         ) from e
 

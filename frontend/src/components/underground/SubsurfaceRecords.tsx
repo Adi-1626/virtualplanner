@@ -11,6 +11,7 @@ import { MAX_DRAWN, USER_KEY, WORK_MARGIN_M, useSubsurfaceRecords } from './useS
 import { showConflictHighlight } from './conflictHighlight';
 import { focusBounds } from './conflictClasses';
 import { redactPaths } from '../../lib/redactPaths';
+import { ErrorNotice } from '../ui/ErrorNotice';
 
 const QL_NOTE: Record<string, string> = {
   'QL-A': 'ASCE 38 QL-A: exposed / potholed (horizontal and vertical measured)',
@@ -128,7 +129,7 @@ export const SubsurfaceRecords: React.FC = () => {
         </button>
       </div>
       {recordsState === 'loading' && <p className="text-label text-text-2" data-testid="ug-records-loading">Loading records for this area…</p>}
-      {recordsState === 'error' && <p className="text-label text-fail" role="alert">Could not load records: {sentence(recordsError)} Existing utilities here are UNKNOWN until this loads. <button type="button" className="uos-link" onClick={() => void reload()}>Retry</button></p>}
+      {recordsState === 'error' && <ErrorNotice message={sentence(recordsError)} prefix="Could not load records:" onRetry={() => void reload()}><span className="text-text-2">Existing utilities here are UNKNOWN until this loads.</span></ErrorNotice>}
       {recordsState === 'loaded' && (
         <ul data-testid="ug-layer-summary">
           {layers.map(l => <LayerRow key={l.key} l={l} />)}
@@ -214,7 +215,7 @@ const ImportForm: React.FC<{ onDone: () => void; onCancel: () => void }> = ({ on
         <input id="ug-imp-bbox" className={input} style={inputStyle} value={bbox} placeholder="blank = coverage UNKNOWN" onChange={e => setBbox(e.target.value)} aria-invalid={!bboxOk} />
         <p className="text-[11px]" style={note}>Only a stated coverage lets a conflict check say "no record within available data"; without it utilities stay UNKNOWN.</p>
       </div>
-      {err && <p className="text-label text-fail" role="alert">{err}</p>}
+      {err && <ErrorNotice message={err} />}
       {warn.length > 0 && <p className="text-label text-warn">{warn.join('; ')}</p>}
       <div className="flex gap-2">
         <button type="submit" className="uos-btn" disabled={busy || !file || !user.trim() || !bboxOk} data-testid="ug-import-submit">{busy ? 'Importing…' : 'Import'}</button>

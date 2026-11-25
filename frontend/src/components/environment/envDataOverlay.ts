@@ -19,8 +19,8 @@ import {
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { Cancelled, envDataApi, timeoutOr, type AqStation, type EnvDataLayer } from '../../lib/envDataApi';
 import { clipBbox, renderWidth, streamEntityId } from './envDataModel';
-import { redactPaths } from '../../lib/redactPaths';
-import { trackedFetch } from '../../lib/api';
+import { apiErrorFromResponse, trackedFetch } from '../../lib/api';
+import { describeError, friendlyText } from '../../lib/errorCatalogue';
 import { clearTips, registerPickable, setTip, setTipResolver, type EnvTip } from './envTips';
 import { useShellStore } from '../../shell/useShellStore';
 import { dropTreeLayer, drawTreeTiles, setTreeLayerShown, treeLayerCounts } from './treeLayer';
@@ -143,11 +143,7 @@ async function drawRaster(v: Viewer, l: EnvDataLayer, st: EnvDataOverlayState, b
     // Probe first so an error is reported instead of an empty map
     let r: Response;
     try { r = await trackedFetch(url, { signal: timeoutOr(cancel, TIMEOUT_MS) }); } catch (e) { if (cancel.aborted) throw new Superseded(); throw e; }
-    if (!r.ok) {
-      let detail = `${r.status}`;
-      try { const j = await r.json(); if (typeof j.detail === 'string') detail = `${r.status} ${j.detail}`; } catch { /* keep status */ }
-      throw new Error(`server could not render this view (${redactPaths(detail)})`);
-    }
+    if (!r.ok) throw await apiErrorFromResponse(r, url.replace(/^https?:\/\/[^/]+/, ''), 'tiles');
     blob = await r.blob();
     blobCache.set(url, blob);
   }
@@ -274,10 +270,8 @@ async function draw(l: EnvDataLayer): Promise<void> {
     store.set(l.id, { status: 'shown', bbox: box?.bbox ?? null, bboxFrom: box?.from ?? null, message });
   } catch (e) {
     if (e instanceof Superseded || e instanceof Cancelled || !alive()) return;
-    const msg = e instanceof Error
-      ? (e.name === 'TimeoutError' ? `no answer from the data server within ${TIMEOUT_MS / 1000} s`
-        : /failed to fetch|networkerror|load failed|could not be reached/i.test(e.message) ? 'the data server did not answer (check that it is running, then show the layer again)' : redactPaths(e.message))
-      : String(e);
+    // one catalogue for every failed request (lib/errorCatalogue.ts): short words, an action, the log reference
+    const msg = friendlyText(describeError(e, 'load'));
     dropMapObjects(l.id, v);   // never leave an older view's drawing under an error message
     store.set(l.id, { status: 'error', error: msg, message: null });
   }

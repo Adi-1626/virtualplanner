@@ -6,6 +6,7 @@ import { remapRoadSections, repairRoadSections } from './roadSections';
 import { cacheGetMany, cachePutMany } from '../storage/localCache';
 import { BASE_SCENARIO_ID } from '../scenarios/ScenarioManager';
 import { apiPost, apiDelete, apiPostBatch, apiDeleteBatch } from '../../lib/api';
+import { showErrorToast } from '../../lib/errorToast';
 
 /** One entry of a proposal's change set as the backend returns it (docs/SCENARIOS_AND_VERSIONING.md). */
 export interface ScenarioChange {
@@ -347,8 +348,8 @@ export class ObjectManager {
 
   private reportSync(p: Promise<unknown>, message: string) {
     p.catch((e) => {
-      console.warn('[ObjectManager] scenario change sync failed:', e);
-      (globalThis as any).window?.showToast?.(message, 'error');
+      console.warn(`[ObjectManager] scenario change sync failed (${message}):`, e);
+      showErrorToast(e, { context: 'save' });
     });
   }
 
@@ -587,7 +588,7 @@ export class ObjectManager {
     if (!skipSync) {
       this.syncPost(fresh).catch((e) => {
         console.warn('[ObjectManager] syncPost failed — connectionState updated:', e);
-        (window as any).showToast?.('Save failed: Unable to sync with backend server', 'error');
+        showErrorToast(e, { context: 'save' });
       });
     }
   }
@@ -620,7 +621,7 @@ export class ObjectManager {
       this.notify(new Set(freshObjs.map(o => o.type)));
       if (!skipSync && stored.length > 0) this.syncPostMultiple(stored.map(obj => this.objects.get(obj.id)!)).catch((e) => {
         console.warn('[ObjectManager] syncPostMultiple failed — connectionState updated:', e);
-        (window as any).showToast?.('Save failed: Unable to sync batch with backend server', 'error');
+        showErrorToast(e, { context: 'save' });
       });
       return;
     }
@@ -636,7 +637,7 @@ export class ObjectManager {
     if (!skipSync && freshObjs.length > 0) {
       this.syncPostMultiple(freshObjs.map(obj => this.objects.get(obj.id)!)).catch((e) => {
         console.warn('[ObjectManager] syncPostMultiple failed — connectionState updated:', e);
-        (window as any).showToast?.('Save failed: Unable to sync batch with backend server', 'error');
+        showErrorToast(e, { context: 'save' });
       });
     }
   }
@@ -678,7 +679,7 @@ export class ObjectManager {
     if (!skipSync) {
       this.syncPost(updated).catch((e) => {
         console.warn('[ObjectManager] syncPost (update) failed — connectionState updated:', e);
-        (window as any).showToast?.('Save failed: Unable to sync update with backend server', 'error');
+        showErrorToast(e, { context: 'save' });
       });
     }
   }
@@ -702,7 +703,7 @@ export class ObjectManager {
       if (!skipSync) {
         this.syncDelete(id).catch((e) => {
           console.warn('[ObjectManager] syncDelete failed — connectionState updated:', e);
-          (window as any).showToast?.('Delete failed: Unable to sync with backend server', 'error');
+          showErrorToast(e, { context: 'save' });
         });
       }
     }
@@ -749,7 +750,7 @@ export class ObjectManager {
       if (!skipSync && idsToSync.length > 0) {
         this.syncDeleteMultiple(idsToSync).catch((e) => {
           console.warn('[ObjectManager] syncDeleteMultiple failed — connectionState updated:', e);
-          (window as any).showToast?.('Delete failed: Unable to sync with backend server', 'error');
+          showErrorToast(e, { context: 'save' });
         });
       }
     }

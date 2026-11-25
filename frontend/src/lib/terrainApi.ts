@@ -3,8 +3,7 @@
  * Copernicus DEM GLO-30 is a DSM (buildings and trees included): every value is screening-grade. `null` = UNKNOWN
  * (nodata / outside coverage / not published), never 0.
  */
-import { API_BASE, trackedFetch } from './api';
-import { redactPaths } from './redactPaths';
+import { API_BASE, apiErrorFromResponse, trackedFetch } from './api';
 
 export type SampleStatus = 'ok' | 'nodata' | 'outside_coverage';
 
@@ -65,11 +64,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   const res = await trackedFetch(`${API_BASE}/api/terrain${path}`, {
     method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
-    try { const j = await res.json(); if (j?.detail) detail = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail); } catch { /* not json */ }
-    throw new Error(redactPaths(detail));
-  }
+  if (!res.ok) throw await apiErrorFromResponse(res, `/api/terrain${path}`);
   return res.json() as Promise<T>;
 }
 

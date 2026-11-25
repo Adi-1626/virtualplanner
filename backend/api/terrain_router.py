@@ -16,6 +16,7 @@ import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from app_errors import ApiProblem
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -37,7 +38,7 @@ def _dem():
     except D.DemUnavailable as e:
         # the exception names the server's data folder: log it, never send it to the UI
         log.warning("terrain: %s", e)
-        raise HTTPException(503, LOCAL_DEM_NOT_LOADED)
+        raise ApiProblem(503, "DATA_NOT_AVAILABLE", LOCAL_DEM_NOT_LOADED)
 
 
 def _meta(db, dem) -> dict:

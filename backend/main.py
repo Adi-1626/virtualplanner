@@ -1,4 +1,8 @@
 from fastapi import FastAPI
+from app_logging import configure_logging, install as install_request_logging
+
+configure_logging()  # before the startup seeds below, so their messages reach the log (DEVELOPER_HANDBOOK §5.7)
+
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from database.connection import engine, Base
@@ -42,6 +46,10 @@ app = FastAPI(
     version="2.0"
 )
 
+# Request log, X-Request-ID, JSON error bodies with a stable `code` (app_logging.py, app_errors.py). Installed first so it
+# sits inside CORS/GZip: its 500 answers still get CORS headers and it measures the uncompressed size.
+install_request_logging(app)
+
 # Enable CORS for frontend integration
 app.add_middleware(
     CORSMiddleware,
@@ -49,6 +57,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID"],  # the UI shows it as the error reference
 )
 # Compress JSON responses >= 1 KB when the client accepts gzip (a 1,283-finding underground screening is ~5.9 MB of JSON;
 # docs/urbanos/UNDERGROUND_CHECKS.md §3). Level 6: most of level 9's ratio at a fraction of its CPU on 2-CPU hosts.
@@ -97,4 +106,4 @@ def read_root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True, access_log=False)  # app_logging logs each request

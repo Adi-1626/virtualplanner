@@ -19,6 +19,7 @@ Status (updated 2026-11-22 IST):
 |---|---|---|---|
 | 1 | **START_HERE.md** (this file) | What UrbanOS is and where to go next | 5 min |
 | 2 | **[DEVELOPER_HANDBOOK.md](DEVELOPER_HANDBOOK.md)** | **The practical guide**: product goal and honesty rules; every dataset with publisher, licence, official or not, files, pipeline, registry id, endpoint and the feature that uses it; the official-only rule and the updater (CLI and review flow); architecture and code map; running on Windows and Linux; tests; pitfalls; how to add a road type, a check, a dataset or a report section; known limits | 1–2 h, then reference |
+| 2a | [DEVELOPER_HANDBOOK §5.7 Logs and errors](DEVELOPER_HANDBOOK.md#57-logs-and-errors) | Where the backend log is (`backend/logs/urbanos.log`), its env vars, how to match the Reference in an on-screen error to its log line, the error codes and messages | 10 min |
 | 3 | [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | Product, architecture, the 7 workspaces, folder structure, one traced workflow per workspace | 30 min |
 | 4 | [DATA_CATALOGUE.md](DATA_CATALOGUE.md) | A GIS primer, every raw and derived dataset with sizes and lineage, licences, the Phase A deletion manifest | 45 min |
 | 5 | [DATABASE_AND_CODE_GUIDE.md](DATABASE_AND_CODE_GUIDE.md) | The important files and functions, all 168 API endpoints, 44 DB tables, configuration, tests | reference |

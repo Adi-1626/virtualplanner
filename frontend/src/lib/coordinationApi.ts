@@ -7,8 +7,7 @@
  * unknown; `no_conflict_within_available_data` is not proof of no conflict; seeded clearance rules are cited PERMISSION
  * distances, not engineering clearances. No UI here.
  */
-import { API_BASE, trackedFetch } from './api';
-import { redactPaths } from './redactPaths';
+import { API_BASE, apiErrorFromResponse, trackedFetch } from './api';
 
 export type Certainty = 'measured' | 'estimated' | 'hypothetical' | 'unknown';
 export type ConflictClass = 'conflict' | 'potential_conflict' | 'vertically_separated' | 'no_conflict_within_available_data' | 'unknown_no_coverage';
@@ -181,11 +180,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   const res = await trackedFetch(`${API_BASE}/api/coordination${path}`, {
     method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) {
-    let msg = res.statusText;
-    try { const j = await res.json(); msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail); } catch { /* keep statusText */ }
-    throw new Error(`${res.status}: ${redactPaths(msg)}`);
-  }
+  if (!res.ok) throw await apiErrorFromResponse(res, `/api/coordination${path}`);
   return res.json() as Promise<T>;
 }
 const q = (s: string) => encodeURIComponent(s);
@@ -238,7 +233,7 @@ export const coordinationApi = {
     const res = await trackedFetch(`${API_BASE}/api/coordination/underground/screen/report?format=${format}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+    if (!res.ok) throw await apiErrorFromResponse(res, '/api/coordination/underground/screen/report', 'export');
     const cd = res.headers.get('Content-Disposition') ?? '';
     const filename = /filename="([^"]+)"/.exec(cd)?.[1] ?? `underground-screening.${format}`;
     return { blob: await res.blob(), filename, findings: Number(res.headers.get('X-Findings') ?? 0) };
