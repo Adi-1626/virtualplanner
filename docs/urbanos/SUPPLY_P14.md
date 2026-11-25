@@ -124,6 +124,28 @@ capacity. For comparison the p13 BPR (0.15/4) gives 87 % of FFS at capacity.
   vehicle classes keep their own speed factors). Give-way behaviour was already Indo-HCM based (critical gaps 2.7/3.8 s with
   impatience, `TrafficMicroSim.criticalGap`) and is unchanged; inferred signals are passed as signal points.
 
+### 1.6 Width-based capacity (researched 2026-11-25 for the 09:00 corridors; not applied)
+
+Question: busy 09:00 corridors carry about 4,000 PCU/h per direction in the counts while p14 gives them about 2,200 (OSM
+`lanes` × Indo-HCM lane capacity); Indian mixed traffic uses the full carriageway width, so would a width-based capacity fix it?
+
+| Finding | Source | Status |
+|---|---|---|
+| Indo-HCM Ch. 5 defines its urban-road typology by carriageway width per direction (3.5 m per lane + 0.25 m kerb shyness each side): 7.5 m = four-lane divided, 11 m = six-lane, 14.5 m = eight-lane, 18 m = ten-lane; 7.5 m two-lane undivided | CSIR-CRRI "Indo-HCM Snippets", §5.1.2, https://crridom.gov.in/sites/default/files/files/Indo-HCM%20Snippets.pdf (publisher's site, read with pdftotext) | confirmed |
+| Base capacity per direction by width: 7.5 m 2,700; 11.0 m 4,200; 14.0 m 6,800 PCU/h (1,350 / 1,400 / 1,700 PCU/h/lane); two-lane undivided 7.0 m 2,400 both ways. Per metre of width: 360, 382, 486 PCU/h/m | IRC:92-2017 Table 6.3 (quoting the urban capacities), copy at https://law.resource.org/pub/in/bis/irc/irc.gov.in.092.2017.pdf | third-party copy: unconfirmed against the IRC edition |
+| Indo-HCM's per-metre unit is used for signalised approaches (unit base saturation flow, PCU/h/m × effective width); p14 already uses it there (§1.5) | Indo-HCM Ch. 6 as quoted in teaching slides (slideshare) | third-party: unconfirmed |
+
+So the standard does support capacity by width, but only through the width classes above, which are the lane capacities p14
+already uses (`C_lane × lanes`, Table 5.4); a width-based rule changes the result only where the true width is known and
+differs from lanes × 3.5 m + 0.5 m. In the OSM index (2026-11-02) only 45 of 1,734 trunk, 2 of 2,324 primary and 3 of
+1,703 secondary ways carry `width`, and 37 of the trunk values are `18` on two-lane one-way carriageways of Satara / Solapur
+Rd (a right-of-way, not a carriageway: 9 m per lane); 3 tagged ways in total give a plausible 2.75-4.5 m per lane
+(`/workspace/work/p14-final/width_stats.txt`). Without width data the fallback (lanes × standard width) reproduces today's
+capacity, and the right-of-way values would wrongly give ten-lane capacity. Also, a 7.5 m carriageway's standard capacity
+(2,700 PCU/h/dir) is itself below the ~4,000 observed, so the gap is not explained by width alone (PCU set, lane use and
+the demand pattern remain). **Decision: no code change**; the capacity stays lane-based. Revisit with measured carriageway
+widths (PMC road inventory or a width survey from imagery).
+
 ## 2. Code
 
 | File | What |
@@ -221,7 +243,8 @@ UI switch was added (the banner would otherwise show p13 numbers for a p14 run).
 
 ## 4. Limits
 
-- Every standard value was read from third-party copies; the Indo-HCM unsignalised values are second-hand quotations.
+- Every standard value was read from third-party copies (except the Indo-HCM width typology, confirmed from CSIR-CRRI's own
+  snippets, §1.6); the Indo-HCM unsignalised values are second-hand quotations.
 - Side friction is inferred (access points and OSM building footprints with assumed thresholds); parking and bus stops are
   not mapped and not applied; Indo-HCM's friction factors are capacity factors applied here to speed as well.
 - The mean-to-85th-percentile ratio (0.865), the right-turning share (0.15), the inferred-signal rule and the linear
