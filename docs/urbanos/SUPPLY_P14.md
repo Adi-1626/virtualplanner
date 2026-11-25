@@ -241,6 +241,14 @@ better description of free-flow conditions (night) and the worse one at the peak
 for the app should wait for a demand fix (an OD matrix or ATCS counts, VALIDATION_P13.md §7) and then re-run both checks. No
 UI switch was added (the banner would otherwise show p13 numbers for a p14 run).
 
+**Joint run with the synthetic demand (2026-11-25, DEMAND_P14.md §5–8).** On branch `p14` the p14 supply model is used only
+by the opt-in "Synthetic demo model", with parameters chosen on the calibration records (S10: mid-block capacity × 1.3,
+saturation flow × 1.3, local-road route-choice factor 1.5, all inside SUPPLY_BOUNDS). Its hold-out still fails (journey
+times 8/28, counts 2/16, river +17.4 %; p13 default re-scored 3/28, 1/16, −49.2 %) and the official check is worse (1/15,
+river +42.5 %, vs 2/15, −26.5 %), so `SUPPLY_MODEL_DEFAULT` stays `'p13'` and the demo model stays off by default. The
+§1.6 width-based capacity stays unapplied (no usable widths); the 09:00 over-saturation it was researched for remains the
+main cause of the 09:00 journey-time failure.
+
 ## 4. Limits
 
 - Every standard value was read from third-party copies (except the Indo-HCM width typology, confirmed from CSIR-CRRI's own
