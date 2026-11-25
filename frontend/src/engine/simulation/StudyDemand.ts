@@ -26,6 +26,12 @@ export interface DemandProvenance {
   components?: DemandComponents;
   /** Set when the plan is a demand version estimated from calibration counts (demand/odmeAssignment.ts): prior, datasets, iterations, change statistics. */
   odme?: OdmeProvenance;
+  /**
+   * Set when the plan is the SYNTHETIC land-use 4-step demand (demand/syntheticDemand.ts, docs/urbanos/DEMAND_P14.md): the
+   * dataset, its label (always `synthetic`: never measured, never mixed with official or estimated data) and the clock hour
+   * the plan already represents (no further hour factor).
+   */
+  synthetic?: { datasetId: string; label: 'synthetic'; hour: number; buildingsIn: number; buildingsNoRoad: number; cells: number; zonesIn: number; scale: number };
 }
 /** Peak-hour vehicles per hour by part of the area demand. */
 export interface DemandComponents {

@@ -8,6 +8,8 @@ import { TrafficCountsNotice } from '../../components/data/TrafficCountsNotice';
 import { TRAFFIC_VALIDATION, TRAFFIC_VALIDATION_SUMMARY, RIVER_SCREENLINE_TEXT, COUNTS_ALL, COUNTS_CALIBRATION, COUNTS_HOLDOUT } from '../../components/ui/badges/trafficValidation';
 import { bannerText, projectScoreFor, PROJECT_CHECK, PROJECT_DATA_NOTE } from '../../components/ui/badges/projectValidation';
 import { engineInstance } from '../../engine/TwinCityEngine';
+import { demandProjectScore, syntheticDemandBannerLine, SYNTHETIC_DEMAND_CHECK, SYNTHETIC_DEMAND_NAME, SYNTHETIC_DEMAND_NOTE } from '../../components/ui/badges/syntheticDemandCheck';
+import { SourceBadge } from '../../components/ui/SourceBadge';
 
 /**
  * Simulate context panel: the model list with each model's standing, and how to start. The study itself
@@ -18,7 +20,12 @@ export const SimulateContext: React.FC = () => {
   const setInspectorOpen = useShellStore(s => s.setInspectorOpen);
   const inspectorOpen = useShellStore(s => s.inspectorOpen);
   const using = sim.supplySet;
-  const banner = bannerText(TRAFFIC_VALIDATION.verdict === 'meets_criteria', projectScoreFor(using), using);
+  // p14: with the synthetic demand in use the project check is the one run with it (unchecked counts as failing)
+  const synthetic = sim.demandModel.model === 'synthetic';
+  const demandScore = demandProjectScore(synthetic, using);
+  const projectScore = demandScore === undefined ? projectScoreFor(using) : demandScore ?? { ...projectScoreFor(using), pass: false };
+  const banner = bannerText(TRAFFIC_VALIDATION.verdict === 'meets_criteria', projectScore, using);
+  const demandLine = syntheticDemandBannerLine(synthetic, using);
   return (
     <div className="space-y-5">
       <div className="uos-banner-fail" role="status" data-testid="simulate-validation-banner">
@@ -26,7 +33,7 @@ export const SimulateContext: React.FC = () => {
         <div className="space-y-1">
           <p className="font-medium" data-testid="validation-banner-headline">{banner.headline}.</p>
           <p data-testid="validation-banner-official">Official-count check ({TRAFFIC_VALIDATION.standard}): {TRAFFIC_VALIDATION.verdict === 'fails_validation' ? 'fails' : 'meets the criteria'}: {TRAFFIC_VALIDATION_SUMMARY}.</p>
-          <p data-testid="validation-banner-project">{banner.project}</p>
+          {demandLine ? <p data-testid="validation-banner-demand">{demandLine}</p> : <p data-testid="validation-banner-project">{banner.project}</p>}
           <p data-testid="validation-banner-meaning">{banner.meaning}</p>
         </div>
       </div>
@@ -53,6 +60,16 @@ export const SimulateContext: React.FC = () => {
           <p className="text-meta text-text-3 mt-1.5">{PROJECT_CHECK.tunedDecision.on ? 'On by default: ' : 'Off by default: '}{PROJECT_CHECK.tunedDecision.reason}. Changing it needs a new baseline.</p>
         </PanelSection>
       )}
+      <PanelSection title="Demand">
+        <label className="flex items-start gap-2 text-label text-text-1">
+          <input type="checkbox" data-testid="synthetic-demand-toggle" checked={synthetic} onChange={e => engineInstance.simMode.setSyntheticDemand(e.target.checked)} />
+          <span className="flex-1">{SYNTHETIC_DEMAND_NAME} <SourceBadge source="synthetic" /></span>
+        </label>
+        <p className="text-meta text-text-3 mt-1.5">{SYNTHETIC_DEMAND_NOTE}</p>
+        {synthetic && sim.demandModel.status === 'loading' && <p className="text-meta text-text-2 mt-1.5" data-testid="synthetic-demand-status">Loading the synthetic demand; the area estimate runs until it is ready.</p>}
+        {synthetic && sim.demandModel.status === 'none' && <p className="text-meta text-warn mt-1.5" data-testid="synthetic-demand-status">The synthetic demand is not installed here ({sim.demandModel.error ?? 'no data'}): the area estimate runs instead.</p>}
+        <p className="text-meta text-text-3 mt-1.5">{SYNTHETIC_DEMAND_CHECK.decision.on ? 'On by default: ' : 'Off by default (area estimate): '}{SYNTHETIC_DEMAND_CHECK.decision.reason}. Changing it needs a new baseline.</p>
+      </PanelSection>
       <PanelSection title="Data">
         <TrafficCountsNotice compact />
         <p className="text-meta text-text-3 mt-1.5">{PROJECT_DATA_NOTE}</p>

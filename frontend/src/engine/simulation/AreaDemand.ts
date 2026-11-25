@@ -212,7 +212,7 @@ export function cordonOf(area: StudyArea, roads: ReadonlyMap<string, DrivableObj
  * condensed graph, memoised. Most of a road network is one component, so this
  * costs one pass plus a few small searches.
  */
-function reachability(adj: ReadonlyMap<string, string[]>): (from: string, to: string) => boolean {
+export function reachability(adj: ReadonlyMap<string, string[]>): (from: string, to: string) => boolean {
   const index = new Map<string, number>(), low = new Map<string, number>(), comp = new Map<string, number>();
   const onStack = new Set<string>(), stack: string[] = [];
   let next = 0, comps = 0;

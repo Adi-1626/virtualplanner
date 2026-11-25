@@ -42,6 +42,8 @@ import { fetchEstimatedTraffic, type EstimatedTrafficModel } from './EstimatedTr
 import { fetchDiurnalProfile, hourFactor, COUNT_HOURS, type DiurnalProfile, type DayType } from './timeOfDay';
 import { compileAreaDemand, fetchCalibratedEdgeFlows, type CalibratedEdgeFlows } from './AreaDemand';
 import { matchPlanToEstimates } from './AreaDemandMatch';
+import { SyntheticDemandSource } from '../demand/syntheticDemandSource';
+import { SYNTHETIC_DEMAND_DEFAULT_ON, SYNTHETIC_DECISION, SYNTHETIC_PARAMS } from '../calibration/syntheticDemandDecision';
 import { roadSection, type RoadSection } from './roadSection';
 import { startAnalysisJob, type RunningAnalysis } from './analysisRunner';
 import { DEFAULT_ANALYSIS, CORRIDOR_RANGE_M, type AnalysisJob, type AnalysisOutput } from './analysisJob';
@@ -349,6 +351,12 @@ export interface SimulationModeState {
   calibration: CalibrationState;
   /** p13: which assignment parameters run: the defaults or the tuned (estimated) set (calibration/tunedSupply.ts). */
   supplySet: 'default' | 'tuned';
+  /**
+   * p14: which demand the area runs on: the area estimate (AreaDemand.ts) or the SYNTHETIC land-use 4-step demand
+   * (demand/syntheticDemand.ts; label synthetic, demo only, not measured). status: the synthetic model's loading state
+   * (off: not requested); why: the recorded reason it is or is not the default.
+   */
+  demandModel: { model: 'area-estimate' | 'synthetic'; status: 'off' | 'loading' | 'ready' | 'none'; defaultOn: boolean; why: string; error: string | null };
   timeOfDay: TimeOfDayState;
   /** The road section the click stands for (both carriageways, between main junctions). */
   section: RoadSection | null;
@@ -460,6 +468,7 @@ export class SimulationMode {
     selectedVehicleId: null,
     calibration: EMPTY_CALIBRATION,
     supplySet: TUNED_SUPPLY_DEFAULT_ON && TUNED_SUPPLY ? 'tuned' : 'default',
+    demandModel: { model: SYNTHETIC_DEMAND_DEFAULT_ON ? 'synthetic' : 'area-estimate', status: 'off', defaultOn: SYNTHETIC_DEMAND_DEFAULT_ON, why: SYNTHETIC_DECISION.reason, error: null },
     timeOfDay: { status: 'idle', error: null, profile: null, hour: COUNT_HOURS.AM, day: 'weekday', countPeak: 'PM', factor: 1 },
     section: null,
     corridor: null,
@@ -1226,7 +1235,9 @@ export class SimulationMode {
   private studyKey() {
     // p13: the tuned (estimated) supply set is part of the study, so a baseline made with the other setting is never
     // compared against (nor restored onto) this one; the default set adds nothing, so keys of baselines saved before p13 hold
-    return contentKey({ roads: this.state.seedRoadIds, range: this.state.rangeMeters, direction: this.state.direction, ...(this.useTunedSupply ? { supply: 'tuned' } : {}) });
+    return contentKey({ roads: this.state.seedRoadIds, range: this.state.rangeMeters, direction: this.state.direction, ...(this.useTunedSupply ? { supply: 'tuned' } : {}),
+      // p14: the synthetic demand is part of the study too (the area estimate adds nothing, so older baselines' keys hold)
+      ...(this.useSyntheticDemand ? { demand: 'synthetic' } : {}) });
   }
 
   private demandContextKey() {
@@ -1281,6 +1292,41 @@ export class SimulationMode {
   public activeSupply(): SupplyParams | null {
     return this.useTunedSupply ? TUNED_SUPPLY : null;
   }
+  /** p14: the SYNTHETIC land-use demand (demand/syntheticDemand.ts): on by default only when the recorded hold-out check passed. */
+  public useSyntheticDemand = SYNTHETIC_DEMAND_DEFAULT_ON;
+  private synthetic = new SyntheticDemandSource();
+  /** Switches the demand between the area estimate and the synthetic demand: a saved baseline made with the other can no longer be compared. */
+  public setSyntheticDemand(on: boolean) {
+    if (this.useSyntheticDemand === on) return;
+    this.useSyntheticDemand = on;
+    this.planCache = null;
+    this.invalidateComparison(STUDY_CHANGED.demand);
+    this.setState({ demandModel: { ...this.state.demandModel, model: on ? 'synthetic' : 'area-estimate' } });
+    const c = this.state.comparison;
+    if (c.baseline && c.staleReason && STUDY_REASONS.has(c.staleReason) && this.baselineStudyKey === this.studyKey()) this.setState({ comparison: { ...c, staleReason: null } });
+    // The plan now represents the clock hour (synthetic) or the land-use peak (area estimate): the hour factor follows
+    this.setTimeOfDay({});
+    if (on) this.ensureSynthetic();
+    if (this.state.area) { this.analysisStale = true; this.scheduleAnalysis(); }
+  }
+  /** Loads the synthetic city model and the area's building trip ends (once each); re-runs the analysis when they arrive. */
+  private ensureSynthetic(area: StudyArea | null = this.state.area) {
+    if (!this.useSyntheticDemand) return;
+    const s = this.synthetic;
+    const done = () => {
+      this.setState({ demandModel: { ...this.state.demandModel, status: s.status === 'off' ? 'loading' : s.status, error: s.error } });
+      if (this.useSyntheticDemand && this.state.area && s.city && s.hasEnds(this.state.area.bounds)) { this.planCache = null; this.analysisStale = true; this.setTimeOfDay({}); this.scheduleAnalysis(); }
+    };
+    if (!s.city) {
+      if (s.status !== 'loading') { this.setState({ demandModel: { ...this.state.demandModel, status: 'loading' } }); void s.load(SYNTHETIC_PARAMS.betaMult).then(() => { done(); this.ensureSynthetic(); }); }
+      return;
+    }
+    if (area && !s.hasEnds(area.bounds)) void s.loadEnds(area.bounds).then(done);
+  }
+  /** The synthetic demand is what the area runs on now (switched on, model and trip ends loaded). */
+  private syntheticInUse(area: StudyArea | null = this.state.area): boolean {
+    return this.useSyntheticDemand && !this.calibratedPlan && !!area && !!this.synthetic.city && this.synthetic.hasEnds(area.bounds);
+  }
   private estimatedTraffic: EstimatedTrafficModel | null = null;
   /**
    * Use the city-wide estimated traffic for main-road edge flows. OFF: tried in p10 (docs/urbanos/TRAFFIC_ESTIMATED_P10.md
@@ -1302,12 +1348,22 @@ export class SimulationMode {
    * its edge and through traffic on its main roads) for the land-use peak of
    * the clock hour; the hypothetical multiplier, if set, on top (labelled so).
    */
-  public studyPlan(area: StudyArea | null = this.state.area, landUse: 'AM_Peak' | 'PM_Peak' = this.landUsePeriod(), raw = false): DemandPlan | null {
+  public studyPlan(area: StudyArea | null = this.state.area, landUse: 'AM_Peak' | 'PM_Peak' = this.landUsePeriod(), raw = false, hour: number = this.state.timeOfDay.hour): DemandPlan | null {
     if (!area) return null;
     const settings = this.state.demandSettings;
     let plan: DemandPlan | null;
     if (this.calibratedPlan) plan = this.calibratedPlan;
-    else {
+    else if (this.useSyntheticDemand && this.syntheticInUse(area)) {
+      // p14: the SYNTHETIC demand of the clock hour (label synthetic; never mixed with the area estimate's parts)
+      const key = contentKey({ synthetic: this.synthetic.city!.id, rev: this.revision, seeds: area.seedRoadIds, range: area.rangeMeters, dir: area.direction, through: settings.through, corr: this.correctionsEnabled, hour, p: SYNTHETIC_PARAMS });
+      if (this.planCache?.key !== key) {
+        const roads = new Map(this.getRoads().map(r => [r.id, r]));
+        const areaKey = contentKey({ rev: this.revision, seeds: area.seedRoadIds, range: area.rangeMeters, dir: area.direction, corr: this.correctionsEnabled, b: area.bounds });
+        this.planCache = { key, plan: this.synthetic.plan(area, roads, hour, settings.through !== false, areaKey, SYNTHETIC_PARAMS.scale) };
+      }
+      plan = this.planCache.plan;
+    } else {
+      if (this.useSyntheticDemand) this.ensureSynthetic(area);
       const period = landUse;
       const key = contentKey({ ctx: demandContextKey({ ...this.getContext(), period }), rev: this.revision, seeds: area.seedRoadIds, range: area.rangeMeters, dir: area.direction, through: settings.through, corr: this.correctionsEnabled, edge: this.useCalibratedEdgeFlows ? this.calibratedEdgeFlows?.id ?? null : null, est: this.useEstimatedTraffic ? this.estimatedTraffic?.id ?? null : null,
         estLu: this.useEstimatedTraffic && this.estimatedLandUse, estMatch: this.useEstimatedTraffic && this.estimatedMatch, sig: this.useEstimatedTraffic && this.estimatedMatch ? this.signalPoints?.length ?? null : null });
@@ -1840,6 +1896,8 @@ export class SimulationMode {
    * before noon, 19:00 after). Used by the analysis and the time-of-day runs alike.
    */
   private referenceHour(hour: number, countPeak: 'AM' | 'PM' = this.state.timeOfDay.countPeak): number {
+    // p14: a synthetic plan is the demand of the clock hour itself (directional, hourly OD): no further hour factor
+    if (this.syntheticInUse()) return hour;
     return this.calibratedPlan ? COUNT_HOURS[countPeak] : COUNT_HOURS[hour < 12 ? 'AM' : 'PM'];
   }
 
@@ -1931,7 +1989,7 @@ export class SimulationMode {
         // This period reads the case in force now: if it is no longer the one the run started on, the rows mix two cases
         if (!this.state.timeline.mixed && this.timelineKey() !== key) this.setState({ timeline: { ...this.state.timeline, mixed: true, outdated: true } });
         const landUsePeriod = p.hour < 12 ? 'AM_Peak' as const : 'PM_Peak' as const;
-        const plan = this.studyPlan(area, landUsePeriod);
+        const plan = this.studyPlan(area, landUsePeriod, false, p.hour);
         if (!runnablePlan(plan)) throw new Error('No traffic can be estimated for this area.');
         const referenceHour = this.referenceHour(p.hour);
         const factor = hourFactor(profile, p.hour, referenceHour, this.state.timeOfDay.day);
@@ -2301,6 +2359,7 @@ export const STUDY_CHANGED = {
   range: 'The study range changed since the baseline. Save again for a new baseline, or set the range back.',
   direction: 'The study direction changed since the baseline. Save again for a new baseline, or set the direction back.',
   supply: 'The traffic parameters changed since the baseline (defaults vs tuned, estimated). Save again for a new baseline, or switch them back.',
+  demand: 'The demand changed since the baseline (area estimate vs synthetic land-use demand). Save again for a new baseline, or switch it back.',
 } as const;
 const STUDY_REASONS = new Set<string>(Object.values(STUDY_CHANGED));
 

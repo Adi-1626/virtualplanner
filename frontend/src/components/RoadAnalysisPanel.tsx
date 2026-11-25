@@ -79,7 +79,7 @@ const DataBadges: React.FC<{ r: RoadAnalysisResult; proposal: boolean }> = ({ r,
       {proposal && <ProposalBadge />}
       <EvidenceTag kind={r.evidence.demand?.source === 'hypothetical' ? 'hypothetical' : 'modelled'} testId="evidence-status" />
       {demand && (
-        <span className="inline-flex items-center gap-1 text-[11px] text-slate-500" title={demand.source === 'calibrated' ? 'Demand fitted to traffic counts' : 'Demand estimated, not counted'}>
+        <span className="inline-flex items-center gap-1 text-[11px] text-slate-500" title={demand.source === 'calibrated' ? 'Demand fitted to traffic counts' : demand.synthetic ? 'Synthetic land-use demand: demo data, not measured' : 'Demand estimated, not counted'}>
           demand <SourceBadge source={sourceOf(demand.source)} />
         </span>
       )}
@@ -490,6 +490,7 @@ export const DemandEvidence: React.FC<{ sim: SimulationModeState }> = ({ sim }) 
       {comp && comp.internal + comp.outbound + comp.inbound < 1 && (
         <Notice tone="warn" icon={AlertTriangle}>The project holds no buildings or zones here, so all the area's traffic is through traffic between its edges, at an assumed {fmt(500)} veh/h per entering lane (an assumption, not a count). Roads that mostly serve local trips will carry too little.</Notice>
       )}
+      {d?.synthetic && <p className="text-slate-300" data-testid="demand-synthetic">Synthetic demand (label synthetic, not measured): trips start and end at {fmt(d.synthetic.buildingsIn)} of the area's buildings ({d.synthetic.cells} trip-end points in {d.synthetic.zonesIn} zones); traffic from beyond enters where its city route crosses the area's edge.</p>}
       {d && <p className="leading-snug">{d.label}</p>}
       {out && <p className="text-slate-500">Area routing: {out.result.assignment.iterations} iterations, relative gap {(out.result.assignment.relativeGap * 100).toFixed(2)}%, {(out.timings.assignmentMs / 1000).toFixed(1)} s. Neighbourhood: {fmt(out.result.corridor.demandVph)} veh/h routed through it, simulated {out.result.seeds.length} times ({(out.timings.simulationMs / 1000).toFixed(0)} s). {fmt(out.unroutedVph)} veh/h could not be routed. Same inputs give the same result.</p>}
       <label className="flex items-center gap-2 text-slate-300 cursor-pointer"><input type="checkbox" checked={sim.demandSettings.through} onChange={e => mode.setDemandSettings({ through: e.target.checked })} /> Include traffic passing through the area</label>

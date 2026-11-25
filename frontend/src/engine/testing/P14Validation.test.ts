@@ -1,0 +1,163 @@
+import { describe, it } from 'vitest';
+import fs from 'fs';
+import v8 from 'v8';
+import zlib from 'zlib';
+import type { DrivableObject, StudyArea } from '../simulation/StudyAreaExplorer';
+import { snapDemandPlan } from '../simulation/StudyDemand';
+import { assignTraffic } from '../simulation/staticAssignment';
+import type { MicroDemandTrip } from '../simulation/TrafficMicroSim';
+import { DEFAULT_SUPPLY } from '../simulation/supplyParams';
+import { scoreProjectCheck, sectionCount, wayBearing, type ProjectObs } from '../calibration/projectCheck';
+import { decodeSyntheticDemand, rebalance, syntheticAreaPlan, type AreaPaths, type SyntheticCity, type SyntheticTripEnd } from '../demand/syntheticDemand';
+
+/**
+ * Opt-in harness for p14 (docs/urbanos/DEMAND_P14.md): the p13 project check (same records, same 50/50 seed-13 split,
+ * same criteria in projectCheck.ts) with the SYNTHETIC land-use 4-step demand in place of the area estimate. P14=1.
+ *
+ * It reads the p13 study areas as built and cached by P13Validation.test.ts (the same networks, roads and mapped signals the
+ * p13 baseline ran on), cuts the synthetic city OD to each area at the record's hour (syntheticAreaPlan, the function the
+ * app uses) and runs the area assignment with the default supply parameters. Tuning (P14_MODE=tune) sees CALIBRATION
+ * records only.
+ *
+ *   P14_CACHE_READ  comma-separated p13 cache files (v8-serialised areas)
+ *   P14_RECORDS     records.json (urbanos-data/estimated/validation-v1)
+ *   P14_ASSET       the synthetic demand asset (JSON); P14_ENDS trip_ends.csv.gz
+ *   P14_MODE        eval | tune
+ *   P14_SETS        eval: JSON list of {name, scale, betaMult} (default: [{name:'synthetic', scale:1, betaMult:1}])
+ *   P14_GRID        tune: JSON {scale:[..], betaMult:[..]}
+ *   P14_ITERS       assignment iterations (default 30)
+ *   P14_OUT         JSON-lines output (appended)
+ *   P14_ONLY        comma-separated record ids
+ */
+interface RecordSpec {
+  id: string; kind: 'jt' | 'count'; split: 'calibration' | 'holdout'; roadClass: string; area: string; hours: number[];
+  jt?: { o: [number, number]; d: [number, number]; googleKm: Record<string, number>; targetMin: Record<string, number>; rangeMin: Record<string, [number, number]> };
+  count?: { ways: number[]; target: number };
+}
+interface Built { rec: RecordSpec; area: StudyArea; roads: Map<string, DrivableObject>; signals: readonly (readonly [number, number])[] | undefined; trips: Map<number, MicroDemandTrip[]>; oldVph?: Record<number, number> }
+
+const wayOf = (id: string) => { const m = /^osm_(\d+)/.exec(id); return m ? Number(m[1]) : null; };
+const countBearing = (b: Built, linkId: string) => wayBearing(b.roads.get(linkId.replace(/_seg_\d+_(fwd|bwd)$/, '').replace(/_(fwd|bwd)$/, ''))?.coordinates as number[][] | undefined, linkId.endsWith('_bwd'));
+const distM = (a: readonly number[], b: readonly number[]) => Math.hypot((a[0] - b[0]) * 111320 * Math.cos(a[1] * Math.PI / 180), (a[1] - b[1]) * 111320);
+
+/** As P13Validation.test.ts evaluate(): one cross-section per direction for counts, the shortest converged-time path for journey times. */
+function evaluate(b: Built, hour: number, trips: MicroDemandTrip[], iters: number): ProjectObs | null {
+  const a = assignTraffic(b.area, b.roads, trips, { signalPoints: b.signals, supply: DEFAULT_SUPPLY, maxIterations: iters, maxMs: 1e9, targetGap: 1e-3 });
+  const base = { id: `${b.rec.id}@${hour}`, record: b.rec.id, split: b.rec.split, roadClass: b.rec.roadClass, area: b.rec.area, hour };
+  if (b.rec.kind === 'count' && b.rec.count) {
+    const ways = new Set(b.rec.count.ways);
+    const flows: { bearing: number; vph: number }[] = [];
+    a.links.forEach((l, i) => { const w = wayOf(l.id); if (w === null || !ways.has(w)) return; flows.push({ bearing: countBearing(b, l.id), vph: a.volVeh[i] }); });
+    if (!flows.length) return null;
+    return { ...base, kind: 'count', observed: b.rec.count.target, model: sectionCount(flows) };
+  }
+  if (b.rec.kind === 'jt' && b.rec.jt) {
+    const N = a.nodes.length;
+    const outs: number[][] = Array.from({ length: N }, () => []), ins = new Uint8Array(N);
+    a.links.forEach(l => { if (!l.restricted) { outs[l.from].push(l.index); ins[l.to] = 1; } });
+    const near = (ll: [number, number], needOut: boolean) => {
+      let bi = -1, bd = Infinity;
+      for (let i = 0; i < N; i++) { if (needOut ? !outs[i].length : !ins[i]) continue; const d = distM(a.nodeCoords[i], [ll[1], ll[0]]); if (d < bd) { bd = d; bi = i; } }
+      return { i: bi, d: bd };
+    };
+    const o = near(b.rec.jt.o, true), d = near(b.rec.jt.d, false);
+    if (o.i < 0 || d.i < 0 || o.d > 150 || d.d > 150) return { ...base, kind: 'jt', observed: b.rec.jt.targetMin[String(hour)], model: null, note: 'O/D not on the area network' };
+    const dist = new Float64Array(N).fill(Infinity), len = new Float64Array(N), done = new Uint8Array(N);
+    dist[o.i] = 0;
+    const heap: [number, number][] = [[0, o.i]];
+    while (heap.length) {
+      let m = 0; for (let k = 1; k < heap.length; k++) if (heap[k][0] < heap[m][0]) m = k;
+      const [du, u] = heap[m]; heap[m] = heap[heap.length - 1]; heap.pop();
+      if (done[u]) continue; done[u] = 1;
+      if (u === d.i) break;
+      for (const li of outs[u]) { const l = a.links[li]; const nd = du + a.timeS[li]; if (nd < dist[l.to]) { dist[l.to] = nd; len[l.to] = len[u] + l.lengthM; heap.push([nd, l.to]); } }
+    }
+    if (!Number.isFinite(dist[d.i])) return { ...base, kind: 'jt', observed: b.rec.jt.targetMin[String(hour)], model: null, note: 'no route' };
+    return { ...base, kind: 'jt', observed: b.rec.jt.targetMin[String(hour)], model: dist[d.i] / 60, routeKm: len[d.i] / 1000, googleKm: b.rec.jt.googleKm[String(hour)] };
+  }
+  return null;
+}
+
+function readEnds(file: string): SyntheticTripEnd[] {
+  const lines = zlib.gunzipSync(fs.readFileSync(file)).toString('utf8').split('\n');
+  const out: SyntheticTripEnd[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i]) continue;
+    const r = lines[i].split(',').map(Number);
+    out.push({ lon: r[0], lat: r[1], zone: r[2], res: r[3], jobs: r[4], svc: r[5], seats: r[6], ind: r[7] });
+  }
+  return out;
+}
+
+describe.skipIf(!process.env.P14)('p14 project check with the synthetic land-use demand (opt-in)', () => {
+  it('evaluates / tunes', () => {
+    const out = process.env.P14_OUT!;
+    const log = (o: unknown) => fs.appendFileSync(out, JSON.stringify(o) + '\n');
+    const iters = Number(process.env.P14_ITERS ?? 30);
+    const only = process.env.P14_ONLY ? new Set(process.env.P14_ONLY.split(',')) : null;
+    const records = (JSON.parse(fs.readFileSync(process.env.P14_RECORDS!, 'utf8')) as RecordSpec[]).filter(r => !only || only.has(r.id));
+    const city0 = decodeSyntheticDemand(JSON.parse(fs.readFileSync(process.env.P14_ASSET!, 'utf8')));
+    const ends = readEnds(process.env.P14_ENDS!);
+    const built: Built[] = [];
+    for (const f of process.env.P14_CACHE_READ!.split(',')) {
+      for (const b of v8.deserialize(fs.readFileSync(f)) as Built[]) {
+        const rec = records.find(r => r.id === b.rec.id);
+        // The p13 area-estimate demand is kept only as its total (veh/h per hour), for the report
+        if (rec) built.push({ ...b, rec, trips: new Map(), oldVph: Object.fromEntries([...b.trips].map(([h, t]) => [h, Math.round(t.reduce((n, x) => n + x.vehiclesPerHour, 0))])) });
+      }
+    }
+    log({ records: built.length, asset: city0.id });
+    const pathsCache = new Map<string, { paths?: AreaPaths }>();
+    const cities = new Map<number, SyntheticCity>();
+    const cityFor = (m: number) => { let c = cities.get(m); if (!c) { c = rebalance(city0, m); cities.set(m, c); } return c; };
+    // Synthetic trips per record and hour at scale 1 (the scale is linear), per beta multiplier
+    const tripsMemo = new Map<string, { trips: MicroDemandTrip[]; vph: number; comp: unknown }>();
+    const tripsFor = (b: Built, hour: number, betaMult: number) => {
+      const key = `${b.rec.id}@${hour}@${betaMult}`;
+      let t = tripsMemo.get(key);
+      if (!t) {
+        const cache = pathsCache.get(b.rec.id) ?? pathsCache.set(b.rec.id, {}).get(b.rec.id)!;
+        const plan = syntheticAreaPlan(cityFor(betaMult), b.area, b.roads, ends, { hour }, cache);
+        const segs = new Set(b.area.segments.map(s => s.key));
+        const trips = plan ? snapDemandPlan(plan, b.area.network, 250, segs).filter(x => x.fromNodeId && x.toNodeId) : [];
+        t = { trips, vph: plan?.provenance.vehiclesPerHour ?? 0, comp: plan?.provenance.components };
+        tripsMemo.set(key, t);
+      }
+      return t;
+    };
+    const evalAll = (scale: number, betaMult: number, which: (b: Built) => boolean) => {
+      const obs: ProjectObs[] = [];
+      const demand: Record<string, unknown> = {};
+      for (const b of built) if (which(b)) for (const h of b.rec.hours) {
+        const t = tripsFor(b, h, betaMult);
+        const trips = scale === 1 ? t.trips : t.trips.map(x => ({ ...x, vehiclesPerHour: x.vehiclesPerHour * scale }));
+        const r = evaluate(b, h, trips, iters);
+        if (r) obs.push(r);
+        demand[`${b.rec.id}@${h}`] = { vph: Math.round(t.vph * scale), old: b.oldVph?.[h] ?? null, comp: t.comp };
+      }
+      return { obs, demand };
+    };
+    const mode = process.env.P14_MODE ?? 'eval';
+    if (mode === 'eval') {
+      const sets = process.env.P14_SETS ? JSON.parse(fs.readFileSync(process.env.P14_SETS, 'utf8')) as { name: string; scale: number; betaMult: number }[] : [{ name: 'synthetic', scale: 1, betaMult: 1 }];
+      for (const s of sets) {
+        const t0 = Date.now();
+        const { obs, demand } = evalAll(s.scale, s.betaMult, () => true);
+        log({ eval: s.name, set: s, iters, ms: Date.now() - t0, obs, demand, score: scoreProjectCheck(obs) });
+      }
+    } else if (mode === 'tune') {
+      // Grid over the two demand parameters on the CALIBRATION records only (the hold-out is never evaluated here)
+      const grid = { scale: [0.7, 0.85, 1, 1.15, 1.3], betaMult: [0.8, 1, 1.25], ...(process.env.P14_GRID ? JSON.parse(process.env.P14_GRID) : {}) } as { scale: number[]; betaMult: number[] };
+      const cal = (b: Built) => b.rec.split === 'calibration';
+      let best: { J: number; scale: number; betaMult: number } | null = null;
+      for (const m of grid.betaMult) for (const s of grid.scale) {
+        const t0 = Date.now();
+        const { obs } = evalAll(s, m, cal);
+        const sc = scoreProjectCheck(obs);
+        log({ tune: { scale: s, betaMult: m }, J: sc.loss, cal: sc.calibration, ms: Date.now() - t0 });
+        if (!best || sc.loss < best.J) best = { J: sc.loss, scale: s, betaMult: m };
+      }
+      log({ tuned: best });
+    }
+  }, 48 * 3600_000);
+});
