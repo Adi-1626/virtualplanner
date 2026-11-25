@@ -167,6 +167,14 @@ describe('p15: gateway loading and congestion-aware city paths', () => {
     const t2 = new Map([['t', { ...trips.get('t')!, vehiclesPerHour: 2000, fromNode: 'A', from: pt(0) }]]);
     balanceGateways(t2, gws, (a) => a !== 'B', 0.2);
     expect([...t2.values()].filter(t => t.fromNode === 'B')).toHaveLength(0);
+    // reach 0 (= every boundary road): the far road C takes a share too (less than the near B), totals kept
+    const t3 = new Map([['t', { ...trips.get('t')!, vehiclesPerHour: 2000, fromNode: 'A', from: pt(0) }]]);
+    for (const k of [...trips.keys()]) if (k !== 't') trips.delete(k);
+    balanceGateways(t3, gws, () => true, 0.2, 3, 0);
+    const by3 = (n: string) => [...t3.values()].filter(t => t.fromNode === n).reduce((x, t) => x + t.vehiclesPerHour, 0);
+    expect(by3('A') + by3('B') + by3('C')).toBeCloseTo(2000, 6);
+    expect(by3('C')).toBeGreaterThan(0);
+    expect(by3('B')).toBeGreaterThan(by3('C'));
     // In the area plan it is off unless asked for, and totals are kept when on
     const base = syntheticAreaPlan(c, area(), roadMap, ends, { hour: 9 })!;
     const bal = syntheticAreaPlan(c, area(), roadMap, ends, { hour: 9, gatewayBalance: 0.5 })!;

@@ -281,6 +281,12 @@ export interface SyntheticAreaOptions {
    */
   gatewayBalance?: number;
   /**
+   * p15 how far (m) `gatewayBalance` may move traffic from an over-capacity boundary road: default GATEWAY_DIVERT_MAX_M
+   * (nearby roads only, distance decay GATEWAY_DIVERT_DECAY_M); Infinity (JSON: 0 or any value ≤ 0) spreads the excess
+   * over every boundary road of that side that reaches the trip's other end, in proportion to its spare capacity.
+   */
+  gatewayReachM?: number;
+  /**
    * p15 congestion-aware city paths: when set (iterations, e.g. 4), the city paths that decide where traffic from beyond
    * enters and leaves the area, and which zone pairs pass through it, come from a city-wide capacity-restrained
    * assignment of the hour's OD on the main-road skeleton (method of successive averages, `congestedSkeletonTimes`):
@@ -298,6 +304,8 @@ export function gatewayLaneCapacityPcu(rank: number): number {
 }
 /** p15: how far (m) traffic is moved from an over-capacity boundary road to another one, and the distance decay (ASSUMED). */
 export const GATEWAY_DIVERT_MAX_M = 3000, GATEWAY_DIVERT_DECAY_M = 1000;
+/** p15: an over-capacity boundary road's trip is moved to at most this many other boundary roads (ASSUMED; bounds the plan size). */
+export const GATEWAY_SPREAD_K = 4;
 
 const M_PER_DEG = 111320;
 const distM = (a: readonly number[], b: readonly number[]) => Math.hypot((a[0] - b[0]) * M_PER_DEG * Math.cos(a[1] * Math.PI / 180), (a[1] - b[1]) * M_PER_DEG);
@@ -726,10 +734,13 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
   const add = (m: Map<string, number>, k: string, v: number) => m.set(k, (m.get(k) ?? 0) + v);
   const etOf = (p: Purpose, side: 'P' | 'A') => sig(city.endWeights[p]?.[side] ?? {});
   const through = opts.through !== false;
+  // p15 check: intrazonal trips (same zone at both ends) that cross the area's edge (one end in the area, one in the rest of the zone)
+  let intrazonalEdge = 0;
   forEachHourlyFlow(city, opts.hour, (o, d, p, oEnd, dEnd, kind, vph) => {
     const eo = etOf(p, oEnd), ed = etOf(p, dEnd);
     const so = share.get(`${o}|${eo}`) ?? 0, sd = share.get(`${d}|${ed}`) ?? 0;
     const v = vph * scale;
+    if (o === d) intrazonalEdge += v * (so * (1 - sd) + (1 - so) * sd);
     if (so > 0 && sd > 0) add(II, `${o}|${eo}|${d}|${ed}|${kind}`, v * so * sd);
     if (so > 0 && sd < 1) add(IE, `${o}|${eo}|${paths.outbound[d]}|${kind}`, v * so * (1 - sd));
     if (sd > 0 && so < 1) add(EI, `${paths.inbound[o]}|${d}|${ed}|${kind}`, v * (1 - so) * sd);
@@ -811,7 +822,7 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
     }
     emit('through', kind as VehicleKind, v, pieces);
   }
-  const balance = opts.gatewayBalance && opts.gatewayBalance > 0 ? balanceGateways(trips, paths.gateways, canReach, opts.gatewayBalance) : null;
+  const balance = opts.gatewayBalance && opts.gatewayBalance > 0 ? balanceGateways(trips, paths.gateways, canReach, opts.gatewayBalance, 3, opts.gatewayReachM ?? GATEWAY_DIVERT_MAX_M) : null;
   const list = [...trips.values()].filter(t => t.vehiclesPerHour > 1e-6).map(({ fromNode: _f, toNode: _t, ...t }) => t);
   const vph = list.reduce((s, t) => s + t.vehiclesPerHour, 0);
   if (!(vph > 0)) return null;
@@ -823,13 +834,13 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
     + (through ? `${f(comp.through)} through, crossing it on its city route (${pct(comp.through)}%).` : 'through traffic switched off.')
     + (comp.noEdgeRoute >= 1 ? ` ${f(comp.noEdgeRoute)} veh/h left out (no drivable way on the area's roads).` : '')
     + (scale !== 1 ? ` Scaled ×${scale.toFixed(2)} (calibration parameter).` : '')
-    + (balance && balance.movedVph >= 1 ? ` ${f(balance.movedVph)} veh/h moved from over-capacity boundary roads to nearby ones.` : '');
+    + (balance && balance.movedVph >= 1 ? ` ${f(balance.movedVph)} veh/h moved from over-capacity boundary roads to ${opts.gatewayReachM !== undefined && !(opts.gatewayReachM > 0 && Number.isFinite(opts.gatewayReachM)) ? 'other' : 'nearby'} ones.` : '');
   return {
     trips: list,
     provenance: {
       source: 'synthetic', label, period: opts.hour < 12 ? 'AM_Peak' : 'PM_Peak', vehiclesPerHour: vph, pairCount: list.length,
       components: { internal: comp.internal, outbound: comp.outbound, inbound: comp.inbound, through: comp.through, outsideArea: 0, noEdgeRoute: comp.noEdgeRoute, cordonPoints: gateways.length, throughIncluded: through },
-      synthetic: { ...(balance ? { gatewayBalance: balance } : {}), noRouteByPart: noRoute, datasetId: city.id, label: SYNTHETIC_LABEL, hour: ((Math.floor(opts.hour) % 24) + 24) % 24, buildingsIn, buildingsNoRoad, cells: [...cellsByZone.values()].reduce((s, l) => s + l.length, 0), zonesIn: cellsByZone.size, scale },
+      synthetic: { ...(balance ? { gatewayBalance: balance } : {}), intrazonalEdgeVph: intrazonalEdge, noRouteByPart: noRoute, datasetId: city.id, label: SYNTHETIC_LABEL, hour: ((Math.floor(opts.hour) % 24) + 24) % 24, buildingsIn, buildingsNoRoad, cells: [...cellsByZone.values()].reduce((s, l) => s + l.length, 0), zonesIn: cellsByZone.size, scale },
     },
   };
 }
@@ -845,8 +856,12 @@ type PlanTrip = { from: [number, number, number]; to: [number, number, number]; 
  * capacity, in proportion to spare capacity × exp(−distance / GATEWAY_DIVERT_DECAY_M), only where the area's roads lead
  * from the new boundary road to the trip's other end. Traffic with nowhere to go stays (no trip is dropped; totals kept).
  */
-export function balanceGateways(trips: Map<string, PlanTrip>, gateways: readonly Gateway[], canReach: (a: string, b: string) => boolean, factor: number, passes = 3): { movedVph: number; overloadedIn: number; overloadedOut: number } {
+export function balanceGateways(trips: Map<string, PlanTrip>, gateways: readonly Gateway[], canReach: (a: string, b: string) => boolean, factor: number, passes = 3, reachM: number = GATEWAY_DIVERT_MAX_M): { movedVph: number; overloadedIn: number; overloadedOut: number } {
   const pcu = P14.pcuMidblock.value as Record<string, number>;
+  // reach ≤ 0 or Infinity: every boundary road, distance decay GATEWAY_DIVERT_MAX_M (nearby roads first, farther ones as
+  // those fill); otherwise within reach, decay GATEWAY_DIVERT_DECAY_M × reach / GATEWAY_DIVERT_MAX_M
+  const all = !(reachM > 0) || !Number.isFinite(reachM);
+  const decayM = all ? GATEWAY_DIVERT_MAX_M : GATEWAY_DIVERT_DECAY_M * reachM / GATEWAY_DIVERT_MAX_M;
   const byNode = new Map<string, Gateway>();
   for (const g of gateways) byNode.set(g.nodeId, g);
   let movedVph = 0;
@@ -869,17 +884,22 @@ export function balanceGateways(trips: Map<string, PlanTrip>, gateways: readonly
       if (!overloaded.length) break;
       let movedThisPass = 0;
       for (const { g, l } of overloaded) {
-        const cands = gateways.filter(c => c !== g && (spare.get(c.nodeId) ?? 0) > 0 && distM(c.point, g.point) <= GATEWAY_DIVERT_MAX_M);
+        const cands = gateways.filter(c => c !== g && (spare.get(c.nodeId) ?? 0) > 0 && (all || distM(c.point, g.point) <= reachM));
         if (!cands.length) continue;
         let excess = l - Math.max(0, capOf(g)); // PCU/h to move
         const keep = Math.max(0, capOf(g)) / l;
         for (const t of at.get(g.nodeId) ?? []) {
           if (!(excess > 0)) break;
           const other = side === 'in' ? t.toNode : t.fromNode;
-          const ok = cands.filter(c => c.nodeId !== other && (spare.get(c.nodeId) ?? 0) > 0 && (side === 'in' ? canReach(c.nodeId, other) : canReach(other, c.nodeId)));
-          if (!ok.length) continue;
           const p = pcu[t.kind] ?? 1;
-          const w = ok.map(c => (spare.get(c.nodeId) ?? 0) * Math.exp(-distM(c.point, g.point) / GATEWAY_DIVERT_DECAY_M));
+          // The GATEWAY_SPREAD_K best candidates (spare capacity × distance decay) that reach the trip's other end: bounded
+          // so the plan does not multiply into one trip per boundary road (p15: that ran the 09:00 eval out of memory)
+          const ranked = cands.filter(c => c.nodeId !== other && (spare.get(c.nodeId) ?? 0) > 0)
+            .map(c => ({ c, w: (spare.get(c.nodeId) ?? 0) * Math.exp(-distM(c.point, g.point) / decayM) })).sort((a, b) => b.w - a.w);
+          const pick: typeof ranked = [];
+          for (const x of ranked) { if (pick.length >= GATEWAY_SPREAD_K) break; if (side === 'in' ? canReach(x.c.nodeId, other) : canReach(other, x.c.nodeId)) pick.push(x); }
+          if (!pick.length) continue;
+          const ok = pick.map(x => x.c), w = pick.map(x => x.w);
           const sw = w.reduce((a, b) => a + b, 0);
           if (!(sw > 0)) continue;
           // Move this trip's share of the excess, never more than the candidates' spare capacity
