@@ -84,7 +84,7 @@ export async function runAnalysisJob(job: AnalysisJob, onProgress?: (share: numb
   const t0 = Date.now();
   const segs = new Set(job.area.segments.map(s => s.key));
   const ds = job.supply?.demandScale ?? 1;
-  const trips = snapDemandPlan(job.plan, job.area.network, 250, segs).map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * job.hourFactor * ds }));
+  const trips = snapDemandPlan(job.plan, job.area.network, 250, segs, { preferMainNetwork: true }).map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * job.hourFactor * ds }));
   const assignment = assignTraffic(job.area, job.roads, trips, { signalPoints: job.options.signalPoints, junctionEdits: job.options.junctionEdits, supply: job.supply ?? undefined,
     supplyModel: job.supplyModel, buildings: job.buildings, localCostFactor: job.localCostFactor, signalWarrantScale: job.signalWarrantScale });
   // p14: the corridor's vehicles take the same car free-flow speeds as their desired speeds

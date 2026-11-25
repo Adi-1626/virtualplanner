@@ -76,7 +76,7 @@ export function matchPlanToEstimates(plan: DemandPlan, area: StudyArea, roads: R
   const t0 = Date.now();
   if (!plan.trips.length) return null;
   const segs = new Set(area.segments.map(s => s.key));
-  const trips = snapDemandPlan(plan, area.network, 250, segs);
+  const trips = snapDemandPlan(plan, area.network, 250, segs, { preferMainNetwork: true });
   const problem = areaOdProblem(area, roads, trips, { maxIterations: 25, targetGap: 5e-3, maxMs: 4000, ...assignment });
   const counts = estimatedTargets(area, roads, model, hour, problem.linkIndex);
   if (!counts.length || !problem.prior.length) return null;

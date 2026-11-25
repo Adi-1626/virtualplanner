@@ -37,7 +37,7 @@ describe.skipIf(!env.P16DIAG)('p16 diagnosis (opt-in)', () => {
       for (const hour of hours) {
         const plan = syntheticAreaPlan(city, b.area, b.roads, ends, { hour, scale: set.scale, gatewayBalance: set.gatewayBalance, gatewayReachM: set.gatewayReachM, ...(set.cityCongestion ? { cityCongestion: set.cityCongestion } : {}), ...(set.cityVdf ? { cityVdf: set.cityVdf } : {}), ...(set.gatewayMeter ? { gatewayMeter: set.gatewayMeter } : {}), ...(set.p16demand ? { p16: set.p16demand } : {}) } as never, {});
         if (!plan) continue;
-        const trips = snapDemandPlan(plan, b.area.network, 250, segs);
+        const trips = snapDemandPlan(plan, b.area.network, 250, segs, { preferMainNetwork: true });
         const ws = set.signalWarrant ? eighthHourScale(city, hour) : null;
         const a = assignTraffic(b.area, b.roads, trips, { ...aopts, ...(ws ? { signalWarrantScale: ws } : {}) });
         const zsig = a.warrantedSignalPoints?.length ? [...(b.signals ?? []), ...a.warrantedSignalPoints] : b.signals;

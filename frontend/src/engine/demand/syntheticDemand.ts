@@ -23,6 +23,7 @@ import type { StudyArea, DrivableObject } from '../simulation/StudyAreaExplorer'
 import type { VehicleKind } from '../simulation/TrafficMicroSim';
 import type { DemandPlan } from '../simulation/StudyDemand';
 import { reachability } from '../simulation/AreaDemand';
+import { mainComponent } from '../simulation/graphComponents';
 import { osmRoadClass } from '../simulation/networkCorrections';
 import { P14 } from '../simulation/supplyConfig';
 import { p14TimeRatio } from '../simulation/indianSupply';
@@ -694,14 +695,20 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
   // Snap grid (ground-level nodes only, as snapDemandPlan)
   const G = 0.003, grid = new Map<string, typeof nodes>();
   for (const nd of nodes) { if (Math.abs(nd.coordinates[2] || 0) > 3) continue; const k = `${Math.floor(nd.coordinates[0] / G)}:${Math.floor(nd.coordinates[1] / G)}`; (grid.get(k) ?? grid.set(k, []).get(k)!).push(nd); }
+  // p16: the area's main network (largest strongly connected component); a building whose nearest node is on a small
+  // fragment loads at the nearest node of the main network within the access distance (as snapDemandPlan does)
+  const fwd = new Map<string, string[]>();
+  for (const e of net.edges.values()) if (included.has(segKey(e.id))) (fwd.get(e.fromNodeId) ?? fwd.set(e.fromNodeId, []).get(e.fromNodeId)!).push(e.toNodeId);
+  const main = mainComponent(fwd);
   const snap = (x: number, y: number): string | null => {
     const cx = Math.floor(x / G), cy = Math.floor(y / G);
-    let best: string | null = null, bd = accessM;
+    let best: string | null = null, bd = accessM, bestMain: string | null = null, bm = accessM;
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const nd of grid.get(`${cx + dx}:${cy + dy}`) ?? []) {
       const d = distM([x, y], nd.coordinates);
       if (d < bd) { bd = d; best = nd.id; }
+      if (main?.has(nd.id) && d < bm) { bm = d; bestMain = nd.id; }
     }
-    return best;
+    return bestMain ?? best;
   };
 
   // 1. Building trip ends inside the area, grouped per zone into cells (the heaviest building carries the cell)
@@ -783,8 +790,6 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
   });
 
   // 4. Expand into trips between buildings and boundary roads, on routes the area's roads allow
-  const fwd = new Map<string, string[]>();
-  for (const e of net.edges.values()) if (included.has(segKey(e.id))) (fwd.get(e.fromNodeId) ?? fwd.set(e.fromNodeId, []).get(e.fromNodeId)!).push(e.toNodeId);
   const canReach = reachability(fwd);
   const trips = new Map<string, PlanTrip>();
   const comp = { internal: 0, outbound: 0, inbound: 0, through: 0, noEdgeRoute: 0 };
@@ -993,7 +998,11 @@ export function meterGateways(trips: Map<string, PlanTrip>, gateways: readonly G
 
 /** Where a zone's path gives no boundary road with lanes on that side: the boundary roads of that side, nearest first. */
 function fallbackPieces(cells: { cell: Cell; s: number }[], gateways: Gateway[], side: 'in' | 'out') {
-  const gs = gateways.filter(g => (side === 'in' ? g.inLanes : g.outLanes) > 0 && g.rank >= 2);
+  // Boundary roads of collector rank or above; where the area has none on that side (a fringe village reached only by
+  // local roads, p16), every boundary road of that side rather than leaving the trips out
+  const sideGs = gateways.filter(g => (side === 'in' ? g.inLanes : g.outLanes) > 0);
+  const ranked = sideGs.filter(g => g.rank >= 2);
+  const gs = ranked.length ? ranked : sideGs;
   const pieces: { from: [number, number, number]; to: [number, number, number]; fromNode: string; toNode: string; w: number }[] = [];
   for (const c of cells) {
     const near = [...gs].sort((a, b) => distM(c.cell.point, a.point) - distM(c.cell.point, b.point)).slice(0, 2);

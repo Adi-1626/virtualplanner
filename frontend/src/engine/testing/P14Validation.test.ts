@@ -179,7 +179,7 @@ describe.skipIf(!process.env.P14)('p14 project check with the synthetic land-use
         const cache = pathsCache.get(b.rec.id) ?? pathsCache.set(b.rec.id, {}).get(b.rec.id)!;
         const plan = syntheticAreaPlan(cityFor(betaMult), b.area, b.roads, ends, { hour, ...(gb ? { gatewayBalance: gb } : {}), ...(gr !== undefined ? { gatewayReachM: gr } : {}), ...(cc ? { cityCongestion: cc } : {}), ...(cv ? { cityVdf: cv } : {}), ...(gm ? { gatewayMeter: gm } : {}) }, cache);
         const segs = new Set(b.area.segments.map(s => s.key));
-        const trips = plan ? snapDemandPlan(plan, b.area.network, 250, segs).map((x, i) => ({ ...x, part: (plan.trips[i] as { part?: string }).part })).filter(x => x.fromNodeId && x.toNodeId) : [];
+        const trips = plan ? snapDemandPlan(plan, b.area.network, 250, segs, { preferMainNetwork: true }).map((x, i) => ({ ...x, part: (plan.trips[i] as { part?: string }).part })).filter(x => x.fromNodeId && x.toNodeId) : [];
         t = { trips, vph: plan?.provenance.vehiclesPerHour ?? 0, comp: plan ? { ...plan.provenance.components, ...(plan.provenance.synthetic?.gatewayBalance ? { gb: plan.provenance.synthetic.gatewayBalance } : {}), izEdge: plan.provenance.synthetic?.intrazonalEdgeVph, pairs: plan.provenance.pairCount } : undefined };
         tripsMemo.set(key, t);
       }

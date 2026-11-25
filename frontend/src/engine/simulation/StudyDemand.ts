@@ -1,3 +1,4 @@
+import { mainComponent } from './graphComponents';
 import type { BuildingObject, JunctionObject } from '../objects/types';
 import type { DemandZone, ExternalGateway, ModeSplit, TimePeriod } from '../objects/demandTypes';
 import type { TrafficNetwork } from '../objects/trafficTypes';
@@ -187,22 +188,34 @@ export function compileStudyDemand(context: SimulationContext, bounds?: Bounds):
     period, vehiclesPerHour: trips.reduce((n, t) => n + t.vehiclesPerHour, 0), pairCount: trips.length } };
 }
 
-export function snapDemandPlan(plan: DemandPlan, network: TrafficNetwork, maxAccessDistanceM = 250, includedSegments?: ReadonlySet<string>): MicroDemandTrip[] {
+export function snapDemandPlan(plan: DemandPlan, network: TrafficNetwork, maxAccessDistanceM = 250, includedSegments?: ReadonlySet<string>, opts: { preferMainNetwork?: boolean } = {}): MicroDemandTrip[] {
   const cache = new Map<string, string>();
-  const allowed = includedSegments ? new Set([...network.edges.values()].filter(e => includedSegments.has(e.id.replace(/_(fwd|bwd)$/, ''))).flatMap(e => [e.fromNodeId, e.toNodeId])) : null;
+  const inc = (e: { id: string }) => !includedSegments || includedSegments.has(e.id.replace(/_(fwd|bwd)$/, ''));
+  const allowed = includedSegments ? new Set([...network.edges.values()].filter(inc).flatMap(e => [e.fromNodeId, e.toNodeId])) : null;
+  // p16 (area demand only): a trip end whose nearest node is on a small fragment of the network (cannot reach or be
+  // reached from the rest) loads at the nearest node of the main network within the access distance, as
+  // syntheticAreaPlan snaps its buildings; no main network (e.g. a one-way corridor) = plain nearest node
+  let main: Set<string> | null = null;
+  if (opts.preferMainNetwork) {
+    const fwd = new Map<string, string[]>();
+    for (const e of network.edges.values()) if (inc(e)) (fwd.get(e.fromNodeId) ?? fwd.set(e.fromNodeId, []).get(e.fromNodeId)!).push(e.toNodeId);
+    main = mainComponent(fwd);
+  }
   const nearest = (point: readonly number[]) => {
     const key = point.join(',');
     if (cache.has(key)) return cache.get(key)!;
-    let id = '', best = maxAccessDistanceM;
+    let id = '', best = maxAccessDistanceM, idMain = '', bestMain = maxAccessDistanceM;
     for (const node of network.nodes.values()) {
       if (allowed && !allowed.has(node.id)) continue;
       // Demand attaches to the ground network, never to a flyover passing above a building.
       if (Math.abs((node.coordinates[2] || 0) - (point[2] || 0)) > 3) continue;
       const d = distance(point, node.coordinates);
       if (d < best) { best = d; id = node.id; }
+      if (main?.has(node.id) && d < bestMain) { bestMain = d; idMain = node.id; }
     }
-    cache.set(key, id);
-    return id;
+    const pick = idMain || id;
+    cache.set(key, pick);
+    return pick;
   };
   return plan.trips.map(t => ({ fromNodeId: nearest(t.from), toNodeId: nearest(t.to), vehiclesPerHour: t.vehiclesPerHour, kind: t.kind, viaRoadId: t.viaRoadId, ...(t.viaLinkIds ? { viaLinkIds: t.viaLinkIds } : {}) }));
 }

@@ -2293,7 +2293,7 @@ export class SimulationMode {
       if (!prior?.trips.length) throw new Error('This study area has no demand to adjust.');
       const t0 = Date.now(), hour = this.state.timeOfDay.hour, f = this.state.timeOfDay.factor;
       const segs = new Set(area.segments.map(x => x.key));
-      const trips = snapDemandPlan(prior, area.network, 250, segs).map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * f }));
+      const trips = snapDemandPlan(prior, area.network, 250, segs, { preferMainNetwork: true }).map(t => ({ ...t, vehiclesPerHour: t.vehiclesPerHour * f }));
       const edgeIds = [...area.network.edges.keys()].filter(id => segs.has(id.replace(/_(fwd|bwd)$/, '')));
       const built = countsToConstraints(rows, edgeIds, { hour, allowEstimated: opts.allowEstimated });
       const calib = built.constraints;
