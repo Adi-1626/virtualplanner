@@ -31,7 +31,7 @@ import { ProjectsContext } from './contexts/ProjectsContext';
 import { ReportsContext } from './contexts/ReportsContext';
 import { DataCatalogueOverlay } from '../components/data/DataCatalogueView';
 import { ErrorNotice } from '../components/ui/ErrorNotice';
-import { isFriendlyErrorText, type ErrorContext } from '../lib/errorCatalogue';
+import { userErrorText, type ErrorContext } from '../lib/errorCatalogue';
 import { ERROR_TOAST_EVENT, type ErrorToastDetail } from '../lib/errorToast';
 
 // 'notice': a failed request, shown neutrally with its reference (components/ui/ErrorNotice.tsx, lib/errorCatalogue.ts)
@@ -86,7 +86,7 @@ export const AppShell: React.FC<{ trust?: React.ReactNode }> = ({ trust }) => {
     };
     // a request failure that reached a string-only toast call is still shown the neutral way, with its reference
     (window as any).showToast = (message: string, type: Toast['type'] = 'info') =>
-      show({ message, type: type === 'error' && isFriendlyErrorText(message) ? 'notice' : type });
+      show(type === 'error' ? { message: userErrorText(message, 'load'), type: 'notice' } : { message, type });
     const onErrorToast = (e: Event) => {
       const d = (e as CustomEvent<ErrorToastDetail>).detail;
       show({ message: '', type: 'notice', error: d.error, context: d.context, retry: d.retry });

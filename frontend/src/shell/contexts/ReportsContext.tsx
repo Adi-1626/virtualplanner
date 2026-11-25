@@ -18,6 +18,8 @@ import { DataCatalogueSection } from '../../components/data/DataCatalogueSection
 import { useSimulationMode } from '../../hooks/useSimulationMode';
 import { reportDataOf, downloadReportFile } from '../../components/simulate/comparisonExport';
 import { loadLastComparisonReport, type ComparisonReportData } from '../../engine/report/comparisonReport';
+import { ErrorNotice } from '../../components/ui/ErrorNotice';
+import { userErrorText } from '../../lib/errorCatalogue';
 
 const who = () => localStorage.getItem('td-user') ?? '';
 const when = (iso: string | null | undefined) => formatWhen(iso, 'never');
@@ -84,7 +86,7 @@ export const ReportsContext: React.FC = () => {
 
   return (
     <div className="space-y-5" data-testid="reports-catalogue">
-      {error && <p className="text-label text-warn" role="status">Some reports could not be listed ({error}).</p>}
+      {error && <ErrorNotice prefix="Some reports could not be listed." message={userErrorText(error, 'load')} />}
       <DataCatalogueSection />
       <PanelSection title="Planning project reports" aside={<button type="button" onClick={load} className="uos-link inline-flex items-center gap-1" aria-label="Reload reports"><RefreshCw size={12} aria-hidden />Reload</button>}>
         {projects == null ? <p className="text-label text-text-2 flex items-center gap-2"><Loader2 size={14} className="animate-spin" aria-hidden />Loading…</p>

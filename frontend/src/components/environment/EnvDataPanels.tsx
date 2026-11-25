@@ -14,11 +14,13 @@ import { cameraBox, loadStations } from './envDataOverlay';
 import { airCsv, NAAQS_24H, pointDate, rainCsv, readoutIndex } from './envPlanner';
 import { downloadText } from './download';
 import { useEnvFocus } from './envFocus';
+import { ErrorNotice } from '../ui/ErrorNotice';
+import { userErrorText } from '../../lib/errorCatalogue';
 
 const selCls = 'max-w-full min-w-0 rounded-md bg-white/[0.05] border border-white/10 px-1.5 py-0.5 text-label text-text-1 focus:outline-none focus:border-cyan-400/60';
 const fmt = (v: number, d = 0) => v.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d });
 
-const Err: React.FC<{ e: string | null; id: string }> = ({ e, id }) => e ? <p className="text-meta text-warn" role="status" data-testid={id}>{e}</p> : null;
+const Err: React.FC<{ e: string | null; id: string }> = ({ e, id }) => e ? <div data-testid={id}><ErrorNotice message={userErrorText(e, 'load')} /></div> : null;
 
 // ── land cover areas ───────────────────────────────────────────────────────────
 export const LandcoverAreasPanel: React.FC = () => {

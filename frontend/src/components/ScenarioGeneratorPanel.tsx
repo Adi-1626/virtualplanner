@@ -5,6 +5,8 @@ import { CAUSE_LABEL } from '../engine/generator/diagnosis';
 import { CATEGORY_LABEL } from '../engine/generator/candidates';
 import { METRICS, METRIC_BY_ID, paretoSet, weightedRanking, explainScenario, type MetricId, type ScenarioRow } from '../engine/generator/compare';
 import { TrustBadge } from './ui/badges/TrustBadge';
+import { ErrorNotice } from './ui/ErrorNotice';
+import { userErrorText } from '../lib/errorCatalogue';
 
 /**
  * Scenario generator and multi-objective comparison (docs/SCENARIO_GENERATOR.md).
@@ -89,7 +91,7 @@ export const ScenarioGeneratorPanel: React.FC = () => {
                   <p className="text-slate-300">Limitations</p><ul className="ml-3 list-disc text-slate-400">{c.limitations.map(x => <li key={x}>{x}</li>)}</ul>
                 </details>
                 {made && <div className="mt-1 text-slate-300" data-testid="gen-created">
-                  {made.error ? <span className="text-rose-300">Not created: {made.error}</span> : <>Proposal <code className="text-slate-400">{made.scenarioId}</code>{made.versionId ? ' · version saved' : ''}
+                  {made.error ? <ErrorNotice prefix="The proposal was not created." message={userErrorText(made.error)} /> : <>Proposal <code className="text-slate-400">{made.scenarioId}</code>{made.versionId ? ' · version saved' : ''}
                     {made.topology && <span className={made.topology.ok ? 'text-emerald-300' : 'text-amber-200'} data-testid="gen-topology"> · topology {made.topology.ok ? 'connected' : `issues: ${made.topology.problems.join(' ')}`}</span>}
                     {made.feasibility && <div className="text-slate-400" data-testid="gen-feasibility">Feasibility screening: {made.feasibility.findings} findings, {made.feasibility.investigations} investigations required{made.feasibility.critical ? `, ${made.feasibility.critical} critical flag(s)` : ''}; outside existing right of way: {made.feasibility.outsideRoW} ({made.feasibility.certainty}).{made.feasibility.summary.length ? ` ${made.feasibility.summary.join(' ')}` : ''}</div>}
                     <button className="ml-1 text-sky-300 underline" onClick={() => engineInstance.scenarios.setActiveScenario(made.scenarioId)}>Open</button></>}

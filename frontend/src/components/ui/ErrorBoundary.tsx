@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RotateCcw, ChevronDown } from 'lucide-react';
+import { userErrorText } from '../../lib/errorCatalogue';
 
 interface Props {
   children: ReactNode;
@@ -39,18 +40,18 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-[#060913] p-4 text-slate-100 select-none">
-          <div className="w-full max-w-lg glass-panel rounded-3xl border border-rose-500/20 bg-slate-900/90 p-6 shadow-2xl space-y-5">
+          <div className="w-full max-w-lg glass-panel rounded-3xl border border-white/10 bg-slate-900/90 p-6 shadow-2xl space-y-5">
             {/* Header */}
             <div className="flex items-center gap-3">
-              <div className="p-3 rounded-2xl bg-rose-950/80 border border-rose-500/30 text-rose-400">
+              <div className="p-3 rounded-2xl bg-slate-800/80 border border-white/10 text-slate-300">
                 <AlertTriangle size={24} />
               </div>
               <div>
                 <h2 className="text-base font-bold text-slate-100 tracking-wide">
-                  Application Encountered an Error
+                  Something went wrong on this screen
                 </h2>
-                <p className="text-xs text-rose-400/90 font-mono mt-0.5">
-                  TwinCity Engine UI crash caught gracefully
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Your saved work is not affected
                 </p>
               </div>
             </div>
@@ -58,7 +59,7 @@ export class ErrorBoundary extends Component<Props, State> {
             {/* Message */}
             <div className="bg-slate-950/60 rounded-xl p-3.5 border border-white/5">
               <p className="text-xs text-slate-300 font-medium">
-                {this.state.error?.message || 'An unexpected rendering error occurred.'}
+                {userErrorText(this.state.error?.message, 'load')}
               </p>
             </div>
 
@@ -86,7 +87,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 <ChevronDown size={12} className="transition-transform group-open:rotate-180" />
               </summary>
               <div className="mt-2.5 space-y-2">
-                <pre className="p-3 rounded-xl bg-slate-950/90 text-[11px] font-mono text-rose-300/90 overflow-x-auto max-h-48 border border-white/5 whitespace-pre-wrap leading-relaxed">
+                <pre className="p-3 rounded-xl bg-slate-950/90 text-[11px] font-mono text-slate-400 overflow-x-auto max-h-48 border border-white/5 whitespace-pre-wrap leading-relaxed">
                   {this.state.error?.stack || 'No component stack available.'}
                 </pre>
                 {this.state.errorInfo?.componentStack && (

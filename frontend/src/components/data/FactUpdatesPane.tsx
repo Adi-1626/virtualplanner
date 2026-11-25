@@ -9,6 +9,8 @@ import {
   conflictSummary, evidenceDate, evidenceSource, groupProposals, needsNote, proposalIsOfficial, rollbackTargets, sourceCount, versionNote,
   runStatusText, withheldText,
 } from './factUpdatesModel';
+import { ErrorNotice } from '../ui/ErrorNotice';
+import { userErrorText } from '../../lib/errorCatalogue';
 
 const TONE_COLOR = { good: 'var(--measured, #3FB950)', warn: 'var(--warn, #E8833A)', bad: 'var(--fail, #FF6B61)', unknown: 'var(--unknown, #9AA4B2)' };
 const reviewerName = () => localStorage.getItem('td-user') ?? '';
@@ -160,7 +162,7 @@ export const FactUpdatesPane: React.FC = () => {
         (gov.in, nic.in, Maha-Metro, Parliament, MSRDC). News reports are never used. Each fact shows the sentence it came from. Nothing changes the
         dataset until a named reviewer approves it and applies it as a new version; every version can be rolled back.
       </p>
-      {error && <p className="text-label text-warn" role="status">Could not load the review queue ({error}).</p>}
+      {error && <ErrorNotice prefix="The review queue could not be loaded." message={userErrorText(error, 'load')} />}
       <div className="flex items-center gap-2 text-meta text-text-3 flex-wrap">
         <span>{runStatusText(!!error, lastRun)}</span>
         {status && !status.audit.ok && <span style={{ color: TONE_COLOR.bad }}>Audit log check failed: {status.audit.reason}</span>}

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, AlertTriangle, CheckCircle2, XCircle, Gauge, Eraser, Download, MapPin, ChevronDown, ExternalLink } from 'lucide-react';
+import { Loader2, AlertTriangle, CheckCircle2, Gauge, Eraser, Download, MapPin, ChevronDown, ExternalLink } from 'lucide-react';
 import { engineInstance } from '../engine/TwinCityEngine';
 import type { SimulationModeState } from '../engine/simulation/SimulationMode';
 import { shortCitation, type CountDataset } from '../engine/calibration/observedCounts';
@@ -8,6 +8,8 @@ import { GEH_PASS, GEH_TARGET_SHARE, type GehSummary } from '../engine/calibrati
 import type { MicroSimMetrics } from '../engine/simulation/TrafficMicroSim';
 import { Section, Button, Notice } from './ui/kit';
 import { SourceBadge } from './ui/SourceBadge';
+import { ErrorNotice } from './ui/ErrorNotice';
+import { userErrorText } from '../lib/errorCatalogue';
 
 const TURN_LABEL = { left: 'L', straight: 'T', right: 'R' } as const;
 const fmt = (v: number | null) => (v === null ? '–' : Math.round(v).toLocaleString());
@@ -59,7 +61,7 @@ export const CalibrationPanel: React.FC<{ sim: SimulationModeState }> = ({ sim }
           </>
         )}
         {c.staleReason && !c.rows.length && <p className="text-xs text-slate-500">Earlier results were cleared: {c.staleReason}</p>}
-        {c.status === 'error' && <Notice tone="bad" icon={XCircle}>{c.error}</Notice>}
+        {c.status === 'error' && <ErrorNotice prefix="Calibration could not run." message={userErrorText(c.error)} context="simulate" />}
         {c.rows.length > 0 && <Results sim={sim} />}
       </div>
     </Section>

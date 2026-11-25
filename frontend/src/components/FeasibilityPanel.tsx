@@ -11,6 +11,8 @@ import {
   saveAssessment, uploadEvidence, type DocumentRecord, type EvidenceRecord, type ReviewRecord, type ReviewStatus, type StoredAssessment,
 } from '../engine/feasibility/feasibilityApi';
 import { Button, Notice, Section, Segmented } from './ui/kit';
+import { ErrorNotice } from './ui/ErrorNotice';
+import { userErrorText } from '../lib/errorCatalogue';
 
 const CHIP: Record<Certainty, string> = {
   verified_from_available_data: 'bg-sky-500/15 text-sky-200 border-sky-400/30',
@@ -77,7 +79,7 @@ export const FeasibilityPanel: React.FC<{ obj: ProposalObj; onBack: () => void }
       const s = await saveAssessment(res);
       setA(res); setStored(s);
       await loadRecords(s.id);
-    } catch (e) { setError(`Assessment failed: ${(e as Error).message}`); }
+    } catch (e) { setError(`The assessment could not be completed. ${userErrorText((e as Error).message, 'save')}`); }
     finally { setBusy(null); }
   };
 
@@ -90,7 +92,7 @@ export const FeasibilityPanel: React.FC<{ obj: ProposalObj; onBack: () => void }
       const link = document.createElement('a');
       link.href = documentUrl(d); link.download = d.file_name; link.rel = 'noopener';
       document.body.appendChild(link); link.click(); link.remove();
-    } catch (e) { setError(`Document generation failed: ${(e as Error).message}`); }
+    } catch (e) { setError(`The document could not be made. ${userErrorText((e as Error).message, 'save')}`); }
     finally { setBusy(null); }
   };
 
@@ -100,7 +102,7 @@ export const FeasibilityPanel: React.FC<{ obj: ProposalObj; onBack: () => void }
     try {
       const r = await uploadEvidence(stored.id, ev.file, { description: ev.description, uploaded_by: ev.uploaded_by, investigation_id: ev.investigation_id || null, provenance: ev.provenance });
       setEvidence(x => [...x, r]); setEv(s => ({ ...s, file: null, description: '' }));
-    } catch (e) { setError(`Upload failed: ${(e as Error).message}`); }
+    } catch (e) { setError(`The file could not be uploaded. ${userErrorText((e as Error).message, 'save')}`); }
     finally { setBusy(null); }
   };
 
@@ -114,7 +116,7 @@ export const FeasibilityPanel: React.FC<{ obj: ProposalObj; onBack: () => void }
         ...(rev.status === 'external_approval_recorded_unverified' ? { external_reference: rev.external_reference } : {}),
       });
       setReviews(x => [...x, r]); setRev(s => ({ ...s, notes: '', evidence_ids: [], external_reference: '' }));
-    } catch (e) { setError(`Review not recorded: ${(e as Error).message}`); }
+    } catch (e) { setError(`The review was not recorded. ${userErrorText((e as Error).message, 'save')}`); }
     finally { setBusy(null); }
   };
 
@@ -163,7 +165,7 @@ export const FeasibilityPanel: React.FC<{ obj: ProposalObj; onBack: () => void }
           {stored && <div className="text-xs text-slate-500">Assessment {stored.id.slice(0, 8)} · {stored.created_at} UTC · {a?.lengthM} m{stale ? ' · settings changed, not yet re-assessed' : ''}</div>}
         </Section>
 
-        {error && <Notice tone="bad">{error}</Notice>}
+        {error && <ErrorNotice message={error} />}
 
         {a && (
           <>

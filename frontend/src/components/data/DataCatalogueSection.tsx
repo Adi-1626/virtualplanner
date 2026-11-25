@@ -4,6 +4,8 @@ import { datasetsApi, type DsDataset, type FeatureStatus } from '../../lib/datas
 import { PanelSection } from '../ui/Panel';
 import { catalogueSummary, withPendingVersions } from './dataCatalogueModel';
 import { useDataCatalogue } from './useDataCatalogue';
+import { ErrorNotice } from '../ui/ErrorNotice';
+import { userErrorText } from '../../lib/errorCatalogue';
 
 /** Reports → "Data catalogue" entry: counts, and the two buttons that open the catalogue overlay. */
 export const DataCatalogueSection: React.FC = () => {
@@ -18,7 +20,7 @@ export const DataCatalogueSection: React.FC = () => {
   const s = list ? catalogueSummary(list) : null;
   return (
     <PanelSection title="Data catalogue">
-      {err && <p className="text-label text-warn" role="status">Registry not reachable ({err}).</p>}
+      {err && <ErrorNotice prefix="The data registry could not be loaded." message={userErrorText(err, 'load')} />}
       {!err && !s && <p className="text-label text-text-2 flex items-center gap-2"><Loader2 size={14} className="animate-spin" aria-hidden />Loading…</p>}
       {s && (
         <p className="text-label text-text-2 tabular-nums" data-testid="data-summary">

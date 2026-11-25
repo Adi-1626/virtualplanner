@@ -4,6 +4,8 @@ import { engineInstance } from '../engine/TwinCityEngine';
 import type { ScenarioVersion, ScenarioVersionList } from '../engine/scenarios/versions';
 import { assumptionDifferences, hasUnsavedChanges } from '../engine/scenarios/versions';
 import { ConfirmDialog } from './ui/ConfirmDialog';
+import { ErrorNotice } from './ui/ErrorNotice';
+import { userErrorText } from '../lib/errorCatalogue';
 
 /**
  * Versions of the active proposal (docs/SCENARIOS_AND_VERSIONING.md): save the change set as an immutable version
@@ -97,7 +99,7 @@ export const ScenarioVersions: React.FC<{ scenarioId: string }> = ({ scenarioId 
           <Save size={12} /> Save
         </button>
       </div>
-      {error && <p className="text-xs text-rose-300">{error}</p>}
+      {error && <ErrorNotice prefix="Versions could not be loaded." message={userErrorText(error, 'load')} onRetry={() => void refresh()} />}
       <ul className="flex flex-col gap-1 max-h-48 overflow-y-auto" data-testid="version-list">
         {versions.map(v => {
           const diffs = assumptionDifferences(v.assumptions ?? {}, now);

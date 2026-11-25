@@ -10,6 +10,8 @@ import {
   type Dataset, type DatasetKind, type DatasetMeta, type DatasetRole, type DayType, type Direction, type FieldError,
   type HourRow, type ImportPreview, type PcuFactorSet, type VehicleClass,
 } from '../engine/data/trafficData';
+import { ErrorNotice } from './ui/ErrorNotice';
+import { userErrorText } from '../lib/errorCatalogue';
 
 /**
  * Traffic Data Manager (docs/TRAFFIC_DATA.md): datasets with provenance,
@@ -91,7 +93,7 @@ export const TrafficDataPanel: React.FC<{ onClose: () => void }> = ({ onClose })
             <input id="td-user" className={inputCls} value={user} onChange={e => setUser(e.target.value)} placeholder="e.g. A. Engineer" />
           </div>
           <TrafficCountsNotice compact />
-          {error && <Notice tone="bad" icon={AlertTriangle} action={<Button size="sm" variant="ghost" onClick={() => void reload()}>Retry</Button>}>Traffic data could not be loaded: {error}</Notice>}
+          {error && <ErrorNotice prefix="Traffic data could not be loaded." message={userErrorText(error, 'load')} onRetry={() => void reload()} />}
           {tab === 'datasets' && <DatasetList datasets={datasets} sets={sets} user={user} onChanged={reload} />}
           {tab === 'enter' && <ManualEntry datasets={datasets ?? []} classes={classes} sets={sets} user={user} roadId={roadId} setRoadId={setRoadId} onChanged={reload} />}
           {tab === 'import' && <ImportWizard sets={sets} user={user} onDone={async () => { await reload(); setTab('datasets'); }} />}
@@ -341,7 +343,9 @@ const ManualEntry: React.FC<{ datasets: Dataset[]; classes: VehicleClass[]; sets
           <p className="text-xs text-slate-500">{set ? `PCU by ${set.name} (v${set.version}).` : ''} {pcuNote}{vph === null ? ' Period must be HH:MM to HH:MM, end after start.' : ''}</p>
         </div>
       </Section>
-      {result && <Notice tone={result.ok ? 'good' : 'bad'} icon={result.ok ? CheckCircle2 : AlertTriangle}>{result.text}{result.errors?.length ? <ul className="mt-1 text-xs">{result.errors.map((e, i) => <li key={i}>{FIELD_LABEL[e.field] ?? e.field}: {e.message}</li>)}</ul> : null}</Notice>}
+      {result && (result.ok
+        ? <Notice tone="good" icon={CheckCircle2}>{result.text}</Notice>
+        : <ErrorNotice message={userErrorText(result.text, 'save')}>{result.errors?.length ? <ul className="text-xs">{result.errors.map((e, i) => <li key={i}>{FIELD_LABEL[e.field] ?? e.field}: {e.message}</li>)}</ul> : null}</ErrorNotice>)}
       <Button variant="primary" className="w-full" icon={busy ? Loader2 : Database} spin={busy} disabled={busy} onClick={() => void save()}>Save count</Button>
     </div>
   );
@@ -409,7 +413,7 @@ const ImportWizard: React.FC<{ sets: PcuFactorSet[]; user: string; onDone: () =>
         )}
       </Section>
       {busy && <Notice icon={Loader2} spin>Reading the file…</Notice>}
-      {error && <Notice tone="bad" icon={AlertTriangle}>{error}</Notice>}
+      {error && <ErrorNotice message={userErrorText(error, 'upload')} />}
       {preview && (
         <>
           <Section title="2. Map columns">
@@ -484,7 +488,7 @@ const RoadView: React.FC<{ datasets: Dataset[]; roadId: string | null; setRoadId
   return (
     <div className="space-y-3" data-testid="road-view">
       <RoadPicker roadId={roadId} setRoadId={setRoadId} />
-      {error && <Notice tone="bad" icon={AlertTriangle}>{error}</Notice>}
+      {error && <ErrorNotice prefix="Counts could not be loaded." message={userErrorText(error, 'load')} />}
       {roadId && data && !data.length && <p className="text-sm text-slate-400">No counts on this road.</p>}
       {data?.map(({ ds, set, hours }) => (
         <div key={ds.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-2.5 space-y-1.5">

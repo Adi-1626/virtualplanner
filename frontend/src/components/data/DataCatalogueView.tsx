@@ -16,6 +16,8 @@ import {
 import { useDataCatalogue, type DataView } from './useDataCatalogue';
 import { displayPath, redactPaths } from '../../lib/redactPaths';
 import { FactUpdatesPane } from './FactUpdatesPane';
+import { ErrorNotice } from '../ui/ErrorNotice';
+import { userErrorText } from '../../lib/errorCatalogue';
 
 const TONE_COLOR = { good: 'var(--measured, #3FB950)', warn: 'var(--warn, #E8833A)', bad: 'var(--fail, #FF6B61)', unknown: 'var(--unknown, #9AA4B2)' };
 const FEATURE_COLOR = { ready: TONE_COLOR.good, partial: TONE_COLOR.warn, blocked: TONE_COLOR.bad };
@@ -68,7 +70,7 @@ const DataCatalogueView: React.FC = () => {
         <button type="button" className="uos-btn uos-btn-sm" onClick={load} aria-label="Reload catalogue"><RefreshCw size={13} aria-hidden />Reload</button>
         <IconButton icon={X} label="Close data catalogue" onClick={close} size="sm" tooltip="left" />
       </header>
-      {error && <p className="text-label text-warn px-4 pt-2" role="status">Could not load everything ({error}).</p>}
+      {error && <ErrorNotice className="mx-4 mt-2" prefix="Some of the catalogue could not be loaded." message={userErrorText(error, 'load')} />}
       <TabPanel idBase="uos-data" id={view} className="uos-data-body">
         {view === 'datasets'
           ? <DatasetsPane list={list} features={features} selected={selected} onSelect={id => select(id)} onChanged={load} />
@@ -138,7 +140,7 @@ const ProvenanceCard: React.FC<{ id: string; features: FeatureReadiness[] | null
   const [busy, setBusy] = useState<string | null>(null);
   const reload = useCallback(() => { setErr(null); datasetsApi.get(id).then(setD).catch((e: Error) => setErr(e.message)); }, [id]);
   useEffect(() => { setD(null); reload(); }, [reload]);
-  if (err) return <p className="text-label text-warn" role="status">Could not load {id}: {err}</p>;
+  if (err) return <ErrorNotice prefix="This dataset could not be loaded." message={userErrorText(err, 'load')} onRetry={reload} />;
   if (!d) return <p className="text-label text-text-2 flex items-center gap-2"><Loader2 size={14} className="animate-spin" aria-hidden />Loading…</p>;
   const v = d.active_version;
   const fp = footprint(v?.coverage_bbox ?? null);

@@ -11,6 +11,8 @@ import { StaleBadge } from './common';
 import { StepList } from './GetStarted';
 import { inputCls, labelCls, when, type Act, type ProjectBundle } from './projectData';
 import { projectStudyAreaOptions } from './studyAreaOptions';
+import { ErrorNotice } from '../ui/ErrorNotice';
+import { userErrorText } from '../../lib/errorCatalogue';
 
 export const OverviewTab: React.FC<{ b: ProjectBundle; who: string; act: Act; reload: () => void; goTab: (t: string) => void; onDeleted: () => void }> = ({ b, who, act, reload, goTab, onDeleted }) => {
   const p = b.project;
@@ -162,7 +164,7 @@ const DeleteProject: React.FC<{ b: ProjectBundle; who: string; onDeleted: () => 
             {runs ? `Its ${runs} conflict check${runs === 1 ? ' and its findings are' : 's and their findings are'} archived with it` : 'Its findings are archived with it'}, and so are other projects’ findings against it: kept as an archived record on the server (the deletion is noted in the other projects’ Activity), no longer in active lists or reports. A deleted project cannot be opened again in the app.</p>
           <label className={labelCls} htmlFor="pd-name">Type the project name to confirm: <b className="text-slate-200">{p.name}</b></label>
           <input id="pd-name" className={inputCls} value={typed} onChange={e => setTyped(e.target.value)} data-testid="delete-name" autoComplete="off" />
-          {err && <Notice tone="bad">{err}</Notice>}
+          {err && <ErrorNotice prefix="The project was not deleted." message={userErrorText(err, 'save')} />}
           <div className="flex gap-2">
             <Button size="sm" icon={busy ? Loader2 : Trash2} spin={busy} className="!bg-rose-500/80 !text-white hover:!bg-rose-500" disabled={busy || typed.trim() !== p.name.trim()} onClick={() => void del()} data-testid="delete-confirm-button">Delete project</Button>
             <Button size="sm" variant="ghost" onClick={() => { setOpen(false); setTyped(''); setErr(null); }}>Cancel</Button>

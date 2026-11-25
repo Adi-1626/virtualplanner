@@ -11,6 +11,8 @@ import { chosenDrafts, draftsFromChangeSet, zRangeText, type ElementDraft, type 
 import { engineInstance } from '../../engine/TwinCityEngine';
 import { useShellStore } from '../../shell/useShellStore';
 import { inputCls, flyToGeometry, type Act, type ProjectBundle } from './projectData';
+import { ErrorNotice } from '../ui/ErrorNotice';
+import { userErrorText } from '../../lib/errorCatalogue';
 
 export const AlternativesTab: React.FC<{ b: ProjectBundle; who: string; act: Act }> = ({ b, who, act }) => {
   const p = b.project;
@@ -114,7 +116,7 @@ const RegisterElements: React.FC<{ sid: string; b: ProjectBundle; who: string; a
     });
     setBusy(false);
   };
-  if (err) return <Notice tone="bad">{err}</Notice>;
+  if (err) return <ErrorNotice message={userErrorText(err, 'save')} />;
   if (!plan) return <Notice icon={Loader2} spin>Reading the alternative…</Notice>;
   return (
     <div className="space-y-2 border-t border-white/10 pt-2" data-testid="register-elements">

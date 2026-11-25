@@ -9,6 +9,8 @@ import { OverviewTab } from './OverviewTab';
 import { AlternativesTab } from './AlternativesTab';
 import { ConflictsTab } from './ConflictsTab';
 import { AssessmentsTab, DatasetsTab, DecisionsTab, ActivityTab } from './RecordsTabs';
+import { ErrorNotice } from '../ui/ErrorNotice';
+import { userErrorText } from '../../lib/errorCatalogue';
 
 export type ProjectTab = 'overview' | 'alternatives' | 'assessments' | 'datasets' | 'conflicts' | 'decisions' | 'activity';
 
@@ -22,7 +24,7 @@ export const ProjectPage: React.FC<{ id: string; user: string; onBack: () => voi
       <PanelBody>{error
         ? (/^404\b/.test(error)
           ? <span data-testid="project-gone"><Notice tone="warn">This project no longer exists (it was deleted). Go back to all projects.</Notice></span>
-          : <Notice tone="bad" action={<button type="button" className="uos-link" onClick={() => void reload()}>Try again</button>}>The project could not be loaded ({error}).</Notice>)
+          : <ErrorNotice prefix="The project could not be loaded." message={userErrorText(error, 'load')} onRetry={() => void reload()} />)
         : <Notice icon={Loader2} spin>Loading…</Notice>}</PanelBody></>);
   const who = user.trim();
   const p = b.project;
@@ -45,7 +47,7 @@ export const ProjectPage: React.FC<{ id: string; user: string; onBack: () => voi
       </div>
       <TabPanel idBase="uos-project" id={tab} className="flex-1 min-h-0 flex flex-col">
         <PanelBody>
-          {error && <Notice tone="bad">{error}</Notice>}
+          {error && <ErrorNotice message={userErrorText(error, 'save')} />}
           {b.partialErrors.length > 0 && <Notice tone="warn">Some parts could not be loaded: {b.partialErrors.join(' · ')}</Notice>}
           {!who && <Notice tone="warn">Read-only until you enter your name on the project list (“All projects”); it is recorded with every change.</Notice>}
           {tab === 'overview' && <OverviewTab b={b} who={who} act={act} reload={() => void reload()} goTab={t => setTab(t as ProjectTab)} onDeleted={onDeleted ?? onBack} />}

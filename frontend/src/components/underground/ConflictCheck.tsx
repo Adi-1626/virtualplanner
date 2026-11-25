@@ -20,6 +20,7 @@ import { clearConflictHighlight, showConflictHighlight } from './conflictHighlig
 import { gapCountText, groupGaps, type GapGroup } from './screeningGroups';
 import { plural } from '../../lib/plural';
 import { ErrorNotice } from '../ui/ErrorNotice';
+import { userErrorText } from '../../lib/errorCatalogue';
 
 /** What the screening reads (coordination/screening.py SCREENED_TYPES): underground works, metro, and the decks whose piers go into the ground. */
 const SCREENED_TYPES = new Set(['underground_alignment', 'utility', 'metro_line', 'metro_station', 'flyover', 'metro_flyover']);
@@ -355,7 +356,7 @@ const ReportExport: React.FC<{ sid: string; objects: () => ScreeningObject[]; st
       link.href = url; link.download = filename; document.body.appendChild(link); link.click(); link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
       setMsg(`Downloaded ${filename} (${findings.toLocaleString('en-IN')} findings).`);
-    } catch (e) { setMsg(`The report could not be made: ${(e as Error).message}`); } finally { setBusy(null); }
+    } catch (e) { setMsg(`The report could not be made. ${userErrorText((e as Error).message, 'export')}`); } finally { setBusy(null); }
   };
   return (
     <section className="uos-card flex flex-col gap-1.5" data-testid="ug-report">

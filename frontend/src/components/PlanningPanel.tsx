@@ -11,6 +11,8 @@ import { ProjectPage } from './projects/ProjectPage';
 import { GetStarted } from './projects/GetStarted';
 import { useShellStore } from '../shell/useShellStore';
 import { projectStudyAreaOptions } from './projects/studyAreaOptions';
+import { ErrorNotice } from './ui/ErrorNotice';
+import { userErrorText } from '../lib/errorCatalogue';
 
 /**
  * Planning & Approval Workspace (docs/PLANNING_WORKSPACE.md) redesigned as the Projects & Coordination workspace
@@ -57,9 +59,9 @@ export const PlanningPanel: React.FC<{ onClose: () => void; /** Open this projec
             <PanelHeader title="Planning projects" subtitle="One project per planning activity: its alternatives, conflicts with other agencies’ projects, assessments and decisions" onClose={onClose} />
             <PanelBody>
               {error && (
-                <Notice tone="bad" action={<Button size="sm" icon={RefreshCw} onClick={() => void reload()} data-testid="projects-retry">Try again</Button>}>
-                  The project list could not be loaded ({error}). Nothing was changed.
-                </Notice>
+                <ErrorNotice prefix="The project list could not be loaded. Nothing was changed." message={userErrorText(error, 'load')}>
+                  <span><Button size="sm" icon={RefreshCw} onClick={() => void reload()} data-testid="projects-retry">Try again</Button></span>
+                </ErrorNotice>
               )}
               <div>
                 <label className={labelCls} htmlFor="pl-user">Your name (recorded with every change; not verified)</label>
@@ -132,7 +134,7 @@ const NewProject: React.FC<{ user: string; open: boolean; setOpen: (v: boolean) 
         {areas && areas.length === 0 && <p className="text-xs text-slate-500 mt-1">No study area yet (draw one in Design → Study area). You can set it later.</p>}
       </div>
       <p className="text-xs text-slate-500">The project notes the current base city, so a later change to it is flagged. You can rename it or change the study area later.</p>
-      {err && <Notice tone="bad">{err}</Notice>}
+      {err && <ErrorNotice prefix="The project was not created." message={userErrorText(err, 'save')} />}
       <div className="flex gap-2">
         <Button variant="primary" icon={busy ? Loader2 : Plus} spin={busy} disabled={busy || !name.trim() || !user.trim()} data-testid="create-project" onClick={create}>Create</Button>
         <Button variant="ghost" onClick={() => { setOpen(false); reset(); }} data-testid="cancel-project">Cancel</Button>

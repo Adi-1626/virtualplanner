@@ -53,15 +53,15 @@ export const ConnectionBadge: React.FC = () => {
   if (status === 'offline') {
     return (
       <div 
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium font-mono border bg-rose-950/70 border-rose-500/40 text-rose-300 shadow-sm"
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium font-mono border bg-slate-900/80 border-white/15 text-slate-300 shadow-sm"
         title="Backend server offline. Changes are preserved locally."
       >
-        <WifiOff size={11} className="text-rose-400 shrink-0" />
+        <WifiOff size={11} className="text-slate-400 shrink-0" />
         <span>Offline</span>
         <button
           onClick={handleRetry}
           disabled={isRetrying}
-          className="ml-1 p-0.5 hover:bg-rose-900/60 rounded text-rose-300 hover:text-white transition cursor-pointer disabled:opacity-50"
+          className="ml-1 p-0.5 hover:bg-slate-800/60 rounded text-slate-300 hover:text-white transition cursor-pointer disabled:opacity-50"
           title="Retry connection to backend"
         >
           <RefreshCw size={10} className={isRetrying ? 'animate-spin' : ''} />
