@@ -143,7 +143,8 @@ describe('Connection state', () => {
 
   it('treats an HTTP error as reachable (not offline) but still throws', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('bad', { status: 422 })));
-    await expect(apiGet('/api/objects')).rejects.toThrow(/422/);
+    // p15-logging: the message is the catalogue text; the status stays on the error
+    await expect(apiGet('/api/objects')).rejects.toMatchObject({ status: 422 });
     expect(connectionState.current).toBe('online');
   });
 });

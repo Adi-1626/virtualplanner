@@ -90,7 +90,8 @@ describe('object sync queue', () => {
     calls[1].release();
     await flush(); await flush();
     expect(om.hasPendingWrite('syn_align_1')).toBe(false);
-    expect(warn).toHaveBeenCalledTimes(1); // the failed create only
+    // the failed create only (api.ts also logs each failed request with its request id since p15-logging)
+    expect(warn.mock.calls.filter(c => String(c[0]).startsWith('[ObjectManager]')).length).toBe(1);
     warn.mockRestore();
   });
 
