@@ -70,3 +70,71 @@ model's units or speed-flow curve, step stated), `assumed` (engineering bar for 
 Micro-simulation in the harness: 2 seeds (42, 7), 300 s warm-up, 300 s measured (the app: 3 seeds, 300 s + 900 s; shorter
 here to fit 41 x 4 runs on 2 CPUs). The static assignment is deterministic (same inputs, same flows), so its stability is
 not a band.
+
+## 4. Baseline: the recorded demo model on the p16 harness
+
+Run `p16-run/base.jsonl` (`eval.sh base P16_MICRO=1`, wt-p16 at 8d141c8, recorded S10gb1k4, 60 iterations, micro-simulation
+on). Table regenerated with `frontend/src/engine/testing/citywide/summarize.py`; see §8 for the full table next to the
+final model. Pattern: nights pass (only N2 in the old city / near Sangam bridge fails), days fail D1/D2/M1/M2.
+
+## 5. What the baseline failures are (diagnosis before any fix)
+
+| Finding | Evidence | Kind |
+|---|---|---|
+| Overloaded boundary roads. Through traffic is 50-75 % of an inner area's demand (e.g. a river bridge area at 09:00: 85,806 veh/h, 46,654 through); it enters on the boundary road its city path crosses and cannot spread, so a few boundary links reach 5-20 x the zero-flow time (p10 speed 0.2-1.5 km/h, while D3, the loaded length above v/c 1.2, stays ≤ 7 %). | base.jsonl `parts`, `byClass`; P16Diag (excess vehicle-hours by place: boundary nodes) | model (candidates K4/K5 gateway metering, K2-K4 congestion-aware city paths) |
+| D2 misfire. D2 is written on link speed including signal and junction delay at the hour; in the old city the zero-flow p10 is already ~7.5 km/h (signal delay on 30-80 m links), so D2 cannot pass there whatever the flow. | 23:00 rows: p10 6.8-9.5 km/h at v/c < 0.3 | band as written: reported strictly; never re-scored in the official counts |
+| Unwarranted signals / junction control. Every OSM signal plus every priority junction is controlled; low-volume legs of signalised junctions add 20-40 s per vehicle. | P16Diag cause split | model (K1-K5 IRC:93 volume-warranted signals) |
+| R2: trips left out ("no drivable way"). All of it is at plan level (the assignment routes everything it gets: unrouted 0). Nagar Rd area: 12 % of the building activity sat on nodes of small network fragments (16-, 7-, 6-node one-way pieces / internal lanes) that reach no boundary road. A fringe village whose boundary roads are all local roads: the fall-back gateways were filtered to collector rank and above, so its external trips had nowhere to go (22-44 % left out). | `p16-run/ends1.jsonl` (P16Ends.test.ts) | bug, fixed (§7) |
+| R3: building ends far from their node. Trips load at junction nodes only (the network has no mid-link nodes). Buildings 30-100 m from a mapped road are 150-240 m from that road's nearest junction (ends1: road within 100 m for 88-95 % of activity, a junction node for 81-86 %). In fringe villages the lanes to the houses are not mapped. | ends1.jsonl | structural (zone connectors at junctions); not fixed (§9) |
+| M1 in an area that is not congested in the assignment (IT park, 09:00/19:00). A deadlock between junction nodes 20-25 m apart (above the 16 m at which the micro-simulation joins nodes into one junction): causes `blockedExit` + `crossingTraffic` (the harness now logs causes and sites). | `p16-run/m1d.jsonl` | micro-simulation; not fixed (§9) |
+
+## 6. Candidates and the selection rule
+
+Rule pre-registered in `/workspace/work/p16-run/RULE_p16.md` before any screen ran: J (calibration-only project-check loss,
+15 Frank-Wolfe iterations) must be within 0.04 of the incumbent's; among those the highest H (static-band harness passes,
+41 x 4); ties by lower J; the incumbent stays unless a candidate beats its H. The hold-out is not used to choose.
+
+| Set | What it adds to S10gb1k4+fix (all p16-dev code, off unless named) |
+|---|---|
+| K0 | nothing (incumbent on the p16 bug fixes) |
+| K1 | IRC:93-1985 volume-warranted signals (an OSM signal or a priority junction is signalised when the hour's flows, scaled to the 8th busiest hour, meet Warrant 1) |
+| K2 | K1 + congestion-aware city paths (6 skeleton loading passes) |
+| K3 | K1 + congestion-aware city paths (8 passes, p14 speed-flow curve on the skeleton) |
+| K4 | K3 + gateway metering 1.3 (entering traffic above 1.3 x a boundary road's capacity is held beyond the edge and reported) |
+| K5 | K1 + gateway metering 1.3 |
+
+Screens: `p16-run/calscr*.jsonl` (J), `p16-run/hK*.jsonl` (H); the choice is computed by `p16-run/choose.py` into
+`p16-run/choice.json` (no hand step). Results in §8.
+
+## 7. Fixes (code, not tuning)
+
+1. **Same-road carriageway transitions had junction control** (p16-dev 16fbd23): where a divided road becomes one two-way
+   road (same road on every arm) the static assignment and the micro-simulation treated the transition as a priority
+   junction, each carriageway giving way to the other; up to 26,000 s delay per vehicle on some links. Now no control.
+2. **Merge capacity sharing** (16fbd23): a heavy one-way stream merging into a carriageway gets its share of the downstream
+   capacity (limited priority) instead of waiting for gaps in the major stream only.
+3. **Trips on network fragments** (p16-fix 4670f6d): a building whose nearest node lies on a small fragment of the area's
+   network (not in its largest strongly connected component) loads at the nearest node of the main network within the
+   250 m access distance, in `syntheticAreaPlan` and in `snapDemandPlan(…, { preferMainNetwork: true })` (the app's area
+   assignment, area demand matching, the P14 project check and the harness). No main network (under half the nodes, e.g.
+   a one-way corridor) = the old nearest-node rule. Tests: `CitywideP16.test.ts` (one-way spur).
+4. **Fringe areas with only local boundary roads** (4670f6d): the fall-back boundary roads for external trips were
+   collector rank and above only; with none, every boundary road of that side is used instead of leaving the trips out.
+5. **Harness measurement** (4670f6d): R3 is measured to the node the trip actually loads at (after the snap), not to the
+   nearest node; the harness also logs the micro-simulation's gridlock causes and sites. Bands unchanged.
+
+Options added but only on through the record if chosen: IRC:93 warranted signals, congestion-aware city paths with the p14
+curve, gateway metering (p16-dev 16fbd23, 1ba5c73).
+
+## 8. Results
+
+_Pending the queued runs (`p16-run/pipeline_p16.sh`, `pipeline_p16b.sh`): choice table, 60-iteration calibration /
+hold-out, official 15-site check, final harness with micro-simulation, default decision. Fill from `choice.json`,
+`fin60.merged.jsonl`, `fin.score.txt`, `final.jsonl` (summarize.py) next to `base.jsonl`._
+
+## 9. Remaining weak areas
+
+- R3 in fringe villages and long-block areas: loading only at junction nodes; a fix needs access nodes on long links (the
+  network builder), not attempted in p16.
+- M1 deadlocks between junctions 20-25 m apart in the micro-simulation (IT park); not fixed.
+- D2 in the old city: the band as written includes signal delay (misfire, §5); reported strictly.
