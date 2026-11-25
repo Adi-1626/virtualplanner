@@ -174,8 +174,11 @@ describe.skipIf(!fs.existsSync(ASSET + 'parity_fixture.json'))('synthetic demand
       expect(t.veh / fx.hourlyVehicleTrips[h]).toBeCloseTo(1, 4); // hourly shares are stored to 6 decimals
       expect(t.pcu / fx.hourlyPcu[h]).toBeCloseTo(1, 4);
     }
+    // The TypeScript re-balancing (used for tuning beta) reproduces the build script's balancing factors
+    const r = rebalance(c, 1 + 1e-12, 400);
     for (const cell of fx.cells.slice(0, 10)) {
       expect(odCell(c, 'HBW', cell.i, cell.j)).toBeCloseTo(cell.HBW, 6);
+      for (const p of ['HBW', 'HBE'] as const) expect(odCell(r, p, cell.i, cell.j)).toBeCloseTo(odCell(c, p, cell.i, cell.j), 3);
       expect(modeProbs(c, cell.i, cell.j).two_wheeler).toBeCloseTo(cell.probs.two_wheeler, 6);
     }
   }, 60000);
