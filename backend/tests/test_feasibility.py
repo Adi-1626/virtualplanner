@@ -86,9 +86,12 @@ def _pdf_text(data: bytes) -> str:
     import re
     import zlib
     out = []
-    for m in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", data, re.S):
+    # fpdf2 writes "stream\n<data>\nendstream". The data is binary: a compressed stream whose last byte is 0x0D was cut by
+    # an optional "\r?" before "\nendstream" and silently skipped (the document's timestamp changes the bytes, so the test
+    # failed about once in a few hundred runs). Match fpdf2's exact framing and decompress without needing the checksum.
+    for m in re.finditer(rb"stream\n(.*?)\nendstream", data, re.S):
         try:
-            out.append(zlib.decompress(m.group(1)).decode("latin-1"))
+            out.append(zlib.decompressobj().decompress(m.group(1)).decode("latin-1"))
         except zlib.error:
             pass
     return "\n".join(out)
