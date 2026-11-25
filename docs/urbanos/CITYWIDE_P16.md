@@ -84,7 +84,7 @@ final model. Pattern: nights pass (only N2 in the old city / near Sangam bridge 
 | Overloaded boundary roads. Through traffic is 50-75 % of an inner area's demand (e.g. a river bridge area at 09:00: 85,806 veh/h, 46,654 through); it enters on the boundary road its city path crosses and cannot spread, so a few boundary links reach 5-20 x the zero-flow time (p10 speed 0.2-1.5 km/h, while D3, the loaded length above v/c 1.2, stays ≤ 7 %). | base.jsonl `parts`, `byClass`; P16Diag (excess vehicle-hours by place: boundary nodes) | model (candidates K4/K5 gateway metering, K2-K4 congestion-aware city paths) |
 | D2 misfire. D2 is written on link speed including signal and junction delay at the hour; in the old city the zero-flow p10 is already ~7.5 km/h (signal delay on 30-80 m links), so D2 cannot pass there whatever the flow. | 23:00 rows: p10 6.8-9.5 km/h at v/c < 0.3 | band as written: reported strictly; never re-scored in the official counts |
 | Unwarranted signals / junction control. Every OSM signal plus every priority junction is controlled; low-volume legs of signalised junctions add 20-40 s per vehicle. | P16Diag cause split | model (K1-K5 IRC:93 volume-warranted signals) |
-| R2: trips left out ("no drivable way"). All of it is at plan level (the assignment routes everything it gets: unrouted 0). Nagar Rd area: 12 % of the building activity sat on nodes of small network fragments (16-, 7-, 6-node one-way pieces / internal lanes) that reach no boundary road. A fringe village (one network component, every node connected) still lost 22-44 %: its boundary roads are all local roads and the fall-back gateways were filtered to collector rank and above (cause inferred from the code; the fixed run in §8 confirms or not). | `p16-run/ends1.jsonl` (P16Ends.test.ts) | bug, fixed (§7) |
+| R2: trips left out ("no drivable way"). All of it is at plan level (the assignment routes everything it gets: unrouted 0), and almost all of it is *through* traffic (Nagar Rd 09:00: 4,194 of 4,198 veh/h). Fringe village p16_20: every left-out vehicle was a city path whose entry and exit resolve to the same boundary node: it grazes the area's corner and never drives on its roads, but was counted as left out (fixed run: 463 → 0 left out, 463 reported as edge-only). A first guess (buildings on small network fragments) was checked and is not the cause (fixchk.jsonl: unchanged left-out). | `p16-run/ends1.jsonl`, `fixchk*.jsonl` | bug, fixed (§7) |
 | R3: building ends far from their node. Trips load at junction nodes only (the network has no mid-link nodes). Buildings 30-100 m from a mapped road are 150-240 m from that road's nearest junction (ends1: road within 100 m for 88-95 % of activity, a junction node for 81-86 %). In fringe villages the lanes to the houses are not mapped. | ends1.jsonl | structural (zone connectors at junctions); not fixed (§9) |
 | M1 in an area that is not congested in the assignment (IT park, 09:00/19:00). A deadlock between junction nodes 20-25 m apart (above the 16 m at which the micro-simulation joins nodes into one junction): causes `blockedExit` + `crossingTraffic` (the harness now logs causes and sites). | `p16-run/m1d.jsonl` | micro-simulation; not fixed (§9) |
 
@@ -113,13 +113,15 @@ Screens: `p16-run/calscr*.jsonl` (J), `p16-run/hK*.jsonl` (H); the choice is com
    junction, each carriageway giving way to the other; up to 26,000 s delay per vehicle on some links. Now no control.
 2. **Merge capacity sharing** (16fbd23): a heavy one-way stream merging into a carriageway gets its share of the downstream
    capacity (limited priority) instead of waiting for gaps in the major stream only.
-3. **Trips on network fragments** (p16-fix 4670f6d): a building whose nearest node lies on a small fragment of the area's
-   network (not in its largest strongly connected component) loads at the nearest node of the main network within the
-   250 m access distance, in `syntheticAreaPlan` and in `snapDemandPlan(…, { preferMainNetwork: true })` (the app's area
-   assignment, area demand matching, the P14 project check and the harness). No main network (under half the nodes, e.g.
-   a one-way corridor) = the old nearest-node rule. Tests: `CitywideP16.test.ts` (one-way spur).
-4. **Fringe areas with only local boundary roads** (4670f6d): the fall-back boundary roads for external trips were
-   collector rank and above only; with none, every boundary road of that side is used instead of leaving the trips out.
+3. **City paths that only graze the area** (p16-fix db7c772): a through path whose entry and exit both resolve to the same
+   boundary node is not an area trip (it never uses the area's roads); it is no longer counted as "left out, no drivable
+   way" but reported as `edgeOnlyVph` in the plan provenance and the harness rows. Verified on p16_20 (fixchk2.jsonl).
+4. **Trips on network fragments** (4670f6d; hygiene, not the R2 cause): a building whose nearest node lies on a small
+   fragment of the area's network (not in its largest strongly connected component) loads at the nearest node of the main
+   network within the 250 m access distance (`syntheticAreaPlan`; `snapDemandPlan(…, { preferMainNetwork: true })` in the
+   app's area assignment, area demand matching, the P14 project check and the harness). No main network (under half the
+   nodes, e.g. a one-way corridor) = the old nearest-node rule. Fringe areas with only local boundary roads may use them as
+   fall-back gateways (were collector rank and above only). Tests: `CitywideP16.test.ts`.
 5. **Harness measurement** (4670f6d): R3 is measured to the node the trip actually loads at (after the snap), not to the
    nearest node; the harness also logs the micro-simulation's gridlock causes and sites. Bands unchanged.
 
