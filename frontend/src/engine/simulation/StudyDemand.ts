@@ -1,4 +1,4 @@
-import { mainComponent } from './graphComponents';
+import { mainComponent, mainReach } from './graphComponents';
 import type { BuildingObject, JunctionObject } from '../objects/types';
 import type { DemandZone, ExternalGateway, ModeSplit, TimePeriod } from '../objects/demandTypes';
 import type { TrafficNetwork } from '../objects/trafficTypes';
@@ -192,17 +192,19 @@ export function snapDemandPlan(plan: DemandPlan, network: TrafficNetwork, maxAcc
   const cache = new Map<string, string>();
   const inc = (e: { id: string }) => !includedSegments || includedSegments.has(e.id.replace(/_(fwd|bwd)$/, ''));
   const allowed = includedSegments ? new Set([...network.edges.values()].filter(inc).flatMap(e => [e.fromNodeId, e.toNodeId])) : null;
-  // p16 (area demand only): a trip end whose nearest node is on a small fragment of the network (cannot reach or be
-  // reached from the rest) loads at the nearest node of the main network within the access distance, as
-  // syntheticAreaPlan snaps its buildings; no main network (e.g. a one-way corridor) = plain nearest node
-  let main: Set<string> | null = null;
+  // p16 (area demand only): a trip end whose nearest node cannot serve it (an origin node that does not reach the area's
+  // main network, a destination node the main network does not reach: a small fragment, a one-way spur) loads at the
+  // nearest node of the main network within the access distance, as syntheticAreaPlan snaps its buildings; no main
+  // network (e.g. a one-way corridor) = plain nearest node
+  let main: Set<string> | null = null, reach: ReturnType<typeof mainReach> = null;
   if (opts.preferMainNetwork) {
     const fwd = new Map<string, string[]>();
     for (const e of network.edges.values()) if (inc(e)) (fwd.get(e.fromNodeId) ?? fwd.set(e.fromNodeId, []).get(e.fromNodeId)!).push(e.toNodeId);
     main = mainComponent(fwd);
+    reach = mainReach(fwd, main);
   }
-  const nearest = (point: readonly number[]) => {
-    const key = point.join(',');
+  const nearest = (point: readonly number[], side: 'from' | 'to') => {
+    const key = side + point.join(',');
     if (cache.has(key)) return cache.get(key)!;
     let id = '', best = maxAccessDistanceM, idMain = '', bestMain = maxAccessDistanceM;
     for (const node of network.nodes.values()) {
@@ -213,11 +215,17 @@ export function snapDemandPlan(plan: DemandPlan, network: TrafficNetwork, maxAcc
       if (d < best) { best = d; id = node.id; }
       if (main?.has(node.id) && d < bestMain) { bestMain = d; idMain = node.id; }
     }
-    const pick = idMain || id;
+    // A point that IS a node (a boundary road's gateway node the plan chose, checked to reach its other end) keeps that
+    // node: only a building's own position moves to the main network (p16 fix 2: re-snapping chosen gateway nodes sent
+    // trips to a main-network node that could equal the other end or not reach it, counted as unrouted, R2). p16 fix 3:
+    // a nearest node that serves the trip's direction is kept (was: any node outside the main component moved, up to
+    // 15 % of an area's building-end traffic loaded over 100 m from its building with no routing gain, R3)
+    const serves = !!id && (!reach || (side === 'from' ? reach.toMain : reach.fromMain).has(id));
+    const pick = id && (best <= 0.5 || serves) ? id : idMain || id;
     cache.set(key, pick);
     return pick;
   };
-  return plan.trips.map(t => ({ fromNodeId: nearest(t.from), toNodeId: nearest(t.to), vehiclesPerHour: t.vehiclesPerHour, kind: t.kind, viaRoadId: t.viaRoadId, ...(t.viaLinkIds ? { viaLinkIds: t.viaLinkIds } : {}) }));
+  return plan.trips.map(t => ({ fromNodeId: nearest(t.from, 'from'), toNodeId: nearest(t.to, 'to'), vehiclesPerHour: t.vehiclesPerHour, kind: t.kind, viaRoadId: t.viaRoadId, ...(t.viaLinkIds ? { viaLinkIds: t.viaLinkIds } : {}) }));
 }
 
 function polygonArea(points: readonly (readonly number[])[]): number {

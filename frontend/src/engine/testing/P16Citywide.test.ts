@@ -296,10 +296,14 @@ describe.skipIf(!env.P16)('p16 city-wide robustness harness (opt-in)', () => {
             const free = Float64Array.from(z.timeS);
             const sm = staticMetrics(a, free, b.roads, b.section);
             const be = buildingEnds(plan, b.area, trips);
+            // diagnostic only (not a band): the pre-fix R3 measure (nearest ground node, not the node used), and the
+            // unrouted vehicles whose two ends load at the same node
+            const beNearest = buildingEnds(plan, b.area);
+            const sameNodeVph = Math.round(trips.reduce((s, t) => s + (t.fromNodeId === t.toNodeId ? t.vehiclesPerHour : 0), 0));
             const comp = plan.provenance.components!;
             Object.assign(row, { ok: true, demandVph: Math.round(plan.provenance.vehiclesPerHour), snappedVph: Math.round(totVph), unroutedVph: Math.round(a.unroutedVeh),
               noEdgeRouteVph: Math.round(comp.noEdgeRoute ?? 0), heldOutsideVph: Math.round((plan.provenance.synthetic as { heldOutsideVph?: number } | undefined)?.heldOutsideVph ?? 0), edgeOnlyVph: Math.round((plan.provenance.synthetic as { edgeOnlyVph?: number } | undefined)?.edgeOnlyVph ?? 0), noRouteByPart: Object.fromEntries(Object.entries((plan.provenance.synthetic as { noRouteByPart?: Record<string, number> } | undefined)?.noRouteByPart ?? {}).map(([k, v]) => [k, Math.round(v)])), parts: { internal: Math.round(comp.internal), outbound: Math.round(comp.outbound), inbound: Math.round(comp.inbound), through: Math.round(comp.through) },
-              ...sm, buildingEnds: be, warranted: a.warrantedSignalPoints?.length ?? 0, assignMs: Date.now() - t0 });
+              ...sm, buildingEnds: be, buildingEndsNearest: beNearest, unroutedSameNodeVph: sameNodeVph, warranted: a.warrantedSignalPoints?.length ?? 0, assignMs: Date.now() - t0 });
             if (env.P16_MICRO === '1') {
               // The corridor run as analysisJob.ts does it, two seeds, a short warm-up and measured window
               const inside = new Set(b.corridor.segments.map(s => s.key));
