@@ -175,4 +175,36 @@ describe('p16 fix: area demand loads on the main network', () => {
     const map = new Map(roads.map(r => [r.id, r]));
     expect(assignTraffic(area, map, [main], { supplyModel: 'p14', signalPoints: [], maxIterations: 5 }).unroutedVeh).toBe(0);
   });
+  it('fix 3: mainReach splits the directions; a destination at the spur end keeps its own node (the main road reaches it)', async () => {
+    const { mainComponent, mainReach } = await import('../simulation/graphComponents');
+    const adj = new Map<string, string[]>([['a', ['b']], ['b', ['c']], ['c', ['a', 'x']], ['x', []], ['y', ['a']], ['z', []]]);
+    const r = mainReach(adj, mainComponent(adj))!;
+    expect(r.fromMain.has('x') && !r.toMain.has('x')).toBe(true);
+    expect(r.toMain.has('y') && !r.fromMain.has('y')).toBe(true);
+    expect(r.fromMain.has('z') || r.toMain.has('z')).toBe(false);
+    const roads = [
+      road('m1', [[-400, 0], [0, 0]], { highway: 'secondary' }, 'arterial', 2),
+      road('m2', [[0, 0], [400, 0]], { highway: 'secondary' }, 'arterial', 2),
+      road('sp', [[0, 0], [0, 150]], { highway: 'residential', oneway: 'yes' }, 'local', 1, true),
+    ];
+    const area = areaOf(roads, 'm1');
+    const segs = new Set(area.segments.map(s => s.key));
+    const t = snapDemandPlan(plan([{ from: [400, 0], to: [10, 160], vph: 100 }]), area.network, 250, segs, { preferMainNetwork: true })[0];
+    expect(Math.abs(area.network.nodes.get(t.toNodeId)!.coordinates[1] - pt(0, 150)[1])).toBeLessThan(1e-6);
+    const map = new Map(roads.map(r => [r.id, r]));
+    expect(assignTraffic(area, map, [t], { supplyModel: 'p14', signalPoints: [], maxIterations: 5 }).unroutedVeh).toBe(0);
+  });
+  it('fix 2: a trip end placed exactly on a node (a gateway the plan chose) keeps that node', () => {
+    const roads = [
+      road('m1', [[-400, 0], [0, 0]], { highway: 'secondary' }, 'arterial', 2),
+      road('m2', [[0, 0], [400, 0]], { highway: 'secondary' }, 'arterial', 2),
+      road('sp', [[0, 0], [0, 150]], { highway: 'residential', oneway: 'yes' }, 'local', 1, true),
+    ];
+    const area = areaOf(roads, 'm1');
+    const segs = new Set(area.segments.map(s => s.key));
+    const end = [...area.network.nodes.values()].find(n => Math.abs(n.coordinates[1] - pt(0, 150)[1]) < 1e-6)!;
+    const p = plan([{ from: [400, 0], to: [0, 0], vph: 100 }]);
+    p.trips[0].from = [...end.coordinates] as typeof p.trips[0]['from'];
+    expect(snapDemandPlan(p, area.network, 250, segs, { preferMainNetwork: true })[0].fromNodeId).toBe(end.id);
+  });
 });

@@ -23,7 +23,7 @@ import type { StudyArea, DrivableObject } from '../simulation/StudyAreaExplorer'
 import type { VehicleKind } from '../simulation/TrafficMicroSim';
 import type { DemandPlan } from '../simulation/StudyDemand';
 import { reachability } from '../simulation/AreaDemand';
-import { mainComponent } from '../simulation/graphComponents';
+import { mainComponent, mainReach } from '../simulation/graphComponents';
 import { osmRoadClass } from '../simulation/networkCorrections';
 import { P14 } from '../simulation/supplyConfig';
 import { p14TimeRatio } from '../simulation/indianSupply';
@@ -677,7 +677,7 @@ export function areaPaths(city: SyntheticCity, outline: [number, number][], gate
 }
 
 type EndType = string; // a purpose end's coefficient signature, e.g. "res:1"
-interface Cell { zone: number; point: [number, number, number]; nodeId: string; attrs: Record<EndAttr, number>; act: number }
+interface Cell { zone: number; point: [number, number, number]; nodeO: string; nodeD: string; attrs: Record<EndAttr, number>; act: number }
 
 /** The study-area cut of the city OD at one hour: building-level trip ends inside, boundary roads for the rest. */
 export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, ends: readonly SyntheticTripEnd[], opts: SyntheticAreaOptions,
@@ -699,8 +699,11 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
   // fragment loads at the nearest node of the main network within the access distance (as snapDemandPlan does)
   const fwd = new Map<string, string[]>();
   for (const e of net.edges.values()) if (included.has(segKey(e.id))) (fwd.get(e.fromNodeId) ?? fwd.set(e.fromNodeId, []).get(e.fromNodeId)!).push(e.toNodeId);
-  const main = mainComponent(fwd);
-  const snap = (x: number, y: number): string | null => {
+  const main = mainComponent(fwd), reach = mainReach(fwd, main);
+  // p16 fix 3: the nearest node is kept for the direction it serves (origin: reaches the main network; destination: reached
+  // from it); only the direction it cannot serve loads at the nearest main-network node (was: any node outside the main
+  // component moved for both directions)
+  const snap = (x: number, y: number): [string, string] | null => {
     const cx = Math.floor(x / G), cy = Math.floor(y / G);
     let best: string | null = null, bd = accessM, bestMain: string | null = null, bm = accessM;
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const nd of grid.get(`${cx + dx}:${cy + dy}`) ?? []) {
@@ -708,7 +711,9 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
       if (d < bd) { bd = d; best = nd.id; }
       if (main?.has(nd.id) && d < bm) { bm = d; bestMain = nd.id; }
     }
-    return bestMain ?? best;
+    if (!best) return bestMain ? [bestMain, bestMain] : null;
+    const o = !reach || reach.toMain.has(best) ? best : bestMain ?? best, d = !reach || reach.fromMain.has(best) ? best : bestMain ?? best;
+    return [o, d];
   };
 
   // 1. Building trip ends inside the area, grouped per zone into cells (the heaviest building carries the cell)
@@ -721,15 +726,16 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
     if (!inPolygon(b.lon, b.lat, outline)) continue;
     const act = b.res + b.jobs + b.seats + b.ind;
     if (!(act > 0) || b.zone < 0 || b.zone >= city.n) continue;
-    const nodeId = snap(b.lon, b.lat);
-    if (!nodeId) { buildingsNoRoad++; continue; }
+    const nodes2 = snap(b.lon, b.lat);
+    if (!nodes2) { buildingsNoRoad++; continue; }
+    const [nodeO, nodeD] = nodes2;
     buildingsIn++;
     const key = `${b.zone}:${Math.floor(b.lon / dLng)}:${Math.floor(b.lat / dLat)}`;
     let c = cellsByKey.get(key);
-    if (!c) { c = { zone: b.zone, point: [b.lon, b.lat, 0], nodeId, attrs: { res: 0, jobs: 0, svc: 0, seats: 0, ind: 0 }, act: 0, bestAct: -1 }; cellsByKey.set(key, c); }
+    if (!c) { c = { zone: b.zone, point: [b.lon, b.lat, 0], nodeO, nodeD, attrs: { res: 0, jobs: 0, svc: 0, seats: 0, ind: 0 }, act: 0, bestAct: -1 }; cellsByKey.set(key, c); }
     for (const a of END_ATTRS) c.attrs[a] += b[a];
     c.act += act;
-    if (act > c.bestAct) { c.bestAct = act; c.point = [b.lon, b.lat, 0]; c.nodeId = nodeId; }
+    if (act > c.bestAct) { c.bestAct = act; c.point = [b.lon, b.lat, 0]; c.nodeO = nodeO; c.nodeD = nodeD; }
   }
   // At most maxCells per zone: the rest join the nearest kept cell of their zone
   const cellsByZone = new Map<number, Cell[]>();
@@ -843,19 +849,19 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
     const [o, eo, d, ed, kind] = k.split('|');
     const A = cellsOf(+o, eo), B = cellsOf(+d, ed);
     const pieces = [];
-    for (const a of A) for (const b of B) pieces.push({ from: a.cell.point, to: b.cell.point, fromNode: a.cell.nodeId, toNode: b.cell.nodeId, w: a.s * b.s });
+    for (const a of A) for (const b of B) pieces.push({ from: a.cell.point, to: b.cell.point, fromNode: a.cell.nodeO, toNode: b.cell.nodeD, w: a.s * b.s });
     emit('internal', kind as VehicleKind, v, pieces);
   }
   for (const [k, v] of IE) {
     const [o, eo, gid, kind] = k.split('|');
     const pieces = [];
-    for (const a of cellsOf(+o, eo)) for (const g of gwPieces(+gid, 'out')) pieces.push({ from: a.cell.point, to: g.g.point, fromNode: a.cell.nodeId, toNode: g.g.nodeId, w: a.s * g.s });
+    for (const a of cellsOf(+o, eo)) for (const g of gwPieces(+gid, 'out')) pieces.push({ from: a.cell.point, to: g.g.point, fromNode: a.cell.nodeO, toNode: g.g.nodeId, w: a.s * g.s });
     emit('outbound', kind as VehicleKind, v, pieces.length ? pieces : fallbackPieces(cellsOf(+o, eo), paths.gateways, 'out'));
   }
   for (const [k, v] of EI) {
     const [gid, d, ed, kind] = k.split('|');
     const pieces = [];
-    for (const g of gwPieces(+gid, 'in')) for (const b of cellsOf(+d, ed)) pieces.push({ from: g.g.point, to: b.cell.point, fromNode: g.g.nodeId, toNode: b.cell.nodeId, w: g.s * b.s });
+    for (const g of gwPieces(+gid, 'in')) for (const b of cellsOf(+d, ed)) pieces.push({ from: g.g.point, to: b.cell.point, fromNode: g.g.nodeId, toNode: b.cell.nodeD, w: g.s * b.s });
     emit('inbound', kind as VehicleKind, v, pieces.length ? pieces : fallbackPieces(cellsOf(+d, ed), paths.gateways, 'in'));
   }
   // p16: a city path whose entry and exit both resolve to the same boundary node only grazes the area's edge (it never
@@ -1020,8 +1026,8 @@ function fallbackPieces(cells: { cell: Cell; s: number }[], gateways: Gateway[],
   for (const c of cells) {
     const near = [...gs].sort((a, b) => distM(c.cell.point, a.point) - distM(c.cell.point, b.point)).slice(0, 2);
     for (const g of near) pieces.push(side === 'out'
-      ? { from: c.cell.point, to: g.point, fromNode: c.cell.nodeId, toNode: g.nodeId, w: c.s / near.length }
-      : { from: g.point, to: c.cell.point, fromNode: g.nodeId, toNode: c.cell.nodeId, w: c.s / near.length });
+      ? { from: c.cell.point, to: g.point, fromNode: c.cell.nodeO, toNode: g.nodeId, w: c.s / near.length }
+      : { from: g.point, to: c.cell.point, fromNode: g.nodeId, toNode: c.cell.nodeD, w: c.s / near.length });
   }
   return pieces;
 }

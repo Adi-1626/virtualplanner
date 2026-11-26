@@ -19,6 +19,24 @@ export function mainComponent(adj: ReadonlyMap<string, string[]>): Set<string> |
   return out;
 }
 
+/**
+ * p16 fix 3: which nodes the main network reaches (`fromMain`) and which reach it (`toMain`). A trip leaves its origin
+ * node only if that node reaches the main network, and arrives only if the main network reaches it; a node joined one way
+ * (e.g. a one-way street cut by the area's edge) still serves the trips of that direction at its own position.
+ * Null when there is no main network.
+ */
+export function mainReach(adj: ReadonlyMap<string, string[]>, main: ReadonlySet<string> | null): { fromMain: Set<string>; toMain: Set<string> } | null {
+  if (!main) return null;
+  const rev = new Map<string, string[]>();
+  adj.forEach((to, from) => { for (const t of to) (rev.get(t) ?? rev.set(t, []).get(t)!).push(from); });
+  const flood = (g: ReadonlyMap<string, string[]>) => {
+    const seen = new Set<string>(main), q = [...main];
+    while (q.length) { const v = q.pop()!; for (const w of g.get(v) ?? []) if (!seen.has(w)) { seen.add(w); q.push(w); } }
+    return seen;
+  };
+  return { fromMain: flood(adj), toMain: flood(rev) };
+}
+
 /** Tarjan's strongly connected components (iterative): node -> component id. */
 export function strongComponents(adj: ReadonlyMap<string, string[]>): Map<string, number> {
   const index = new Map<string, number>(), low = new Map<string, number>(), comp = new Map<string, number>();
