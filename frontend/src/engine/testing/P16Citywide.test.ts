@@ -287,6 +287,37 @@ describe.skipIf(!env.P16)('p16 city-wide robustness harness (opt-in)', () => {
               ...(set.gatewayReachM !== undefined ? { gatewayReachM: set.gatewayReachM } : {}), ...(set.cityCongestion ? { cityCongestion: set.cityCongestion } : {}), ...(set.cityVdf ? { cityVdf: set.cityVdf } : {}), ...(set.gatewayMeter ? { gatewayMeter: set.gatewayMeter } : {}), ...(set.p16demand ? { p16: set.p16demand } : {}) } as never, cache);
             if (!plan) { row.ok = false; row.error = 'no plan (no trip ends or no roads)'; log(row); continue; }
             const trips = snapDemandPlan(plan, b.area.network, 250, segs, { preferMainNetwork: true });
+            if (env.P16_R3DIAG === '1') {
+              // R3 diagnosis (no assignment): pre-registered measure (nearest node of the whole network), the baseline's
+              // used node (plain nearest included ground node, no main-network preference) and the node used now; for the
+              // building-end traffic within 100 m at the plain node but over 100 m now: whether the plain from-node reaches
+              // the plain to-node (the trip would route without the move)
+              const plain = snapDemandPlan(plan, b.area.network, 250, segs);
+              const adj = new Map<string, string[]>();
+              for (const e of b.area.network.edges.values()) if (segs.has(e.id.replace(/_(fwd|bwd)$/, ''))) (adj.get(e.fromNodeId) ?? adj.set(e.fromNodeId, []).get(e.fromNodeId)!).push(e.toNodeId);
+              const reachCache = new Map<string, Set<string>>();
+              const reachFrom = (n: string) => { let r = reachCache.get(n); if (r) return r; r = new Set([n]); const q = [n]; while (q.length) { const v = q.pop()!; for (const w of adj.get(v) ?? []) if (!r.has(w)) { r.add(w); q.push(w); } } reachCache.set(n, r); return r; };
+              let movedVph = 0, movedRoutableVph = 0, movedTrips = 0;
+              const dist = (p: readonly number[], id: string) => { const nd = b.area.network.nodes.get(id); return nd ? distM(p, nd.coordinates) : Infinity; };
+              (plan.trips as (DemandPlan['trips'][number] & { part?: string })[]).forEach((t, i) => {
+                const sides: ['from' | 'to', readonly number[]][] = [];
+                if (t.part === 'internal' || t.part === 'outbound') sides.push(['from', t.from]);
+                if (t.part === 'internal' || t.part === 'inbound') sides.push(['to', t.to]);
+                for (const [side, p] of sides) {
+                  const pn = side === 'from' ? plain[i].fromNodeId : plain[i].toNodeId, un = side === 'from' ? trips[i].fromNodeId : trips[i].toNodeId;
+                  if (dist(p, pn) <= 100 && dist(p, un) > 100) {
+                    movedVph += t.vehiclesPerHour; movedTrips++;
+                    const rs = reachFrom(plain[i].fromNodeId);
+                    if (rs.has(plain[i].toNodeId) && plain[i].fromNodeId !== plain[i].toNodeId) movedRoutableVph += t.vehiclesPerHour;
+                  }
+                }
+              });
+              log({ r3diag: true, area: b.rec.id, hour, prereg: buildingEnds(plan, b.area), plainUsed: buildingEnds(plan, b.area, plain), used: buildingEnds(plan, b.area, trips),
+                movedVph: Math.round(movedVph), movedRoutableVph: Math.round(movedRoutableVph), movedEnds: movedTrips,
+                plainUnroutedVph: Math.round(assignTraffic(b.area, b.roads, plain, { ...aopts, maxIterations: 1 }).unroutedVeh),
+                usedUnroutedVph: Math.round(assignTraffic(b.area, b.roads, trips, { ...aopts, maxIterations: 1 }).unroutedVeh) });
+              continue;
+            }
             const totVph = trips.reduce((s, t) => s + t.vehiclesPerHour, 0);
             const ws = set.signalWarrant ? eighthHourScale(city, hour) : null;
             const a = assignTraffic(b.area, b.roads, trips, { ...aopts, ...(ws ? { signalWarrantScale: ws } : {}) });
