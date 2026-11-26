@@ -125,6 +125,28 @@ describe('road analysis panel pieces', () => {
     const r = result({ load: load(19000, false, null), loadBySeed: [load(19000, false, null)] });
     expect(renderToStaticMarkup(createElement(LoadCard, { r }))).toBe('');
   });
+  it('no load card on a road with no traffic or when nothing was routed into the area (p16 screenshot 04)', () => {
+    // a residential road with 0 veh/h in an overloaded neighbourhood: the amber note does not show, the message stays in the explanation
+    const empty = result({ status: 'no_traffic', totalVph: 0, explainedDirection: null, statusBySeed: ['no_traffic', 'no_traffic', 'no_traffic'] });
+    expect(renderToStaticMarkup(createElement(LoadCard, { r: empty }))).toBe('');
+    const why = renderToStaticMarkup(createElement(WhyCard, { r: empty, overlay: 'none', actions: actions() }));
+    expect(why).not.toContain('load-warning');
+    expect(why).toContain('6,620 of the 19,314');
+    // nothing routed into the area at all (every run 0 veh/h demand), even if a run were flagged
+    const zero = { ...load(0, true, MSG), demandVph: 0, servedShare: 0 };
+    expect(renderToStaticMarkup(createElement(LoadCard, { r: result({ load: zero, loadBySeed: [zero, zero, zero] }) }))).toBe('');
+    // a road with traffic in an overloaded neighbourhood still gets it
+    expect(renderToStaticMarkup(createElement(LoadCard, { r: result() }))).toContain('load-warning');
+  });
+  it('run-to-run stability chip wraps inside the panel instead of running past its edge (p16 screenshot 06)', () => {
+    const r = result({ statusConsistent: false, statusBySeed: ['moderate', 'moderate', 'severe'] });
+    const chip = doc(renderToStaticMarkup(createElement(StatusHeader, { r, when: 'Morning peak' }))).querySelector('[data-testid="status-consistency"]')!;
+    expect(chip.textContent).toContain('runs disagree');
+    const cls = chip.getAttribute('class')!.split(/\s+/);
+    expect(cls).toContain('max-w-full');
+    expect(cls).toContain('whitespace-normal');
+    expect(cls).not.toContain('whitespace-nowrap');
+  });
   it('sources and bottlenecks render as bars with their shares', () => {
     const s = renderToStaticMarkup(createElement(SourcesCard, { r: result(), overlay: 'none', actions: actions() }));
     expect(s).toContain('93%');

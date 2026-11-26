@@ -31,6 +31,18 @@ export function overloadedRuns(r: RoadAnalysisResult): { runs: LoadCheck[]; of: 
   return { runs, of: all.length, message };
 }
 
+/**
+ * The amber "more traffic routed here than the junctions pass" card shows only when a run was overloaded AND the selected
+ * road carries traffic: on a road with no traffic (status no_traffic, under 10 veh/h) or when no traffic was routed into
+ * the area at all, "volumes shown are what got through" has nothing to qualify (p16 screenshot 04, IT park residential road).
+ */
+export function showLoadCard(r: RoadAnalysisResult): boolean {
+  const all = r.loadBySeed ?? [r.load];
+  if (r.status === 'no_traffic' || !(r.totalVph > 0)) return false;
+  if (!all.some(l => l.demandVph > 0)) return false;
+  return all.some(l => l.overloaded);
+}
+
 export const DELAY_COLOURS = { signal: '#60a5fa', blocked: '#f43f5e', giveWay: '#facc15', other: '#94a3b8' } as const;
 
 export const delayParts = (d: NonNullable<DirectionFlow['delay']>) => [

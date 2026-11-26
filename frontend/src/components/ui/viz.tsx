@@ -8,10 +8,11 @@ import { TONE_CHIP, TONE_TEXT, losTone, type Tone } from './vizTones';
  * own palette (slate-950 glass, cyan accent), no chart library.
  */
 
-export const Chip: React.FC<{ tone?: Tone; icon?: LucideIcon; title?: string; children: React.ReactNode; className?: string; testId?: string; size?: 'sm' | 'md' }> = ({ tone = 'neutral', icon: Icon, title, children, className = '', testId, size = 'sm' }) => (
+/** `wrap`: a long label wraps inside its container (max-w-full) instead of running past its right edge. */
+export const Chip: React.FC<{ tone?: Tone; icon?: LucideIcon; title?: string; children: React.ReactNode; className?: string; testId?: string; size?: 'sm' | 'md'; wrap?: boolean }> = ({ tone = 'neutral', icon: Icon, title, children, className = '', testId, size = 'sm', wrap = false }) => (
   <span title={title} data-testid={testId}
-    className={`inline-flex items-center gap-1 rounded-full border whitespace-nowrap ${size === 'md' ? 'px-2.5 py-1 text-sm font-semibold' : 'px-2 py-0.5 text-[11px] font-medium'} ${TONE_CHIP[tone]} ${className}`}>
-    {Icon && <Icon size={size === 'md' ? 14 : 11} aria-hidden />}{children}
+    className={`inline-flex items-center gap-1 border ${wrap ? 'max-w-full min-w-0 whitespace-normal rounded-xl leading-snug' : 'whitespace-nowrap rounded-full'} ${size === 'md' ? 'px-2.5 py-1 text-sm font-semibold' : 'px-2 py-0.5 text-[11px] font-medium'} ${TONE_CHIP[tone]} ${className}`}>
+    {Icon && <Icon size={size === 'md' ? 14 : 11} className="shrink-0" aria-hidden />}{wrap ? <span className="min-w-0 break-words">{children}</span> : children}
   </span>
 );
 

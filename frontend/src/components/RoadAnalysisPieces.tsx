@@ -9,7 +9,7 @@ import { compassWord, directionColor, landmarkPhrase, screenArrowDeg } from '../
 import { Button } from './ui/kit';
 import { Card, Chip, Disclosure, InfoToggle, KpiCard, LosBadge, Meter, StackedBar } from './ui/viz';
 import { TONE_FILL, losTone, type Tone } from './ui/vizTones';
-import { STATUS, explainedDirection, overloadedRuns, delayParts, causeLine } from './roadAnalysisView';
+import { STATUS, explainedDirection, overloadedRuns, showLoadCard, delayParts, causeLine } from './roadAnalysisView';
 import { TrustBadge } from './ui/badges/TrustBadge';
 
 /**
@@ -60,7 +60,7 @@ export const StatusHeader: React.FC<{ r: RoadAnalysisResult; when: string; badge
         )}
       </p>
       <div className="flex flex-wrap gap-1.5 items-center">
-        <Chip tone={r.statusConsistent ? 'neutral' : 'warn'} icon={r.statusConsistent ? CheckCircle2 : AlertTriangle} testId="status-consistency"
+        <Chip tone={r.statusConsistent ? 'neutral' : 'warn'} icon={r.statusConsistent ? CheckCircle2 : AlertTriangle} testId="status-consistency" wrap
           title={`${r.statusConsistent ? `All ${r.seeds.length} runs (seeds ${r.seeds.join(', ')}) give the same status.` : `The runs give different statuses: ${r.statusBySeed.map(x => STATUS_WORD_SHORT[x]).join(' / ')}. The road is near a boundary between levels of service.`} This is run-to-run stability of the simulation, not accuracy: the traffic model fails validation (TAG M3.1).`}>
           {r.statusConsistent ? `Run-to-run stability ${r.seeds.length}/${r.seeds.length}` : `Run-to-run stability: runs disagree (${r.statusBySeed.map(x => STATUS_WORD_SHORT[x]).join(' / ')})`}
         </Chip>
@@ -195,7 +195,8 @@ export const WhyCard: React.FC<{ r: RoadAnalysisResult; overlay: MapOverlay; act
   const w = explainedDirection(r);
   const delay = w?.d.delay ?? null;
   const line = causeLine(r);
-  const loadMessages = new Set(overloadedRuns(r).runs.map(l => l.message).filter(Boolean).concat(r.load.message ?? []));
+  // the overload messages move to the load card when it shows (otherwise they stay in the explanation)
+  const loadMessages = new Set(showLoadCard(r) ? overloadedRuns(r).runs.map(l => l.message).filter(Boolean).concat(r.load.message ?? []) : []);
   const reasons = r.reasons.filter(x => !loadMessages.has(x));
   return (
     <section className="space-y-2">
@@ -270,7 +271,7 @@ const CAUSE_WORD: Record<string, string> = { priorityGap: 'waiting for a gap', c
 /** One card, shown once, when more traffic is routed into the neighbourhood than its simulated junctions pass. */
 export const LoadCard: React.FC<{ r: RoadAnalysisResult }> = ({ r }) => {
   const { runs, of, message } = overloadedRuns(r);
-  if (!runs.length) return null;
+  if (!showLoadCard(r)) return null;
   const majority = r.load.overloaded;
   const rows = (r.loadBySeed ?? [r.load]).map((l, i) => ({ l, seed: r.seeds[i] }));
   const waiting = Math.max(...runs.map(l => l.waitingToEnter));
