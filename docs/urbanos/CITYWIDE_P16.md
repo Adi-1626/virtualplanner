@@ -403,8 +403,8 @@ Screenshots (09:00, demo mode): `/workspace/work/urbanos/shots/p16/01..06_*_0900
 - M1 deadlocks between junctions 20-25 m apart in the micro-simulation (IT park, MIDC); not fixed. Joining nodes up to
   24 m apart was tried and broke 4 of 62 junction tests (§8.6), so it was not adopted; a fix needs junction grouping that
   tells a wide divided-road crossing from two nearby junctions.
-- R3 (node used) below the baseline in 18 area-hours (bridge p16_05, IT park p16_13, MIDC p16_17, collectors p16_33/35,
-  old city p16_09 at night): building ends whose nearest node cannot route the trip load at the main network > 100 m
+- R3 (node used) newly failing against the baseline in 25 area-hours in 8 areas (bridge p16_05, old city p16_09, IT park
+  p16_13, MIDC p16_17, collectors p16_33/35, locals p16_36/39): building ends whose nearest node cannot route the trip load at the main network > 100 m
   away (§8.5). A fix needs access nodes on long links / two-way access to one-way spurs (network builder).
 - Calibration: hold-out and the official check fail (§8.2); the synthetic model stays off by default.
 - D2 in the old city: the band as written includes signal delay (misfire, §5); reported strictly.
