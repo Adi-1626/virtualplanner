@@ -117,6 +117,22 @@ export const P14 = Object.freeze({
   /** Junctions where two different arterial / sub-arterial roads meet with no mapped signal are taken as signalised (OSM maps few of Pune's signals). */
   inferSignals: S({ maxCategory: 1, matchM: 35 }, 'assumed', 'p13 bias finding: mapped signals cover only part of Pune\'s signals (0-8 stop lines on 1.4-7 km routes); IRC category <= 1 = arterial / sub-arterial',
     'the corridor micro-simulation estimates signals the same way when no mapped signals are given (TrafficMicroSim: a collector or bigger road on both axes); the inferred points are passed to the micro-simulation too'),
+  /**
+   * p16: an unsignalised junction carrying the IRC:93-1985 Warrant 1 or Warrant 2 volumes is taken as signalised
+   * (warrantedSignalPoints): Warrant 1 (minimum vehicular volume, Table 2) major street both approaches 650 veh/h (1 lane)
+   * / 800 (2+ lanes) with the higher minor approach 200 (1 lane) / 250 (2+ lanes); Warrant 2 (interruption of continuous
+   * traffic, Table 3) major 1000 / 1200 with minor 100 / 150; for each of any 8 hours of an average day (the model checks
+   * the 8th busiest hour of the day: the hour's flows x eighthHourScale).
+   */
+  signalWarrant: S({ w1Major: [650, 800], w1Minor: [200, 250], w2Major: [1000, 1200], w2Minor: [100, 150], afterIterations: 10, rounds: 2 }, 'standard',
+    'IRC:93-1985 Guidelines on Design and Installation of Road Traffic Signals, §3 Table 2 and §4 Table 3 (https://law.resource.org/pub/in/bis/irc/irc.gov.in.093.1985.pdf; text read from https://archive.org/stream/govlawircy1985sp93_0/govlawircy1985sp93_0_djvu.txt)',
+    'p16 (docs/urbanos/CITYWIDE_P16.md §5): OSM maps few of Pune\'s signals and p14 inferred them only where two arterial / sub-arterial roads cross, so busy collector and local junctions ran as priority junctions with hours of delay; the check runs after afterIterations of the assignment, up to `rounds` times'),
+  /**
+   * p16: a minor approach that only merges into one one-way carriageway gets at least its share (by arriving flow) of the
+   * downstream carriageway's capacity: limited priority / zip merging instead of absolute gap acceptance, which starves a
+   * heavy merging stream (before: a 6,000 veh/h one-way merging into a carriageway queued for 10+ minutes per vehicle).
+   */
+  mergeSharing: S(true, 'international', 'Troutbeck & Kako (1999), Limited priority merge at unsignalized intersections, Transportation Research Part A 33(3-4) 291-304 (the minor stream gets a share of capacity under heavy major flow); the share-by-arrival rule is an assumption'),
   /** Control delay: d = 3600/c + 900 T [(x - 1) + sqrt((x - 1)^2 + 3600 x / (450 T c))] + 5 (s). */
   controlDelay: S('HCM 2000 Eq. 17-38', 'international', 'IIT Bombay NPTEL notes, Uncontrolled Intersection, eq. 9'),
   // ── Roundabouts (OSM junction=roundabout) ──────────────────────────

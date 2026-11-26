@@ -23,8 +23,10 @@ import type { StudyArea, DrivableObject } from '../simulation/StudyAreaExplorer'
 import type { VehicleKind } from '../simulation/TrafficMicroSim';
 import type { DemandPlan } from '../simulation/StudyDemand';
 import { reachability } from '../simulation/AreaDemand';
+import { mainComponent } from '../simulation/graphComponents';
 import { osmRoadClass } from '../simulation/networkCorrections';
 import { P14 } from '../simulation/supplyConfig';
+import { p14TimeRatio } from '../simulation/indianSupply';
 
 export const SYNTHETIC_LABEL = 'synthetic' as const;
 /** v2: beta by jurisdiction (CMP-2024 Table 2-38) and the outer-cordon traffic (DEMAND_P14.md §4); v1 stays installed for reproduction. */
@@ -89,6 +91,8 @@ export interface SyntheticCity {
   skeleton: Skeleton;
   /** Road-vehicle trips per person trip by kind for each OD cell (from the mode split and occupancy), built on first use. */
   vehPerPerson?: Float32Array;
+  /** City road-vehicle trips per clock hour (the asset's checks.hourlyVehicleTrips), when the asset has them. */
+  hourlyVeh?: number[];
 }
 interface Skeleton {
   n: number; lon: Float64Array; lat: Float64Array; from: Uint16Array; to: Uint16Array; time: Float64Array; cls: Uint8Array; classes: string[];
@@ -135,7 +139,20 @@ export function decodeSyntheticDemand(doc: SyntheticDemandDoc): SyntheticCity {
     fixed: doc.fixedDaily ?? {}, kindShares: doc.kindShares ?? {},
     endWeights: doc.endWeights, mode: doc.modeSplit.params, occupancy: doc.occupancy, hourly: doc.hourly,
     skeleton: { n: sk.n, lon, lat, from, to, time, cls: bytes(sk.cls), classes: sk.classes, outStart: out.start, outEdge: out.edge, inStart: inn.start, inEdge: inn.edge, connectors: sk.connectors },
+    ...(doc.checks?.hourlyVehicleTrips?.length === 24 ? { hourlyVeh: [...doc.checks.hourlyVehicleTrips] } : {}),
   };
+}
+
+/**
+ * p16: factor from the city's vehicle trips at `hour` to those of the 8th busiest hour of the day (IRC:93-1985 asks for its
+ * warrant volumes in each of any 8 hours of an average day; staticAssignment signalWarrantScale). Null without an hourly profile.
+ */
+export function eighthHourScale(city: SyntheticCity, hour: number): number | null {
+  const h = city.hourlyVeh;
+  if (!h || h.length !== 24) return null;
+  const v = h[((Math.floor(hour) % 24) + 24) % 24];
+  const eighth = [...h].sort((a, b) => b - a)[7];
+  return v > 0 ? eighth / v : null;
 }
 
 /** Gravity deterrence t^alpha exp(beta t), t the network time in minutes (at least 0.5). */
@@ -293,6 +310,20 @@ export interface SyntheticAreaOptions {
    * a zone pair's traffic is split over the paths of the iterations. Absent: the p14 behaviour (one uncongested path).
    */
   cityCongestion?: number;
+  /**
+   * p16: the speed-flow curve of the city-wide skeleton loading (`cityCongestion`): 'bpr' (default, the p15 assumption
+   * 0.15 / 4) or 'p14', the p14 Indo-HCM curve the area assignment itself uses (SUPPLY_P14.md §1.4), normalised so the
+   * skeleton's peak running time holds at v/c 0.75 (Indo-HCM Table 5.7 LOS C/D boundary, 59 % of FFS, about the
+   * CMP-2024 network speed of 25 km/h against urban free-flow speeds: the assumed reference load of those times).
+   */
+  cityVdf?: 'bpr' | 'p14';
+  /**
+   * p16 gateway metering: a boundary road delivers into the area at most this multiple of its capacity (lanes x
+   * gatewayLaneCapacityPcu) per hour; the excess entering traffic (inbound and through) is held outside the area this hour
+   * (it queues upstream, beyond the area, as it would on the real network) and reported as `heldOutsideVph`. Applied after
+   * gateway loading. Absent: everything is loaded.
+   */
+  gatewayMeter?: number;
 }
 
 /** p15: capacity of a boundary road per lane (PCU/h) by its highest road class rank (4 highway, 3 arterial, 2 collector, 1 local). */
@@ -436,6 +467,8 @@ export function skeletonCapacityPcu(cls: string): number {
 }
 /** BPR (US BPR 1964, international; ASSUMED here) on the skeleton's peak running time: t = t_peak (1 + 0.15 (v/c)^4). */
 const SKELETON_BPR = { alpha: 0.15, beta: 4 };
+/** p16: the p14 curve's time ratio at the skeleton's reference load v/c 0.75 (see SyntheticAreaOptions.cityVdf). */
+const P14_REF_RATIO = p14TimeRatio(0.75);
 const congestedCache = new WeakMap<SyntheticCity, Map<string, Float64Array[]>>();
 
 /** One all-or-nothing loading of the zone OD (PCU/h, n x n) on the skeleton with link times `t`; returns link flows. */
@@ -481,8 +514,8 @@ function skeletonAon(city: SyntheticCity, od: Float64Array, t: Float64Array): Fl
  * all-or-nothing paths used (element 0: the uncongested peak running times), so the MSA flows are the average of the
  * iterations' path flows and each zone pair's traffic splits evenly over its iteration paths. Cached per city and hour.
  */
-export function congestedSkeletonTimes(city: SyntheticCity, hour: number, iterations: number): Float64Array[] {
-  const h = ((Math.floor(hour) % 24) + 24) % 24, key = `${h}:${iterations}`;
+export function congestedSkeletonTimes(city: SyntheticCity, hour: number, iterations: number, vdf: 'bpr' | 'p14' = 'bpr'): Float64Array[] {
+  const h = ((Math.floor(hour) % 24) + 24) % 24, key = `${h}:${iterations}${vdf === 'p14' ? ':p14' : ''}`;
   let m = congestedCache.get(city);
   if (!m) { m = new Map(); congestedCache.set(city, m); }
   const hit = m.get(key);
@@ -496,7 +529,7 @@ export function congestedSkeletonTimes(city: SyntheticCity, hour: number, iterat
   for (let k = 1; k < Math.max(1, iterations); k++) {
     const y = skeletonAon(city, od, times[k - 1]);
     for (let e = 0; e < x.length; e++) x[e] += (y[e] - x[e]) / k;
-    times.push(Float64Array.from(sk.time, (t0, e) => t0 * (1 + SKELETON_BPR.alpha * Math.pow(x[e] / cap[e], SKELETON_BPR.beta))));
+    times.push(Float64Array.from(sk.time, (t0, e) => t0 * (vdf === 'p14' ? p14TimeRatio(x[e] / cap[e]) / P14_REF_RATIO : 1 + SKELETON_BPR.alpha * Math.pow(x[e] / cap[e], SKELETON_BPR.beta))));
   }
   m.set(key, times);
   return times;
@@ -662,14 +695,20 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
   // Snap grid (ground-level nodes only, as snapDemandPlan)
   const G = 0.003, grid = new Map<string, typeof nodes>();
   for (const nd of nodes) { if (Math.abs(nd.coordinates[2] || 0) > 3) continue; const k = `${Math.floor(nd.coordinates[0] / G)}:${Math.floor(nd.coordinates[1] / G)}`; (grid.get(k) ?? grid.set(k, []).get(k)!).push(nd); }
+  // p16: the area's main network (largest strongly connected component); a building whose nearest node is on a small
+  // fragment loads at the nearest node of the main network within the access distance (as snapDemandPlan does)
+  const fwd = new Map<string, string[]>();
+  for (const e of net.edges.values()) if (included.has(segKey(e.id))) (fwd.get(e.fromNodeId) ?? fwd.set(e.fromNodeId, []).get(e.fromNodeId)!).push(e.toNodeId);
+  const main = mainComponent(fwd);
   const snap = (x: number, y: number): string | null => {
     const cx = Math.floor(x / G), cy = Math.floor(y / G);
-    let best: string | null = null, bd = accessM;
+    let best: string | null = null, bd = accessM, bestMain: string | null = null, bm = accessM;
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const nd of grid.get(`${cx + dx}:${cy + dy}`) ?? []) {
       const d = distM([x, y], nd.coordinates);
       if (d < bd) { bd = d; best = nd.id; }
+      if (main?.has(nd.id) && d < bm) { bm = d; bestMain = nd.id; }
     }
-    return best;
+    return bestMain ?? best;
   };
 
   // 1. Building trip ends inside the area, grouped per zone into cells (the heaviest building carries the cell)
@@ -723,9 +762,9 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
 
   // 2. City paths relative to the area
   const cc = opts.cityCongestion && opts.cityCongestion > 1 ? Math.round(opts.cityCongestion) : 0;
-  const timesKey = cc ? `${((Math.floor(opts.hour) % 24) + 24) % 24}:${cc}` : 'free';
+  const timesKey = cc ? `${((Math.floor(opts.hour) % 24) + 24) % 24}:${cc}${opts.cityVdf === 'p14' ? ':p14' : ''}` : 'free';
   const paths = cache?.paths && (cache.paths.timesKey ?? 'free') === timesKey && cache.paths.outline.length === outline.length && cache.paths.outline.every((p, i) => p[0] === outline[i][0] && p[1] === outline[i][1]) ? cache.paths
-    : areaPaths(city, outline, gateways, cc ? congestedSkeletonTimes(city, opts.hour, cc) : [city.skeleton.time], timesKey);
+    : areaPaths(city, outline, gateways, cc ? congestedSkeletonTimes(city, opts.hour, cc, opts.cityVdf ?? 'bpr') : [city.skeleton.time], timesKey);
   if (cache) cache.paths = paths;
 
   // 3. Flows of the hour, split by where their ends are
@@ -751,8 +790,6 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
   });
 
   // 4. Expand into trips between buildings and boundary roads, on routes the area's roads allow
-  const fwd = new Map<string, string[]>();
-  for (const e of net.edges.values()) if (included.has(segKey(e.id))) (fwd.get(e.fromNodeId) ?? fwd.set(e.fromNodeId, []).get(e.fromNodeId)!).push(e.toNodeId);
   const canReach = reachability(fwd);
   const trips = new Map<string, PlanTrip>();
   const comp = { internal: 0, outbound: 0, inbound: 0, through: 0, noEdgeRoute: 0 };
@@ -781,14 +818,22 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
   type Piece = { from: [number, number, number]; to: [number, number, number]; fromNode: string; toNode: string; w: number };
   const ins = paths.gateways.filter(g => g.inLanes > 0), outs = paths.gateways.filter(g => g.outLanes > 0);
   const nearestTo = (list: Gateway[], p: readonly number[], k: number) => [...list].sort((a, b) => distM(a.point, p) - distM(b.point, p)).slice(0, k);
+  // p16 fix: when none of the nearest boundary roads works (they all sit on a fragment off the area's main network, e.g.
+  // a one-way spur or the far carriageway at the edge: Nagar Rd p16_27, 4,194 veh/h through left out at 09:00), the
+  // nearest boundary road on the main network (largest strongly connected component; every pair of its nodes connects)
+  const mainIns = main ? ins.filter(g => main.has(g.nodeId)) : [], mainOuts = main ? outs.filter(g => main.has(g.nodeId)) : [];
   const repairPiece = (part: 'outbound' | 'inbound' | 'through') => (x: Piece): Piece | null => {
-    if (part === 'outbound') { const g = nearestTo(outs, x.to, 12).find(c => c.nodeId !== x.fromNode && canReach(x.fromNode, c.nodeId)); return g ? { ...x, to: g.point, toNode: g.nodeId } : null; }
-    if (part === 'inbound') { const g = nearestTo(ins, x.from, 12).find(c => c.nodeId !== x.toNode && canReach(c.nodeId, x.toNode)); return g ? { ...x, from: g.point, fromNode: g.nodeId } : null; }
+    if (part === 'outbound') { const g = nearestTo(outs, x.to, 12).find(c => c.nodeId !== x.fromNode && canReach(x.fromNode, c.nodeId)) ?? nearestTo(mainOuts, x.to, 1).find(c => c.nodeId !== x.fromNode && canReach(x.fromNode, c.nodeId)); return g ? { ...x, to: g.point, toNode: g.nodeId } : null; }
+    if (part === 'inbound') { const g = nearestTo(ins, x.from, 12).find(c => c.nodeId !== x.toNode && canReach(c.nodeId, x.toNode)) ?? nearestTo(mainIns, x.from, 1).find(c => c.nodeId !== x.toNode && canReach(c.nodeId, x.toNode)); return g ? { ...x, from: g.point, fromNode: g.nodeId } : null; }
     let best: Piece | null = null, bd = Infinity;
     for (const a of nearestTo(ins, x.from, 6)) for (const b of nearestTo(outs, x.to, 6)) {
       if (a.nodeId === b.nodeId || !canReach(a.nodeId, b.nodeId)) continue;
       const d = distM(a.point, x.from) + distM(b.point, x.to);
       if (d < bd) { bd = d; best = { ...x, from: a.point, fromNode: a.nodeId, to: b.point, toNode: b.nodeId }; }
+    }
+    if (!best) {
+      const a = nearestTo(mainIns, x.from, 1)[0], b = nearestTo(mainOuts, x.to, 1)[0];
+      if (a && b && a.nodeId !== b.nodeId) best = { ...x, from: a.point, fromNode: a.nodeId, to: b.point, toNode: b.nodeId };
     }
     return best;
   };
@@ -813,16 +858,22 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
     for (const g of gwPieces(+gid, 'in')) for (const b of cellsOf(+d, ed)) pieces.push({ from: g.g.point, to: b.cell.point, fromNode: g.g.nodeId, toNode: b.cell.nodeId, w: g.s * b.s });
     emit('inbound', kind as VehicleKind, v, pieces.length ? pieces : fallbackPieces(cellsOf(+d, ed), paths.gateways, 'in'));
   }
+  // p16: a city path whose entry and exit both resolve to the same boundary node only grazes the area's edge (it never
+  // drives on the area's roads): not an area trip, reported as edgeOnly (it was counted as "left out, no drivable way")
+  let edgeOnly = 0;
   for (const [k, v] of EE) {
     const [ein, eout, kind] = k.split('|');
     const pieces = [];
+    let same = 0;
     for (const a of gwPieces(+ein, 'in')) for (const b of gwPieces(+eout, 'out')) {
-      if (a.g.nodeId === b.g.nodeId) continue;
+      if (a.g.nodeId === b.g.nodeId) { same++; continue; }
       pieces.push({ from: a.g.point, to: b.g.point, fromNode: a.g.nodeId, toNode: b.g.nodeId, w: a.s * b.s });
     }
+    if (!pieces.length && same > 0) { edgeOnly += v; continue; }
     emit('through', kind as VehicleKind, v, pieces);
   }
   const balance = opts.gatewayBalance && opts.gatewayBalance > 0 ? balanceGateways(trips, paths.gateways, canReach, opts.gatewayBalance, 3, opts.gatewayReachM ?? GATEWAY_DIVERT_MAX_M) : null;
+  const held = opts.gatewayMeter && opts.gatewayMeter > 0 ? meterGateways(trips, paths.gateways, opts.gatewayMeter) : null;
   const list = [...trips.values()].filter(t => t.vehiclesPerHour > 1e-6).map(({ fromNode: _f, toNode: _t, ...t }) => t);
   const vph = list.reduce((s, t) => s + t.vehiclesPerHour, 0);
   if (!(vph > 0)) return null;
@@ -834,13 +885,14 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
     + (through ? `${f(comp.through)} through, crossing it on its city route (${pct(comp.through)}%).` : 'through traffic switched off.')
     + (comp.noEdgeRoute >= 1 ? ` ${f(comp.noEdgeRoute)} veh/h left out (no drivable way on the area's roads).` : '')
     + (scale !== 1 ? ` Scaled ×${scale.toFixed(2)} (calibration parameter).` : '')
+    + (held && held.heldVph >= 1 ? ` ${f(held.heldVph)} veh/h held beyond the area's edge (more than its boundary roads deliver in the hour).` : '')
     + (balance && balance.movedVph >= 1 ? ` ${f(balance.movedVph)} veh/h moved from over-capacity boundary roads to ${opts.gatewayReachM !== undefined && !(opts.gatewayReachM > 0 && Number.isFinite(opts.gatewayReachM)) ? 'other' : 'nearby'} ones.` : '');
   return {
     trips: list,
     provenance: {
       source: 'synthetic', label, period: opts.hour < 12 ? 'AM_Peak' : 'PM_Peak', vehiclesPerHour: vph, pairCount: list.length,
       components: { internal: comp.internal, outbound: comp.outbound, inbound: comp.inbound, through: comp.through, outsideArea: 0, noEdgeRoute: comp.noEdgeRoute, cordonPoints: gateways.length, throughIncluded: through },
-      synthetic: { ...(balance ? { gatewayBalance: balance } : {}), intrazonalEdgeVph: intrazonalEdge, noRouteByPart: noRoute, datasetId: city.id, label: SYNTHETIC_LABEL, hour: ((Math.floor(opts.hour) % 24) + 24) % 24, buildingsIn, buildingsNoRoad, cells: [...cellsByZone.values()].reduce((s, l) => s + l.length, 0), zonesIn: cellsByZone.size, scale },
+      synthetic: { ...(balance ? { gatewayBalance: balance } : {}), ...(held ? { heldOutsideVph: held.heldVph, meteredGateways: held.gateways } : {}), intrazonalEdgeVph: intrazonalEdge, noRouteByPart: noRoute, edgeOnlyVph: edgeOnly, datasetId: city.id, label: SYNTHETIC_LABEL, hour: ((Math.floor(opts.hour) % 24) + 24) % 24, buildingsIn, buildingsNoRoad, cells: [...cellsByZone.values()].reduce((s, l) => s + l.length, 0), zonesIn: cellsByZone.size, scale },
     },
   };
 }
@@ -931,9 +983,39 @@ export function balanceGateways(trips: Map<string, PlanTrip>, gateways: readonly
   return { movedVph, overloadedIn: over.in, overloadedOut: over.out };
 }
 
+/**
+ * p16 gateway metering (SyntheticAreaOptions.gatewayMeter): entering traffic (inbound and through) above `factor` x a
+ * boundary road's capacity is held outside the area this hour, every trip entering there scaled by the same share.
+ */
+export function meterGateways(trips: Map<string, PlanTrip>, gateways: readonly Gateway[], factor: number): { heldVph: number; gateways: number } {
+  const pcu = P14.pcuMidblock.value as Record<string, number>;
+  const byNode = new Map<string, Gateway>();
+  for (const g of gateways) byNode.set(g.nodeId, g);
+  const load = new Map<string, number>(), at = new Map<string, PlanTrip[]>();
+  for (const t of trips.values()) {
+    if (t.part !== 'inbound' && t.part !== 'through') continue;
+    if (!byNode.has(t.fromNode) || !(t.vehiclesPerHour > 0)) continue;
+    load.set(t.fromNode, (load.get(t.fromNode) ?? 0) + t.vehiclesPerHour * (pcu[t.kind] ?? 1));
+    (at.get(t.fromNode) ?? at.set(t.fromNode, []).get(t.fromNode)!).push(t);
+  }
+  let heldVph = 0, n = 0;
+  for (const [node, l] of load) {
+    const g = byNode.get(node)!, cap = factor * g.inLanes * gatewayLaneCapacityPcu(g.rank);
+    if (!(cap > 0) || l <= cap) continue;
+    const keep = cap / l;
+    n++;
+    for (const t of at.get(node)!) { heldVph += t.vehiclesPerHour * (1 - keep); t.vehiclesPerHour *= keep; }
+  }
+  return { heldVph, gateways: n };
+}
+
 /** Where a zone's path gives no boundary road with lanes on that side: the boundary roads of that side, nearest first. */
 function fallbackPieces(cells: { cell: Cell; s: number }[], gateways: Gateway[], side: 'in' | 'out') {
-  const gs = gateways.filter(g => (side === 'in' ? g.inLanes : g.outLanes) > 0 && g.rank >= 2);
+  // Boundary roads of collector rank or above; where the area has none on that side (a fringe village reached only by
+  // local roads, p16), every boundary road of that side rather than leaving the trips out
+  const sideGs = gateways.filter(g => (side === 'in' ? g.inLanes : g.outLanes) > 0);
+  const ranked = sideGs.filter(g => g.rank >= 2);
+  const gs = ranked.length ? ranked : sideGs;
   const pieces: { from: [number, number, number]; to: [number, number, number]; fromNode: string; toNode: string; w: number }[] = [];
   for (const c of cells) {
     const near = [...gs].sort((a, b) => distM(c.cell.point, a.point) - distM(c.cell.point, b.point)).slice(0, 2);

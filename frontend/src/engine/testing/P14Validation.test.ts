@@ -11,7 +11,7 @@ import { scoreProjectCheck, sectionCount, sectionCountGrouped, wayBearing, type 
 import http from 'http';
 import { LocalOsmIndex } from '../editing/LocalOsmIndex';
 import { TrafficSignalSource } from '../simulation/trafficSignals';
-import { decodeSyntheticDemand, rebalance, syntheticAreaPlan, type AreaPaths, type SyntheticCity, type SyntheticTripEnd } from '../demand/syntheticDemand';
+import { decodeSyntheticDemand, eighthHourScale, rebalance, syntheticAreaPlan, type AreaPaths, type SyntheticCity, type SyntheticTripEnd } from '../demand/syntheticDemand';
 
 /**
  * Opt-in harness for p14 (docs/urbanos/DEMAND_P14.md): the p13 project check (same records, same 50/50 seed-13 split,
@@ -65,13 +65,16 @@ const distM = (a: readonly number[], b: readonly number[]) => Math.hypot((a[0] -
 
 /** As P13Validation.test.ts evaluate(): one cross-section per direction for counts, the shortest converged-time path for journey times. */
 /** A candidate model: demand scale and beta multiplier, and supply parameters (p13 SupplyParams within SUPPLY_BOUNDS) and the local-road route-choice factor. */
-interface CandidateSet { name: string; scale: number; betaMult: number; capacityFactor?: number; signalSatFactor?: number; speedFactor?: [number, number, number]; localCostFactor?: number; gatewayBalance?: number; gatewayReachM?: number; cityCongestion?: number }
+interface CandidateSet { name: string; scale: number; betaMult: number; capacityFactor?: number; signalSatFactor?: number; speedFactor?: [number, number, number]; localCostFactor?: number; gatewayBalance?: number; gatewayReachM?: number; cityCongestion?: number; cityVdf?: 'bpr' | 'p14'; gatewayMeter?: number; signalWarrant?: boolean }
 let CURRENT: CandidateSet | null = null;
+let WARRANT_CITY: SyntheticCity | null = null;
 function evaluate(b: Built, hour: number, trips: MicroDemandTrip[], iters: number): ProjectObs | null {
   // p14-supply's model where merged (P14_SUPPLY_MODEL=p14); passed untyped so this file also compiles on the demand branch alone
   const extra: Record<string, unknown> = process.env.P14_SUPPLY_MODEL === 'p14' ? { supplyModel: 'p14', buildings: b.buildings ?? null } : {};
   if (process.env.P14_LOCAL_FACTOR) extra.localCostFactor = Number(process.env.P14_LOCAL_FACTOR);
   if (CURRENT?.localCostFactor) extra.localCostFactor = CURRENT.localCostFactor;
+  // p16: IRC:93 volume-warranted signals at the record's hour (CITYWIDE_P16.md §5)
+  if (CURRENT?.signalWarrant && WARRANT_CITY) { const w = eighthHourScale(WARRANT_CITY, hour); if (w) extra.signalWarrantScale = w; }
   const supply = { ...DEFAULT_SUPPLY, ...(CURRENT?.capacityFactor ? { capacityFactor: CURRENT.capacityFactor } : {}), ...(CURRENT?.signalSatFactor ? { signalSatFactor: CURRENT.signalSatFactor } : {}), ...(CURRENT?.speedFactor ? { speedFactor: CURRENT.speedFactor } : {}) };
   const a = assignTraffic(b.area, b.roads, trips, { signalPoints: b.signals, supply, maxIterations: iters, maxMs: 1e9, targetGap: 1e-3, ...extra });
   const base = { id: `${b.rec.id}@${hour}`, record: b.rec.id, split: b.rec.split, roadClass: b.rec.roadClass, area: b.rec.area, hour };
@@ -147,6 +150,7 @@ describe.skipIf(!process.env.P14)('p14 project check with the synthetic land-use
     const only = process.env.P14_ONLY ? new Set(process.env.P14_ONLY.split(',')) : null;
     const records = (JSON.parse(fs.readFileSync(process.env.P14_RECORDS!, 'utf8')) as RecordSpec[]).filter(r => !only || only.has(r.id));
     const city0 = decodeSyntheticDemand(JSON.parse(fs.readFileSync(process.env.P14_ASSET!, 'utf8')));
+    WARRANT_CITY = city0;
     const ends = readEnds(process.env.P14_ENDS!);
     const built: Built[] = [];
     for (const f of process.env.P14_CACHE_READ!.split(',')) {
@@ -168,14 +172,14 @@ describe.skipIf(!process.env.P14)('p14 project check with the synthetic land-use
     // Synthetic trips per record and hour at scale 1 (the scale is linear), per beta multiplier
     const tripsMemo = new Map<string, { trips: MicroDemandTrip[]; vph: number; comp: unknown }>();
     const tripsFor = (b: Built, hour: number, betaMult: number) => {
-      const gb = CURRENT?.gatewayBalance, cc = CURRENT?.cityCongestion, gr = CURRENT?.gatewayReachM;
-      const key = `${b.rec.id}@${hour}@${betaMult}@${gb ?? ''}@${cc ?? ''}@${gr ?? ''}`;
+      const gb = CURRENT?.gatewayBalance, cc = CURRENT?.cityCongestion, gr = CURRENT?.gatewayReachM, cv = CURRENT?.cityVdf, gm = CURRENT?.gatewayMeter;
+      const key = `${b.rec.id}@${hour}@${betaMult}@${gb ?? ''}@${cc ?? ''}@${gr ?? ''}@${cv ?? ''}@${gm ?? ''}`;
       let t = tripsMemo.get(key);
       if (!t) {
         const cache = pathsCache.get(b.rec.id) ?? pathsCache.set(b.rec.id, {}).get(b.rec.id)!;
-        const plan = syntheticAreaPlan(cityFor(betaMult), b.area, b.roads, ends, { hour, ...(gb ? { gatewayBalance: gb } : {}), ...(gr !== undefined ? { gatewayReachM: gr } : {}), ...(cc ? { cityCongestion: cc } : {}) }, cache);
+        const plan = syntheticAreaPlan(cityFor(betaMult), b.area, b.roads, ends, { hour, ...(gb ? { gatewayBalance: gb } : {}), ...(gr !== undefined ? { gatewayReachM: gr } : {}), ...(cc ? { cityCongestion: cc } : {}), ...(cv ? { cityVdf: cv } : {}), ...(gm ? { gatewayMeter: gm } : {}) }, cache);
         const segs = new Set(b.area.segments.map(s => s.key));
-        const trips = plan ? snapDemandPlan(plan, b.area.network, 250, segs).map((x, i) => ({ ...x, part: (plan.trips[i] as { part?: string }).part })).filter(x => x.fromNodeId && x.toNodeId) : [];
+        const trips = plan ? snapDemandPlan(plan, b.area.network, 250, segs, { preferMainNetwork: true }).map((x, i) => ({ ...x, part: (plan.trips[i] as { part?: string }).part })).filter(x => x.fromNodeId && x.toNodeId) : [];
         t = { trips, vph: plan?.provenance.vehiclesPerHour ?? 0, comp: plan ? { ...plan.provenance.components, ...(plan.provenance.synthetic?.gatewayBalance ? { gb: plan.provenance.synthetic.gatewayBalance } : {}), izEdge: plan.provenance.synthetic?.intrazonalEdgeVph, pairs: plan.provenance.pairCount } : undefined };
         tripsMemo.set(key, t);
       }

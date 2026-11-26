@@ -66,7 +66,7 @@ export class SyntheticDemandSource {
   }
 
   /** The area's synthetic plan at the clock hour, or null when the model or the area's trip ends are not loaded (yet). */
-  plan(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, hour: number, through: boolean, areaKey: string, scale = 1, extra: { gatewayBalance?: number; gatewayReachM?: number; cityCongestion?: number } = {}): DemandPlan | null {
+  plan(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, hour: number, through: boolean, areaKey: string, scale = 1, extra: { gatewayBalance?: number; gatewayReachM?: number; cityCongestion?: number; cityVdf?: 'bpr' | 'p14'; gatewayMeter?: number } = {}): DemandPlan | null {
     if (!this.city || !this.hasEnds(area.bounds)) return null;
     const cache = this.paths.get(areaKey) ?? {};
     if (!this.paths.has(areaKey)) { if (this.paths.size > 8) this.paths.clear(); this.paths.set(areaKey, cache); }

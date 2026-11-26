@@ -21,7 +21,7 @@ import type { RoadSection } from '../simulation/roadSection';
 import type { BuildingPoint } from '../simulation/indianSupply';
 import { DEFAULT_SUPPLY } from '../simulation/supplyParams';
 import { SYNTHETIC_PARAMS } from '../calibration/syntheticDemandDecision';
-import { decodeSyntheticDemand, rebalance, syntheticAreaPlan, type AreaPaths, type SyntheticCity, type SyntheticTripEnd } from '../demand/syntheticDemand';
+import { decodeSyntheticDemand, eighthHourScale, rebalance, syntheticAreaPlan, type AreaPaths, type SyntheticCity, type SyntheticTripEnd } from '../demand/syntheticDemand';
 import { evaluateBands, type AreaHourMetrics } from './citywide/citywideBands';
 
 /**
@@ -154,20 +154,23 @@ export function staticMetrics(a: AssignmentResult, free: Float64Array, roads: Re
 }
 
 /** Where the plan's building ends start / end: share of building-end veh/h on a node within 100 m of the building. */
-function buildingEnds(plan: DemandPlan, area: StudyArea): { share: number | null; vph: number; noRoadShare: number | null } {
+function buildingEnds(plan: DemandPlan, area: StudyArea, snapped?: readonly { fromNodeId: string; toNodeId: string }[]): { share: number | null; vph: number; noRoadShare: number | null } {
   let near = 0, tot = 0;
-  for (const t of plan.trips as (DemandPlan['trips'][number] & { part?: string })[]) {
-    const ends: (readonly number[])[] = [];
-    if (t.part === 'internal' || t.part === 'outbound') ends.push(t.from);
-    if (t.part === 'internal' || t.part === 'inbound') ends.push(t.to);
-    for (const p of ends) {
+  (plan.trips as (DemandPlan['trips'][number] & { part?: string })[]).forEach((t, i) => {
+    const ends: [readonly number[], string | undefined][] = [];
+    if (t.part === 'internal' || t.part === 'outbound') ends.push([t.from, snapped?.[i]?.fromNodeId]);
+    if (t.part === 'internal' || t.part === 'inbound') ends.push([t.to, snapped?.[i]?.toNodeId]);
+    for (const [p, used] of ends) {
       tot += t.vehiclesPerHour;
+      // p16 fix: the node the trip actually loads at (snapDemandPlan), when given
+      const un = used ? area.network.nodes.get(used) : undefined;
+      if (snapped) { if (un && distM(p, un.coordinates) <= 100) near += t.vehiclesPerHour; continue; }
       // the node syntheticAreaPlan snapped the building to: the nearest ground node within 250 m (recomputed here)
       let bd = Infinity;
       for (const nd of area.network.nodes.values()) { if (Math.abs(nd.coordinates[0] - p[0]) > 0.003 || Math.abs(nd.coordinates[1] - p[1]) > 0.003) continue; const d = distM(p, nd.coordinates); if (d < bd) bd = d; }
       if (bd <= 100) near += t.vehiclesPerHour;
     }
-  }
+  });
   const syn = plan.provenance.synthetic as { buildingsIn?: number; buildingsNoRoad?: number } | undefined;
   const bi = syn?.buildingsIn ?? 0, bn = syn?.buildingsNoRoad ?? 0;
   return { share: tot > 0 ? near / tot : null, vph: Math.round(tot), noRoadShare: bi + bn > 0 ? bn / (bi + bn) : null };
@@ -276,28 +279,27 @@ describe.skipIf(!env.P16)('p16 city-wide robustness harness (opt-in)', () => {
         const segs = new Set(b.area.segments.map(s => s.key));
         const aopts = { signalPoints: b.signals, junctionEdits: b.simOptions.junctionEdits, supply, supplyModel: 'p14' as const, buildings: b.buildings, maxIterations: iters, maxMs: 1e9, targetGap: 1e-3,
           ...(set.localCostFactor ? { localCostFactor: set.localCostFactor } : {}), ...(set.p16 ? { p16: set.p16 } : {}) };
-        // Zero-flow reference: the same network with no traffic (free running, signal delay, junction control at zero flow)
-        let free: Float64Array | null = null;
         for (const hour of hoursOnly ?? b.rec.hours) {
           const t0 = Date.now();
           const row: Record<string, unknown> = { area: b.rec.id, stratum: b.rec.stratum, roadClass: b.rec.roadClass, jurisdiction: b.rec.jurisdiction, hour, set: set.name };
           try {
             const plan = syntheticAreaPlan(city, b.area, b.roads, ends, { hour, scale: set.scale, ...(set.gatewayBalance ? { gatewayBalance: set.gatewayBalance } : {}),
-              ...(set.gatewayReachM !== undefined ? { gatewayReachM: set.gatewayReachM } : {}), ...(set.cityCongestion ? { cityCongestion: set.cityCongestion } : {}), ...(set.p16demand ? { p16: set.p16demand } : {}) } as never, cache);
+              ...(set.gatewayReachM !== undefined ? { gatewayReachM: set.gatewayReachM } : {}), ...(set.cityCongestion ? { cityCongestion: set.cityCongestion } : {}), ...(set.cityVdf ? { cityVdf: set.cityVdf } : {}), ...(set.gatewayMeter ? { gatewayMeter: set.gatewayMeter } : {}), ...(set.p16demand ? { p16: set.p16demand } : {}) } as never, cache);
             if (!plan) { row.ok = false; row.error = 'no plan (no trip ends or no roads)'; log(row); continue; }
-            const trips = snapDemandPlan(plan, b.area.network, 250, segs);
+            const trips = snapDemandPlan(plan, b.area.network, 250, segs, { preferMainNetwork: true });
             const totVph = trips.reduce((s, t) => s + t.vehiclesPerHour, 0);
-            if (!free) {
-              const z = assignTraffic(b.area, b.roads, trips.map(t => ({ ...t, vehiclesPerHour: 1e-6 })), { ...aopts, maxIterations: 2 });
-              free = Float64Array.from(z.timeS);
-            }
-            const a = assignTraffic(b.area, b.roads, trips, aopts);
+            const ws = set.signalWarrant ? eighthHourScale(city, hour) : null;
+            const a = assignTraffic(b.area, b.roads, trips, { ...aopts, ...(ws ? { signalWarrantScale: ws } : {}) });
+            // Zero-flow reference on the same network and the same signals (the hour's warranted signals included)
+            const zsig = a.warrantedSignalPoints?.length ? [...(b.signals ?? []), ...a.warrantedSignalPoints] : b.signals;
+            const z = assignTraffic(b.area, b.roads, trips.map(t => ({ ...t, vehiclesPerHour: 1e-6 })), { ...aopts, signalPoints: zsig, maxIterations: 2 });
+            const free = Float64Array.from(z.timeS);
             const sm = staticMetrics(a, free, b.roads, b.section);
-            const be = buildingEnds(plan, b.area);
+            const be = buildingEnds(plan, b.area, trips);
             const comp = plan.provenance.components!;
             Object.assign(row, { ok: true, demandVph: Math.round(plan.provenance.vehiclesPerHour), snappedVph: Math.round(totVph), unroutedVph: Math.round(a.unroutedVeh),
-              noEdgeRouteVph: Math.round(comp.noEdgeRoute ?? 0), parts: { internal: Math.round(comp.internal), outbound: Math.round(comp.outbound), inbound: Math.round(comp.inbound), through: Math.round(comp.through) },
-              ...sm, buildingEnds: be, assignMs: Date.now() - t0 });
+              noEdgeRouteVph: Math.round(comp.noEdgeRoute ?? 0), heldOutsideVph: Math.round((plan.provenance.synthetic as { heldOutsideVph?: number } | undefined)?.heldOutsideVph ?? 0), edgeOnlyVph: Math.round((plan.provenance.synthetic as { edgeOnlyVph?: number } | undefined)?.edgeOnlyVph ?? 0), noRouteByPart: Object.fromEntries(Object.entries((plan.provenance.synthetic as { noRouteByPart?: Record<string, number> } | undefined)?.noRouteByPart ?? {}).map(([k, v]) => [k, Math.round(v)])), parts: { internal: Math.round(comp.internal), outbound: Math.round(comp.outbound), inbound: Math.round(comp.inbound), through: Math.round(comp.through) },
+              ...sm, buildingEnds: be, warranted: a.warrantedSignalPoints?.length ?? 0, assignMs: Date.now() - t0 });
             if (env.P16_MICRO === '1') {
               // The corridor run as analysisJob.ts does it, two seeds, a short warm-up and measured window
               const inside = new Set(b.corridor.segments.map(s => s.key));
@@ -320,7 +322,8 @@ describe.skipIf(!env.P16)('p16 city-wide robustness harness (opt-in)', () => {
                 const ld = sim.analysisCounts()?.load;
                 runs.push({ seed, inflowVph: Math.round(m1.inflowVph), waiting0: m0.waitingToEnter, waiting1: m1.waitingToEnter, onNetwork: m1.onNetwork, completed: ld?.completedInWindow ?? null,
                   tripKmh: m1.tripSpeedKmh, delayIndex: m1.delayIndex, gridlockRemovals: m1.gridlockRemovals, gridlockEvents: m1.accounting.gridlockEvents ?? null, gridlockedNow: m1.accounting.gridlockedNow ?? null,
-                  unroutable: m1.unroutable, watchedKmh: m1.watched.meanSpeedKmh });
+                  unroutable: m1.unroutable, watchedKmh: m1.watched.meanSpeedKmh,
+                  gridlockByCause: (m1.accounting as { gridlockEventsByCause?: unknown }).gridlockEventsByCause ?? null, gridlockSites: sim.gridlockSites().slice(0, 4).map(g => ({ node: g.node, lng: +g.lng.toFixed(5), lat: +g.lat.toFixed(5), n: g.vehicles, s: Math.round(g.longestS), causes: g.causes, places: g.places })) });
               }
               row.micro = { corridorVph: Math.round(cplan.provenance.vehiclesPerHour), warmS, measS, runs, ms: Date.now() - t1 };
             }

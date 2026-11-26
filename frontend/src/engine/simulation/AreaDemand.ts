@@ -5,6 +5,7 @@ import type { VehicleKind } from './TrafficMicroSim';
 import { estimatedLinkFlow, zoneDensityAt, type EstimatedTrafficModel } from './EstimatedTraffic';
 import { VEHICLE_TYPES } from './TrafficMicroSim';
 import { roadKeys } from './roadSection';
+import { strongComponents } from './graphComponents';
 import { activityEndpoints, landUseVehicles, type DemandPlan, type SimulationContext, type DemandComponents, type ActivityEndpoint } from './StudyDemand';
 
 /**
@@ -212,33 +213,10 @@ export function cordonOf(area: StudyArea, roads: ReadonlyMap<string, DrivableObj
  * condensed graph, memoised. Most of a road network is one component, so this
  * costs one pass plus a few small searches.
  */
+export { mainComponent, strongComponents } from './graphComponents';
+
 export function reachability(adj: ReadonlyMap<string, string[]>): (from: string, to: string) => boolean {
-  const index = new Map<string, number>(), low = new Map<string, number>(), comp = new Map<string, number>();
-  const onStack = new Set<string>(), stack: string[] = [];
-  let next = 0, comps = 0;
-  const nodes = new Set<string>([...adj.keys(), ...[...adj.values()].flat()]);
-  for (const root of nodes) {
-    if (index.has(root)) continue;
-    const work: { v: string; i: number }[] = [{ v: root, i: 0 }];
-    index.set(root, next); low.set(root, next); next++; stack.push(root); onStack.add(root);
-    while (work.length) {
-      const top = work[work.length - 1];
-      const out = adj.get(top.v) ?? [];
-      if (top.i < out.length) {
-        const w = out[top.i++];
-        if (!index.has(w)) { index.set(w, next); low.set(w, next); next++; stack.push(w); onStack.add(w); work.push({ v: w, i: 0 }); }
-        else if (onStack.has(w)) low.set(top.v, Math.min(low.get(top.v)!, index.get(w)!));
-        continue;
-      }
-      work.pop();
-      if (work.length) { const p = work[work.length - 1].v; low.set(p, Math.min(low.get(p)!, low.get(top.v)!)); }
-      if (low.get(top.v) === index.get(top.v)) {
-        let w: string;
-        do { w = stack.pop()!; onStack.delete(w); comp.set(w, comps); } while (w !== top.v);
-        comps++;
-      }
-    }
-  }
+  const comp = strongComponents(adj);
   const dag = new Map<number, Set<number>>();
   adj.forEach((outs, v) => { for (const w of outs) { const a = comp.get(v)!, b = comp.get(w)!; if (a !== b) (dag.get(a) ?? dag.set(a, new Set()).get(a)!).add(b); } });
   const memo = new Map<number, Set<number>>();
@@ -256,6 +234,7 @@ export function reachability(adj: ReadonlyMap<string, string[]>): (from: string,
     return a !== undefined && b !== undefined && reachableFrom(a).has(b);
   };
 }
+
 
 /** Erlang-2 survival: share of trips with mean length L longer than r. */
 const longerThan = (rKm: number, meanKm: number) => { const x = 2 * rKm / meanKm; return (1 + x) * Math.exp(-x); };
