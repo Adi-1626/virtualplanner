@@ -384,7 +384,7 @@ Not adopted; the harness M1 re-run was skipped. M1 failures stay (fix3: 24 / 19 
 
 **The synthetic city-wide model stays OFF by default** (decideSyntheticDefault: hold-out fails, JT 7/28 counts 2/16 river
 +25.2 %; official 1/15 river +44.6 %, worse than the area estimate 2/15 river -26.5 %). Demo mode remains an explicit,
-labelled choice. Fixes 2-3 were not re-run through the 60-iteration and official checks.
+labelled choice. Official 15-site check re-run on the HEAD code with fixes 2-3 (`official_head.sh`, `head.score.txt`): **1/15 GEH < 5 (hold-out 1/8), river screenline +44.6 % (bias +60 %)** — unchanged from e8b4a25 (+44.6 %), still worse than the area estimate. The 60-iteration calibration / hold-out was not re-run on fixes 2-3.
 
 ### 8.8 Code on p16-citywide after the merge
 
