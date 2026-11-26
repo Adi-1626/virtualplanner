@@ -360,8 +360,10 @@ snapping only, plus a one-iteration assignment to count unrouted vehicles):
 |---|---|---|---|---|---|---|---|---|
 | p16_13_itpark | 09 | 0.940 | 0.940 | 0.869 | 1,534 | 17 | 1,729 | 0 |
 | p16_05_bridge | 09 | 0.942 | 0.942 | 0.897 | 1,203 | 35 | 1,785 | 0 |
+| p16_09_oldcity | 23 | 0.906 | 0.906 | 0.893 | 95 | 2 | 328 | 0 |
 | p16_17_midc | 09 | 0.933 | 0.933 | 0.879 | 790 | 13 | 1,725 | 0 |
 | p16_33_collector | 09 | 0.929 | 0.929 | 0.884 | 272 | 4 | 697 | 0 |
+| p16_35_collector | 09 | 0.910 | 0.910 | 0.891 | 124 | 16 | 112 | 0 |
 
 At the nearest node, these trips cannot route (the "unrouted at nearest node" column: the nearest node is on a one-way
 spur or fragment that does not reach the trip's other end); after the move they all route (0). Of the moved building-end
@@ -392,7 +394,7 @@ dc32690 (fix 2: gateway node kept), 2c3aa82 (fix 3: direction-aware main-network
 (stability chip wraps inside the panel; the amber "more traffic routed than the junctions pass" card is hidden on a road
 with no traffic or when nothing is routed into the area); harness diagnosis dd2a5fb (`P16_R3DIAG`).
 
-Gates on the final HEAD: pending
+Gates on the final HEAD: tsc -p tsconfig.app.json clean; oxlint 0 errors (19 warnings); vite build OK; vitest 10 chunks of src/engine/testing/*.test.ts (--maxWorkers=1) all pass, 1,423 passed / 15 skipped (opt-in harnesses); backend pytest 490 passed, 3 skipped (/workspace/work/p16-e2e/gate3-*.log; tsc/oxlint/build and chunk 00 re-run after the UI commit).
 
 Screenshots (09:00, demo mode): `/workspace/work/urbanos/shots/p16/01..06_*_0900.png`; 04 and 06 retaken after 0d1aac6.
 
