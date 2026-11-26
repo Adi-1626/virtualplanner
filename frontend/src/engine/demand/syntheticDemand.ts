@@ -818,14 +818,22 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
   type Piece = { from: [number, number, number]; to: [number, number, number]; fromNode: string; toNode: string; w: number };
   const ins = paths.gateways.filter(g => g.inLanes > 0), outs = paths.gateways.filter(g => g.outLanes > 0);
   const nearestTo = (list: Gateway[], p: readonly number[], k: number) => [...list].sort((a, b) => distM(a.point, p) - distM(b.point, p)).slice(0, k);
+  // p16 fix: when none of the nearest boundary roads works (they all sit on a fragment off the area's main network, e.g.
+  // a one-way spur or the far carriageway at the edge: Nagar Rd p16_27, 4,194 veh/h through left out at 09:00), the
+  // nearest boundary road on the main network (largest strongly connected component; every pair of its nodes connects)
+  const mainIns = main ? ins.filter(g => main.has(g.nodeId)) : [], mainOuts = main ? outs.filter(g => main.has(g.nodeId)) : [];
   const repairPiece = (part: 'outbound' | 'inbound' | 'through') => (x: Piece): Piece | null => {
-    if (part === 'outbound') { const g = nearestTo(outs, x.to, 12).find(c => c.nodeId !== x.fromNode && canReach(x.fromNode, c.nodeId)); return g ? { ...x, to: g.point, toNode: g.nodeId } : null; }
-    if (part === 'inbound') { const g = nearestTo(ins, x.from, 12).find(c => c.nodeId !== x.toNode && canReach(c.nodeId, x.toNode)); return g ? { ...x, from: g.point, fromNode: g.nodeId } : null; }
+    if (part === 'outbound') { const g = nearestTo(outs, x.to, 12).find(c => c.nodeId !== x.fromNode && canReach(x.fromNode, c.nodeId)) ?? nearestTo(mainOuts, x.to, 1).find(c => c.nodeId !== x.fromNode && canReach(x.fromNode, c.nodeId)); return g ? { ...x, to: g.point, toNode: g.nodeId } : null; }
+    if (part === 'inbound') { const g = nearestTo(ins, x.from, 12).find(c => c.nodeId !== x.toNode && canReach(c.nodeId, x.toNode)) ?? nearestTo(mainIns, x.from, 1).find(c => c.nodeId !== x.toNode && canReach(c.nodeId, x.toNode)); return g ? { ...x, from: g.point, fromNode: g.nodeId } : null; }
     let best: Piece | null = null, bd = Infinity;
     for (const a of nearestTo(ins, x.from, 6)) for (const b of nearestTo(outs, x.to, 6)) {
       if (a.nodeId === b.nodeId || !canReach(a.nodeId, b.nodeId)) continue;
       const d = distM(a.point, x.from) + distM(b.point, x.to);
       if (d < bd) { bd = d; best = { ...x, from: a.point, fromNode: a.nodeId, to: b.point, toNode: b.nodeId }; }
+    }
+    if (!best) {
+      const a = nearestTo(mainIns, x.from, 1)[0], b = nearestTo(mainOuts, x.to, 1)[0];
+      if (a && b && a.nodeId !== b.nodeId) best = { ...x, from: a.point, fromNode: a.nodeId, to: b.point, toNode: b.nodeId };
     }
     return best;
   };
