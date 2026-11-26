@@ -154,20 +154,257 @@ Screens: `p16-run/calscr*.jsonl` (J), `p16-run/hK*.jsonl` (H); the choice is com
 5. **Harness measurement** (4670f6d): R3 is measured to the node the trip actually loads at (after the snap), not to the
    nearest node; the harness also logs the micro-simulation's gridlock causes and sites. Bands unchanged.
 
+6. **Boundary-road repair on the main network** (5aa70a7): through / outbound / inbound repair falls back to the nearest
+   boundary road on the area's main network when all nearest boundary roads sit on a fragment (Nagar Rd p16_27: 4,194
+   veh/h through left out at 09:00 -> 0; `fixchk4.jsonl`).
+7. **Fix 2, gateway node kept** (dc32690): `snapDemandPlan` keeps a point that is a node (the plan's chosen gateway node)
+   instead of re-snapping it to the main network (R2 regression of item 4, §8.4).
+8. **Fix 3, direction-aware main-network snapping** (2c3aa82): a building's nearest node is kept for the direction it
+   serves (origin: reaches the main network; destination: reached from it); only the other direction loads at the nearest
+   main-network node (R3 over-application of item 4, §8.4).
+
 Options added but only on through the record if chosen: IRC:93 warranted signals, congestion-aware city paths with the p14
 curve, gateway metering (p16-dev 16fbd23, 1ba5c73).
 
 ## 8. Results
 
-_Pending the queued runs (`p16-run/pipeline_p16.sh`, `pipeline_p16b.sh`): choice table, 60-iteration calibration /
-hold-out, official 15-site check, final harness with micro-simulation, default decision. Fill from `choice.json`,
-`fin60.merged.jsonl`, `fin.score.txt`, `final.jsonl` (summarize.py) next to `base.jsonl`._
+All numbers below are files in `/workspace/work/p16-run/`. Bands (`citywideBands.ts`) were not moved.
+
+### 8.1 Choice (RULE_p16.md, scope amendment K0 vs K1)
+
+| Set | J (calibration only, 15 it.) | H (static bands, 164 area-hours) |
+|---|---|---|
+| K0 = S10gb1k4+fix (incumbent) | 5.664 | 40 |
+| K1 = K0 + IRC:93 warranted signals | 5.688 | 40 |
+
+Both eligible (J within 0.04); K1 does not beat K0's H strictly, so the incumbent **K0 stays** (`choice.json`, computed by
+`choose.py`, no hand step). K2-K5 were dropped unscreened (scope amendment, written before any screen result), not rejected.
+
+### 8.2 Calibration, hold-out, official check (60 iterations, code at e8b4a25)
+
+| Check | Result |
+|---|---|
+| Calibration (28 journey times, 16 counts) | JT 5/28, counts 1/16, river -21.3 % |
+| Hold-out (evaluated once) | JT 7/28, counts 2/16, river +25.2 % — **fails** (loss 5.850) |
+| Official 15 sites (`fin.score.txt`) | 1/15 GEH < 5 (hold-out 1/8), river screenline +44.6 % (bias +60 %) |
+| Area estimate it must not be worse than | 2/15, river -26.5 % |
+
+**Default decision (decideSyntheticDefault): the synthetic city-wide model is NOT the default** (hold-out fails, and the
+official check is worse than the area estimate). Demo mode stays an explicit, labelled choice. The record
+(`syntheticDemandRecord.ts`) was regenerated with these numbers (e8b4a25). These three checks ran on the code before
+fixes 2 and 3 below (e8b4a25); fixes 2-3 only change where trip ends load (§8.4) and were not re-run through the
+60-iteration check.
+
+### 8.3 City-wide harness: baseline vs final (60 iterations, micro-simulation on, recorded set)
+
+- **Baseline** `base.jsonl`: recorded S10gb1k4 at 8d141c8 (before every p16 fix): **36 / 164**.
+- **Final** `final.jsonl`: K0 record on the fix tree e8b4a25 (fixes 1-5 of §7): **29 / 164**.
+- **Final + fixes 2-3** `fix3.jsonl` (extra row set, clearly separate, all 41 areas re-run on 2c3aa82): **30 / 164**.
+
+Pass counts, baseline / final / final + fixes 2-3:
+
+| Stratum | 09:00 | 14:00 | 19:00 | 23:00 | All |
+|---|---|---|---|---|---|
+| arterial | 2 / 2 / 2 of 5 | 2 / 2 / 2 of 5 | 2 / 2 / 2 of 5 | 3 / 3 / 3 of 5 | 9 / 9 / 9 of 20 |
+| subarterial | 0 / 0 / 0 of 4 | 0 / 0 / 0 of 4 | 0 / 0 / 0 of 4 | 2 / 2 / 2 of 4 | 2 / 2 / 2 of 16 |
+| collector | 0 / 0 / 0 of 4 | 0 / 0 / 0 of 4 | 0 / 0 / 0 of 4 | 2 / 0 / 0 of 4 | 2 / 0 / 0 of 16 |
+| local | 0 / 0 / 0 of 6 | 0 / 0 / 0 of 6 | 0 / 0 / 0 of 6 | 1 / 1 / 1 of 6 | 1 / 1 / 1 of 24 |
+| bridge | 1 / 1 / 1 of 5 | 1 / 1 / 1 of 5 | 0 / 0 / 0 of 5 | 2 / 2 / 2 of 5 | 4 / 4 / 4 of 20 |
+| flyover | 1 / 1 / 1 of 3 | 1 / 1 / 1 of 3 | 1 / 1 / 1 of 3 | 3 / 3 / 3 of 3 | 6 / 6 / 6 of 12 |
+| oldcity | 0 / 0 / 0 of 4 | 0 / 0 / 0 of 4 | 0 / 0 / 0 of 4 | 2 / 1 / 1 of 4 | 2 / 1 / 1 of 16 |
+| itpark | 0 / 0 / 0 of 3 | 0 / 0 / 0 of 3 | 0 / 0 / 0 of 3 | 2 / 1 / 1 of 3 | 2 / 1 / 1 of 12 |
+| midc | 0 / 0 / 0 of 3 | 1 / 0 / 1 of 3 | 1 / 0 / 0 of 3 | 2 / 1 / 1 of 3 | 4 / 1 / 2 of 12 |
+| fringe | 1 / 1 / 1 of 4 | 1 / 1 / 1 of 4 | 1 / 1 / 1 of 4 | 1 / 1 / 1 of 4 | 4 / 4 / 4 of 16 |
+| **all** | 5 / 5 / 5 of 41 | 6 / 5 / 6 of 41 | 5 / 4 / 4 of 41 | 20 / 15 / 15 of 41 | 36 / 29 / 30 of 164 |
+
+**Baseline (base.jsonl): 36 / 164 area-hours pass**
+
+| Stratum | 09:00 | 14:00 | 19:00 | 23:00 | All |
+|---|---|---|---|---|---|
+| arterial | 2/5 | 2/5 | 2/5 | 3/5 | 9/20 |
+| subarterial | 0/4 | 0/4 | 0/4 | 2/4 | 2/16 |
+| collector | 0/4 | 0/4 | 0/4 | 2/4 | 2/16 |
+| local | 0/6 | 0/6 | 0/6 | 1/6 | 1/24 |
+| bridge | 1/5 | 1/5 | 0/5 | 2/5 | 4/20 |
+| flyover | 1/3 | 1/3 | 1/3 | 3/3 | 6/12 |
+| oldcity | 0/4 | 0/4 | 0/4 | 2/4 | 2/16 |
+| itpark | 0/3 | 0/3 | 0/3 | 2/3 | 2/12 |
+| midc | 0/3 | 1/3 | 1/3 | 2/3 | 4/12 |
+| fringe | 1/4 | 1/4 | 1/4 | 1/4 | 4/16 |
+| **all** | **5/41** | **6/41** | **5/41** | **20/41** | **36/164** |
+
+| Band | 09:00 | 14:00 | 19:00 | 23:00 |
+|---|---|---|---|---|
+| D1 | 14 | 6 | 15 | 0 |
+| D2 | 28 | 26 | 29 | 0 |
+| M1 | 25 | 18 | 24 | 4 |
+| M2 | 25 | 17 | 23 | 1 |
+| N2 | 0 | 0 | 0 | 4 |
+| R2 | 2 | 2 | 2 | 2 |
+| R3 | 15 | 19 | 15 | 15 |
+
+**Final (final.jsonl): 29 / 164 area-hours pass**
+
+| Stratum | 09:00 | 14:00 | 19:00 | 23:00 | All |
+|---|---|---|---|---|---|
+| arterial | 2/5 | 2/5 | 2/5 | 3/5 | 9/20 |
+| subarterial | 0/4 | 0/4 | 0/4 | 2/4 | 2/16 |
+| collector | 0/4 | 0/4 | 0/4 | 0/4 | 0/16 |
+| local | 0/6 | 0/6 | 0/6 | 1/6 | 1/24 |
+| bridge | 1/5 | 1/5 | 0/5 | 2/5 | 4/20 |
+| flyover | 1/3 | 1/3 | 1/3 | 3/3 | 6/12 |
+| oldcity | 0/4 | 0/4 | 0/4 | 1/4 | 1/16 |
+| itpark | 0/3 | 0/3 | 0/3 | 1/3 | 1/12 |
+| midc | 0/3 | 0/3 | 0/3 | 1/3 | 1/12 |
+| fringe | 1/4 | 1/4 | 1/4 | 1/4 | 4/16 |
+| **all** | **5/41** | **5/41** | **4/41** | **15/41** | **29/164** |
+
+| Band | 09:00 | 14:00 | 19:00 | 23:00 |
+|---|---|---|---|---|
+| D1 | 16 | 8 | 17 | 0 |
+| D2 | 29 | 28 | 32 | 0 |
+| D3 | 0 | 0 | 1 | 0 |
+| M1 | 26 | 20 | 26 | 5 |
+| M2 | 25 | 17 | 26 | 1 |
+| N2 | 0 | 0 | 0 | 5 |
+| R2 | 3 | 5 | 4 | 3 |
+| R3 | 22 | 26 | 22 | 22 |
+
+**Final + fixes 2-3 (fix3.jsonl, extra row set): 30 / 164 area-hours pass**
+
+| Stratum | 09:00 | 14:00 | 19:00 | 23:00 | All |
+|---|---|---|---|---|---|
+| arterial | 2/5 | 2/5 | 2/5 | 3/5 | 9/20 |
+| subarterial | 0/4 | 0/4 | 0/4 | 2/4 | 2/16 |
+| collector | 0/4 | 0/4 | 0/4 | 0/4 | 0/16 |
+| local | 0/6 | 0/6 | 0/6 | 1/6 | 1/24 |
+| bridge | 1/5 | 1/5 | 0/5 | 2/5 | 4/20 |
+| flyover | 1/3 | 1/3 | 1/3 | 3/3 | 6/12 |
+| oldcity | 0/4 | 0/4 | 0/4 | 1/4 | 1/16 |
+| itpark | 0/3 | 0/3 | 0/3 | 1/3 | 1/12 |
+| midc | 0/3 | 1/3 | 0/3 | 1/3 | 2/12 |
+| fringe | 1/4 | 1/4 | 1/4 | 1/4 | 4/16 |
+| **all** | **5/41** | **6/41** | **4/41** | **15/41** | **30/164** |
+
+| Band | 09:00 | 14:00 | 19:00 | 23:00 |
+|---|---|---|---|---|
+| D1 | 14 | 5 | 17 | 0 |
+| D2 | 28 | 25 | 29 | 0 |
+| M1 | 24 | 19 | 23 | 4 |
+| M2 | 24 | 17 | 25 | 1 |
+| N2 | 0 | 0 | 0 | 4 |
+| R3 | 22 | 23 | 22 | 22 |
+
+- Baseline (base.jsonl): R2 fails 8, R3 fails 64, rows with assignment-unrouted vehicles > 0: 0
+- Final (final.jsonl): R2 fails 15, R3 fails 92, rows with assignment-unrouted vehicles > 0: 127
+- Final + fixes 2-3 (fix3.jsonl, extra row set): R2 fails 0, R3 fails 89, rows with assignment-unrouted vehicles > 0: 0
+
+
+### 8.4 Why the final model is worse than the baseline (and what was fixed)
+
+The final model lost 7 area-hours against the baseline, 5 of them at 23:00 (collector 2, old city 1, IT park 1, MIDC 1),
+plus MIDC 14:00 and 19:00. Per-row comparison (`cmpfb.py base.jsonl final.jsonl`): the new failures are almost all
+**R2** (15 new) and **R3** (28 new); the speed and micro bands moved little (D1 +6, D2 +5, M1 +8, M2 +6 new failures against
+a few fixed ones, mostly in rows that already failed). Night N1/N2/N3 did not get worse except one collector row (N2).
+Two causes, both in the p16 change "trips on network fragments" (4670f6d, §7 item 4), neither in the demand or supply:
+
+1. **Gateway nodes re-snapped (bug, R2).** The area plan picks each boundary road's node (checked to reach the other end
+   of the trip) and hands it on as a point at that node. `snapDemandPlan(…, { preferMainNetwork: true })` then moved any
+   such point whose node lies off the main strongly connected component to another main-network node within 250 m —
+   sometimes the trip's other end (same node) or a node that cannot reach it. Those vehicles were counted as unrouted:
+   unrouted vehicles in 127 of 164 rows (32 of 41 areas) in `final.jsonl` (baseline: none); e.g. p16_01 Sangam/Holkar bridge 09:00 1,339
+   veh/h (4.4 %), R2 failed. **Fix 2 (dc32690):** a point that is a node keeps that node; only a building's own position
+   can move. p16_01 09:00: unrouted 1,339 -> 0, R2 passes again (`fix2chk.jsonl`, `fix3.jsonl`).
+2. **Building ends moved off one-way-connected nodes (over-application, R3).** 4670f6d moved every building end whose
+   nearest node is outside the main component, in both directions, although most such nodes are joined to the main
+   network one way (a one-way street cut by the area's edge) and serve one direction of the trip perfectly. The moved
+   ends load at the nearest main node, often more than 100 m from the building, and R3 is now measured at the node used
+   (§7 item 5; the baseline measured the nearest node): p16_13 Hinjawadi 0.94 -> 0.79 with no routing gain (left out 0
+   before and after). **Fix 3 (2c3aa82):** the nearest node is kept for the direction it serves (an origin node that
+   reaches the main network, a destination node the main network reaches); only the other direction loads on the main
+   network. p16_13 09:00 R3 0.794 -> 0.869, still below 0.90 and reported as a failure. The R3 that remains below the
+   baseline is the honest measurement: those trips now load (the baseline dropped them from the building's cell and
+   spread them over the zone's other cells), and they load more than 100 m from their building. A variant that moved only
+   ends cut off in both directions (`fix2bchk.jsonl`, 4 areas, static only) gave R3 0.94-0.95 by leaving one-way origins to
+   the plan's reachability filter; it was not kept because it leaves non-synthetic plans unroutable at such nodes.
+
+The harness now also logs, as diagnostics only (no band), the pre-fix R3 measure (`buildingEndsNearest`) and the unrouted
+vehicles whose two ends share a node (`unroutedSameNodeVph`).
+
+### 8.5 R3 under both measures (like-for-like)
+
+R3 changed definition mid-way. The **pre-registered** measure is the one committed with the bands in 8d141c8
+(`P16Citywide.test.ts` `buildingEnds`, used by `citywideBands.ts` R3): share of building-end veh/h whose building has a
+road node of the area network **(the nearest node) within 100 m**. 4670f6d changed the harness to measure the node the
+trip **actually loads at** after the snap (§7 item 5). `base.jsonl` holds only the pre-registered measure,
+`final.jsonl` only the changed one, `fix3.jsonl` both (`buildingEndsNearest` = pre-registered, `buildingEnds` = node used).
+Band thresholds are the same in every column; pass counts recomputed by `p16-run/r3cmp.py` (output `r3cmp.txt`).
+
+| Row set (164 area-hours) | R3 fails, pre-registered (nearest node) | R3 fails, node used | Pass, R3 pre-registered | Pass, R3 node used (as recorded) |
+|---|---|---|---|---|
+| Baseline `base.jsonl` | 64 | 64 (inferred: the baseline loads at the nearest node; checked on 2 area-hours, below) | **36** | **36** |
+| Final `final.jsonl` | not logged | 92 | not computable | **29** |
+| Final + fixes 2-3 `fix3.jsonl` (extra set) | 61 | 89 | **37** | **30** |
+
+R3 failures by hour, pre-registered / node used: baseline 15/19/15/15 (09/14/19/23) both; fix3 14/18/14/15 / 22/23/22/22.
+
+Reading it strictly: on the pre-registered measure, fix3 is 37/164 against the baseline's 36/164; on the measure the
+recorded runs used (node used), fix3 is 30/164, the baseline 36/164 (if the inference above holds), the final 29/164.
+The headline result stays the recorded one (node used): **fix3 30/164, below the baseline's 36**. R2 recovered fully
+(fix3: 0 R2 failures, no row with unrouted vehicles; final: 15 R2 failures, unrouted in 127/164 rows in 32 areas).
+
+**Is the remaining R3 loss a bug?** Diagnosis on the HEAD code (`P16_R3DIAG=1`, `r3diag.sh`, `r3d*.jsonl`; plan and
+snapping only, plus a one-iteration assignment to count unrouted vehicles):
+
+| Area | h | R3 pre-reg. | plain nearest (baseline rule) | node used now | moved veh/h (≤100 m -> >100 m) | of it routable at nearest | unrouted at nearest node | unrouted as used |
+|---|---|---|---|---|---|---|---|---|
+| p16_13_itpark | 09 | 0.940 | 0.940 | 0.869 | 1,534 | 17 | 1,729 | 0 |
+| p16_05_bridge | 09 | 0.942 | 0.942 | 0.897 | 1,203 | 35 | 1,785 | 0 |
+| p16_17_midc | 09 | 0.933 | 0.933 | 0.879 | 790 | 13 | 1,725 | 0 |
+| p16_33_collector | 09 | 0.929 | 0.929 | 0.884 | 272 | 4 | 697 | 0 |
+
+At the nearest node, these trips cannot route (the "unrouted at nearest node" column: the nearest node is on a one-way
+spur or fragment that does not reach the trip's other end); after the move they all route (0). Of the moved building-end
+traffic, only the "routable at nearest" share would have routed without the move. So the remaining node-used R3 loss is
+the R2/R3 trade-off of loading trips that the baseline plan dropped from those cells (§8.4), not a further snapping bug;
+no extra fix or extra row set was made. Pre-registered and node-used shares coincide at the baseline's plain nearest
+node in every diagnosed area-hour ("plain" column = "pre-reg."), which is what the baseline column above relies on.
+
+### 8.6 M1 experiment (not adopted)
+
+Idea from §9: join junction nodes up to 24 m apart (JOIN_JUNCTION_M and SIM_FOLD_M 16 -> 24, span 30; branch p16-m1),
+aimed at the micro-simulation deadlocks between node pairs 20-25 m apart (IT park, MIDC). Rule written before running:
+adopt only if the junction tests pass. Result: **4 of 62 junction tests fail** (JunctionEditing x2: Veer Santaji Ghorpade
+Marg grouping, a residential T 16 m past a slip-lane end; SignalBox x2: one controller / shared phase), `m1tests.log`.
+Not adopted; the harness M1 re-run was skipped. M1 failures stay (fix3: 24 / 19 / 23 / 4 area-hours at 09 / 14 / 19 / 23).
+
+### 8.7 Default decision
+
+**The synthetic city-wide model stays OFF by default** (decideSyntheticDefault: hold-out fails, JT 7/28 counts 2/16 river
++25.2 %; official 1/15 river +44.6 %, worse than the area estimate 2/15 river -26.5 %). Demo mode remains an explicit,
+labelled choice. Fixes 2-3 were not re-run through the 60-iteration and official checks.
+
+### 8.8 Code on p16-citywide after the merge
+
+Fixes in order: 16fbd23 (carriageway transitions, merge capacity), db7c772 (grazing through paths), 4670f6d + af20a09
+(main-network loading, tests), 5aa70a7 (through/outbound/inbound repair falls back to main-network boundary roads),
+dc32690 (fix 2: gateway node kept), 2c3aa82 (fix 3: direction-aware main-network snapping), merged dd9eec1; UI 0d1aac6
+(stability chip wraps inside the panel; the amber "more traffic routed than the junctions pass" card is hidden on a road
+with no traffic or when nothing is routed into the area); harness diagnosis dd2a5fb (`P16_R3DIAG`).
+
+Gates on the final HEAD: pending
+
+Screenshots (09:00, demo mode): `/workspace/work/urbanos/shots/p16/01..06_*_0900.png`; 04 and 06 retaken after 0d1aac6.
 
 ## 9. Remaining weak areas
 
 - R3 in fringe villages and long-block areas: loading only at junction nodes; a fix needs access nodes on long links (the
   network builder), not attempted in p16.
-- M1 deadlocks between junctions 20-25 m apart in the micro-simulation (IT park, MIDC); not fixed. Untested idea (not
-  pre-registered): join nodes up to ~24 m apart (JOIN_JUNCTION_M is 16 m; divided-road crossings in Hinjawadi/Bhosari are
-  wider), then re-run the junction tests and the harness M1 rows.
+- M1 deadlocks between junctions 20-25 m apart in the micro-simulation (IT park, MIDC); not fixed. Joining nodes up to
+  24 m apart was tried and broke 4 of 62 junction tests (§8.6), so it was not adopted; a fix needs junction grouping that
+  tells a wide divided-road crossing from two nearby junctions.
+- R3 (node used) below the baseline in 18 area-hours (bridge p16_05, IT park p16_13, MIDC p16_17, collectors p16_33/35,
+  old city p16_09 at night): building ends whose nearest node cannot route the trip load at the main network > 100 m
+  away (§8.5). A fix needs access nodes on long links / two-way access to one-way spurs (network builder).
+- Calibration: hold-out and the official check fail (§8.2); the synthetic model stays off by default.
 - D2 in the old city: the band as written includes signal delay (misfire, §5); reported strictly.
