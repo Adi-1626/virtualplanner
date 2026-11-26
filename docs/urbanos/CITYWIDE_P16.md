@@ -342,7 +342,7 @@ Band thresholds are the same in every column; pass counts recomputed by `p16-run
 
 | Row set (164 area-hours) | R3 fails, pre-registered (nearest node) | R3 fails, node used | Pass, R3 pre-registered | Pass, R3 node used (as recorded) |
 |---|---|---|---|---|
-| Baseline `base.jsonl` | 64 | 64 (inferred: the baseline loads at the nearest node; checked on 2 area-hours, below) | **36** | **36** |
+| Baseline `base.jsonl` | 64 | 64 (inferred: the baseline loads at the plain nearest node; on the HEAD plan that equals the pre-registered share in all 6 diagnosed area-hours below, not checked on the baseline code itself) | **36** | **36** |
 | Final `final.jsonl` | not logged | 92 | not computable | **29** |
 | Final + fixes 2-3 `fix3.jsonl` (extra set) | 61 | 89 | **37** | **30** |
 
