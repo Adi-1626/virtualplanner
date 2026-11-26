@@ -213,7 +213,10 @@ export function snapDemandPlan(plan: DemandPlan, network: TrafficNetwork, maxAcc
       if (d < best) { best = d; id = node.id; }
       if (main?.has(node.id) && d < bestMain) { bestMain = d; idMain = node.id; }
     }
-    const pick = idMain || id;
+    // A point that IS a node (a boundary road's gateway node the plan chose, checked to reach its other end) keeps that
+    // node: only a building's own position moves to the main network (p16 fix 2: re-snapping chosen gateway nodes sent
+    // trips to a main-network node that could equal the other end or not reach it, counted as unrouted, R2)
+    const pick = id && best <= 0.5 ? id : idMain || id;
     cache.set(key, pick);
     return pick;
   };
