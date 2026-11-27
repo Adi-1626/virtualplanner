@@ -8,7 +8,11 @@
  *  - Turn-taking after a minute (MERGE_TURN_S, §18) is between approaches that do
  *    not give way to each other: it never holds main-road traffic for a side
  *    road, never an oncoming vehicle for a right-turner, and never runs a red.
- *  - Main-road drivers do not give way to side-road traffic (no invented courtesy).
+ *  - Main-road drivers moving freely do not give way to side-road traffic. The only
+ *    courtesy is the documented forced entry (COURTESY_S = 60 s, as MERGE_TURN_S):
+ *    a main-road queue crawling under 18 km/h lets in a side-road vehicle that has
+ *    stood a minute at its line (Dutta & Ahmed 2017, doi 10.1007/s40534-017-0151-9;
+ *    TRR 2020, doi 10.1177/0361198120925258). The assertions below hold with it.
  *  - The side road's capacity against the main-road flow lies between the gap-
  *    acceptance capacity (Harders) for Indo-HCM and for HCM 2010 critical gaps, and
  *    never above what the floor critical gap allows.

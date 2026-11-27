@@ -39,7 +39,8 @@ import { compileJunctionEdits } from '../simulation/junctionControl';
  *                          P16_CACHE (v8 file written)
  *   P16=1 P16_MODE=eval    P16_CACHE_READ (cache files), P16_ASSET, P16_ENDS, P16_OUT (JSON lines), P16_SET (JSON
  *                          candidate overriding SYNTHETIC_PARAMS), P16_HOURS, P16_ITERS (60), P16_MICRO (1: corridor
- *                          micro-simulation, 2 seeds), P16_MICRO_S (warm-up and measured seconds, default 300,300)
+ *                          micro-simulation, 2 seeds), P16_MICRO_S (warm-up and measured seconds, default 300,300),
+ *                          P16_MICRO_DUMP (dir: writes each corridor run's inputs as <area>_<hour>.v8 for P17Junction diagnosis)
  */
 const env = process.env;
 if (env.P16 && env.P16_API) {
@@ -396,6 +397,8 @@ describe.skipIf(!env.P16)('p16 city-wide robustness harness (opt-in)', () => {
               const micro = snapDemandPlan(cplan, b.corridor.network, 60, inside);
               const desired = Object.fromEntries(a.links.filter(l => l.carFfsKmh).map(l => [l.id, l.carFfsKmh!]));
               const sig = a.inferredSignalPoints?.length && b.simOptions.signalPoints ? [...b.simOptions.signalPoints, ...a.inferredSignalPoints] : b.simOptions.signalPoints;
+              if (env.P16_MICRO_DUMP) fs.writeFileSync(`${env.P16_MICRO_DUMP}/${b.rec.id}_${hour}.v8`, v8.serialize({ corridor: b.corridor, roads: b.roads, simOptions: { ...b.simOptions, signalPoints: sig }, watch: b.section.segmentKeys, micro, desired,
+                stat: a.links.filter(l => inside.has(l.segmentKey)).map(l => ({ id: l.id, volPcu: a.volPcu[l.index], capPcu: l.capacityPcu, gC: l.gC, t0: l.t0, t: a.timeS[l.index], lanes: l.lanes, lengthM: l.lengthM, jCap: a.junctionCapacityPcu?.[l.index] ?? null, jDelay: a.junctionDelayS?.[l.index] ?? null })) }));
               const runs: Record<string, unknown>[] = [];
               const t1 = Date.now();
               for (const seed of [42, 7]) {
