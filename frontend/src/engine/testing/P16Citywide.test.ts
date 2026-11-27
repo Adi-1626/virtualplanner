@@ -354,6 +354,8 @@ describe.skipIf(!env.P16)('p16 city-wide robustness harness (opt-in)', () => {
     const iters = Number(env.P16_ITERS ?? 60);
     // p18: P18_GAP=1 = gap-acceptance delay at priority approaches (P14.priorityGapDelay); unset = the code default
     if (env.P18_GAP) (P14.priorityGapDelay as { value: boolean }).value = env.P18_GAP === '1';
+    // p18: P18_LOCALGAP=1 = gap-acceptance delay only at unsigned equal-rank local-street junctions (P14.unsignedLocalGap)
+    if (env.P18_LOCALGAP) (P14.unsignedLocalGap as { value: boolean }).value = env.P18_LOCALGAP === '1';
     const hoursOnly = env.P16_HOURS ? env.P16_HOURS.split(',').map(Number) : null;
     const set: CandidateSet = env.P16_SET ? JSON.parse(env.P16_SET) : { name: 'recorded', ...SYNTHETIC_PARAMS };
     const only = env.P16_ONLY ? new Set(env.P16_ONLY.split(',')) : null;

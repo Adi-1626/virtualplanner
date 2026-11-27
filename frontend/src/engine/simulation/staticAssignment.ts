@@ -420,6 +420,9 @@ function junctionControlP14(area: StudyArea, roads: ReadonlyMap<string, Drivable
   const icd = new Float64Array(L);
   const merge = new Uint8Array(L);
   const mergeOut = new Int32Array(L).fill(-1);
+  // p18 (P14.unsignedLocalGap): approaches of an equal-rank junction of local-access streets only (no sign, no major road)
+  const unsignedLocal = new Uint8Array(L);
+  const localHw = (i: number) => { const r = roads.get(edges[i].roadId); return r?.type === 'road' && LOCAL_ACCESS_HIGHWAYS.has(r.osmProvenance?.originalTags?.highway ?? ''); };
   const outgoing = new Map<string, number[]>();
   edges.forEach((e, i) => (outgoing.get(e.fromNodeId) ?? outgoing.set(e.fromNodeId, []).get(e.fromNodeId)!).push(i));
   const isRing = (roadId: string) => { const r = roads.get(roadId); return r?.type === 'road' && !!r.osmProvenance?.roundabout; };
@@ -474,7 +477,8 @@ function junctionControlP14(area: StudyArea, roads: ReadonlyMap<string, Drivable
     if (majors.length === ins.length) {
       // Equal roads: two one-way carriageways merging are not a crossing (no control); otherwise uncontrolled, each yields to the others
       if (ins.length <= 2 && ins.every(oneWay)) continue;
-      for (const i of ins) { kind[i] = 1; conflicts[i] = ins.filter(j => j !== i); }
+      const allLocal = ins.every(localHw);
+      for (const i of ins) { kind[i] = 1; conflicts[i] = ins.filter(j => j !== i); if (allLocal) unsignedLocal[i] = 1; }
       continue;
     }
     for (const i of ins) {
@@ -495,7 +499,7 @@ function junctionControlP14(area: StudyArea, roads: ReadonlyMap<string, Drivable
   }
   kind.forEach((k, i) => { if (k) links[i].junction = k === 1 ? 'minor' : k === 2 ? 'majorRight' : 'roundabout'; if (merge[i]) links[i].junctionMerge = true; });
   void area;
-  return { kind, conflicts, icd, merge, mergeOut };
+  return { kind, conflicts, icd, merge, mergeOut, unsignedLocal };
 }
 
 class Heap {
@@ -714,7 +718,7 @@ function assignOnce(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>,
   const mergeParams = { ...P14.unsigMinor.value, tcBase: P14.unsigMinor.value.tcBase * P14.mergeGapRatio.value, fLV: P14.unsigMinor.value.fLV * P14.mergeGapRatio.value };
   const jCap = new Float64Array(L), jDelay = p14 ? new Float64Array(L) : undefined;
   // p18 (P14.priorityGapDelay): conflicting flow and critical gap of each priority approach
-  const gapDelay = P14.priorityGapDelay.value, jVc = new Float64Array(L);
+  const gapDelay = P14.priorityGapDelay.value, localGap = P14.unsignedLocalGap.value, jVc = new Float64Array(L);
   const tcMinor = gaps(P14.unsigMinor.value).tc, tcMerge = gaps(mergeParams).tc, tcRight = gaps(P14.unsigMajorRight.value).tc;
   const updateJunctions = (flow: Float64Array) => {
     if (!ctl) return;
@@ -739,7 +743,7 @@ function assignOnce(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>,
   const junctionDelay = (i: number, v: number) => {
     const k = ctl ? ctl.kind[i] : 0;
     if (!k) return 0;
-    if (gapDelay && k !== 3) {
+    if ((gapDelay || (localGap && ctl!.unsignedLocal[i])) && k !== 3) {
       const tc = k === 2 ? tcRight : ctl!.merge[i] ? tcMerge : tcMinor;
       return k === 2 ? rShare * priorityDelayS(rShare * v, jCap[i], jVc[i], tc, undefined, dA[i]) : priorityDelayS(v, jCap[i], jVc[i], tc, undefined, dA[i]);
     }

@@ -133,6 +133,15 @@ export const P14 = Object.freeze({
    * delayed share 1 - (1 - x) e^(-q t_c). At x >= 1 this is HCM's form and never above it; at zero flow it is 0 (a free vehicle does not stop).
    */
   priorityGapDelay: S(false, 'international', 'Austroads AGTM Part 2 (2020) Eqs 5.1-5.2 (Adams 1936); Troutbeck & Brilon, FHWA Traffic Flow Theory monograph ch. 8 (D = D_min[1 + (gamma + eps x)/(1 - x)]); HCM 2000 Eq. 17-38 queue term', 'docs/urbanos/P18_PASS.md'),
+  /**
+   * p18: the gap-acceptance delay above (priorityGapDelay) only at junctions where every approach is a local-access street
+   * (OSM residential / living_street / service) of equal rank, i.e. no major road and, in the model, no sign. Indian law
+   * requires a stop only where a STOP sign is displayed (Motor Vehicles (Driving) Regulations 2017, Reg. 7(1)); at other
+   * intersections a driver shall slow down and give way to traffic from the right (Reg. 9(1)-(2); G.S.R. 634(E),
+   * 23 June 2017, indiacode.nic.in). HCM 2000 Eq. 17-38 (a full stop and the service time 3600/c for every vehicle) is a
+   * stop-controlled model, so at zero flow it charged each such approach a stop that the law does not require.
+   */
+  unsignedLocalGap: S(false, 'standard', 'Motor Vehicles (Driving) Regulations 2017 (G.S.R. 634(E)) Reg. 7(1) stop only at a STOP sign, Reg. 9(1)-(2) slow down and give way to the right at other intersections; delay form as priorityGapDelay (Austroads AGTM Part 2 (2020) Eqs 5.1-5.2)', 'docs/urbanos/P18_PASS.md'),
   delayPeriodH: S(0.25, 'international', 'HCM 2000 Eq. 17-38 default T = 0.25 h (IIT Bombay NPTEL notes, worked example)', 'the assignment\'s hourly flow is read as the flow rate of the peak 15 min (assumption); T = 1 h made a minor approach at v/c 3 wait about an hour'),
   /** A minor approach that only merges into one one-way carriageway (no crossing): critical gap scaled by HCM's merge / crossing ratio. */
   mergeGapRatio: S(6.2 / 7.1, 'international', 'HCM 2000 base critical gaps (two-lane major): right turn from minor (US; a merge, India\'s left turn) 6.2 s vs left turn from minor (US; a crossing) 7.1 s, IIT Bombay NPTEL notes Table 1'),
