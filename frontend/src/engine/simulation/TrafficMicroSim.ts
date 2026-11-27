@@ -191,6 +191,15 @@ const AT_LINE_M = 0.5;
 const ROOM_HOLDS = ['room', 'room-wait'] as const;
 /** p18: lanes of one approach that merge into one lane beyond the junction take the room in turn (heldFor). */
 export const ZIP_MERGE = { enabled: true };
+/**
+ * p18: a trip entering the network at a junction node (a source: building access or edge) gives way, lane by lane, to a
+ * vehicle already on the network that has waited at that junction longer than MERGE_TURN_S for room in the same lane.
+ * Motor Vehicles (Driving) Regulations 2017 (G.S.R. 634(E), indiacode.nic.in) Reg. 7(4): "the vehicle emerging onto a
+ * road from a property bordering thereon shall give way to the motor vehicles and other traffic already running on that
+ * road". Without it entering trips took each opening in a full short link and a truck at the junction, needing more
+ * room than they did, waited 3-5 min (p16_40_local 09:00).
+ */
+export const ENTRY_GIVE_WAY = { enabled: false };
 const CONFLICT_HOLDS = ['conflict'] as const;
 /** Traffic that must give way is cleared to cross only from this close to the line. */
 const YIELD_LINE_M = 8;
@@ -1771,6 +1780,26 @@ export class TrafficMicroSim {
     return last ? last.pos - last.type.lengthM : Infinity;
   }
 
+  /**
+   * p18 (ENTRY_GIVE_WAY): the lane with the most room among those not owed to a vehicle waiting at the junction the link
+   * starts from (front vehicle held for room in that lane for longer than MERGE_TURN_S); -1 when every lane is owed.
+   */
+  private entryLane(link: Link): number {
+    const owed = new Set<number>();
+    for (const [, other] of this.incomingOf(link.from)) {
+      for (let li = 0; li < other.lanes.length; li++) {
+        const f = other.lanes[li][0];
+        if (!f || f.grantLane !== null || f.holdNext !== link.index || f.waitS < MERGE_TURN_S || !f.hold || !(ROOM_HOLDS as readonly string[]).includes(f.hold)) continue;
+        const [lo, hi] = this.mappedLanes(other, li, link);
+        for (let k = lo; k <= hi; k++) owed.add(k);
+      }
+    }
+    if (!owed.size) return this.bestLane(link);
+    let best = -1;
+    for (let i = 0; i < link.lanes.length; i++) if (!owed.has(i) && (best < 0 || this.backSpace(link.lanes[i]) > this.backSpace(link.lanes[best]))) best = i;
+    return best;
+  }
+
   private bestLane(link: Link): number {
     let best = 0;
     for (let i = 1; i < link.lanes.length; i++) {
@@ -1798,7 +1827,8 @@ export class TrafficMicroSim {
           continue;
         }
         const link = this.links[veh.link];
-        const lane = this.bestLane(link);
+        const lane = ENTRY_GIVE_WAY.enabled ? this.entryLane(link) : this.bestLane(link);
+        if (lane < 0) { (blocked ??= new Set()).add(veh.link); q[kept++] = veh; continue; }
         const last = link.lanes[lane][link.lanes[lane].length - 1];
         const v0 = link.speed * veh.speedFactor;
         const entryV = Math.min(v0, last ? last.v : v0);
