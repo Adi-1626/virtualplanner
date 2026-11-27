@@ -7,7 +7,7 @@ UrbanOS is a Cesium 3D digital twin of Pune (React/TypeScript frontend, FastAPI 
 
 ## 2. Repository
 - Origin: https://github.com/Adi-1626/virtualplanner (owner Aditya). Upstream `sumedhpatil2005` — do not touch.
-- All local branches were pushed to origin on 2026-11-27. Main: see §6 for whether p17-all was merged.
+- All local branches were pushed to origin on 2026-11-27. origin main = p17-all = 852936b (fast-forwarded 2026-11-27 with user approval).
 - Restore offline: `git clone UrbanOS-git-history.bundle urbanos` (bundle is in the zip the user holds).
 
 ### Branch lineage (newest last)
@@ -24,7 +24,7 @@ UrbanOS is a Cesium 3D digital twin of Pune (React/TypeScript frontend, FastAPI 
 | p15-demo | 434e209 | demo mode, gateway balancing, logging, no-red-errors sweep |
 | p16-citywide | 4f85c3e | 41-area city-wide harness + fixes (fix3 30/164) |
 | p17-access / p17-junction / p17-oldcity | 0568d10 / d756529 / b962fdd | the four weak-spot fixes |
-| **p17-all** | c8a8bc6 (+ final-run doc commit) | integration of p17 work; current best |
+| **p17-all = main** | 852936b | integration of p17 work; current best |
 | p16-m1 | e8b4a25 | rejected experiment (JOIN_JUNCTION_M 24 broke 4 tests) |
 
 Other old branches (ug-*, underground-*, geom-*, dr-*, p4–p7 parts) are already merged into c83ccd9.
@@ -60,7 +60,7 @@ Access nodes ON; micro-sim courtesy 60 s for starved minor approaches at priorit
 
 ## 6. Unfinished work — exact next steps
 1. Confirmation run of final defaults: `cd /workspace/work/p17-run && ./all_run.sh final` then `python3 p17tables.py ../p16-run/fix3.jsonl all_nowb.jsonl final.jsonl`; fill §5b of P17_FIXES.md; re-check adoption rule (total ≥ 30, no band worse than fix3). DONE 2026-11-27 19:12 IST: 48/164, all bands ≤ fix3 (P17_FIXES §5b).
-2. If the rule holds and user approved: fast-forward origin main to p17-all (main is an ancestor; user approved 2026-11-27).
+2. DONE: origin main fast-forwarded to p17-all 852936b (2026-11-27).
 3. Remaining weak spots: peak D2 over-capacity at minor give-way approaches (real v/c>1); Sangam Bridge p16_05 downstream signal box saturated (flow-ratio sum 1.73–2.19) — needs signal plan/capacity, not a model trick; IT park p16_13 still 7 gridlocked vehicles at 09:00; MIDC M2 queues; R3 access in old city.
 4. Replays at p16_06/15/16 were done with 30 s courtesy; re-run with 60 s.
 5. Merge decisions: p11-sim and p12-flow into p17-all line; p12/p13 validation banners (project check as ValidationCheck entry).
