@@ -137,6 +137,17 @@ export const P14 = Object.freeze({
    */
   signalOneJunction: S(true, 'assumed', 'OSM highway=traffic_signals tagging: the signal node is the junction node or the stop line of an approach of that junction (https://wiki.openstreetmap.org/wiki/Tag:highway%3Dtraffic_signals); the corridor micro-simulation already gives each signal to the nearest junction (TrafficMicroSim.junctionsWithSignals)'),
   /**
+   * p17: the area assignment times its signals as the corridor micro-simulation does (Webster's optimum cycle from the
+   * approaches' flow ratios, greens in proportion, approach-wise phases, 3 s amber + 2 s all-red, 7 s minimum green, at
+   * least 40 s), with the cycle capped at supply.cycleS (120 s by default: IRC:93-1985 §22.2 "the maximum cycle length
+   * recommended is preferably 120 seconds"; §22.2 the cycle designed for least delay, §22.3 greens in proportion to the
+   * flow per lane, §22.5 a cycle per peak / off-peak period). Before (p13-p16) every signal ran the 120 s maximum with
+   * equal greens at every hour: a two-lane old-city junction at night held a car 37 s on average with no traffic.
+   * Re-timed from the current flows at a few iterations, then held (iterative optimisation-assignment, Allsop 1974).
+   */
+  signalTimingWebster: S(true, 'standard', 'IRC:93-1985 §22.2-22.5 (https://archive.org/stream/govlawircy1985sp93_0/govlawircy1985sp93_0_djvu.txt); Webster 1958 as signalTiming.ts',
+    'docs/urbanos/OLDCITY_P17.md; p14 supply only, junctions without an edited plan'),
+  /**
    * p16: an unsignalised junction carrying the IRC:93-1985 Warrant 1 or Warrant 2 volumes is taken as signalised
    * (warrantedSignalPoints): Warrant 1 (minimum vehicular volume, Table 2) major street both approaches 650 veh/h (1 lane)
    * / 800 (2+ lanes) with the higher minor approach 200 (1 lane) / 250 (2+ lanes); Warrant 2 (interruption of continuous

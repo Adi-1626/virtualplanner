@@ -186,6 +186,34 @@ describe('p14 junction control inference', () => {
   });
 });
 
+describe('p17 signal timing in the assignment (IRC:93 / Webster, as the micro-simulation)', () => {
+  it('a quiet crossing runs a short cycle; the busy approach gets the longer green; the cycle never exceeds the 120 s cap', () => {
+    const roads = [
+      road('a1', [[-300, 0], [0, 0]], { highway: 'primary', name: 'East West Road' }), road('a2', [[0, 0], [300, 0]], { highway: 'primary', name: 'East West Road' }),
+      road('b1', [[0, -300], [0, 0]], { highway: 'secondary', name: 'North South Road' }), road('b2', [[0, 0], [0, 300]], { highway: 'secondary', name: 'North South Road' }),
+    ];
+    const map = new Map(roads.map(r => [r.id, r]));
+    const area = new StudyAreaExplorer().explore(roads, 1, { seedRoadIds: ['a1'], rangeMeters: 3000, direction: 'both' });
+    const segs = new Set(area.segments.map(s => s.key));
+    const run = (vph: number) => assignTraffic(area, map, snapDemandPlan(plan([{ from: [-300, 0], to: [300, 0], vph }, { from: [0, -300], to: [0, 300], vph: vph / 10 }]), area.network, 60, segs), { supplyModel: 'p14', signalPoints: [], maxIterations: 40 });
+    const into = (r: ReturnType<typeof run>, id: string) => r.links.find(l => l.roadId === id && l.id.endsWith('_fwd') && l.gC !== null)!;
+    const quiet = run(1e-3);
+    const ew = into(quiet, 'a1'), ns = into(quiet, 'b1');
+    expect(ew.signalApproach && ns.signalApproach).toBeTruthy();
+    const cyc = (l: { t0: number; gC: number | null; signalApproach?: { t0NoSignal: number } }) => 2 * (l.t0 - l.signalApproach!.t0NoSignal) / (1 - l.gC!) ** 2;
+    // near zero flow: Webster's 40 s minimum split by the (tiny) flow ratios, every phase at least the 7 s minimum green
+    // (8 s effective: + 3 s amber - 2 s start-up); here 1 x 20.8 s + 3 x 7 s greens + 4 x 5 s = 62 s, as the micro-simulation
+    expect(cyc(ew)).toBeCloseTo(62, 0);
+    expect(ns.gC!).toBeCloseTo(8 / cyc(ns), 6);
+    // before p17 every signal ran 120 s with equal greens: (120 - 16) / 120 / 4 = 0.217, 120 x 0.783^2 / 2 = 36.8 s at any flow
+    expect(ew.t0 - ew.signalApproach!.t0NoSignal).toBeLessThan(20);
+    const busy = run(1400);
+    expect(into(busy, 'a1').gC!).toBeGreaterThan(into(busy, 'b1').gC!);
+    expect(cyc(into(busy, 'a1'))).toBeLessThanOrEqual(120 + 1e-6);
+    expect(cyc(into(busy, 'a1'))).toBeGreaterThan(48);
+  });
+});
+
 describe('p17 one junction per signal', () => {
   it('a mapped signal controls its crossing (both carriageways), not a lane joining 25 m away', () => {
     // East West Road divided: carriageways at y = 0 and y = 12 (12 m apart: one folded junction), North South Road crossing at x = 0,
