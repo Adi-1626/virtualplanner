@@ -89,7 +89,19 @@ measured runs stand without a re-run: `pkme` (pockets + E) 62/164 but D1 +1, M1 
 partial) D1 worse → not adopted. One pre-registered probe (RULE_p19 addendum, written before running it): V4CC + pockets
 + E (`hcpke`), because V4CC removes most D1 failures, which is what blocked pockets + E.
 
-(section 4.2 hcpke, filled when it finishes)
+### 4.2 `hcpke` (V4CC + pockets + meter + zip + fix E, p18 pk caches)
+
+| Run | Pass | D1 | D2 | D3 | M1 | M2 | N2 | R3 | Verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| `mz` (adopted) | 50 | 33 | 80 | 0 | 32 | 37 | 4 | 56 | reference |
+| `hcpke` | **66** | **8** | **76** | 1 | **37** | 35 | 3 | **20** | **not adopted** (M1 +5, D3 +1 vs `mz`) |
+
+`hcpke` is the best total measured so far (66/164, +16 area-hours; D1 33 -> 8, R3 56 -> 20), but the pre-registered rule
+needs every band total not worse than `mz`, and M1 (37 vs 32) and D3 (1 vs 0) are worse. It is **not adopted** and no
+post-hoc variant of it was run (rule addendum). Rows: `p19-run/hcpke.jsonl`; switches stay opt-in
+(`P18_POCKETS`, `P18_METER`, `P18_LOCALGAP`, demand v4 + `cityCongestion 6` / `cityVdf p14` in the synthetic set).
+What blocks it is M1 (corridor gridlock), which is why section 6 goes after the M1 residual.
+
 
 ## 5. Supply check of the undiagnosed rows (classify3.md)
 
