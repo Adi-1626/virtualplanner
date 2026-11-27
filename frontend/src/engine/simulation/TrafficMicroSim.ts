@@ -189,6 +189,8 @@ export const COURTESY_CRAWL_MS = 5;
 const AT_LINE_M = 0.5;
 /** Turn-taking: a vehicle held for room in a lane is owed that lane; one held by crossing traffic is owed the junction. */
 const ROOM_HOLDS = ['room', 'room-wait'] as const;
+/** p18: lanes of one approach that merge into one lane beyond the junction take the room in turn (heldFor). */
+export const ZIP_MERGE = { enabled: true };
 const CONFLICT_HOLDS = ['conflict'] as const;
 /** Traffic that must give way is cleared to cross only from this close to the line. */
 const YIELD_LINE_M = 8;
@@ -2408,22 +2410,28 @@ export class TrafficMicroSim {
    * and at a priority junction it does not give way to `veh`'s road. Waits are
    * strictly ordered, so two approaches can never each wait for the other.
    */
-  private longerWaiting(node: string, mine: Link, veh: Vehicle, holds: readonly string[], each: (f: Vehicle, other: Link, lane: number) => boolean): boolean {
+  private longerWaiting(node: string, mine: Link, veh: Vehicle, holds: readonly string[], each: (f: Vehicle, other: Link, lane: number) => boolean, sameApproach = false): boolean {
     const c = this.controls.get(node);
     if (!c) return false;
     const myNext = mine.to === node && veh.routeIdx < veh.route.length - 1 ? this.links[veh.route[veh.routeIdx + 1]] : null;
     for (const [idx, other] of this.incomingOf(node)) {
-      if (idx === mine.index) continue;
-      if (c.kind === 'signal' && this.signalState(idx) !== 'green') continue;
-      if (c.kind === 'priority' && this.hasPriorityOver(mine, other, c)) continue;
+      // p18: the other lanes of `veh`'s own approach take their turn too where asked (`sameApproach`: lanes that
+      // merge into one lane beyond the junction, zip merging); otherwise only other approaches
+      const own = idx === mine.index;
+      if (own && !sameApproach) continue;
+      if (!own && c.kind === 'signal' && this.signalState(idx) !== 'green') continue;
+      if (!own && c.kind === 'priority' && this.hasPriorityOver(mine, other, c)) continue;
       for (let li = 0; li < other.lanes.length; li++) {
+        if (own && li === veh.lane) continue;
         const f = other.lanes[li][0];
         if (!f || f.grantLane !== null || f.holdNext === undefined || f.waitS < MERGE_TURN_S || f.waitS <= veh.waitS) continue;
-        if (!f.hold || !holds.includes(f.hold)) continue;
+        // A lane of the same approach waiting for the same exit lane keeps its turn whatever held it last (red, a
+        // crossing claim): zip merging alternates the two queues, it does not wait for both to be refused room
+        if (!f.hold || (!own && !holds.includes(f.hold))) continue;
         // Never a turn against priority: a vehicle whose movement gives way to `veh`'s
         // (a right turn across oncoming traffic, at a signal or a priority junction) waits
         // for a gap however long it has waited
-        if (myNext && this.givesWayTo(other, this.links[f.holdNext], mine, myNext, c)) continue;
+        if (!own && myNext && this.givesWayTo(other, this.links[f.holdNext], mine, myNext, c)) continue;
         if (each(f, other, li)) return true;
       }
     }
@@ -2437,13 +2445,18 @@ export class TrafficMicroSim {
    * stream on a long movement always found room as its tail rolled on, and the
    * straight-on queue beside it was refused until its front vehicle was removed
    * as gridlock (docs/OVERHAUL.md §18).
+   * p18 (ZIP_MERGE.enabled): the other lanes of the same approach count as well, so two lanes that merge into one
+   * lane beyond the junction (a lane drop at the stop line) take the room in turn. Without it the kerb lane's queue,
+   * granted first on every green, took each gap and the vehicle at the head of the other lane waited 6 min at a
+   * signal with a short green, at night. Zip merging is the rule at a lane drop: StVO §7(4) (Germany,
+   * Reissverschlussverfahren); FHWA Work Zone Mobility and Safety / MnDOT zipper merge guidance.
    */
   private heldFor(next: Link, k: number, veh: Vehicle): boolean {
     return this.longerWaiting(next.from, this.links[veh.link], veh, ROOM_HOLDS, (f, other, li) => {
       if (f.holdNext !== next.index) return false;
       const [lo, hi] = this.mappedLanes(other, li, next);
       return k >= lo && k <= hi;
-    });
+    }, ZIP_MERGE.enabled);
   }
 
   /**
