@@ -38,6 +38,9 @@ export interface AccessNodeOptions {
   skipNodes?: ReadonlySet<string>;
 }
 
+/** p17: whether the app's study area gets access nodes (SimulationMode.accessNodes); on only if the p17 harness rule passed. */
+export const ACCESS_NODES_DEFAULT = false;
+
 export const ACCESS_DEFAULTS = { triggerM: 95, reachM: 95, mergeM: 60, endGapM: 20, minLinkM: 60, spacingM: 100 } as const;
 
 const KY = 110574;

@@ -20,7 +20,8 @@ import { DirectionArrows } from '../rendering/renderers/DirectionArrows';
 import { MicroTrafficVisualizer } from '../rendering/renderers/MicroTrafficVisualizer';
 import { TrafficMicroSim, STEP_S, OD_REFERENCE_LEVEL, type MicroSimMetrics, type VehicleView } from './TrafficMicroSim';
 import type { TrafficSignalSource, SignalPoint } from './trafficSignals';
-import { splitJunctionObjects, type JunctionEditSpec } from './junctionControl';
+import { splitJunctionObjects, compileJunctionEdits, type JunctionEditSpec } from './junctionControl';
+import { addAccessNodes, ACCESS_NODES_DEFAULT } from './accessNodes';
 import { junctionApproachDeltas } from './junctionCompare';
 import type { JunctionObject } from '../objects/types';
 
@@ -916,8 +917,12 @@ export class SimulationMode {
       const corridor = area.rangeMeters <= CORRIDOR_RANGE_M ? area : this.explorer.explore(roads, this.revision, { seedRoadIds: area.seedRoadIds, rangeMeters: CORRIDOR_RANGE_M, direction: this.state.direction, ...from });
       // Seeds deleted from the network drop out here
       const section = area.seedRoadIds.length ? roadSection(area, new Map(roads.map(r => [r.id, r])), area.seedRoadIds) : null;
+      // p17: access nodes on the area's long links, once the area's buildings are loaded (ensureBuildings adds them later otherwise)
+      this.exploredArea = area;
+      const boundsKey = [area.bounds.minLng, area.bounds.minLat, area.bounds.maxLng, area.bounds.maxLat].map(v => v.toFixed(4)).join(',');
+      const withAccess = boundsKey === this.buildingBoundsKey ? this.withAccessNodes(area, corridor, section) : area;
       // A closed road stays the study (its baseline and name); the area and section are mapped from the roads that joined it
-      this.setState({ area, corridor, error: null, seedRoadIds: closed.length ? this.state.seedRoadIds : area.seedRoadIds, closedRoads: closed, section, speeds: this.speedReport });
+      this.setState({ area: withAccess, corridor, error: null, seedRoadIds: closed.length ? this.state.seedRoadIds : area.seedRoadIds, closedRoads: closed, section, speeds: this.speedReport });
       // Back on the baseline's roads, range and direction: a "study changed" notice no longer applies
       const c = this.state.comparison;
       if (c.baseline && c.staleReason && STUDY_REASONS.has(c.staleReason) && this.baselineStudyKey === this.studyKey()) this.setState({ comparison: { ...c, staleReason: null } });
@@ -1014,6 +1019,24 @@ export class SimulationMode {
     while (this.keptResults.size > KEPT_RESULTS) this.keptResults.delete(this.keptResults.keys().next().value!);
   }
 
+  // ── p17: access nodes on long links ──────────────────────────────────────
+
+  /** p17: the area as explored, before access nodes (they are added from it whenever the buildings change). */
+  private exploredArea: StudyArea | null = null;
+  /** p17: whether the area gets access (loading) nodes on its long links near buildings (simulation/accessNodes.ts). */
+  public accessNodes = ACCESS_NODES_DEFAULT;
+  /**
+   * The explored area with access nodes where buildings meet its long links. The corridor of the micro-simulation keeps
+   * its links whole (its segment keys must match the area's) and edited junctions keep their arms. Needs the area's
+   * building centroids (p14 supply); without them, the area as explored.
+   */
+  private withAccessNodes(area: StudyArea, corridor: StudyArea | null, section: RoadSection | null): StudyArea {
+    if (!this.accessNodes || !this.buildingPoints?.length || !corridor || corridor === area) return area;
+    const exclude = new Set([...corridor.segments.map(s => s.key), ...(section?.segmentKeys ?? [])]);
+    const skipNodes = new Set(compileJunctionEdits(area.network, this.simOptions().junctionEdits).flatMap(c => [...c.nodeIds]));
+    return addAccessNodes(area, new Map(this.getRoads().map(r => [r.id, r])), { points: this.buildingPoints.map(p => [p[0], p[1]]), exclude, skipNodes });
+  }
+
   // ── p14: building frontage for the side-friction inference ───────────────
 
   /** p14: OSM building centroids of the current area (null: not loaded, not covered, or the p13 model). */
@@ -1035,6 +1058,11 @@ export class SimulationMode {
       .then(points => {
         if (load !== this.buildingLoad) return;
         this.buildingPoints = points;
+        // p17: the area gains its access nodes now that its buildings are known
+        if (this.exploredArea && this.state.area && this.state.area.bounds === this.exploredArea.bounds) {
+          const a = this.withAccessNodes(this.exploredArea, this.state.corridor, this.state.section);
+          if (a !== this.state.area) { this.cancelAnalysis(); this.setState({ area: a }); }
+        }
         const c = this.state.comparison;
         this.invalidateComparison(c.result || c.running ? 'Building frontage for the road side friction changed. Run the comparison again.' : null);
       })
