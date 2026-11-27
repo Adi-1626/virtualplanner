@@ -173,15 +173,17 @@ export const GRIDLOCK_S = 180;
  */
 const MERGE_TURN_S = 60;
 /**
- * Courtesy to a starved approach (p17, docs/urbanos/JUNCTION_P17.md §2): at a priority junction a vehicle in a
+ * Courtesy to a starved approach (p17, docs/urbanos/P17_FIXES.md): at a priority junction a vehicle in a
  * priority stream crawling under COURTESY_CRAWL_MS lets in a vehicle that has stood COURTESY_S or more at its line on
  * another approach, waiting for a gap in that stream or for its claims, where their paths cross or merge (forced /
  * courtesy merging into a slow queue). Gap acceptance alone never let it in: a queue crawling at walking pace leaves
  * no 3-4 s gap, and the side road (or the median gap of a divided-road crossing) stood until it counted as gridlock,
- * its queue blocking the junction behind. Assumption (no published figure): COURTESY_S well under GRIDLOCK_S and
- * MERGE_TURN_S; COURTESY_CRAWL_MS = 18 km/h, a queue that can stop for one vehicle within a few metres.
+ * its queue blocking the junction behind. COURTESY_S = 60 s, the same minute as MERGE_TURN_S turn-taking: forced
+ * minor-road entries into a slow major stream after a long wait are documented at Indian priority junctions (Dutta &
+ * Ahmed 2017, doi 10.1007/s40534-017-0151-9; TRR 2020, doi 10.1177/0361198120925258); well under GRIDLOCK_S.
+ * COURTESY_CRAWL_MS = 18 km/h (assumption), a queue that can stop for one vehicle within a few metres.
  */
-export const COURTESY_S = 30;
+export const COURTESY_S = 60;
 export const COURTESY_CRAWL_MS = 5;
 /** A vehicle held at a line stops this close to it (see lineGap); within this it is at the line. */
 const AT_LINE_M = 0.5;

@@ -344,7 +344,8 @@ describe.skipIf(!env.P16)('p16 city-wide robustness harness (opt-in)', () => {
               const micro = snapDemandPlan(cplan, b.corridor.network, 60, inside);
               const desired = Object.fromEntries(a.links.filter(l => l.carFfsKmh).map(l => [l.id, l.carFfsKmh!]));
               const sig = a.inferredSignalPoints?.length && b.simOptions.signalPoints ? [...b.simOptions.signalPoints, ...a.inferredSignalPoints] : b.simOptions.signalPoints;
-              if (env.P16_MICRO_DUMP) fs.writeFileSync(`${env.P16_MICRO_DUMP}/${b.rec.id}_${hour}.v8`, v8.serialize({ corridor: b.corridor, roads: b.roads, simOptions: { ...b.simOptions, signalPoints: sig }, watch: b.section.segmentKeys, micro, desired }));
+              if (env.P16_MICRO_DUMP) fs.writeFileSync(`${env.P16_MICRO_DUMP}/${b.rec.id}_${hour}.v8`, v8.serialize({ corridor: b.corridor, roads: b.roads, simOptions: { ...b.simOptions, signalPoints: sig }, watch: b.section.segmentKeys, micro, desired,
+                stat: a.links.filter(l => inside.has(l.segmentKey)).map(l => ({ id: l.id, volPcu: a.volPcu[l.index], capPcu: l.capacityPcu, gC: l.gC, t0: l.t0, t: a.timeS[l.index], lanes: l.lanes, lengthM: l.lengthM, jCap: a.junctionCapacityPcu?.[l.index] ?? null, jDelay: a.junctionDelayS?.[l.index] ?? null })) }));
               const runs: Record<string, unknown>[] = [];
               const t1 = Date.now();
               for (const seed of [42, 7]) {
