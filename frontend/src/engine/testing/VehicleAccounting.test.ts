@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import type { RoadObject, RoadClassification } from '../objects/types';
 import { StudyAreaExplorer, type StudyArea } from '../simulation/StudyAreaExplorer';
-import { TrafficMicroSim, STEP_S, OD_REFERENCE_LEVEL, GRIDLOCK_S, type MicroDemandTrip, type VehicleKind, type VehicleAccounting } from '../simulation/TrafficMicroSim';
+import { TrafficMicroSim, ZIP_MERGE, STEP_S, OD_REFERENCE_LEVEL, GRIDLOCK_S, type MicroDemandTrip, type VehicleKind, type VehicleAccounting } from '../simulation/TrafficMicroSim';
 
 const LAT0 = 18.5;
 const pt = (x: number, y: number): [number, number, number] => [73.8 + x / (111320 * Math.cos(LAT0 * Math.PI / 180)), LAT0 + y / 111320, 0];
@@ -110,6 +110,11 @@ describe('vehicle accounting', () => {
   });
 
   it('gridlock left in place is reported with its location and what it waits on', () => {
+    // p18: zip merging (ZIP_MERGE) clears this network's lane-drop deadlock; the test is about the gridlock report, so it
+    // runs the network under the pre-p18 merge rule, which still deadlocks it
+    const zip = ZIP_MERGE.enabled;
+    ZIP_MERGE.enabled = false;
+    try {
     const sim = overloaded(false, 42);
     let seen = 0;
     for (let i = 1; i <= 1500 / STEP_S; i++) {
@@ -128,6 +133,7 @@ describe('vehicle accounting', () => {
     // This network is overloaded: some front vehicle stands for over three minutes at some point
     expect(sim.getMetrics().accounting.gridlockEvents).toBeGreaterThan(0);
     expect(seen).toBeGreaterThan(0);
+    } finally { ZIP_MERGE.enabled = zip; }
   }, 60_000);
 
   it('is repeatable: the same seed gives the same counters', () => {
