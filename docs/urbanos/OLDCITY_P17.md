@@ -58,4 +58,4 @@ within reach of the floor.
 
 ## 4. Changes
 
-RESULTS_PLACEHOLDER
+Results, adoption and what is default: [P17_FIXES.md](P17_FIXES.md) §3-§5 (fixes 1-3 adopted; fix 4, assignment Webster timing, kept as an option, off).
