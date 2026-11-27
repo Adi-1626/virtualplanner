@@ -1,6 +1,6 @@
 import type { StudyArea, DrivableObject } from './StudyAreaExplorer';
 import type { MicroDemandTrip, VehicleKind } from './TrafficMicroSim';
-import { VEHICLE_TYPES } from './TrafficMicroSim';
+import { VEHICLE_TYPES, JOIN_JUNCTION_M, MAX_JUNCTION_SPAN_M } from './TrafficMicroSim';
 import { midblockCapacityPcu, ircCategory } from './roadParameters';
 import { DEFAULT_SUPPLY, type SupplyParams } from './supplyParams';
 import { indoHcmSaturationFlow } from './signalTiming';
@@ -225,7 +225,12 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
   }
   for (const n of rbAt.keys()) editedAt.delete(n);
   const signalised = new Set<string>();
-  for (const [id, s] of arms) if (!editedAt.has(id) && !rbAt.has(id) && s.size >= 3 && signalNear(id)) signalised.add(id);
+  const signalCandidate = (id: string) => !editedAt.has(id) && !rbAt.has(id) && (arms.get(id)?.size ?? 0) >= 3;
+  if (p14 && P14.signalOneJunction.value) {
+    for (const id of signalJunctionNodes(area, roads, edges, arms, signalPoints)) if (signalCandidate(id)) signalised.add(id);
+  } else {
+    for (const id of arms.keys()) if (signalCandidate(id) && signalNear(id)) signalised.add(id);
+  }
   // Approaches per signalised node: links ending there whose start is not itself signalised (not an internal link of the junction)
   const approaches = new Map<string, number>();
   for (const e of edges) if (signalised.has(e.toNodeId) && !signalised.has(e.fromNodeId)) approaches.set(e.toNodeId, (approaches.get(e.toNodeId) ?? 0) + 1);
@@ -300,6 +305,63 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
   // Banned turns of edited junctions, over the numbered graph
   const bans = turnBansFor(compiled, nodes, links.map(l => l.id), Int32Array.from(links, l => l.from), Int32Array.from(links, l => l.to));
   return { nodes, nodeIndex, nodeCoords, links, outStart, outLinks, signalised, bans: bans && !bans.empty ? bans : null, control, friction };
+}
+
+/**
+ * p17 (P14.signalOneJunction): the nodes the signal points control. Each point controls the nearest junction (3+ stretches)
+ * whose centre is within SIGNAL_MATCH_M, a junction being the nodes joined by stretches shorter than JOIN_JUNCTION_M (at
+ * most MAX_JUNCTION_SPAN_M across), as TrafficMicroSim.joinJunctions / junctionsWithSignals; plus the 3+-stretch nodes
+ * within SIGNAL_MATCH_M of the point where only roads of that junction meet (the other carriageway of a divided crossing).
+ */
+function signalJunctionNodes(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, edges: readonly { id: string; roadId: string; fromNodeId: string; toNodeId: string; length: number }[],
+  arms: Map<string, Set<string>>, signalPoints: readonly (readonly [number, number])[] | undefined): Set<string> {
+  const out = new Set<string>();
+  if (!signalPoints?.length) return out;
+  const coord = (id: string) => area.network.nodes.get(id)?.coordinates;
+  const span = (ids: string[]) => {
+    const cs = ids.map(id => coord(id)!), lats = cs.map(c => c[1]), lngs = cs.map(c => c[0]);
+    return Math.hypot((Math.max(...lngs) - Math.min(...lngs)) * M_PER_DEG_LAT * Math.cos(lats[0] * Math.PI / 180), (Math.max(...lats) - Math.min(...lats)) * M_PER_DEG_LAT);
+  };
+  const junctionOf = new Map<string, string>(), members = new Map<string, string[]>();
+  const find = (id: string) => junctionOf.get(id) ?? id;
+  for (const e of [...edges].filter(e => e.length < JOIN_JUNCTION_M).sort((a, b) => a.length - b.length)) {
+    if (!coord(e.fromNodeId) || !coord(e.toNodeId)) continue;
+    const a = find(e.fromNodeId), b = find(e.toNodeId);
+    if (a === b) continue;
+    const merged = [...(members.get(a) ?? [a]), ...(members.get(b) ?? [b])];
+    if (span(merged) > MAX_JUNCTION_SPAN_M) continue;
+    members.set(a, merged); members.delete(b);
+    for (const m of merged) junctionOf.set(m, a);
+  }
+  const groupsAt = new Map<string, Set<string>>();
+  for (const e of edges) { const g = roadGroupKey(roads.get(e.roadId), e.roadId); for (const n of [e.fromNodeId, e.toNodeId]) (groupsAt.get(n) ?? groupsAt.set(n, new Set()).get(n)!).add(g); }
+  const junctions = new Map<string, { ids: string[]; c: [number, number] }>();
+  for (const [id, s] of arms) {
+    const c = coord(id);
+    if (!c) continue;
+    const j = find(id);
+    if (junctions.has(j)) continue;
+    const ids = (members.get(j) ?? [j]).filter(m => coord(m));
+    if (!ids.some(m => (arms.get(m)?.size ?? 0) >= 3) && s.size < 3) continue;
+    const cs = ids.map(m => coord(m)!);
+    junctions.set(j, { ids, c: [cs.reduce((t, p) => t + p[0], 0) / cs.length, cs.reduce((t, p) => t + p[1], 0) / cs.length] });
+  }
+  const list = [...junctions.values()].filter(j => j.ids.some(m => (arms.get(m)?.size ?? 0) >= 3));
+  for (const p of signalPoints) {
+    let best: { ids: string[]; c: [number, number] } | null = null, bd = SIGNAL_MATCH_M;
+    for (const j of list) { if (Math.abs(j.c[0] - p[0]) > 0.001 || Math.abs(j.c[1] - p[1]) > 0.001) continue; const d = distM(p, j.c); if (d < bd) { bd = d; best = j; } }
+    if (!best) continue;
+    for (const m of best.ids) out.add(m);
+    const roadsOf = new Set(best.ids.flatMap(m => [...(groupsAt.get(m) ?? [])]));
+    for (const [id, s] of arms) {
+      if (s.size < 3 || out.has(id)) continue;
+      const c = coord(id);
+      if (!c || Math.abs(c[0] - p[0]) > 0.001 || Math.abs(c[1] - p[1]) > 0.001 || distM(p, c) >= SIGNAL_MATCH_M) continue;
+      const g = groupsAt.get(id);
+      if (g && [...g].every(k => roadsOf.has(k))) out.add(id);
+    }
+  }
+  return out;
 }
 
 /**

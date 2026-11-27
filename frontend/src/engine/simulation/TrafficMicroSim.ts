@@ -218,7 +218,7 @@ export const MAX_VEHICLES = 5000;
  */
 export const JOIN_JUNCTION_M = 16;
 /** A joined junction never spans more than this, so a dense street is not collapsed into one. */
-const MAX_JUNCTION_SPAN_M = 30;
+export const MAX_JUNCTION_SPAN_M = 30;
 
 /** Fixed-time signal plan: each of two phase groups gets green, amber, then all-red. */
 export const SIGNAL_GREEN_S = 25;

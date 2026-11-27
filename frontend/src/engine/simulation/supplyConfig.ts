@@ -118,6 +118,15 @@ export const P14 = Object.freeze({
   inferSignals: S({ maxCategory: 1, matchM: 35 }, 'assumed', 'p13 bias finding: mapped signals cover only part of Pune\'s signals (0-8 stop lines on 1.4-7 km routes); IRC category <= 1 = arterial / sub-arterial',
     'the corridor micro-simulation estimates signals the same way when no mapped signals are given (TrafficMicroSim: a collector or bigger road on both axes); the inferred points are passed to the micro-simulation too'),
   /**
+   * p17: a mapped (or inferred / warranted) signal point controls one junction: the nearest junction of 3+ stretches within
+   * 35 m, a junction being the nodes the micro-simulator folds into one (stretches < JOIN_JUNCTION_M, at most
+   * MAX_JUNCTION_SPAN_M across), plus nodes within 35 m where only roads of that junction meet (the other carriageway of a
+   * divided crossing). Before (p13-p16) every 3+-stretch node within 35 m was signalised, so in the old city one signal
+   * also signalised the lane junctions beside it (p16_09: 179 signalised nodes for 88 mapped + 38 inferred points, 46 of
+   * them not the nearest node of any mapped point; docs/urbanos/OLDCITY_P17.md).
+   */
+  signalOneJunction: S(true, 'assumed', 'OSM highway=traffic_signals tagging: the signal node is the junction node or the stop line of an approach of that junction (https://wiki.openstreetmap.org/wiki/Tag:highway%3Dtraffic_signals); the corridor micro-simulation already gives each signal to the nearest junction (TrafficMicroSim.junctionsWithSignals)'),
+  /**
    * p16: an unsignalised junction carrying the IRC:93-1985 Warrant 1 or Warrant 2 volumes is taken as signalised
    * (warrantedSignalPoints): Warrant 1 (minimum vehicular volume, Table 2) major street both approaches 650 veh/h (1 lane)
    * / 800 (2+ lanes) with the higher minor approach 200 (1 lane) / 250 (2+ lanes); Warrant 2 (interruption of continuous
