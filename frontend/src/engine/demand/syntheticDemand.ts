@@ -706,12 +706,16 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
   // component moved for both directions)
   const snap = (x: number, y: number): [string, string] | null => {
     const cx = Math.floor(x / G), cy = Math.floor(y / G);
-    let best: string | null = null, bd = accessM, bestMain: string | null = null, bm = accessM;
+    let best: string | null = null, bd = accessM, bestMain: string | null = null, bm = accessM, junction = false;
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const nd of grid.get(`${cx + dx}:${cy + dy}`) ?? []) {
       const d = distM([x, y], nd.coordinates);
+      if (!nd.access && d < accessM) junction = true;
       if (d < bd) { bd = d; best = nd.id; }
       if (main?.has(nd.id) && d < bm) { bm = d; bestMain = nd.id; }
     }
+    // p17: access nodes change where a building's trips load, not whether the building is in the area (a building with no
+    // junction node within the access distance stays "no road", as without access nodes)
+    if (!junction) return null;
     if (!best) return bestMain ? [bestMain, bestMain] : null;
     const o = !reach || reach.toMain.has(best) ? best : bestMain ?? best, d = !reach || reach.fromMain.has(best) ? best : bestMain ?? best;
     return [o, d];
