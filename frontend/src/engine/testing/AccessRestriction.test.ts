@@ -80,6 +80,10 @@ describe('Access-restricted roads in the area assignment', () => {
     expect(r({ access: 'private', motor_vehicle: 'yes' })).toBe(false); // the more specific tag opens it
     expect(r({ access: 'permissive' })).toBe(false);
     expect(r({})).toBe(false);
+    // p17: roads closed to public motor traffic (OSRM car profile blacklist) are not through routes either
+    expect(r({ access: 'military' })).toBe(true);
+    expect(r({ motor_vehicle: 'agricultural' })).toBe(true);
+    expect(r({ access: 'military', motor_vehicle: 'yes' })).toBe(false);
   });
 
   it('through traffic takes the public road round, not the private campus road, even though the campus road is 1.2 km shorter', () => {
