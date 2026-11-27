@@ -111,6 +111,16 @@ export const P14 = Object.freeze({
   /** Share of a major approach's flow turning right (across the opposing flow). */
   majorRightShare: S(0.15, 'assumed', 'no turning counts in the network; HCM-style major right turn delay is spread over the approach'),
   /** Analysis period of the control-delay formula (h). */
+  /**
+   * p17: the deceleration-acceleration term of the control delay. HCM 2000 Eq. 17-38 adds a constant 5 s/veh for "the
+   * deceleration of vehicles from free-flow speed to the speed of vehicles in queue and the acceleration of vehicles from
+   * the stop line to free-flow speed"; a stop from speed u and back costs u/(2d) + u/(2a) (uniform deceleration d and
+   * acceleration a), with the micro-simulation's fleet (VEHICLE_TYPES shares, maxAccel, comfortDecel). The term is that
+   * loss at the approach's stream free-flow speed, never more than HCM's 5 s (reached at about 24 km/h). Before (p14-p16)
+   * every controlled approach paid 5 s, also a 13 km/h old-city lane (2.7 s by kinematics).
+   */
+  decelAccelS: S({ hcmConstS: 5 }, 'derived', 'HCM 2000 Eq. 17-38 constant (IIT Bombay NPTEL notes, as delayPeriodH) bounded by uniform-acceleration kinematics with the micro-simulation fleet accelerations',
+    'docs/urbanos/OLDCITY_P17.md'),
   delayPeriodH: S(0.25, 'international', 'HCM 2000 Eq. 17-38 default T = 0.25 h (IIT Bombay NPTEL notes, worked example)', 'the assignment\'s hourly flow is read as the flow rate of the peak 15 min (assumption); T = 1 h made a minor approach at v/c 3 wait about an hour'),
   /** A minor approach that only merges into one one-way carriageway (no crossing): critical gap scaled by HCM's merge / crossing ratio. */
   mergeGapRatio: S(6.2 / 7.1, 'international', 'HCM 2000 base critical gaps (two-lane major): right turn from minor (US; a merge, India\'s left turn) 6.2 s vs left turn from minor (US; a crossing) 7.1 s, IIT Bombay NPTEL notes Table 1'),

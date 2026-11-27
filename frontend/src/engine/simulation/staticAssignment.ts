@@ -11,7 +11,7 @@ import { nodeKey } from './junctionGroups';
 import { entryCapacityPcu } from '../streetDesign/roundabout';
 import type { RoundaboutEffect } from '../streetDesign/network';
 import { P14, type SupplyModel, type FrictionClass } from './supplyConfig';
-import { p14LinkSupply, p14TimeRatio, SIGNAL_TO_MIDBLOCK_PCU, frictionByRoad, gapCapacityPcu, controlDelayS, roundaboutEntryPcu, inferredSignalPoints, approachRank, roadGroupKey, type BuildingPoint } from './indianSupply';
+import { p14LinkSupply, p14TimeRatio, SIGNAL_TO_MIDBLOCK_PCU, frictionByRoad, gapCapacityPcu, controlDelayS, decelAccelS, roundaboutEntryPcu, inferredSignalPoints, approachRank, roadGroupKey, type BuildingPoint } from './indianSupply';
 
 /**
  * Area-wide static traffic assignment (deterministic user equilibrium).
@@ -683,10 +683,12 @@ function assignOnce(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>,
       }
     }
   };
+  // p17: the deceleration-acceleration term at each approach's stream free-flow speed (P14.decelAccelS)
+  const dA = Float64Array.from(links, l => decelAccelS(l.freeSpeedKmh));
   const junctionDelay = (i: number, v: number) => {
     const k = ctl ? ctl.kind[i] : 0;
     if (!k) return 0;
-    return k === 2 ? rShare * controlDelayS(rShare * v, jCap[i]) : controlDelayS(v, jCap[i]);
+    return k === 2 ? rShare * controlDelayS(rShare * v, jCap[i], undefined, dA[i]) : controlDelayS(v, jCap[i], undefined, dA[i]);
   };
   // t0 runs at the stream's free speed (car FFS x s0), so the Indo-HCM ratio (relative to car FFS) times s0 is its congestion part
   const linkCost = p14

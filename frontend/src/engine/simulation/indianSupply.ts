@@ -133,11 +133,18 @@ export function capacityFromGaps(vc: number, tc: number, tf: number, a: number, 
   if (vc < 1) return 3600 * a / tf;
   return a * vc * Math.exp(-vc * (tc - b) / 3600) / (1 - Math.exp(-vc * tf / 3600));
 }
-/** Control delay (s/veh) of a stream v (PCU/h) at capacity c (PCU/h) over T hours (HCM 2000 Eq. 17-38). */
-export function controlDelayS(v: number, c: number, T = P14.delayPeriodH.value): number {
+/** Control delay (s/veh) of a stream v (PCU/h) at capacity c (PCU/h) over T hours (HCM 2000 Eq. 17-38); `decelS` the deceleration-acceleration term (HCM: 5 s). */
+export function controlDelayS(v: number, c: number, T = P14.delayPeriodH.value, decelS = P14.decelAccelS.value.hcmConstS): number {
   const cap = Math.max(1, c), x = Math.max(0, v) / cap;
-  return 3600 / cap + 900 * T * ((x - 1) + Math.sqrt((x - 1) ** 2 + (3600 / cap) * x / (450 * T))) + 5;
+  return 3600 / cap + 900 * T * ((x - 1) + Math.sqrt((x - 1) ** 2 + (3600 / cap) * x / (450 * T))) + decelS;
 }
+/** Fleet mean of 1/(2a) + 1/(2d) (s per m/s): the time a stop from speed u and back to u costs is u x this (VEHICLE_TYPES shares). */
+export const STOP_LOSS_S_PER_MS = (() => {
+  const w = VEHICLE_TYPES.reduce((n, t) => n + t.share, 0);
+  return VEHICLE_TYPES.reduce((n, t) => n + t.share * (0.5 / t.maxAccel + 0.5 / t.comfortDecel), 0) / w;
+})();
+/** p17 (P14.decelAccelS): the deceleration-acceleration term of the control delay at an approach whose stream runs at `kmh`. */
+export const decelAccelS = (kmh: number) => Math.min(P14.decelAccelS.value.hcmConstS, Math.max(0, kmh) / 3.6 * STOP_LOSS_S_PER_MS);
 
 /** Roundabout entry capacity per lane (PCU/h) from the ring's inscribed circle diameter and the circulating flow (IRC:65 Table 9.1). */
 export function roundaboutEntryPcu(icdM: number, qcPcu: number): number {
