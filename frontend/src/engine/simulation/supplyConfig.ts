@@ -144,8 +144,11 @@ export const P14 = Object.freeze({
    * flow per lane, §22.5 a cycle per peak / off-peak period). Before (p13-p16) every signal ran the 120 s maximum with
    * equal greens at every hour: a two-lane old-city junction at night held a car 37 s on average with no traffic.
    * Re-timed from the current flows at a few iterations, then held (iterative optimisation-assignment, Allsop 1974).
+   * OFF by default (p17 harness rule, docs/urbanos/P17_FIXES.md): it lowers real peak link times, but the zero-flow
+   * reference of band D1 then runs Webster's short night cycles, and D1 (median speed ratio) failed in 3 more area-hours
+   * at 14:00 (p16_04, p16_09, p16_10) and D3 in 1 (p16_40 19:00); available as assignTraffic option signalTiming: 'webster'.
    */
-  signalTimingWebster: S(true, 'standard', 'IRC:93-1985 §22.2-22.5 (https://archive.org/stream/govlawircy1985sp93_0/govlawircy1985sp93_0_djvu.txt); Webster 1958 as signalTiming.ts',
+  signalTimingWebster: S(false, 'standard', 'IRC:93-1985 §22.2-22.5 (https://archive.org/stream/govlawircy1985sp93_0/govlawircy1985sp93_0_djvu.txt); Webster 1958 as signalTiming.ts',
     'docs/urbanos/OLDCITY_P17.md; p14 supply only, junctions without an edited plan'),
   /**
    * p16: an unsignalised junction carrying the IRC:93-1985 Warrant 1 or Warrant 2 volumes is taken as signalised

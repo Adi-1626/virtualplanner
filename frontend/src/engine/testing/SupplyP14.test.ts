@@ -195,7 +195,7 @@ describe('p17 signal timing in the assignment (IRC:93 / Webster, as the micro-si
     const map = new Map(roads.map(r => [r.id, r]));
     const area = new StudyAreaExplorer().explore(roads, 1, { seedRoadIds: ['a1'], rangeMeters: 3000, direction: 'both' });
     const segs = new Set(area.segments.map(s => s.key));
-    const run = (vph: number) => assignTraffic(area, map, snapDemandPlan(plan([{ from: [-300, 0], to: [300, 0], vph }, { from: [0, -300], to: [0, 300], vph: vph / 10 }]), area.network, 60, segs), { supplyModel: 'p14', signalPoints: [], maxIterations: 40 });
+    const run = (vph: number) => assignTraffic(area, map, snapDemandPlan(plan([{ from: [-300, 0], to: [300, 0], vph }, { from: [0, -300], to: [0, 300], vph: vph / 10 }]), area.network, 60, segs), { supplyModel: 'p14', signalPoints: [], maxIterations: 40, signalTiming: 'webster' });
     const into = (r: ReturnType<typeof run>, id: string) => r.links.find(l => l.roadId === id && l.id.endsWith('_fwd') && l.gC !== null)!;
     const quiet = run(1e-3);
     const ew = into(quiet, 'a1'), ns = into(quiet, 'b1');

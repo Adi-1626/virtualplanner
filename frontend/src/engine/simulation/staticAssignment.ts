@@ -158,6 +158,12 @@ export interface AssignmentOptions {
    * off. Unsignalised junctions whose scaled flows meet Warrant 1 or 2 are run as signalised, like the inferred signals.
    */
   signalWarrantScale?: number;
+  /**
+   * p17 (p14 supply only): 'webster' = the assignment times its signals as the micro-simulation (P14.signalTimingWebster);
+   * 'fixed' = IRC:93's 120 s maximum cycle with equal greens (p13-p16). Absent = P14.signalTimingWebster (off: the p17
+   * harness rule, docs/urbanos/P17_FIXES.md).
+   */
+  signalTiming?: 'webster' | 'fixed';
 }
 
 /** OSM classes the local-road perceived-cost factor applies to. */
@@ -189,7 +195,7 @@ export const bprTime = (t0: number, x: number, c: number, alpha = BPR_ALPHA, bet
 
 /** The area's links as an assignment network, with free-flow times and capacities. */
 export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>, signalPoints?: readonly (readonly [number, number])[], junctionEdits?: readonly JunctionEditSpec[], supply: Readonly<SupplyParams> = DEFAULT_SUPPLY,
-  p14: { buildings?: readonly BuildingPoint[] | null } | null = null) {
+  p14: { buildings?: readonly BuildingPoint[] | null; webster?: boolean } | null = null) {
   const included = new Set(area.segments.map(s => s.key));
   const edges = [...area.network.edges.values()].filter(e => included.has(segKey(e.id)));
   const nodeIndex = new Map<string, number>();
@@ -279,7 +285,7 @@ export function buildAssignmentNetwork(area: StudyArea, roads: ReadonlyMap<strin
       gC = Math.max(0.1, (cyc - n * ASSIGN_LOST_PER_PHASE_S) / cyc / n);
       stopLinePcu = indoHcmSaturationFlow(lanes * LANE_WIDTH_M) * gC * supply.signalSatFactor * satPcu;
       sigDelay = cyc * (1 - gC) ** 2 / 2;
-      if (p14 && P14.signalTimingWebster.value) { timedApproach = indoHcmSaturationFlow(lanes * LANE_WIDTH_M) * supply.signalSatFactor * satPcu; junctionSig = sigDelay; }
+      if (p14 && (p14.webster ?? P14.signalTimingWebster.value)) { timedApproach = indoHcmSaturationFlow(lanes * LANE_WIDTH_M) * supply.signalSatFactor * satPcu; junctionSig = sigDelay; }
     }
     // Roundabout entry (IRC:65 Table 9.1, Qc assumed): capacity per entry lane x entry lanes (no more than the approach has)
     const rb = rbAt.get(e.toNodeId);
@@ -572,7 +578,7 @@ function assignOnce(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>,
   const p14 = o.supplyModel === 'p14';
   const inferred = p14 ? inferredSignalPoints(area, roads, o.signalPoints) : null;
   const signalPoints = inferred?.length ? [...(o.signalPoints ?? []), ...inferred] : o.signalPoints;
-  const net = buildAssignmentNetwork(area, roads, signalPoints, o.junctionEdits, supply, p14 ? { buildings: o.buildings } : null);
+  const net = buildAssignmentNetwork(area, roads, signalPoints, o.junctionEdits, supply, p14 ? { buildings: o.buildings, webster: o.signalTiming ? o.signalTiming === 'webster' : undefined } : null);
   const alpha = supply.bprAlpha, beta = supply.bprBeta;
   const pcuOf = p14 ? PCU_P14 : PCU;
   const { links, outStart, outLinks, nodes } = net;

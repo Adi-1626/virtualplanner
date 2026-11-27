@@ -38,8 +38,8 @@ export interface AccessNodeOptions {
   skipNodes?: ReadonlySet<string>;
 }
 
-/** p17: whether the app's study area gets access nodes (SimulationMode.accessNodes); on only if the p17 harness rule passed. */
-export const ACCESS_NODES_DEFAULT = false;
+/** p17: whether the app's study area gets access nodes (SimulationMode.accessNodes); ON: the p17 harness rule passed (docs/urbanos/P17_FIXES.md). */
+export const ACCESS_NODES_DEFAULT = true;
 
 export const ACCESS_DEFAULTS = { triggerM: 95, reachM: 95, mergeM: 60, endGapM: 20, minLinkM: 60, spacingM: 100 } as const;
 
