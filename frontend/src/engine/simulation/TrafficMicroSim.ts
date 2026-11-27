@@ -141,6 +141,8 @@ const DEFAULT_LANE_WIDTH_M = 3.5;
 export const EDGE_FADE_M = 60;
 /** Turns sharper than this slow vehicles to TURN_SPEED_MPS at the junction. */
 const TURN_ANGLE_DEG = 35;
+/** Lane pre-sorting looks this far ahead (m) along a route on roads of one width (sortedLane). Assumption: the distance over which drivers in Pune traffic take the lane for a branch ahead. */
+const LANE_SORT_M = 150;
 const TURN_SPEED_MPS = 4.5;
 /**
  * Buses and goods vehicles (7 m and longer) turn slower: about 11 km/h against
@@ -170,6 +172,17 @@ export const GRIDLOCK_S = 180;
  * GRIDLOCK_S, so a vehicle that only had to wait its turn is never removed.
  */
 const MERGE_TURN_S = 60;
+/**
+ * Courtesy to a starved approach (p17, docs/urbanos/JUNCTION_P17.md §2): at a priority junction a vehicle in a
+ * priority stream crawling under COURTESY_CRAWL_MS lets in a vehicle that has stood COURTESY_S or more at its line on
+ * another approach, waiting for a gap in that stream or for its claims, where their paths cross or merge (forced /
+ * courtesy merging into a slow queue). Gap acceptance alone never let it in: a queue crawling at walking pace leaves
+ * no 3-4 s gap, and the side road (or the median gap of a divided-road crossing) stood until it counted as gridlock,
+ * its queue blocking the junction behind. Assumption (no published figure): COURTESY_S well under GRIDLOCK_S and
+ * MERGE_TURN_S; COURTESY_CRAWL_MS = 18 km/h, a queue that can stop for one vehicle within a few metres.
+ */
+export const COURTESY_S = 30;
+export const COURTESY_CRAWL_MS = 5;
 /** A vehicle held at a line stops this close to it (see lineGap); within this it is at the line. */
 const AT_LINE_M = 0.5;
 /** Turn-taking: a vehicle held for room in a lane is owed that lane; one held by crossing traffic is owed the junction. */
@@ -344,6 +357,12 @@ export interface MicroSimOptions {
    * explicitly labelled fallback, kept for comparison with earlier results.
    */
   removeStuckVehicles?: boolean;
+  /** Courtesy to a starved approach after this many seconds at its line (COURTESY_S; 0 = off, gap acceptance only). */
+  courtesyS?: number;
+  /** Edge entry: vehicles wait in order per road leaving the source node (default true); false = one queue per source node. */
+  entryPerLink?: boolean;
+  /** Lane pre-sorting for a narrowing branch ahead (sortedLane; default true). */
+  laneSorting?: boolean;
 }
 
 export interface MicroDemandTrip {
@@ -796,6 +815,9 @@ export class TrafficMicroSim {
   private stopsSum = 0;
   private gridlockRemovals = 0;
   private readonly removeStuck: boolean;
+  private readonly courtesyS: number;
+  private readonly entryPerLink: boolean;
+  private readonly laneSorting: boolean;
   private generated = 0;
   private spawned = 0;
   private exitedAtEdge = 0;
@@ -848,6 +870,9 @@ export class TrafficMicroSim {
     this.abreastEnabled = options.twoWheelersAbreast ?? true;
     this.stopLineCounting = options.stopLineCounting ?? true;
     this.removeStuck = options.removeStuckVehicles ?? false;
+    this.courtesyS = options.courtesyS ?? COURTESY_S;
+    this.entryPerLink = options.entryPerLink ?? true;
+    this.laneSorting = options.laneSorting ?? true;
     this.focusLoad = Math.max(0, options.focusLoad ?? 0);
     const net = area.network;
     this.areaNodes = net.nodes;
@@ -1754,16 +1779,27 @@ export class TrafficMicroSim {
     let onNetwork = this.onNetworkCount;
     if (this.analysis && onNetwork >= MAX_VEHICLES) this.analysis.capSteps++;
     for (const s of this.sources) {
-      while (s.queue.length > 0 && onNetwork < MAX_VEHICLES) {
-        const veh = s.queue[0];
+      // Vehicles wait to enter in order on each road leaving the source; one whose road is full
+      // does not hold back those for another road (p17: with one queue per source, the first
+      // vehicle's full road stopped every other road from the same edge node, and the edge
+      // queue grew while those roads stood empty). entryPerLink false: the single queue.
+      const q = s.queue;
+      let kept = 0, blocked: Set<number> | null = null;
+      const roads = this.entryPerLink ? this.outDegree(s.nodeId) : 1;
+      for (let r = 0; r < q.length; r++) {
+        const veh = q[r];
+        if (onNetwork >= MAX_VEHICLES || (blocked && (blocked.size >= roads || blocked.has(veh.link)))) {
+          if (kept === r && (onNetwork >= MAX_VEHICLES || blocked!.size >= roads)) { kept = q.length; break; } // nothing taken out: the rest stays as it is
+          q[kept++] = veh;
+          continue;
+        }
         const link = this.links[veh.link];
         const lane = this.bestLane(link);
         const last = link.lanes[lane][link.lanes[lane].length - 1];
         const v0 = link.speed * veh.speedFactor;
         const entryV = Math.min(v0, last ? last.v : v0);
         const needed = veh.type.minGapM + entryV * veh.type.headwayS * 0.5;
-        if (this.backSpace(link.lanes[lane]) < needed) break;
-        s.queue.shift();
+        if (this.backSpace(link.lanes[lane]) < needed) { (blocked ??= new Set()).add(veh.link); q[kept++] = veh; continue; }
         this.spawned++;
         if (this.analysis) this.analysis.released++;
         veh.lane = lane;
@@ -1777,8 +1813,17 @@ export class TrafficMicroSim {
         onNetwork++;
         this.onNetworkCount++;
       }
+      q.length = kept;
     }
   }
+
+  /** Links leaving a (simulated) junction node, counted once per node. */
+  private outDegree(node: string): number {
+    let n = this.outDegrees.get(node);
+    if (n === undefined) { n = Math.max(1, this.outLinks(this.junction(node)).length); this.outDegrees.set(node, n); }
+    return n;
+  }
+  private readonly outDegrees = new Map<string, number>();
 
   /**
    * Design flows for Webster timing from observed counts: PCU/h arriving on each
@@ -2123,7 +2168,7 @@ export class TrafficMicroSim {
     // open before moving, so a turning queue could not discharge as a platoon
     // (one vehicle per lane every 4-5 s).
     const room = (k: number, d: number, connector: LaneConnector) => this.exitRoom(veh, next, k, d, connector);
-    let lane = withPartner ? partner!.grantLane! : this.mappedLane(link, veh.lane, next);
+    let lane = withPartner ? partner!.grantLane! : this.sortedLane(veh, link, next);
     let connector = this.connectorFor(link, veh.lane, next, lane);
     dist = connector.start - veh.pos;
     if (!withPartner && room(lane, dist, connector) < need(connector)) {
@@ -2169,6 +2214,7 @@ export class TrafficMicroSim {
 
     if (this.conflictingClaim(veh, link, connector, false)) return this.refuse(link, 'conflict', veh, next.index);
     if (!withPartner && this.owesTurn(veh, link, connector)) return this.refuse(link, 'conflict', veh, next.index);
+    if (!withPartner && c?.kind === 'priority' && this.owesCourtesy(veh, link, connector)) return this.refuse(link, 'courtesy', veh, next.index);
 
     if (c?.kind === 'signal') {
       // Permissive right turn: give way to opposing green traffic (gap acceptance)
@@ -2414,6 +2460,30 @@ export class TrafficMicroSim {
       if (!fNext || f.route[f.routeIdx + 1] !== fNext.index) return false;
       return connectorsConflict(connector, this.connectorFor(other, li, fNext, this.mappedLanes(other, li, fNext)[0]));
     });
+  }
+
+  /**
+   * Courtesy (COURTESY_S): whether `veh`, crawling in a stream with priority at this
+   * priority junction, lets in a vehicle standing at its line on another approach
+   * that has waited COURTESY_S (and longer than `veh`) for a gap in, or the claims
+   * of, the traffic `veh` is part of, where their paths cross or merge. Only a vehicle
+   * that can still stop comfortably before its line yields.
+   */
+  private owesCourtesy(veh: Vehicle, link: Link, connector: LaneConnector): boolean {
+    if (!(this.courtesyS > 0) || veh.v >= COURTESY_CRAWL_MS || connector.start - veh.pos <= (veh.v * veh.v) / (2 * veh.type.comfortDecel)) return false;
+    for (const [idx, other] of this.incomingOf(link.to)) {
+      if (idx === link.index) continue;
+      for (let li = 0; li < other.lanes.length; li++) {
+        const f = other.lanes[li][0];
+        if (!f || f.grantLane !== null || f.holdNext === undefined || f.waitS < this.courtesyS || f.waitS <= veh.waitS) continue;
+        if (f.hold !== 'give-way' && f.hold !== 'conflict') continue;
+        const fNext = this.links[f.holdNext];
+        if (!fNext || f.route[f.routeIdx + 1] !== fNext.index || f.routeIdx >= f.route.length - 1) continue;
+        if (this.stopLine(f, other) - f.pos > 3) continue; // at its line, not queued behind it
+        if (connectorsConflict(connector, this.connectorFor(other, li, fNext, this.mappedLanes(other, li, fNext)[0]))) return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -2703,6 +2773,64 @@ export class TrafficMicroSim {
   }
 
   /** The emptiest of the lanes `lane` leads to (the lowest index on a tie, so it is repeatable). */
+  /**
+   * Lane pre-sorting (p17, docs/urbanos/JUNCTION_P17.md §3): the lane of `next` a vehicle takes. Lanes keep their
+   * order across a junction (mappedLane), and nothing changes lane along a link, so before, a vehicle bound for a
+   * narrower road branching off ahead (a one-lane slip off a two-lane bridge approach) queued in whichever lane it
+   * happened to be in: both lanes stood behind vehicles waiting for room in the slip, and traffic for the other
+   * branch could not pass. Now, within LANE_SORT_M ahead on roads of the same width, a vehicle whose route leaves
+   * by the leftmost (rightmost) of two or more branches into a road with fewer lanes takes the kerb-side
+   * (median-side) lanes that branch needs: at a junction among the lanes its own lane maps to, at a node with no
+   * control (a road continuing) one lane over at most (a lane change). Lane 0 is the median side (place()).
+   * Edited lane maps are kept as edited.
+   */
+  private sortedLane(veh: Vehicle, link: Link, next: Link): number {
+    const mapped = this.mappedLane(link, veh.lane, next);
+    const n = next.lanes.length;
+    if (!this.laneSorting || n < 2 || (this.laneMap.size && this.laneMap.has(`${link.index}>${next.index}`))) return mapped;
+    const want = this.laneNeed(veh, next);
+    if (!want || (mapped >= want[0] && mapped <= want[1])) return mapped;
+    let lo: number, hi: number;
+    if (this.controls.has(link.to)) [lo, hi] = this.mappedLanes(link, veh.lane, next);
+    else if (link.lanes.length === n) { lo = Math.max(0, veh.lane - 1); hi = Math.min(n - 1, veh.lane + 1); }
+    else return mapped;
+    const a = Math.max(lo, want[0]), b = Math.min(hi, want[1]);
+    if (a > b) return mapped;
+    let best = a;
+    for (let k = a + 1; k <= b; k++) if (this.backSpace(next.lanes[k]) > this.backSpace(next.lanes[best])) best = k;
+    return best;
+  }
+
+  /** Lanes of `next` (by index) the vehicle's first narrowing branch within LANE_SORT_M needs, or null (any lane). */
+  private laneNeed(veh: Vehicle, next: Link): [number, number] | null {
+    const n = next.lanes.length;
+    let cur = next, dist = 0;
+    for (let idx = veh.routeIdx + 1; idx + 1 < veh.route.length && dist <= LANE_SORT_M; idx++) {
+      const nx = this.links[veh.route[idx + 1]];
+      const outs = this.outLinks(cur.to).filter(o => o.to !== cur.from);
+      if (outs.length >= 2 && nx.lanes.length < n) {
+        const k = nx.lanes.length;
+        const ang = (o: Link) => this.turnAngle(cur, o);
+        const mine = ang(nx);
+        if (outs.every(o => o === nx || ang(o) < mine)) return [n - k, n - 1]; // leftmost branch: kerb-side lanes
+        if (outs.every(o => o === nx || ang(o) > mine)) return [0, k - 1]; // rightmost branch: median-side lanes
+        return null;
+      }
+      dist += cur.length;
+      cur = nx;
+      if (cur.lanes.length !== n) return null;
+    }
+    return null;
+  }
+
+  /** Links leaving a simulated junction node. */
+  private outLinks(node: string): Link[] {
+    let r = this.outByNode.get(node);
+    if (!r) { r = this.links.filter(l => l.from === node); this.outByNode.set(node, r); }
+    return r;
+  }
+  private readonly outByNode = new Map<string, Link[]>();
+
   private mappedLane(link: Link, lane: number, next: Link): number {
     const [lo, hi] = this.mappedLanes(link, lane, next);
     let best = lo;
@@ -3263,7 +3391,7 @@ export class TrafficMicroSim {
     else switch (veh.hold) {
       case 'signal': cause = 'redSignal'; break;
       case 'give-way': cause = 'priorityGap'; break;
-      case 'conflict': cause = 'crossingTraffic'; break;
+      case 'conflict': case 'courtesy': cause = 'crossingTraffic'; break;
       case 'room': case 'room-wait': case 'keep-clear': cause = 'blockedExit'; break;
       default: cause = 'other';
     }
