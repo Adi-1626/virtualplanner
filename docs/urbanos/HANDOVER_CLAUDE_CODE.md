@@ -25,7 +25,7 @@ UrbanOS is a Cesium 3D digital twin of Pune (React/TypeScript frontend, FastAPI 
 | p16-citywide | 4f85c3e | 41-area city-wide harness + fixes (fix3 30/164) |
 | p17-access / p17-junction / p17-oldcity | 0568d10 / d756529 / b962fdd | the four weak-spot fixes |
 | **p17-all = main** | 852936b | integration of p17 work |
-| p18-pass (pushed, not main) | see git log | harness 50/164 (meter + zip merge adopted; pockets / gap opt-in); docs/urbanos/P18_PASS.md, run dir /workspace/work/p18-run (STATUS_p18.md, mz.jsonl, classify.md) |
+| p18-pass (pushed, not main) | see git log | harness 50/164 adopted (meter + zip merge); opt-in switches: pockets (POCKET_STREETS), gap delay (P14.priorityGapDelay), unsigned-local gap delay (P14.unsignedLocalGap, MVDR 2017 Reg 7/9); pockets + unsigned-local = 62/164 but D1 +1 / M1 +7 vs adopted, so not adopted; docs/urbanos/P18_PASS.md, run dir /workspace/work/p18-run (STATUS_p18.md, mz.jsonl, pkme.jsonl, classify.md). Branch p18-entry: dropped experiment F (entry give-way, no effect) |
 | p16-m1 | e8b4a25 | rejected experiment (JOIN_JUNCTION_M 24 broke 4 tests) |
 
 Other old branches (ug-*, underground-*, geom-*, dr-*, p4–p7 parts) are already merged into c83ccd9.

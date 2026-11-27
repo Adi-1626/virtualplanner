@@ -80,6 +80,43 @@ upstream summed over all rows (529,082 of 2,000,867 veh/h); each run states its 
 | N2 | 0 → 0 → 0 → 0 | 0 → 0 → 0 → 0 | 0 → 0 → 0 → 0 | 4 → 4 → 4 → 4 | 4 → 4 → 4 → 4 |
 | R3 | 13 → 4 → 4 → 13 | 15 → 6 → 6 → 15 | 14 → 5 → 5 → 14 | 14 → 5 → 5 → 14 | 56 → 20 → 20 → 56 |
 
+## Second round (after the adopted defaults): fixes E and F
+
+| Id | Change | Source | Switch | Effect | Decision |
+|---|---|---|---|---|---|
+| E | At a junction where every approach is a local-access street (OSM residential / living_street / service) of equal rank, i.e. no major road and in the model no sign, the assignment charges the gap-acceptance delay of fix C instead of HCM's stop-controlled delay (a full stop and the service time 3600/c for every vehicle) | Motor Vehicles (Driving) Regulations 2017, G.S.R. 634(E), 23 June 2017 (official text, upload.indiacode.nic.in): Reg. 7(1) a stop is required only where a STOP sign is displayed; Reg. 9(1)-(2) at other intersections slow down and give way to traffic from the right (Reg. 15(2): two roads of the same category, the vehicle on the right has the right of way). Delay form: Austroads AGTM Part 2 (2020) Eqs 5.1-5.2 (Adams), as fix C | `P14.unsignedLocalGap` (default false), harness `P18_LOCALGAP=1` | probe p16_36_local with pockets: D2 09:00 p10 8.05 -> 9.45 km/h, 19:00 8.60 -> 10.12 km/h (the pockets' D2 blocker passes); full runs below | **Not adopted** (opt-in): D1 worse, see below |
+| F | A trip entering the network at a junction (source) gives way, lane by lane, to a vehicle that has waited there more than 60 s for room in the same lane | MVDR 2017 Reg. 7(4): "the vehicle emerging onto a road from a property bordering thereon shall give way to the motor vehicles and other traffic already running on that road" | `ENTRY_GIVE_WAY.enabled` (default false), branch `p18-entry` only, harness `P18_ENTRYGW=1` | probe p16_40_local (all hours, mz settings): no change (seed 7 identical, seed 42 one more stuck vehicle); the vehicles taking the room ahead of the stuck truck are not source entries as the trace suggested | **Dropped** (not merged; step-loop limit reached on this residual) |
+
+Diagnosis of the truck residual (p16_40_local 09:00, `p18-run/stuck40.log`, `P18StuckDiag`): node 73.84966, 18.56545 is a
+priority junction; the truck (needs 12.0 m) is refused `room` on both lanes of the 28 m exit link (free 2.4 m / 5.4 m) for
+minutes while smaller vehicles (need 8.2 m) take each opening as it appears. `heldFor` never reserves the lane for it
+(`held false` in every request). Not fixed; left as an M1 residual.
+
+### Full runs of the second round
+
+| Run | Switches | Pass | D1 | D2 | M1 | M2 | N2 | R3 | Rule (vs `mz`) |
+|---|---|---|---|---|---|---|---|---|---|
+| `mz` (adopted) | B + D | 50 | 33 | 80 | 32 | 37 | 4 | 56 | reference |
+| `pkme` | A + B + D + E | **62** | **34** | 74 | **39** | 33 | 4 | 20 | fails (D1 +1, M1 +7) |
+| `mze` (chunks c1-c4, 80 rows; stopped) | B + D + E | 27 vs 24 | **25 vs 23** | 40 vs 43 | 16 vs 18 | 16 vs 16 | 3 vs 4 | 18 vs 18 | fails (D1 +2 new, 0 fixed) |
+
+`pkme` (pockets + E) is the best total so far, 62/164, and fixes the D2 row that blocked pockets, but M1 rises (14 new
+area-hours, 7 fixed; single vehicles stuck 3-5 min in rows that are mostly over-capacity) and D1 gains one row net
+(p16_12_oldcity 14:00 and p16_35_collector 09:00 new, p16_13_itpark 09:00 fixed; all three class C, at the threshold).
+`P18_POCKETS_CORRIDOR` turned out to have no effect on the harness corridor (a 23-row rerun `pke0` with it off was
+identical in every value), so the M1 change comes from the area assignment feeding the corridor, not from pocket streets
+inside the corridor.
+
+E alone (`mze`) lowers the D1 median ratio in old-city rows at 14:00 (p16_09 0.617 -> 0.597, p16_12 0.610 -> 0.584):
+D1 and N2 are ratios to the model's own zero-flow speed, which E raises (no stop at an unsigned local junction), while at
+14:00 the same junctions carry flow and keep a gap delay. It is the reference mechanism that ruled out fixes C (p18) and
+assignment Webster timing (p17), smaller in size. Under the rule (no band worse than the adopted run) E cannot be adopted
+without changing how the bands measure, which is not allowed. `mze` was stopped after 80 complete rows (chunks c1-c4)
+once D1 had 2 new failures and none fixed (on those rows: D2 3 fixed / 0 new, M1 6 fixed / 4 new, N2 1 fixed, pass
+24 -> 27); its rows are `p18-run/mze.partial.jsonl`. E and pockets stay available as switches; with both on the harness
+passes 62/164 (`p18-run/pkme.jsonl`). The adopted defaults stay as in `mz` (50/164); the official check is unchanged
+(E is off by default, so no re-run).
+
 ## Honest ceiling (what is left, and why it is not forced)
 
 Every failing area-hour x band of `mz.jsonl` is classified with evidence in `p18-run/classify.md` (copied below as
