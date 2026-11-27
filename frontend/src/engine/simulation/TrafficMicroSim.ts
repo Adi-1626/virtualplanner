@@ -2449,7 +2449,8 @@ export class TrafficMicroSim {
    * lane beyond the junction (a lane drop at the stop line) take the room in turn. Without it the kerb lane's queue,
    * granted first on every green, took each gap and the vehicle at the head of the other lane waited 6 min at a
    * signal with a short green, at night. Zip merging is the rule at a lane drop: StVO §7(4) (Germany,
-   * Reissverschlussverfahren); FHWA Work Zone Mobility and Safety / MnDOT zipper merge guidance.
+   * Reissverschlussverfahren: vehicles of the ending lane join alternately behind one of the through lane,
+   * official text gesetze-im-internet.de/stvo_2013/__7.html).
    */
   private heldFor(next: Link, k: number, veh: Vehicle): boolean {
     return this.longerWaiting(next.from, this.links[veh.link], veh, ROOM_HOLDS, (f, other, li) => {

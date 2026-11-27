@@ -255,10 +255,11 @@ const segmentKey = (edgeId: string) => edgeId.replace(/_(fwd|bwd)$/, '');
 
 /**
  * p18: whether a study area takes in the local streets inside its outline that its range did not reach
- * (StudyAreaExplorer.closePockets). ON; the harness can switch it off to compare (docs/urbanos/P18_PASS.md).
+ * (StudyAreaExplorer.closePockets). OFF by default (opt-in): city-wide it fixed R3 (56 -> 20 failing area-hours) but made
+ * D2 one row worse (p16_36_local 19:00), so it failed the p18 adoption rule (docs/urbanos/P18_PASS.md).
  */
 export const POCKET_STREETS = {
-  enabled: true,
+  enabled: false,
   /** Also in the 700 m micro-simulation corridor (StudyAreaOptions.corridor). */
   corridor: true,
 };

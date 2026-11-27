@@ -14,7 +14,7 @@ import { filterObjectsForScenario } from '../scenarios/scenarioFilter';
 import { isSampleObject } from '../objects/sampleObjects';
 import { isDrivable, POCKET_STREETS, type DrivableObject, type StudyArea } from '../simulation/StudyAreaExplorer';
 import { snapDemandPlan, type DemandPlan } from '../simulation/StudyDemand';
-import { assignTraffic, subareaDemand, type AssignmentResult } from '../simulation/staticAssignment';
+import { assignTraffic, subareaDemand, SUBAREA_METER, type AssignmentResult } from '../simulation/staticAssignment';
 import { TrafficMicroSim, STEP_S, type MicroSimOptions } from '../simulation/TrafficMicroSim';
 import type { TimePeriod } from '../objects/demandTypes';
 import type { RoadSection } from '../simulation/roadSection';
@@ -267,9 +267,9 @@ describe.skipIf(!env.P16)('p16 city-wide robustness harness (opt-in)', () => {
     const log = (o: unknown) => fs.appendFileSync(out, JSON.stringify(o) + '\n');
     const mode = env.P16_MODE ?? 'eval';
     if (mode === 'build') {
-      // p18: pocket streets (StudyAreaExplorer.closePockets) on unless P18_POCKETS=0
-      POCKET_STREETS.enabled = env.P18_POCKETS !== '0';
-      POCKET_STREETS.corridor = env.P18_POCKETS_CORRIDOR !== '0';
+      // p18: pocket streets (StudyAreaExplorer.closePockets): P18_POCKETS=1 / 0 switches them; unset = the code default (off)
+      if (env.P18_POCKETS) POCKET_STREETS.enabled = env.P18_POCKETS === '1';
+      if (env.P18_POCKETS_CORRIDOR) POCKET_STREETS.corridor = env.P18_POCKETS_CORRIDOR === '1';
       const db = JSON.parse(fs.readFileSync(env.P16_DB!, 'utf8')) as { objects: (CityObject & Record<string, unknown>)[] };
       const om = new ObjectManager();
       for (const obj of db.objects) {
@@ -435,9 +435,9 @@ describe.skipIf(!env.P16)('p16 city-wide robustness harness (opt-in)', () => {
             if (env.P16_MICRO === '1') {
               // The corridor run as analysisJob.ts does it, two seeds, a short warm-up and measured window
               const inside = new Set(b.corridor.segments.map(s => s.key));
-              // p18: P18_METER=1 = the corridor gets the flow its upstream bottlenecks pass (SUBAREA_METER, the app default)
+              // p18: P18_METER=1 / 0 switches it, unset = the code default (on): the corridor gets the flow its upstream bottlenecks pass (SUBAREA_METER, the app default)
               const held = { vph: 0 };
-              const ctrips = subareaDemand(a, inside, 1, { meter: env.P18_METER === '1', held });
+              const ctrips = subareaDemand(a, inside, 1, { meter: env.P18_METER ? env.P18_METER === '1' : SUBAREA_METER.enabled, held });
               const cplan: DemandPlan = { trips: ctrips, provenance: { ...plan.provenance, vehiclesPerHour: ctrips.reduce((s, t) => s + t.vehiclesPerHour, 0), pairCount: ctrips.length } };
               const micro = snapDemandPlan(cplan, b.corridor.network, 60, inside);
               const desired = Object.fromEntries(a.links.filter(l => l.carFfsKmh).map(l => [l.id, l.carFfsKmh!]));
