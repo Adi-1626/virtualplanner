@@ -111,12 +111,42 @@ export const P14 = Object.freeze({
   /** Share of a major approach's flow turning right (across the opposing flow). */
   majorRightShare: S(0.15, 'assumed', 'no turning counts in the network; HCM-style major right turn delay is spread over the approach'),
   /** Analysis period of the control-delay formula (h). */
+  /**
+   * p17: the deceleration-acceleration term of the control delay. HCM 2000 Eq. 17-38 adds a constant 5 s/veh for "the
+   * deceleration of vehicles from free-flow speed to the speed of vehicles in queue and the acceleration of vehicles from
+   * the stop line to free-flow speed"; a stop from speed u and back costs u/(2d) + u/(2a) (uniform deceleration d and
+   * acceleration a), with the micro-simulation's fleet (VEHICLE_TYPES shares, maxAccel, comfortDecel). The term is that
+   * loss at the approach's stream free-flow speed, never more than HCM's 5 s (reached at about 24 km/h). Before (p14-p16)
+   * every controlled approach paid 5 s, also a 13 km/h old-city lane (2.7 s by kinematics).
+   */
+  decelAccelS: S({ hcmConstS: 5 }, 'derived', 'HCM 2000 Eq. 17-38 constant (IIT Bombay NPTEL notes, as delayPeriodH) bounded by uniform-acceleration kinematics with the micro-simulation fleet accelerations',
+    'docs/urbanos/OLDCITY_P17.md'),
   delayPeriodH: S(0.25, 'international', 'HCM 2000 Eq. 17-38 default T = 0.25 h (IIT Bombay NPTEL notes, worked example)', 'the assignment\'s hourly flow is read as the flow rate of the peak 15 min (assumption); T = 1 h made a minor approach at v/c 3 wait about an hour'),
   /** A minor approach that only merges into one one-way carriageway (no crossing): critical gap scaled by HCM's merge / crossing ratio. */
   mergeGapRatio: S(6.2 / 7.1, 'international', 'HCM 2000 base critical gaps (two-lane major): right turn from minor (US; a merge, India\'s left turn) 6.2 s vs left turn from minor (US; a crossing) 7.1 s, IIT Bombay NPTEL notes Table 1'),
   /** Junctions where two different arterial / sub-arterial roads meet with no mapped signal are taken as signalised (OSM maps few of Pune's signals). */
   inferSignals: S({ maxCategory: 1, matchM: 35 }, 'assumed', 'p13 bias finding: mapped signals cover only part of Pune\'s signals (0-8 stop lines on 1.4-7 km routes); IRC category <= 1 = arterial / sub-arterial',
     'the corridor micro-simulation estimates signals the same way when no mapped signals are given (TrafficMicroSim: a collector or bigger road on both axes); the inferred points are passed to the micro-simulation too'),
+  /**
+   * p17: a mapped (or inferred / warranted) signal point controls one junction: the nearest junction of 3+ stretches within
+   * 35 m, a junction being the nodes the micro-simulator folds into one (stretches < JOIN_JUNCTION_M, at most
+   * MAX_JUNCTION_SPAN_M across), plus nodes within 35 m where only roads of that junction meet (the other carriageway of a
+   * divided crossing). Before (p13-p16) every 3+-stretch node within 35 m was signalised, so in the old city one signal
+   * also signalised the lane junctions beside it (p16_09: 179 signalised nodes for 88 mapped + 38 inferred points, 46 of
+   * them not the nearest node of any mapped point; docs/urbanos/OLDCITY_P17.md).
+   */
+  signalOneJunction: S(true, 'assumed', 'OSM highway=traffic_signals tagging: the signal node is the junction node or the stop line of an approach of that junction (https://wiki.openstreetmap.org/wiki/Tag:highway%3Dtraffic_signals); the corridor micro-simulation already gives each signal to the nearest junction (TrafficMicroSim.junctionsWithSignals)'),
+  /**
+   * p17: the area assignment times its signals as the corridor micro-simulation does (Webster's optimum cycle from the
+   * approaches' flow ratios, greens in proportion, approach-wise phases, 3 s amber + 2 s all-red, 7 s minimum green, at
+   * least 40 s), with the cycle capped at supply.cycleS (120 s by default: IRC:93-1985 §22.2 "the maximum cycle length
+   * recommended is preferably 120 seconds"; §22.2 the cycle designed for least delay, §22.3 greens in proportion to the
+   * flow per lane, §22.5 a cycle per peak / off-peak period). Before (p13-p16) every signal ran the 120 s maximum with
+   * equal greens at every hour: a two-lane old-city junction at night held a car 37 s on average with no traffic.
+   * Re-timed from the current flows at a few iterations, then held (iterative optimisation-assignment, Allsop 1974).
+   */
+  signalTimingWebster: S(true, 'standard', 'IRC:93-1985 §22.2-22.5 (https://archive.org/stream/govlawircy1985sp93_0/govlawircy1985sp93_0_djvu.txt); Webster 1958 as signalTiming.ts',
+    'docs/urbanos/OLDCITY_P17.md; p14 supply only, junctions without an edited plan'),
   /**
    * p16: an unsignalised junction carrying the IRC:93-1985 Warrant 1 or Warrant 2 volumes is taken as signalised
    * (warrantedSignalPoints): Warrant 1 (minimum vehicular volume, Table 2) major street both approaches 650 veh/h (1 lane)
