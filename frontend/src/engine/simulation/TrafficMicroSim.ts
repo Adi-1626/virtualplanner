@@ -2776,7 +2776,7 @@ export class TrafficMicroSim {
 
   /** The emptiest of the lanes `lane` leads to (the lowest index on a tie, so it is repeatable). */
   /**
-   * Lane pre-sorting (p17, docs/urbanos/JUNCTION_P17.md §3): the lane of `next` a vehicle takes. Lanes keep their
+   * Lane pre-sorting (p17, docs/urbanos/P17_FIXES.md): the lane of `next` a vehicle takes. Lanes keep their
    * order across a junction (mappedLane), and nothing changes lane along a link, so before, a vehicle bound for a
    * narrower road branching off ahead (a one-lane slip off a two-lane bridge approach) queued in whichever lane it
    * happened to be in: both lanes stood behind vehicles waiting for room in the slip, and traffic for the other
