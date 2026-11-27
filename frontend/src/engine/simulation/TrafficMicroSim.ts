@@ -191,6 +191,28 @@ const AT_LINE_M = 0.5;
 const ROOM_HOLDS = ['room', 'room-wait'] as const;
 /** p18: lanes of one approach that merge into one lane beyond the junction take the room in turn (heldFor). */
 export const ZIP_MERGE = { enabled: true };
+/**
+ * p18: a trip entering the network at a junction node (a source: building access or edge) gives way, lane by lane, to a
+ * vehicle already on the network that has waited at that junction longer than MERGE_TURN_S for room in the same lane.
+ * Motor Vehicles (Driving) Regulations 2017 (G.S.R. 634(E), indiacode.nic.in) Reg. 7(4): "the vehicle emerging onto a
+ * road from a property bordering thereon shall give way to the motor vehicles and other traffic already running on that
+ * road". Without it entering trips took each opening in a full short link and a truck at the junction, needing more
+ * room than they did, waited 3-5 min (p16_40_local 09:00).
+ */
+export const ENTRY_GIVE_WAY = { enabled: false };
+/**
+ * p19: a vehicle held for `room` (refused room in every lane of its exit, tryGrant's any-lane search) is owed every lane
+ * it searched, not only the lanes its own lane maps to: it takes whichever lane first has room for it. Before, a truck
+ * (needs 12 m) refused room in both lanes of a full 28 m link was owed only its mapped lane, so smaller vehicles and
+ * entering trips took each opening in the other lane, and it stood 3-5 min (p16_40_local 09:00, docs/urbanos/P19_DEMAND.md).
+ * The owed lane is the reservation of room for a long vehicle after the bounded wait MERGE_TURN_S (merging in turn,
+ * docs/OVERHAUL.md §18; MVDR 2017 Reg. 7(4) for entering trips, ENTRY_GIVE_WAY).
+ * At a priority junction the courtesy of COURTESY_S also covers room: a priority-stream vehicle crawling under
+ * COURTESY_CRAWL_MS leaves the room in the exit lane to a vehicle that has stood COURTESY_S at its line on a give-way
+ * approach waiting for that room (forced / courtesy merging into a slow queue, same sources as COURTESY_S). Without it
+ * the side-road truck in the same jam (seed 7) stood 6-7 min while the major stream's small vehicles took every opening.
+ */
+export const ROOM_ANY_LANE = { enabled: false };
 const CONFLICT_HOLDS = ['conflict'] as const;
 /** Traffic that must give way is cleared to cross only from this close to the line. */
 const YIELD_LINE_M = 8;
@@ -1771,6 +1793,26 @@ export class TrafficMicroSim {
     return last ? last.pos - last.type.lengthM : Infinity;
   }
 
+  /**
+   * p18 (ENTRY_GIVE_WAY): the lane with the most room among those not owed to a vehicle waiting at the junction the link
+   * starts from (front vehicle held for room in that lane for longer than MERGE_TURN_S); -1 when every lane is owed.
+   */
+  private entryLane(link: Link): number {
+    const owed = new Set<number>();
+    for (const [, other] of this.incomingOf(link.from)) {
+      for (let li = 0; li < other.lanes.length; li++) {
+        const f = other.lanes[li][0];
+        if (!f || f.grantLane !== null || f.holdNext !== link.index || f.waitS < MERGE_TURN_S || !f.hold || !(ROOM_HOLDS as readonly string[]).includes(f.hold)) continue;
+        const [lo, hi] = this.owedLanes(other, li, f, link);
+        for (let k = lo; k <= hi; k++) owed.add(k);
+      }
+    }
+    if (!owed.size) return this.bestLane(link);
+    let best = -1;
+    for (let i = 0; i < link.lanes.length; i++) if (!owed.has(i) && (best < 0 || this.backSpace(link.lanes[i]) > this.backSpace(link.lanes[best]))) best = i;
+    return best;
+  }
+
   private bestLane(link: Link): number {
     let best = 0;
     for (let i = 1; i < link.lanes.length; i++) {
@@ -1798,7 +1840,8 @@ export class TrafficMicroSim {
           continue;
         }
         const link = this.links[veh.link];
-        const lane = this.bestLane(link);
+        const lane = ENTRY_GIVE_WAY.enabled ? this.entryLane(link) : this.bestLane(link);
+        if (lane < 0) { (blocked ??= new Set()).add(veh.link); q[kept++] = veh; continue; }
         const last = link.lanes[lane][link.lanes[lane].length - 1];
         const v0 = link.speed * veh.speedFactor;
         const entryV = Math.min(v0, last ? last.v : v0);
@@ -2410,17 +2453,21 @@ export class TrafficMicroSim {
    * and at a priority junction it does not give way to `veh`'s road. Waits are
    * strictly ordered, so two approaches can never each wait for the other.
    */
-  private longerWaiting(node: string, mine: Link, veh: Vehicle, holds: readonly string[], each: (f: Vehicle, other: Link, lane: number) => boolean, sameApproach = false): boolean {
+  private longerWaiting(node: string, mine: Link, veh: Vehicle, holds: readonly string[], each: (f: Vehicle, other: Link, lane: number) => boolean, sameApproach = false, roomCourtesy = false): boolean {
     const c = this.controls.get(node);
     if (!c) return false;
     const myNext = mine.to === node && veh.routeIdx < veh.route.length - 1 ? this.links[veh.route[veh.routeIdx + 1]] : null;
+    // p19 (ROOM_ANY_LANE): courtesy for room (COURTESY_S): `veh`, crawling in a priority stream, leaves the room in a
+    // full exit lane to a vehicle that has stood at its line on a give-way approach for it COURTESY_S or more
+    const crawl = roomCourtesy && this.courtesyS > 0 && veh.v < COURTESY_CRAWL_MS;
     for (const [idx, other] of this.incomingOf(node)) {
       // p18: the other lanes of `veh`'s own approach take their turn too where asked (`sameApproach`: lanes that
       // merge into one lane beyond the junction, zip merging); otherwise only other approaches
       const own = idx === mine.index;
       if (own && !sameApproach) continue;
       if (!own && c.kind === 'signal' && this.signalState(idx) !== 'green') continue;
-      if (!own && c.kind === 'priority' && this.hasPriorityOver(mine, other, c)) continue;
+      const overPriority = !own && c.kind === 'priority' && this.hasPriorityOver(mine, other, c);
+      if (overPriority && !crawl) continue;
       for (let li = 0; li < other.lanes.length; li++) {
         if (own && li === veh.lane) continue;
         const f = other.lanes[li][0];
@@ -2428,10 +2475,12 @@ export class TrafficMicroSim {
         // A lane of the same approach waiting for the same exit lane keeps its turn whatever held it last (red, a
         // crossing claim): zip merging alternates the two queues, it does not wait for both to be refused room
         if (!f.hold || (!own && !holds.includes(f.hold))) continue;
+        const courtesy = crawl && !own && f.hold === 'room' && f.waitS >= this.courtesyS && this.stopLine(f, other) - f.pos <= 3;
+        if (overPriority && !courtesy) continue;
         // Never a turn against priority: a vehicle whose movement gives way to `veh`'s
         // (a right turn across oncoming traffic, at a signal or a priority junction) waits
-        // for a gap however long it has waited
-        if (!own && myNext && this.givesWayTo(other, this.links[f.holdNext], mine, myNext, c)) continue;
+        // for a gap however long it has waited (unless let in for room by courtesy, above)
+        if (!own && !courtesy && myNext && this.givesWayTo(other, this.links[f.holdNext], mine, myNext, c)) continue;
         if (each(f, other, li)) return true;
       }
     }
@@ -2455,9 +2504,9 @@ export class TrafficMicroSim {
   private heldFor(next: Link, k: number, veh: Vehicle): boolean {
     return this.longerWaiting(next.from, this.links[veh.link], veh, ROOM_HOLDS, (f, other, li) => {
       if (f.holdNext !== next.index) return false;
-      const [lo, hi] = this.mappedLanes(other, li, next);
+      const [lo, hi] = this.owedLanes(other, li, f, next);
       return k >= lo && k <= hi;
-    }, ZIP_MERGE.enabled);
+    }, ZIP_MERGE.enabled, ROOM_ANY_LANE.enabled);
   }
 
   /**
@@ -2778,6 +2827,15 @@ export class TrafficMicroSim {
    * it loses lanes several lead to one (the lane connections of a junction or
    * widening, as SUMO builds them).
    */
+  /** Lanes of `next` owed to `f` (front of lane `li` of `link`) when it has waited its turn for room (ROOM_ANY_LANE). */
+  private owedLanes(link: Link, li: number, f: Vehicle, next: Link): [number, number] {
+    if (ROOM_ANY_LANE.enabled && f.hold === 'room') {
+      const edited = this.laneMap.size ? this.laneMap.get(`${link.index}>${next.index}`)?.get(li) : undefined;
+      return edited ?? [0, next.lanes.length - 1];
+    }
+    return this.mappedLanes(link, li, next);
+  }
+
   private mappedLanes(link: Link, lane: number, next: Link): [number, number] {
     const edited = this.laneMap.size ? this.laneMap.get(`${link.index}>${next.index}`)?.get(lane) : undefined;
     if (edited) return edited;
