@@ -138,6 +138,21 @@ export function controlDelayS(v: number, c: number, T = P14.delayPeriodH.value, 
   const cap = Math.max(1, c), x = Math.max(0, v) / cap;
   return 3600 / cap + 900 * T * ((x - 1) + Math.sqrt((x - 1) ** 2 + (3600 / cap) * x / (450 * T))) + decelS;
 }
+/**
+ * p18 (P14.priorityGapDelay): control delay (s/veh) at an unsignalised priority approach: stream v at capacity c (PCU/h)
+ * against conflicting flow qc (PCU/h) with critical gap tc (s): (1 - x) min(Adams' delay, 3600/c) + x 3600/c + HCM queue
+ * term + stop loss x P(delayed). x >= 1 gives HCM 2000 Eq. 17-38; never above it.
+ */
+export function priorityDelayS(v: number, c: number, qc: number, tc: number, T = P14.delayPeriodH.value, decelS = P14.decelAccelS.value.hcmConstS): number {
+  const cap = Math.max(1, c), x = Math.max(0, v) / cap, free = Math.max(0, 1 - x);
+  const q = Math.max(0, qc) / 3600;
+  const adams = q * tc > 1e-6 ? (Math.exp(q * tc) - 1) / q - tc : 0;
+  const queue = 900 * T * ((x - 1) + Math.sqrt((x - 1) ** 2 + (3600 / cap) * x / (450 * T)));
+  const pDelayed = 1 - free * Math.exp(-q * tc);
+  // Adams' delay is bounded by the service time of the capacity formula in use (Indo-HCM's shifted gaps give a higher
+  // capacity than Adams' Poisson stream): the delay never exceeds HCM's form
+  return free * Math.min(adams, 3600 / cap) + (1 - free) * 3600 / cap + queue + pDelayed * decelS;
+}
 /** Fleet mean of 1/(2a) + 1/(2d) (s per m/s): the time a stop from speed u and back to u costs is u x this (VEHICLE_TYPES shares). */
 export const STOP_LOSS_S_PER_MS = (() => {
   const w = VEHICLE_TYPES.reduce((n, t) => n + t.share, 0);

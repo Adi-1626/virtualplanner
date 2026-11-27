@@ -137,6 +137,8 @@ export interface StudyAreaOptions {
   sourcePoints?: readonly (readonly number[])[];
   /** With `sourcePoints`: roads measured from their own nodes as usual (the studied roads the proposal kept). */
   sourceRoadIds?: readonly string[];
+  /** p18: the micro-simulation corridor (its demand is cut from the area's assignment, it loads no buildings itself). */
+  corridor?: boolean;
 }
 
 export interface StudyArea extends StudyAreaOptions {
@@ -250,6 +252,37 @@ export function isAreaCutEnd(road: DrivableObject | undefined, point: readonly n
 
 /** Both travel directions of one stretch of road share this key. */
 const segmentKey = (edgeId: string) => edgeId.replace(/_(fwd|bwd)$/, '');
+
+/**
+ * p18: whether a study area takes in the local streets inside its outline that its range did not reach
+ * (StudyAreaExplorer.closePockets). ON; the harness can switch it off to compare (docs/urbanos/P18_PASS.md).
+ */
+export const POCKET_STREETS = {
+  enabled: true,
+  /** Also in the 700 m micro-simulation corridor (StudyAreaOptions.corridor). */
+  corridor: true,
+};
+/** OSM local-access streets (IRC:86-2018 local class) that close an area's pockets. */
+const POCKET_HIGHWAYS: ReadonlySet<string> = new Set(['residential', 'living_street', 'service', 'unclassified']);
+
+function convexHull(points: [number, number][]): [number, number][] {
+  const p = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (p.length < 3) return p;
+  const cross = (o: number[], a: number[], b: number[]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower: [number, number][] = [], upper: [number, number][] = [];
+  for (const q of p) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop(); lower.push(q); }
+  for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop(); upper.push(q); }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+
+function pointInPolygon(x: number, y: number, poly: readonly [number, number][]): boolean {
+  let r = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], c = poly[j];
+    if ((a[1] > y) !== (c[1] > y) && x < (c[0] - a[0]) * (y - a[1]) / (c[1] - a[1]) + a[0]) r = !r;
+  }
+  return r;
+}
 
 // ─── Graph search ────────────────────────────────────────────────────────────
 
@@ -380,6 +413,7 @@ export class StudyAreaExplorer {
       grown = this.grow(build, seeds, range, options.direction, options.sourcePoints, options.sourceRoadIds)!;
     }
 
+    if (POCKET_STREETS.enabled && (!options.corridor || POCKET_STREETS.corridor)) this.closePockets(index, build!, grown);
     return this.describe(index, build!, grown, { seedRoadIds: seeds, rangeMeters: range, direction: options.direction, ...(options.sourcePoints ? { sourcePoints: options.sourcePoints, sourceRoadIds: options.sourceRoadIds ?? [] } : {}) }, reusedBuild);
   }
 
@@ -477,6 +511,53 @@ export class StudyAreaExplorer {
   }
 
   /** Grows outward from the seeds and decides which road stretches are in the area. */
+  /**
+   * p18: local streets inside the area's outline (the convex hull of the nodes the range reached) that the range did not
+   * reach join the area when they connect to it. The demand loads every building inside that outline (syntheticAreaPlan),
+   * so without them a building on such a street loaded at an area junction up to 250 m away (p16 band R3; 34 of the 56 p17
+   * R3 failures were buildings 95-250 m from any area road though their own street is mapped). Trips load on the local
+   * street they front: centroid connectors to the nearest local streets, with the local streets in the network (Jafari,
+   * Gemar, Ruiz Juri, Duthie 2015, TRR 2498:19-26, doi 10.3141/2498-03; connector placement changes static assignment
+   * flows, Qian & Zhang 2012, Transp. Res. B, "On centroid connectors in static traffic assignment"). Only OSM local-access streets (IRC:86 local class: residential,
+   * living street, service, unclassified) at ground level, both directions of study, wholly inside the outline.
+   */
+  private closePockets(index: RoadIndex, build: LocalBuild, grown: NonNullable<ReturnType<StudyAreaExplorer['grow']>>) {
+    if (!grown.wantDown || !grown.wantUp) return;
+    const net = build.network;
+    const pts: [number, number][] = [];
+    const areaNodes = new Set<string>();
+    grown.included.forEach(e => { for (const n of e.nodes) if (!areaNodes.has(n)) { areaNodes.add(n); const c = net.nodes.get(n)?.coordinates; if (c) pts.push([c[0], c[1]]); } });
+    const outline = convexHull(pts);
+    if (outline.length < 3) return;
+    const cand = new Map<string, TrafficEdge[]>();
+    net.edges.forEach(e => {
+      const key = segmentKey(e.id);
+      if (grown.included.has(key)) return;
+      const road = index.roads.get(e.roadId);
+      const hw = road?.type === 'road' && isUneditedOsm(road) ? road.osmProvenance?.originalTags?.highway ?? '' : '';
+      if (!POCKET_HIGHWAYS.has(hw)) return;
+      if (!e.coordinates.every(c => Math.abs(c[2] ?? 0) <= GRADE_SEPARATION_M && pointInPolygon(c[0], c[1], outline))) return;
+      (cand.get(key) ?? cand.set(key, []).get(key)!).push(e);
+    });
+    if (!cand.size) return;
+    const byNode = new Map<string, string[]>();
+    cand.forEach((es, key) => { for (const e of es) for (const n of [e.fromNodeId, e.toNodeId]) (byNode.get(n) ?? byNode.set(n, []).get(n)!).push(key); });
+    const reached = new Set<string>(), queue = [...areaNodes].filter(n => byNode.has(n));
+    const seen = new Set(queue);
+    while (queue.length) {
+      const n = queue.pop()!;
+      for (const key of byNode.get(n) ?? []) {
+        if (reached.has(key)) continue;
+        reached.add(key);
+        for (const e of cand.get(key)!) for (const m of [e.fromNodeId, e.toNodeId]) if (!seen.has(m)) { seen.add(m); queue.push(m); }
+      }
+    }
+    for (const key of reached) {
+      const e = cand.get(key)![0];
+      grown.included.set(key, { seg: { key, roadId: e.roadId, coordinates: e.coordinates, lengthM: e.length, role: 'both', distanceM: grown.range }, seed: false, down: true, up: true, nodes: [e.fromNodeId, e.toNodeId] });
+    }
+  }
+
   private grow(build: LocalBuild, seeds: string[], range: number, direction: StudyDirection, sourcePoints?: readonly (readonly number[])[], sourceRoadIds?: readonly string[]) {
     const net = build.network;
     const seedSet = new Set(seeds);

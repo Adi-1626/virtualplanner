@@ -121,6 +121,18 @@ export const P14 = Object.freeze({
    */
   decelAccelS: S({ hcmConstS: 5 }, 'derived', 'HCM 2000 Eq. 17-38 constant (IIT Bombay NPTEL notes, as delayPeriodH) bounded by uniform-acceleration kinematics with the micro-simulation fleet accelerations',
     'docs/urbanos/OLDCITY_P17.md'),
+  /**
+   * p18: delay at an unsignalised priority approach (give-way / uncontrolled, not a roundabout) from gap-acceptance theory
+   * instead of HCM's stop-controlled form. HCM 2000 Eq. 17-38 charges every vehicle the mean service time 3600/c and a full
+   * stop (5 s); an isolated minor vehicle facing a Poisson major stream q with critical gap t_c is delayed on average by
+   * Adams' delay D_min = (e^(q t_c) - 1)/q - t_c, and only the share 1 - e^(-q t_c) is delayed at all (Austroads Guide to
+   * Traffic Management Part 2 (2020) Eqs 5.1-5.2; Troutbeck & Brilon, Unsignalized Intersection Theory, FHWA Revised
+   * Monograph on Traffic Flow Theory ch. 8: D = D_min [1 + (gamma + eps x)/(1 - x)], D_min = Adams' delay). Here a vehicle
+   * meets an empty queue with probability 1 - x (M/G/1) and then waits D_min; otherwise it waits the service time; the HCM
+   * time-dependent queue term is kept as is (oversaturated queues discharge at capacity), and the stop loss applies to the
+   * delayed share 1 - (1 - x) e^(-q t_c). At x >= 1 this is HCM's form and never above it; at zero flow it is 0 (a free vehicle does not stop).
+   */
+  priorityGapDelay: S(false, 'international', 'Austroads AGTM Part 2 (2020) Eqs 5.1-5.2 (Adams 1936); Troutbeck & Brilon, FHWA Traffic Flow Theory monograph ch. 8 (D = D_min[1 + (gamma + eps x)/(1 - x)]); HCM 2000 Eq. 17-38 queue term', 'docs/urbanos/P18_PASS.md'),
   delayPeriodH: S(0.25, 'international', 'HCM 2000 Eq. 17-38 default T = 0.25 h (IIT Bombay NPTEL notes, worked example)', 'the assignment\'s hourly flow is read as the flow rate of the peak 15 min (assumption); T = 1 h made a minor approach at v/c 3 wait about an hour'),
   /** A minor approach that only merges into one one-way carriageway (no crossing): critical gap scaled by HCM's merge / crossing ratio. */
   mergeGapRatio: S(6.2 / 7.1, 'international', 'HCM 2000 base critical gaps (two-lane major): right turn from minor (US; a merge, India\'s left turn) 6.2 s vs left turn from minor (US; a crossing) 7.1 s, IIT Bombay NPTEL notes Table 1'),

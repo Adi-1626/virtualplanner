@@ -914,7 +914,7 @@ export class SimulationMode {
         ...from,
       });
       // The neighbourhood simulated vehicle by vehicle: the same network, a shorter range from the road
-      const corridor = area.rangeMeters <= CORRIDOR_RANGE_M ? area : this.explorer.explore(roads, this.revision, { seedRoadIds: area.seedRoadIds, rangeMeters: CORRIDOR_RANGE_M, direction: this.state.direction, ...from });
+      const corridor = area.rangeMeters <= CORRIDOR_RANGE_M ? area : this.explorer.explore(roads, this.revision, { seedRoadIds: area.seedRoadIds, rangeMeters: CORRIDOR_RANGE_M, direction: this.state.direction, corridor: true, ...from });
       // Seeds deleted from the network drop out here
       const section = area.seedRoadIds.length ? roadSection(area, new Map(roads.map(r => [r.id, r])), area.seedRoadIds) : null;
       // p17: access nodes on the area's long links, once the area's buildings are loaded (ensureBuildings adds them later otherwise)

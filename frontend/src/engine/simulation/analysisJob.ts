@@ -5,7 +5,7 @@ import { countChecks, sectionDirections, readCorridorRun, areaContext, combineAn
 import type { RoadSection } from './roadSection';
 import type { CountJunction } from '../calibration/observedCounts';
 import type { SupplyParams } from './supplyParams';
-import { assignTraffic, subareaDemand } from './staticAssignment';
+import { assignTraffic, subareaDemand, SUBAREA_METER } from './staticAssignment';
 import { summarizeEmissions, araiAreaEstimate, type EmissionAccumulator } from '../emissions/emissions';
 import type { VehicleKind } from './TrafficMicroSim';
 import type { SupplyModel } from './supplyConfig';
@@ -71,10 +71,12 @@ export const DEFAULT_ANALYSIS = { warmupS: 300, measureS: 900, seeds: DEFAULT_SE
 /** The corridor's demand from an assignment: paths cut to the corridor, as a plan. */
 export function corridorPlanOf(job: AnalysisJob, assignment: ReturnType<typeof assignTraffic>): DemandPlan {
   const inside = new Set(job.corridor.segments.map(s => s.key));
-  const trips = subareaDemand(assignment, inside);
+  const held = { vph: 0 };
+  const trips = subareaDemand(assignment, inside, 1, { meter: SUBAREA_METER.enabled, held });
   const vph = trips.reduce((n, t) => n + t.vehiclesPerHour, 0);
+  const heldNote = held.vph >= 1 ? ` A further ${Math.round(held.vph).toLocaleString()} veh/h are held in queues on roads before the neighbourhood that the assignment loads above their capacity (modelled), so they do not reach it within the hour.` : '';
   return { trips, provenance: { ...job.plan.provenance, vehiclesPerHour: vph, pairCount: trips.length,
-    label: `Traffic the area assignment routes through the neighbourhood of the selected road (${Math.round(vph).toLocaleString()} veh/h at this hour), each vehicle entering where its route enters and taking the same roads. ${job.plan.provenance.label}` } };
+    label: `Traffic the area assignment routes through the neighbourhood of the selected road (${Math.round(vph).toLocaleString()} veh/h at this hour), each vehicle entering where its route enters and taking the same roads.${heldNote} ${job.plan.provenance.label}` } };
 }
 
 export async function runAnalysisJob(job: AnalysisJob, onProgress?: (share: number) => void, yieldEveryMs = 25, cancelled?: () => boolean): Promise<AnalysisOutput> {

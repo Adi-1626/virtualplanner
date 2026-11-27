@@ -11,7 +11,7 @@ import { nodeKey } from './junctionGroups';
 import { entryCapacityPcu } from '../streetDesign/roundabout';
 import type { RoundaboutEffect } from '../streetDesign/network';
 import { P14, type SupplyModel, type FrictionClass } from './supplyConfig';
-import { p14LinkSupply, p14TimeRatio, SIGNAL_TO_MIDBLOCK_PCU, frictionByRoad, gapCapacityPcu, controlDelayS, decelAccelS, roundaboutEntryPcu, inferredSignalPoints, approachRank, roadGroupKey, type BuildingPoint } from './indianSupply';
+import { p14LinkSupply, p14TimeRatio, SIGNAL_TO_MIDBLOCK_PCU, frictionByRoad, gapCapacityPcu, controlDelayS, priorityDelayS, gaps, decelAccelS, roundaboutEntryPcu, inferredSignalPoints, approachRank, roadGroupKey, type BuildingPoint } from './indianSupply';
 
 /**
  * Area-wide static traffic assignment (deterministic user equilibrium).
@@ -713,6 +713,9 @@ function assignOnce(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>,
   const s0 = P14.vdf.value.s0, rShare = P14.majorRightShare.value;
   const mergeParams = { ...P14.unsigMinor.value, tcBase: P14.unsigMinor.value.tcBase * P14.mergeGapRatio.value, fLV: P14.unsigMinor.value.fLV * P14.mergeGapRatio.value };
   const jCap = new Float64Array(L), jDelay = p14 ? new Float64Array(L) : undefined;
+  // p18 (P14.priorityGapDelay): conflicting flow and critical gap of each priority approach
+  const gapDelay = P14.priorityGapDelay.value, jVc = new Float64Array(L);
+  const tcMinor = gaps(P14.unsigMinor.value).tc, tcMerge = gaps(mergeParams).tc, tcRight = gaps(P14.unsigMajorRight.value).tc;
   const updateJunctions = (flow: Float64Array) => {
     if (!ctl) return;
     for (let i = 0; i < L; i++) {
@@ -720,6 +723,7 @@ function assignOnce(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>,
       if (!k) continue;
       let vc = 0;
       for (const j of ctl.conflicts[i]) vc += flow[j];
+      jVc[i] = vc;
       jCap[i] = k === 1 ? gapCapacityPcu(vc, ctl.merge[i] ? mergeParams : P14.unsigMinor.value) : k === 2 ? gapCapacityPcu(vc, P14.unsigMajorRight.value) : roundaboutEntryPcu(ctl.icd[i], vc) * Math.min(2, Math.max(1, links[i].lanes));
       // p16: a merge into one carriageway shares its downstream capacity when both streams are heavy (limited priority /
       // zip merging: the merging stream is never starved below its share of the carriageway it joins)
@@ -735,6 +739,10 @@ function assignOnce(area: StudyArea, roads: ReadonlyMap<string, DrivableObject>,
   const junctionDelay = (i: number, v: number) => {
     const k = ctl ? ctl.kind[i] : 0;
     if (!k) return 0;
+    if (gapDelay && k !== 3) {
+      const tc = k === 2 ? tcRight : ctl!.merge[i] ? tcMerge : tcMinor;
+      return k === 2 ? rShare * priorityDelayS(rShare * v, jCap[i], jVc[i], tc, undefined, dA[i]) : priorityDelayS(v, jCap[i], jVc[i], tc, undefined, dA[i]);
+    }
     return k === 2 ? rShare * controlDelayS(rShare * v, jCap[i], undefined, dA[i]) : controlDelayS(v, jCap[i], undefined, dA[i]);
   };
   // t0 runs at the stream's free speed (car FFS x s0), so the Indo-HCM ratio (relative to car FFS) times s0 is its congestion part
@@ -881,30 +889,59 @@ export function selectLink(res: AssignmentResult, linkSet: ReadonlySet<number>) 
 }
 
 /**
+ * p18: whether the corridor micro-simulation gets the flow that can reach it (analysisJob). A static assignment loads links
+ * above their capacity (v/c > 1), which no real road passes: the excess waits upstream. Quasi-dynamic assignment with
+ * residual point queues (Bliemer, Raadsen, Smits, Zhou & Bell 2014, Transp. Res. B 68:363-384, doi 10.1016/j.trb.2014.07.001) keeps the static route
+ * choice and caps each link's outflow at its capacity; a path's flow past a bottleneck falls by the bottleneck's pass ratio
+ * min(1, capacity / demand) (proportional node model). Here the tightest upstream bottleneck outside the sub-area sets a
+ * path's flow into the sub-area; the vehicles held there are reported (`held`), never dropped silently.
+ */
+export const SUBAREA_METER = { enabled: true };
+
+/** Per link: min(1, capacity / flow), capacity the tightest of mid-block, signal stop line and unsignalised movement (PCU/h). */
+export function upstreamPassRatio(res: AssignmentResult): Float64Array {
+  return Float64Array.from(res.links, (l, i) => {
+    let cap = l.capacityPcu;
+    if (l.stopLinePcu) cap = Math.min(cap, l.stopLinePcu);
+    const j = res.junctionCapacityPcu?.[i] ?? 0;
+    if (j > 0) cap = Math.min(cap, j);
+    const v = res.volPcu[i];
+    return v > cap && cap > 0 ? cap / v : 1;
+  });
+}
+
+/**
  * The demand that crosses a sub-area: every stored path cut to its runs of
  * links inside `insideSegments`, as trips from where it enters to where it
  * leaves (coordinates, so they snap onto the sub-area's own network), with
  * the links it takes inside. Vehicle kinds keep their OD shares.
  */
-export function subareaDemand(res: AssignmentResult, insideSegments: ReadonlySet<string>, hourFactor = 1) {
+export function subareaDemand(res: AssignmentResult, insideSegments: ReadonlySet<string>, hourFactor = 1, opts: { meter?: boolean; held?: { vph: number } } = {}) {
   const agg = new Map<string, { from: number; to: number; via: number[]; kinds: Map<VehicleKind, number> }>();
+  // p18 (SUBAREA_METER): the flow a path brings to the sub-area is what its upstream links outside the sub-area can pass
+  const alpha = opts.meter ? upstreamPassRatio(res) : null;
+  let held = 0;
   res.odPaths.forEach((ps, oi) => {
     const od = res.ods[oi];
     for (const { pathId, share } of ps) {
       const p = res.paths[pathId];
-      let run: number[] = [];
+      let run: number[] = [], pass = 1;
       const flush = () => {
         if (!run.length) return;
         const from = res.links[run[0]].from, to = res.links[run[run.length - 1]].to;
         const key = run.join(',');
         const e = agg.get(key) ?? agg.set(key, { from, to, via: [...run], kinds: new Map() }).get(key)!;
-        od.kinds.forEach((v, k) => e.kinds.set(k, (e.kinds.get(k) ?? 0) + v * share * hourFactor));
+        od.kinds.forEach((v, k) => { e.kinds.set(k, (e.kinds.get(k) ?? 0) + v * share * hourFactor * pass); held += v * share * hourFactor * (1 - pass); });
         run = [];
       };
-      for (const li of p) { if (insideSegments.has(res.links[li].segmentKey)) run.push(li); else flush(); }
+      for (const li of p) {
+        if (insideSegments.has(res.links[li].segmentKey)) run.push(li);
+        else { flush(); if (alpha) pass = Math.min(pass, alpha[li]); }
+      }
       flush();
     }
   });
+  if (opts.held) opts.held.vph = held;
   const trips: { from: [number, number, number]; to: [number, number, number]; vehiclesPerHour: number; kind: VehicleKind; viaLinkIds: string[] }[] = [];
   for (const e of agg.values()) {
     if (e.from === e.to) continue;

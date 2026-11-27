@@ -12,7 +12,7 @@ import { SimulationMode, type SimulationContext } from '../simulation/Simulation
 import { TrafficSignalSource } from '../simulation/trafficSignals';
 import { filterObjectsForScenario } from '../scenarios/scenarioFilter';
 import { isSampleObject } from '../objects/sampleObjects';
-import { isDrivable, type DrivableObject, type StudyArea } from '../simulation/StudyAreaExplorer';
+import { isDrivable, POCKET_STREETS, type DrivableObject, type StudyArea } from '../simulation/StudyAreaExplorer';
 import { snapDemandPlan, type DemandPlan } from '../simulation/StudyDemand';
 import { assignTraffic, subareaDemand, type AssignmentResult } from '../simulation/staticAssignment';
 import { TrafficMicroSim, STEP_S, type MicroSimOptions } from '../simulation/TrafficMicroSim';
@@ -20,6 +20,7 @@ import type { TimePeriod } from '../objects/demandTypes';
 import type { RoadSection } from '../simulation/roadSection';
 import type { BuildingPoint } from '../simulation/indianSupply';
 import { DEFAULT_SUPPLY } from '../simulation/supplyParams';
+import { P14 } from '../simulation/supplyConfig';
 import { SYNTHETIC_PARAMS } from '../calibration/syntheticDemandDecision';
 import { decodeSyntheticDemand, eighthHourScale, rebalance, syntheticAreaPlan, type AreaPaths, type SyntheticCity, type SyntheticTripEnd } from '../demand/syntheticDemand';
 import { evaluateBands, type AreaHourMetrics } from './citywide/citywideBands';
@@ -114,6 +115,43 @@ function withAccess(b: Built, mode: string, ends: readonly SyntheticTripEnd[]): 
     : (b.buildings ?? []).map(p => [p[0], p[1]]);
   const area = addAccessNodes(b.area, b.roads, { points, exclude, skipNodes });
   return { ...b, area, accessNodes: area.accessNodes ?? 0 };
+}
+
+/** p18 diagnosis: building-end veh/h loading over 100 m from its building, split by why no access node serves it. */
+function r3why2(plan: DemandPlan, b: Built & { accessNodes?: number }, base: Built, snapped: readonly { fromNodeId: string; toNodeId: string }[]) {
+  const out: Record<string, number> = {};
+  const excl = new Set([...base.corridor.segments.map(s => s.key), ...base.section.segmentKeys]);
+  const segs = base.area.segments;
+  const k0 = 111320 * Math.cos(((base.area.bounds.minLat + base.area.bounds.maxLat) / 2) * Math.PI / 180);
+  const pd = (p: readonly number[], c: readonly (readonly number[])[]) => { let best = Infinity; for (let i = 1; i < c.length; i++) { const ax = (c[i - 1][0] - p[0]) * k0, ay = (c[i - 1][1] - p[1]) * 111320, bx = (c[i][0] - p[0]) * k0, by = (c[i][1] - p[1]) * 111320; const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy; const t = L2 < 1e-12 ? 0 : Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L2)); best = Math.min(best, Math.hypot(ax + t * dx, ay + t * dy)); } return best; };
+  const bpts = (base.buildings ?? []) as unknown as (readonly number[])[];
+  const seen = new Map<string, string>(), pv = new Map<string, number>();
+  (plan.trips as (DemandPlan['trips'][number] & { part?: string })[]).forEach((t, i) => {
+    const ends: [readonly number[], string][] = [];
+    if (t.part === 'internal' || t.part === 'outbound') ends.push([t.from, snapped[i].fromNodeId]);
+    if (t.part === 'internal' || t.part === 'inbound') ends.push([t.to, snapped[i].toNodeId]);
+    for (const [p, used] of ends) {
+      const un = b.area.network.nodes.get(used);
+      if (un && distM(p, un.coordinates) <= 100) continue;
+      const key = p.join(',');
+      let why = seen.get(key);
+      if (!why) {
+        let bd = Infinity, bs: typeof segs[number] | null = null;
+        for (const sg of segs) { let near = false; for (const c of sg.coordinates) if (Math.abs(c[0] - p[0]) < 0.02 && Math.abs(c[1] - p[1]) < 0.02) { near = true; break; } if (!near) continue; const d = pd(p, sg.coordinates); if (d < bd) { bd = d; bs = sg; } }
+        let nb = Infinity; for (const q of bpts) { if (Math.abs(q[0] - p[0]) > 0.002 || Math.abs(q[1] - p[1]) > 0.002) continue; nb = Math.min(nb, distM(p, q)); }
+        const road = bs ? base.roads.get(bs.roadId) : undefined;
+        const prov = road?.type === 'road' ? road.osmProvenance : undefined;
+        const hw = prov?.originalTags?.highway ?? road?.type ?? '?';
+        const split = b.area.segments.some(s => bs && s.key.startsWith(bs.key + '.'));
+        why = !un ? 'noNode' : bd > 95 ? (bd > 150 ? 'road>150' : 'road95-150') : excl.has(bs!.key) ? 'corridorOrSection' : bs!.lengthM < 60 ? 'short<60' : (/^motorway/.test(hw) || /_link$/.test(hw) || prov?.bridge || prov?.tunnel || (prov?.layer ?? 0) !== 0) ? `notFrontable_${hw}` : nb > 25 ? (split ? 'splitButPointNotBuilding' : 'pointNotBuilding') : split ? 'splitStillFar' : 'notSplit_other';
+        seen.set(key, why);
+      }
+      out[why] = (out[why] ?? 0) + t.vehiclesPerHour;
+      pv.set(key, (pv.get(key) ?? 0) + t.vehiclesPerHour);
+    }
+  });
+  const top = [...pv].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => `${k.split(',').slice(0, 2).map(Number).map(x => x.toFixed(5)).join(',')}:${seen.get(k)}:${Math.round(v)}`);
+  return { ...Object.fromEntries(Object.entries(out).map(([k, v]) => [k, Math.round(v)])), points: pv.size, top: top.join(' ') };
 }
 
 /** p17 diagnosis: building-end veh/h loading over 100 m from its building, by why (nearest road and its kind). */
@@ -229,6 +267,9 @@ describe.skipIf(!env.P16)('p16 city-wide robustness harness (opt-in)', () => {
     const log = (o: unknown) => fs.appendFileSync(out, JSON.stringify(o) + '\n');
     const mode = env.P16_MODE ?? 'eval';
     if (mode === 'build') {
+      // p18: pocket streets (StudyAreaExplorer.closePockets) on unless P18_POCKETS=0
+      POCKET_STREETS.enabled = env.P18_POCKETS !== '0';
+      POCKET_STREETS.corridor = env.P18_POCKETS_CORRIDOR !== '0';
       const db = JSON.parse(fs.readFileSync(env.P16_DB!, 'utf8')) as { objects: (CityObject & Record<string, unknown>)[] };
       const om = new ObjectManager();
       for (const obj of db.objects) {
@@ -311,6 +352,8 @@ describe.skipIf(!env.P16)('p16 city-wide robustness harness (opt-in)', () => {
 
     // ── evaluation ──
     const iters = Number(env.P16_ITERS ?? 60);
+    // p18: P18_GAP=1 = gap-acceptance delay at priority approaches (P14.priorityGapDelay); unset = the code default
+    if (env.P18_GAP) (P14.priorityGapDelay as { value: boolean }).value = env.P18_GAP === '1';
     const hoursOnly = env.P16_HOURS ? env.P16_HOURS.split(',').map(Number) : null;
     const set: CandidateSet = env.P16_SET ? JSON.parse(env.P16_SET) : { name: 'recorded', ...SYNTHETIC_PARAMS };
     const only = env.P16_ONLY ? new Set(env.P16_ONLY.split(',')) : null;
@@ -338,7 +381,7 @@ describe.skipIf(!env.P16)('p16 city-wide robustness harness (opt-in)', () => {
             if (env.P17_R3QUICK === '1') {
               // p17 quick check (no assignment): R3 both measures, and the plan's left-out traffic
               log({ r3quick: true, area: b.rec.id, hour, access: env.P17_ACCESS ?? '0', accessNodes: (b as { accessNodes?: number }).accessNodes ?? 0, nodes: b.area.network.nodes.size,
-                prereg: buildingEnds(plan, b.area), used: buildingEnds(plan, b.area, trips), why: env.P17_WHY === '1' ? r3why(plan, b, trips) : undefined, noEdgeRouteVph: Math.round(plan.provenance.components?.noEdgeRoute ?? 0), demandVph: Math.round(plan.provenance.vehiclesPerHour) });
+                prereg: buildingEnds(plan, b.area), used: buildingEnds(plan, b.area, trips), why: env.P17_WHY === '1' ? r3why(plan, b, trips) : undefined, why2: env.P18_WHY === '1' ? r3why2(plan, b, b0, trips) : undefined, noEdgeRouteVph: Math.round(plan.provenance.components?.noEdgeRoute ?? 0), demandVph: Math.round(plan.provenance.vehiclesPerHour) });
               continue;
             }
             if (env.P16_R3DIAG === '1') {
@@ -392,7 +435,9 @@ describe.skipIf(!env.P16)('p16 city-wide robustness harness (opt-in)', () => {
             if (env.P16_MICRO === '1') {
               // The corridor run as analysisJob.ts does it, two seeds, a short warm-up and measured window
               const inside = new Set(b.corridor.segments.map(s => s.key));
-              const ctrips = subareaDemand(a, inside);
+              // p18: P18_METER=1 = the corridor gets the flow its upstream bottlenecks pass (SUBAREA_METER, the app default)
+              const held = { vph: 0 };
+              const ctrips = subareaDemand(a, inside, 1, { meter: env.P18_METER === '1', held });
               const cplan: DemandPlan = { trips: ctrips, provenance: { ...plan.provenance, vehiclesPerHour: ctrips.reduce((s, t) => s + t.vehiclesPerHour, 0), pairCount: ctrips.length } };
               const micro = snapDemandPlan(cplan, b.corridor.network, 60, inside);
               const desired = Object.fromEntries(a.links.filter(l => l.carFfsKmh).map(l => [l.id, l.carFfsKmh!]));
@@ -416,7 +461,7 @@ describe.skipIf(!env.P16)('p16 city-wide robustness harness (opt-in)', () => {
                   unroutable: m1.unroutable, watchedKmh: m1.watched.meanSpeedKmh,
                   gridlockByCause: (m1.accounting as { gridlockEventsByCause?: unknown }).gridlockEventsByCause ?? null, gridlockSites: sim.gridlockSites().slice(0, 4).map(g => ({ node: g.node, lng: +g.lng.toFixed(5), lat: +g.lat.toFixed(5), n: g.vehicles, s: Math.round(g.longestS), causes: g.causes, places: g.places })) });
               }
-              row.micro = { corridorVph: Math.round(cplan.provenance.vehiclesPerHour), warmS, measS, runs, ms: Date.now() - t1 };
+              row.micro = { corridorVph: Math.round(cplan.provenance.vehiclesPerHour), heldUpstreamVph: Math.round(held.vph), warmS, measS, runs, ms: Date.now() - t1 };
             }
           } catch (e) {
             row.ok = false; row.error = e instanceof Error ? `${e.message} ${e.stack?.split('\n')[1] ?? ''}` : String(e);
