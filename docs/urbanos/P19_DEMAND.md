@@ -69,4 +69,58 @@ and through traffic use the same Indo-HCM skeleton loading as the feedback) is *
 not a choice criterion between v2 and a candidate). The project check still does not PASS the synthetic-model rule
 (JT 8/28, counts 3/16), so the synthetic model stays opt-in whatever the harness says.
 
-(section 4, harness, filled when run `hc` finishes)
+## 4. City-wide harness on V4CC (run `hc`, adopted p18 defaults: meter + zip, pockets off, fix E off)
+
+| Run | Pass | D1 | D2 | D3 | M1 | M2 | N2 | R3 | Verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| `mz` (p18 adopted, v2) | **50** | 33 | 80 | 0 | 32 | 37 | 4 | 56 | reference |
+| `hc` (V4CC) | 49 | **10** | **77** | 1 | 35 | 37 | 4 | 57 | **not adopted** (total 49 < 50; M1, D3, R3 worse) |
+
+(band columns = failing area-hours; lower is better). V4CC fixes the median-speed band almost everywhere (D1 33 → 10):
+the congested city paths stop sending through traffic into already-loaded areas (e.g. p16_12_oldcity 09:00 demand
+87,930 → 71,081 veh/h). But M1 (corridor micro-simulation gridlock) gains 13 and loses 10, including rows whose area
+demand fell (p16_35_collector 09:00, 30,754 → 23,671), so the M1 change is not a simple load effect; one new D3
+(p16_29_subarterial 19:00, demand 10,985 → 14,821) and one new R3 (p16_36_local 19:00). Rows: `p19-run/hc.jsonl`.
+Under the pre-registered rule V4CC is **not adopted**; the adopted demand stays v2 and the synthetic model stays opt-in.
+
+### 4.1 Pockets and fix E on the adopted demand
+The adopted demand is unchanged (v2) and p19 changed no engine code (`git diff 7852cd9..HEAD` = docs only), so p18's
+measured runs stand without a re-run: `pkme` (pockets + E) 62/164 but D1 +1, M1 +7 → not adopted; `mze` (E alone,
+partial) D1 worse → not adopted. One pre-registered probe (RULE_p19 addendum, written before running it): V4CC + pockets
++ E (`hcpke`), because V4CC removes most D1 failures, which is what blocked pockets + E.
+
+(section 4.2 hcpke, filled when it finishes)
+
+## 5. Supply check of the undiagnosed rows (classify3.md)
+
+`p19-run/classify3.py` re-reads the p18 rows that classify.md left undiagnosed (U) plus N2 (mz.jsonl, adopted v2):
+D2 36 rows (K main road near capacity 15, ZK zero-flow floor + K 12, ZT/ZKT/KT 4, ? 3), M1 11, M2 14, N2 4, D1 2.
+"K" means the area's main road class runs at speed ratio < 0.6, i.e. v/c about 0.85–1.2 on the Indo-HCM curve, with
+< 10 % of vkm above v/c 1.2.
+
+To tell a supply error from a demand / standard question, `p19-run/supplyscan.mjs` and `owscan.mjs` read every main-road
+way (trunk / primary / secondary / tertiary, incl. links) inside the 41 harness areas from the p16 caches (6,386 ways):
+
+| Class | Ways | OSM `lanes` tagged | `maxspeed` tagged | `width` tagged | Lanes used when untagged |
+|---|---|---|---|---|---|
+| trunk | 904 | 600 (66 %) | 246 | 13 | one-way carriageway 3 (57), two-way 4 |
+| primary | 1,799 | 959 (53 %) | 180 | 2 | one-way carriageway 2, two-way 2 (1 per direction) |
+| secondary | 1,374 | 613 (45 %) | 98 | 2 | one-way 2, two-way 2 |
+| tertiary | 2,309 | 388 (17 %) | 229 | 4 | one-way 2, two-way 2 |
+
+Findings (evidence, no change made):
+- Where OSM has `lanes`, the model uses it (2,548 of 2,560 tagged ways match `laneCount`; the other 12 are two-way ways tagged `lanes=1`, kept at one lane per direction). Untagged ways follow the OSM
+  convention (two-way without `lanes` = one lane each way; a mapped dual carriageway is two one-way ways). No systematic
+  lane loss was found, so there is no sourced general lane correction to make.
+- Lane capacities are Indo-HCM 2017 Table 5.4 values (1200 / 1350 / 1400 PCU/h/lane, two-lane undivided / 4- / 6-lane
+  divided) times the recorded capacityFactor 1.3; a two-lane two-way road therefore carries 2 x 1200 x 1.3 = 3,120 PCU/h,
+  already above IRC:106-1990 Table 2's design service volumes for a two-lane two-way arterial (1,500 PCU/h, LOS C, both
+  directions; capacity is higher than DSV but Table 2 gives no capacity column). Raising capacity further is not sourced.
+- `width` is tagged on < 1 % of main ways, so lane-width and parking/bus-stop friction (Indo-HCM Tables 5.9–5.11) stay
+  unmapped; this is a data gap, not a model error, and stays a stated limitation.
+- `maxspeed` is tagged on 12 % of main ways; untagged ways are capped at the IRC:86-2018 design speed of their class,
+  which is above the Indo-HCM operating speed of the base section, so it does not bind on the K rows.
+Conclusion: the K rows are main roads loaded close to their Indo-HCM capacity by the synthetic demand. With no measured
+lanes/width survey and no counts on those roads, they cannot be called a supply error; the lever is the demand's spatial
+pattern (sections 2–4), which is where p19 acted.
+
