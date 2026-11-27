@@ -8,12 +8,12 @@ import { describe, it, expect } from 'vitest';
 import type { RoadObject, RoadClassification } from '../objects/types';
 import { StudyAreaExplorer } from '../simulation/StudyAreaExplorer';
 import { snapDemandPlan, type DemandPlan } from '../simulation/StudyDemand';
-import { assignTraffic, PCU, PCU_P14 } from '../simulation/staticAssignment';
+import { assignTraffic, buildAssignmentNetwork, PCU, PCU_P14 } from '../simulation/staticAssignment';
 import { TrafficMicroSim } from '../simulation/TrafficMicroSim';
 import { P14, p14ParameterTable } from '../simulation/supplyConfig';
 import {
   p14TimeRatio, p14LinkSupply, baseLaneCapacityPcu, operatingSpeedOfLaneCapacity, laneWidthFactor, capacityFromGaps, controlDelayS,
-  gapCapacityPcu, gaps, SIGNAL_TO_MIDBLOCK_PCU, HEAVY_PCT, frictionByRoad, buildingPointsFromOsm, roundaboutEntryPcu, inferredSignalPoints, approachRank, type BuildingPoint,
+  gapCapacityPcu, gaps, decelAccelS, STOP_LOSS_S_PER_MS, SIGNAL_TO_MIDBLOCK_PCU, HEAVY_PCT, frictionByRoad, buildingPointsFromOsm, roundaboutEntryPcu, inferredSignalPoints, approachRank, type BuildingPoint,
 } from '../simulation/indianSupply';
 
 const LAT0 = 18.53;
@@ -132,6 +132,13 @@ describe('p14 unsignalised junctions and roundabouts', () => {
     expect(controlDelayS(75, 347, 0.25)).toBeCloseTo(18.213, 2);
     expect(controlDelayS(400, 347, 1)).toBeGreaterThan(controlDelayS(300, 347, 1));
   });
+  it('p17: the deceleration-acceleration term is the stop loss at the approach speed (fleet kinematics), never above HCM\'s 5 s', () => {
+    // two-wheelers 52 % at 2 m/s2, the rest at 1 m/s2: 0.52 x 0.5 + 0.48 x 1.0 = 0.74 s per m/s
+    expect(STOP_LOSS_S_PER_MS).toBeCloseTo(0.74, 6);
+    expect(decelAccelS(13.3)).toBeCloseTo(13.3 / 3.6 * 0.74, 6); // an old-city lane: 2.7 s
+    expect(decelAccelS(50)).toBe(5);
+    expect(controlDelayS(75, 347, 0.25, decelAccelS(13.3)) - controlDelayS(75, 347, 0.25)).toBeCloseTo(decelAccelS(13.3) - 5, 6);
+  });
   it('roundabout entry capacity from IRC:65 Table 9.1 by ICD, falling with the circulating flow', () => {
     expect(roundaboutEntryPcu(32, 0)).toBe(2567);
     expect(roundaboutEntryPcu(32, 600)).toBe(Math.round(2567 * Math.exp(-0.00032 * 600)));
@@ -176,6 +183,32 @@ describe('p14 junction control inference', () => {
     const into = r.links.filter(l => l.roadId === 'a1' && l.id.endsWith('_fwd'));
     expect(into.some(l => l.gC !== null)).toBe(true);
     expect(into.every(l => !l.junction)).toBe(true);
+  });
+});
+
+describe('p17 one junction per signal', () => {
+  it('a mapped signal controls its crossing (both carriageways), not a lane joining 25 m away', () => {
+    // East West Road divided: carriageways at y = 0 and y = 12 (12 m apart: one folded junction), North South Road crossing at x = 0,
+    // Lane 1 joining the north carriageway 25 m east of the crossing; the signal mapped at the crossing's south-west corner
+    const roads = [
+      road('a1', [[-300, 0], [0, 0]], { highway: 'primary', name: 'East West Road' }, 'arterial', 2, true), road('a2', [[0, 0], [300, 0]], { highway: 'primary', name: 'East West Road' }, 'arterial', 2, true),
+      road('a3', [[300, 12], [25, 12]], { highway: 'primary', name: 'East West Road' }, 'arterial', 2, true), road('a4', [[25, 12], [0, 12]], { highway: 'primary', name: 'East West Road' }, 'arterial', 2, true),
+      road('a5', [[0, 12], [-300, 12]], { highway: 'primary', name: 'East West Road' }, 'arterial', 2, true),
+      road('b1', [[0, -300], [0, 0]], { highway: 'secondary', name: 'North South Road' }), road('b2', [[0, 0], [0, 12]], { highway: 'secondary', name: 'North South Road' }),
+      road('b3', [[0, 12], [0, 300]], { highway: 'secondary', name: 'North South Road' }),
+      road('c1', [[25, 12], [25, 150]], { highway: 'residential', name: 'Lane 1' }, 'local', 1),
+    ];
+    const map = new Map(roads.map(r => [r.id, r]));
+    const area = new StudyAreaExplorer().explore(roads, 1, { seedRoadIds: ['a1'], rangeMeters: 3000, direction: 'both' });
+    const sig: [number, number][] = [[pt(-4, -4)[0], pt(-4, -4)[1]]];
+    const near = (x: number, y: number) => (id: string) => { const c = area.network.nodes.get(id)!.coordinates; return Math.abs(c[0] - pt(x, y)[0]) < 1e-7 && Math.abs(c[1] - pt(x, y)[1]) < 1e-7; };
+    const p14 = buildAssignmentNetwork(area, map, sig, undefined, undefined, { buildings: null });
+    expect([...p14.signalised].some(near(0, 0))).toBe(true);
+    expect([...p14.signalised].some(near(0, 12))).toBe(true);
+    expect([...p14.signalised].some(near(25, 12))).toBe(false);
+    // p13 keeps every 3+-stretch node within 35 m
+    const p13 = buildAssignmentNetwork(area, map, sig);
+    expect([...p13.signalised].some(near(25, 12))).toBe(true);
   });
 });
 
