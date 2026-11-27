@@ -17,6 +17,8 @@ export interface TrafficNode {
   hasSignals: boolean;
   signalTiming?: number; // Cycle timing in seconds
   allowedMovements: TurnMovement[];
+  /** p17: an access (loading) node added on a long link (simulation/accessNodes.ts), not a junction. */
+  access?: boolean;
 }
 
 export interface TrafficEdge {

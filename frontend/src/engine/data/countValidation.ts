@@ -39,7 +39,7 @@ export function roadDirectionFlow(vph: ReadonlyMap<string, number>, roadId: stri
   vph.forEach((v, id) => {
     if (!id.startsWith(prefix)) return;
     const rest = id.slice(prefix.length);
-    if (!/^\d+_(fwd|bwd)$/.test(rest)) return; // another road whose id extends this one
+    if (!/^\d+(?:\.\d+)?_(fwd|bwd)$/.test(rest)) return; // another road whose id extends this one
     if (rest.endsWith('_bwd')) { hasB = true; b = Math.max(b, v); } else { hasF = true; f = Math.max(f, v); }
   });
   // A direction with no link in the result is unknown (null), not zero

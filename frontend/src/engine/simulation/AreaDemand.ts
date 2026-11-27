@@ -117,8 +117,8 @@ export function calibratedLinkFlow(flows: CalibratedEdgeFlows | null | undefined
 const windowWays = new WeakMap<Record<string, number>, Set<string>>();
 function isWindowLink(links: Record<string, number>, edgeId: string): boolean {
   let ways = windowWays.get(links);
-  if (!ways) { ways = new Set(Object.keys(links).map(k => k.replace(/_seg_\d+_(fwd|bwd)$/, ''))); windowWays.set(links, ways); }
-  return ways.has(edgeId.replace(/_seg_\d+_(fwd|bwd)$/, ''));
+  if (!ways) { ways = new Set(Object.keys(links).map(k => k.replace(/_seg_\d+(?:\.\d+)?_(fwd|bwd)$/, ''))); windowWays.set(links, ways); }
+  return ways.has(edgeId.replace(/_seg_\d+(?:\.\d+)?_(fwd|bwd)$/, ''));
 }
 const M_PER_DEG_LAT = 111320;
 const distM = (a: readonly number[], b: readonly number[]) =>

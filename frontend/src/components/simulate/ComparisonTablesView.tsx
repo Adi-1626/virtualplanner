@@ -92,7 +92,7 @@ export const ComparisonTablesView: React.FC<{ t: ComparisonTables; sim: Simulati
         </table>
       </div>
       <Disclosure title={`Roads: volume, load, speed and delay (${t.links.length})`} testId="results-links-disclosure" defaultOpen>
-        {t.links.length ? <LinksTable rows={links} onShow={r => { engineInstance.highlightRoads([...new Set(r.segmentKeys.map(k => k.replace(/_seg_\d+$/, '')))], 'binding'); }} /> : <p className="text-[11px] text-slate-500">No named roads in the area routing.</p>}
+        {t.links.length ? <LinksTable rows={links} onShow={r => { engineInstance.highlightRoads([...new Set(r.segmentKeys.map(k => k.replace(/_seg_\d+(?:\.\d+)?$/, '')))], 'binding'); }} /> : <p className="text-[11px] text-slate-500">No named roads in the area routing.</p>}
         {t.links.length > 10 && <button type="button" className="mt-1 text-[11px] text-cyan-300 hover:text-white cursor-pointer" onClick={() => setAllLinks(v => !v)}>{allLinks ? 'Show the first 10' : `Show all ${t.links.length}`}</button>}
         <p className="mt-1 text-[10px] text-slate-500">Area routing on the frozen demand. Sorted by the change in delay. Click a road to see it on the map.</p>
       </Disclosure>

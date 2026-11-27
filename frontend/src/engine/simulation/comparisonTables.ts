@@ -71,7 +71,7 @@ export function byRoad(r: RoadAnalysisResult, roads: ReadonlyMap<string, Drivabl
   const times = r.areaLinkTime;
   const flows = new Map<string, { bearing: number; vph: number }[]>();
   r.areaLinkVph.forEach((vph, linkId) => {
-    const roadId = linkId.replace(/_seg_\d+_(fwd|bwd)$/, '');
+    const roadId = linkId.replace(/_seg_\d+(?:\.\d+)?_(fwd|bwd)$/, '');
     const road = roads.get(roadId);
     const name = road?.name;
     if (!name || isGenericRoadName(name)) return;

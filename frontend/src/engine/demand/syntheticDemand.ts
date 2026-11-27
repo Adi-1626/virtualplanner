@@ -688,7 +688,8 @@ export function syntheticAreaPlan(city: SyntheticCity, area: StudyArea, roads: R
   for (const e of net.edges.values()) if (included.has(segKey(e.id))) { nodeIds.add(e.fromNodeId); nodeIds.add(e.toNodeId); }
   const nodes = [...nodeIds].map(id => net.nodes.get(id)!).filter(Boolean);
   if (nodes.length < 2) return null;
-  const outline = hull(nodes.map(nd => [nd.coordinates[0], nd.coordinates[1]] as [number, number]));
+  // p17: the outline is the junctions' (access nodes on links do not move the area's edge, nor which buildings are in it)
+  const outline = hull(nodes.filter(nd => !nd.access).map(nd => [nd.coordinates[0], nd.coordinates[1]] as [number, number]));
   if (outline.length < 3) return null;
   const gateways = areaGateways(area, roads);
 

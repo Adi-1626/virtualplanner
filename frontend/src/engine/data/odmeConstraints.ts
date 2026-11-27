@@ -99,7 +99,7 @@ export function countsToConstraints(rows: readonly EngineCountRow[], edgeIds: It
   const days = new Set(o.dayTypes ?? ['weekday', 'all_days']);
   const byRoad = new Map<string, string[]>();
   for (const id of edgeIds) {
-    const m = /^(.*)_seg_\d+_(fwd|bwd)$/.exec(id);
+    const m = /^(.*)_seg_\d+(?:\.\d+)?_(fwd|bwd)$/.exec(id);
     if (m) (byRoad.get(m[1]) ?? byRoad.set(m[1], []).get(m[1])!).push(id);
   }
   const constraints: CountConstraint[] = [], skipped: ConstraintBuild['skipped'] = [];
