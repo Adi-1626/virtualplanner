@@ -198,8 +198,10 @@ export const ZIP_MERGE = { enabled: true };
  * road from a property bordering thereon shall give way to the motor vehicles and other traffic already running on that
  * road". Without it entering trips took each opening in a full short link and a truck at the junction, needing more
  * room than they did, waited 3-5 min (p16_40_local 09:00).
+ * p19: on by default with ROOM_ANY_LANE (city-wide harness `mzg` 51/164 vs 50, M1 32 -> 20, no band worse;
+ * docs/urbanos/P19_DEMAND.md §6).
  */
-export const ENTRY_GIVE_WAY = { enabled: false };
+export const ENTRY_GIVE_WAY = { enabled: true };
 /**
  * p19: a vehicle held for `room` (refused room in every lane of its exit, tryGrant's any-lane search) is owed every lane
  * it searched, not only the lanes its own lane maps to: it takes whichever lane first has room for it. Before, a truck
@@ -211,8 +213,9 @@ export const ENTRY_GIVE_WAY = { enabled: false };
  * COURTESY_CRAWL_MS leaves the room in the exit lane to a vehicle that has stood COURTESY_S at its line on a give-way
  * approach waiting for that room (forced / courtesy merging into a slow queue, same sources as COURTESY_S). Without it
  * the side-road truck in the same jam (seed 7) stood 6-7 min while the major stream's small vehicles took every opening.
+ * On by default since p19 (pre-registered rule: harness `mzg` 51/164 vs 50, M1 32 -> 20, no band worse).
  */
-export const ROOM_ANY_LANE = { enabled: false };
+export const ROOM_ANY_LANE = { enabled: true };
 const CONFLICT_HOLDS = ['conflict'] as const;
 /** Traffic that must give way is cleared to cross only from this close to the line. */
 const YIELD_LINE_M = 8;
