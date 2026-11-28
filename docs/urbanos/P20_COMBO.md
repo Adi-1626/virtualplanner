@@ -2,7 +2,7 @@
 
 Branch `p20-combo` (from p19-demand a13330d). Run dir `/workspace/work/p20-run` (STATUS_p20.md running log). Bands (`citywideBands.ts`) and thresholds untouched.
 
-## 1. Pre-registered rule (verbatim copy of p20-run/RULE_p20.md, written before any p20 run)
+## 1. Pre-registered rule (verbatim copy of p20-run/RULE_p20.md, written before any p20 run; addenda dated)
 
 ### RULE p20 (written 2026-11-28 06:05 IST, BEFORE any p20 harness run)
 Reference = adopted defaults `p19-run/mzg.jsonl` (branch p19-demand a13330d, fix G default on) = **51/164**
@@ -35,6 +35,20 @@ Step 2 (only if a candidate fails on band totals alone): diagnose the specific N
 fix is allowed only for a genuine, general, sourced model bug found in those rows; the fixed candidate is pre-registered
 here as an addendum (with the diagnosis) BEFORE its run. No parameter sweeps, no picking among post-hoc variants.
 At most two such fix rounds (then document and stop).
+
+#### Addendum 1 (written 2026-11-28 ~09:40 IST: after C1 final and C2 c1-c5 partial, BEFORE any run of the candidate below)
+C1 = 64/164 fails (D1 34 > 33 by the p18 zero-flow-reference mechanism of fix E, not a model bug -> no fix allowed;
+M1 31 > 20). C2 partial fails M1 so far (D1 already far below mzg). Step 2 diagnosis of new M1 rows (dumps, P18StuckDiag,
+P20NodeProbe): p16_17_midc 19:00 seed 42 (425 s, light load) is a genuine model bug: at a node WITHOUT a junction control
+(controls exist only at >= 3 arms) `longerWaiting` returns false, so nothing is owed to a vehicle waiting for room and the
+other lane of its own approach changes lane at the node and takes every opening. Fix H = NODE_TURNS (turn-taking for room
+also at uncontrolled nodes; the existing rule of docs/OVERHAUL.md §18 / ZIP_MERGE / ROOM_ANY_LANE, restriction lifted;
+p20-fixh 52a6551). Other diagnosed rows (p16_03 19, p16_14 9, p16_11 9/14, p16_08_flyover 9) are load / priority /
+short-link cases on which H has no effect (documented, no change).
+Candidate **C2H** = C2 + fix H (`P20_NODETURN=1`, worktree wt-p20h), run `c2h` after C2 completes, whatever C2 gives,
+unless C2 is adopted outright (then C2H is informational and not run). C1H is NOT run: C1's D1 failure is not
+addressable by H (micro-only), so C1H cannot meet the rule. Adoption of C2H: same rule (total > 51, no band worse than
+mzg) + Step 3 re-checks. No other variant after seeing c2h.
 
 ## 2. C1 = mzg + pockets + fix E (demand v2), run `c1`
 
