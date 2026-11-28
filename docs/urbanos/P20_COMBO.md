@@ -62,6 +62,14 @@ D1/D2/D3/R*/N* must come out identical to mzg (sanity check of the code path); h
 construction (P14Validation / NetworkValidation do not run the micro-sim). Adopt (NODE_TURNS default true) only if total
 > 51 AND no band total worse than mzg. Otherwise H stays opt-in. No other variant is run after seeing gh.
 
+#### Addendum 3 (written 2026-11-28 07:45 IST, during the gh run (c1-c2 partial, 0 flips vs mzg), BEFORE any C1+H run)
+C1+H (C1 + `P20_NODETURN=1`) is NOT run. Diagnosis-based reason, not a score: C1 fails the rule on D1 (34 > 33); the
+extra D1 rows (p16_12_oldcity 14:00, p16_35_collector 09:00) come from fix E raising the model's own zero-flow reference
+speed in the static assignment (P18_PASS.md, addendum 1), and D1 is computed from the assignment, not from the micro-sim.
+Fix H changes only the micro-simulation (TrafficMicroSim room hold at uncontrolled nodes), so C1+H has exactly C1's D1 = 34
+and cannot meet the rule by construction (same reasoning as C1H in addendum 1 and C2H in addendum 2). The gh run is the
+code-path check: D1/D2/D3/R3/N2 of gh must equal mzg. No further variant is pre-registered in p20.
+
 ## 2. C1 = mzg + pockets + fix E (demand v2), run `c1`
 
 | Run | Pass | D1 | D2 | D3 | M1 | M2 | N2 | R3 | Verdict |
