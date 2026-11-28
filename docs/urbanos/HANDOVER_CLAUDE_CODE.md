@@ -1,6 +1,6 @@
 # UrbanOS (VirtualPlanner) — Handover for Claude Code
 
-Written 2026-11-27 by Hark. Read this first, then `docs/urbanos/START_HERE.md` and `DEVELOPER_HANDBOOK.md`.
+Written 2026-11-27 by Hark, updated 2026-11-28 (p20). Read this first, then `docs/urbanos/START_HERE.md` and `DEVELOPER_HANDBOOK.md`.
 
 ## 1. What the project is
 UrbanOS is a Cesium 3D digital twin of Pune (React/TypeScript frontend, FastAPI + SQLite backend, OSM import, in-browser IDM micro-simulation). It is a decision-support tool for city planners (PMC, PCMC, Maha-Metro, PMRDA): Select area → Understand → Explore improvements → Simulate → Compare → Decide. It is not a game. Cities: Skylines 2 only inspires tool ergonomics; every default comes from a real standard (IRC, CPHEEO, Pune USDG). Correctness and honesty come before visuals.
@@ -26,7 +26,8 @@ UrbanOS is a Cesium 3D digital twin of Pune (React/TypeScript frontend, FastAPI 
 | p17-access / p17-junction / p17-oldcity | 0568d10 / d756529 / b962fdd | the four weak-spot fixes |
 | **p17-all = main** | 852936b | integration of p17 work |
 | p18-pass (pushed, not main) | see git log | harness 50/164 adopted (meter + zip merge); opt-in switches: pockets (POCKET_STREETS), gap delay (P14.priorityGapDelay), unsigned-local gap delay (P14.unsignedLocalGap, MVDR 2017 Reg 7/9); pockets + unsigned-local = 62/164 but D1 +1 / M1 +7 vs adopted, so not adopted; docs/urbanos/P18_PASS.md, run dir /workspace/work/p18-run (STATUS_p18.md, mz.jsonl, pkme.jsonl, classify.md). Branch p18-entry: dropped experiment F (entry give-way, no effect) |
-| p19-demand (pushed, not main) | see git log | demand v4 (congested-time feedback) + V4CC: eligible on hold-out/official but harness 49/164 (hc) and 66/164 with pockets+E (hcpke), M1/D3 worse, not adopted; fix G adopted (ROOM_ANY_LANE + ENTRY_GIVE_WAY default on, harness mzg 51/164, M1 32 -> 20); docs/urbanos/P19_DEMAND.md, run dir /workspace/work/p19-run (STATUS_p19.md, RULE_p19.md, hc/hcpke/mzg.jsonl). Next: pre-register pockets + meter + E on top of G |
+| p19-demand (pushed, not main) | see git log | demand v4 (congested-time feedback) + V4CC: eligible on hold-out/official but harness 49/164 (hc) and 66/164 with pockets+E (hcpke), M1/D3 worse, not adopted; fix G adopted (ROOM_ANY_LANE + ENTRY_GIVE_WAY default on, harness mzg 51/164, M1 32 -> 20); docs/urbanos/P19_DEMAND.md, run dir /workspace/work/p19-run (STATUS_p19.md, RULE_p19.md, hc/hcpke/mzg.jsonl). Pockets + meter + E on top of G was then run in p20 (C1, not adopted) |
+| p20-combo (pushed, not main) | see git log | pre-registered combos on fix G (RULE_p20 + addenda 1-3, verbatim in docs/urbanos/P20_COMBO.md): C1 pockets+E 64/164 (D1 34, M1 31) dropped; C2 +V4CC 66/164 (M1 27, D3 1) dropped; GH = adopted + fix H 51/164 (M1 19, total not > 51) dropped; C2H/C1+H not run by construction (their blocking band is assignment-side, H is micro-only). Fix H = `NODE_TURNS` (turn-taking for room at nodes without a junction control), opt-in. Defaults unchanged: adopted = mzg 51/164. Run dir /workspace/work/p20-run (STATUS_p20.md, RULE_p20.md, c1/c2/gh.jsonl, cls_mzg.md). Branch p20-fixh = fix H alone (merged into p20-combo) |
 | p16-m1 | e8b4a25 | rejected experiment (JOIN_JUNCTION_M 24 broke 4 tests) |
 
 Other old branches (ug-*, underground-*, geom-*, dr-*, p4–p7 parts) are already merged into c83ccd9.
@@ -59,6 +60,15 @@ City-wide harness, 41 areas × 4 hours (09/14/19/23) = 164 area-hours:
 
 ### p17 adopted defaults (a40e052)
 Access nodes ON; micro-sim courtesy 60 s for starved minor approaches at priority junctions, entry queue per road, lane pre-sorting (150 m); one signal per junction; decel-accel delay term (≤5 s); closed-access roads (military etc.) are local-only. Webster signal timing in assignment OFF (kept as `signalTiming: 'webster'` option) because it worsened D1/D3.
+
+### p20 outcome and honest ceiling (2026-11-28)
+Adopted defaults stay `mzg` = **51/164** (D1 33, D2 80, D3 0, M1 20, M2 37, N2 4, R3 56): demand v2, sub-area meter, zip merge, fix G. No p20 candidate met the pre-registered rule (total > 51 and no band worse). Official 15-site 1/15 (GEH 41.4, river +44.0 %), hold-out JT 7/28 / counts 2/16: synthetic model stays OFF. What blocks the remaining 113 failing area-hours (P20_COMBO.md §6):
+- **Real over-capacity in the model** (>= 10 % vkm above v/c 1.2): D1 31, D2 27, M1 10, M2 16 (+ partial 5-10 %: M1 3, M2 7). The synthetic demand runs above the official counts (bias +58.5 %), so part of this may be demand error; it needs measured counts, not a model trick.
+- **Main roads near capacity** (v/c 0.85-1.2): D2 32. Lanes follow OSM, capacity Indo-HCM x 1.3; needs counts/speeds/lane-width survey.
+- **Zero-flow floor / zero-flow-ratio conflict**: D2 21 (area already < 8.8 km/h at 23:00 from junction delay on short minor approaches); D1 2 (p16_22_fringe trunk) and N2 4 (night): D1/N2 are ratios to the model's own free-flow speed, so faster free-flow modelling (e.g. fix E) lowers the ratio; this is why fix E costs D1.
+- **R3**: 52 network extent (pocket streets, opt-in, fix 36 but cost M1/D1), 4 OSM data gaps (no mapped street within ~95 m).
+- **Residual stuck-vehicle / edge-queue cases without area-wide saturation**: M1 7 (diagnosed: full short exits / spillback, priority stream filling the exit, p16_11 23:00 signal-box residual; one removed by opt-in fix H), M2 14 (corridor bottleneck, held flow stated).
+Next honest steps: measured counts/speeds on the D2/D1 roads (RTI/PMC), then re-run; any further candidate (e.g. pockets + H with a D1-neutral access fix) must be pre-registered with a diagnosis before its run.
 
 ## 6. Unfinished work — exact next steps
 1. Confirmation run of final defaults: `cd /workspace/work/p17-run && ./all_run.sh final` then `python3 p17tables.py ../p16-run/fix3.jsonl all_nowb.jsonl final.jsonl`; fill §5b of P17_FIXES.md; re-check adoption rule (total ≥ 30, no band worse than fix3). DONE 2026-11-27 19:12 IST: 48/164, all bands ≤ fix3 (P17_FIXES §5b).
