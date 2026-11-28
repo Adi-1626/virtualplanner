@@ -189,4 +189,4 @@ and width survey), not a parameter change. In `mzg`, D2 fails on 80 rows, 14 of 
   (p18 A) remove most R3 failures (56 -> 20) but were blocked by M1 / D2 rows that fix G and fix E now address in part;
   pockets + meter + E on top of fix G is the obvious next pre-registered candidate (not run in p19, by the rule that no
   variant is picked after seeing the result). Without measured counts / speeds the D2 main-road rows are the ceiling.
-- Gates on f3d1d07: see STATUS_p19.md / section 9.
+- Gates on f3d1d07 (fix G default on), p19-run/gates2: tsc 0 errors, oxlint 0 errors / 19 warnings, vite build ok, vitest 1431 passed / 19 skipped (`--maxWorkers=1`, 10 chunks), pytest 490 passed / 3 skipped. (Earlier run on e215841/888395e: same counts, 18 skipped.)
