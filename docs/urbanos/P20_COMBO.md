@@ -35,3 +35,27 @@ Step 2 (only if a candidate fails on band totals alone): diagnose the specific N
 fix is allowed only for a genuine, general, sourced model bug found in those rows; the fixed candidate is pre-registered
 here as an addendum (with the diagnosis) BEFORE its run. No parameter sweeps, no picking among post-hoc variants.
 At most two such fix rounds (then document and stop).
+
+## 2. C1 = mzg + pockets + fix E (demand v2), run `c1`
+
+| Run | Pass | D1 | D2 | D3 | M1 | M2 | N2 | R3 | Verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| `mzg` (adopted, p19) | 51 | 33 | 80 | 0 | 20 | 37 | 4 | 56 | reference |
+| `pkme` (p18, no fix G) | 62 | 34 | 74 | 0 | 39 | 33 | 4 | 20 | p18, not adopted |
+| `c1` | **64** | **34** | 74 | 0 | **31** | 33 | 4 | 20 | **not adopted** (D1 +1, M1 +11) |
+
+(band columns = failing area-hours, lower is better; rows `p20-run/c1.jsonl`.) Fix G lowers the pockets' M1 cost
+(pkme 39 -> c1 31) but M1 still has 18 new / 7 fixed rows vs `mzg`. D1: p16_12_oldcity 14:00 (median ratio 0.610 ->
+0.592) and p16_35_collector 09:00 (0.68 -> 0.58) new, p16_13_itpark 09:00 fixed: the rows and mechanism p18 found for
+`pkme` (fix E raises the model's own zero-flow speed at unsigned local junctions, and D1 is a ratio to it; P18_PASS.md),
+a measurement-reference effect, not a model bug, so no fix is allowed for it under the rule.
+
+### 2.1 Diagnosis of new M1 rows (Step 2)
+Micro dumps (`p20-run/dump`, `dump.sh`) and `P18StuckDiag` / `P20NodeProbe`:
+
+| Row (seed) | Stand | Finding | Class |
+|---|---|---|---|
+| p16_17_midc 19:00 (42) | 425 s, light load (20 km/h) | bus/truck (needs 16 m) in lane 1 at a node **without a junction control** (a two-arm way continuation); `longerWaiting` returns at once where no control exists, so nothing is owed to it and vehicles of the other lane of its own approach change lane at the node and take every opening | **model bug** -> fix H |
+| p16_03_bridge 19:00 (42) | 233 s | truck on a residential approach, 45 m exit standing full (queue to a primary road at 19:00), back 11.1 m < 12.2 m needed | load / spillback |
+| p16_14_itpark 09:00 (7) | 209 s | priority junction: truck owed room, the priority stream (5.3 m/s, not crawling) fills the 30 m exit | priority by design (MVDR) |
+| p16_11_oldcity 09:00 / 14:00 | 184-241 s | 1-3 vehicles in the old-city jam | load |
