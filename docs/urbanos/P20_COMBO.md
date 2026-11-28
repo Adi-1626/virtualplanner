@@ -50,6 +50,18 @@ unless C2 is adopted outright (then C2H is informational and not run). C1H is NO
 addressable by H (micro-only), so C1H cannot meet the rule. Adoption of C2H: same rule (total > 51, no band worse than
 mzg) + Step 3 re-checks. No other variant after seeing c2h.
 
+#### Addendum 2 (written 2026-11-28 ~10:30 IST, after C2 final, BEFORE any run of the candidate below)
+C2 = 66/164 (D1 8, D2 76, D3 1, M1 27, M2 37, N2 3, R3 20) fails: M1 27 > 20 and D3 1 > 0. The D3 row (p16_29_subarterial
+19:00) is the V4CC demand pattern (through traffic 6,687 -> 10,549 veh/h, overLenShare 0.075 -> 0.094; p19 found the same
+in `hc`), assignment-side, not a code bug. Fix H changes the micro-simulation only, so C2H cannot change D3 and cannot meet
+the rule by construction: c2h was STOPPED after 5 rows of chunk c1 (rows moved unread to p20-run/stopped/, not used for any
+decision). Same reasoning as C1H (addendum 1).
+Candidate **GH** = adopted defaults (`mzg`: demand v2, meter, zip, fix G) + fix H (`P20_NODETURN=1`), p16 caches, run `gh`
+on wt-p20h. Reason: fix H is a diagnosed general model bug (addendum 1), not a score-driven variant. Micro-sim only:
+D1/D2/D3/R*/N* must come out identical to mzg (sanity check of the code path); hold-out/official unaffected by
+construction (P14Validation / NetworkValidation do not run the micro-sim). Adopt (NODE_TURNS default true) only if total
+> 51 AND no band total worse than mzg. Otherwise H stays opt-in. No other variant is run after seeing gh.
+
 ## 2. C1 = mzg + pockets + fix E (demand v2), run `c1`
 
 | Run | Pass | D1 | D2 | D3 | M1 | M2 | N2 | R3 | Verdict |
@@ -73,3 +85,19 @@ Micro dumps (`p20-run/dump`, `dump.sh`) and `P18StuckDiag` / `P20NodeProbe`:
 | p16_03_bridge 19:00 (42) | 233 s | truck on a residential approach, 45 m exit standing full (queue to a primary road at 19:00), back 11.1 m < 12.2 m needed | load / spillback |
 | p16_14_itpark 09:00 (7) | 209 s | priority junction: truck owed room, the priority stream (5.3 m/s, not crawling) fills the 30 m exit | priority by design (MVDR) |
 | p16_11_oldcity 09:00 / 14:00 | 184-241 s | 1-3 vehicles in the old-city jam | load |
+
+## 3. C2 = C1 + V4CC demand, run `c2`
+
+| Run | Pass | D1 | D2 | D3 | M1 | M2 | N2 | R3 | Verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| `mzg` (adopted) | 51 | 33 | 80 | 0 | 20 | 37 | 4 | 56 | reference |
+| `hcpke` (p19, no fix G) | 66 | 8 | 76 | 1 | 37 | 35 | 3 | 20 | p19, not adopted |
+| `c2` | **66** | **8** | **76** | **1** | **27** | 37 | 3 | **20** | **not adopted** (M1 +7, D3 +1) |
+
+Fix G cuts the M1 cost of `hcpke` (37 -> 27) but M1 has 17 new / 10 fixed rows vs `mzg`. D3: p16_29_subarterial 19:00
+(the `hc` row of p19): V4CC routes more through traffic into the area (6,687 -> 10,549 veh/h; overLenShare 0.075 -> 0.094 vs
+the 0.09 band), a demand-pattern effect, not a code bug. C2's new M1 rows diagnosed (C2-env dumps `p20-run/dump2`):
+p16_08_flyover 09:00 (seed 42, 306 s: a bus/truck needing 16 m at an uncontrolled node in front of a 16 m two-lane link
+that feeds a 2 -> 1 lane drop, standing under the 09:00 load), p16_18_midc 09:00 (31 m exit standing full: load),
+p16_05_bridge 19:00 (bridge jam, corridor 30,952 veh/h with 20,169 held upstream: load); fix H has no effect on them.
+Since D3 is assignment-side and fix H is micro-only, C2H (addendum 1) cannot meet the rule; it was stopped unread (addendum 2).
