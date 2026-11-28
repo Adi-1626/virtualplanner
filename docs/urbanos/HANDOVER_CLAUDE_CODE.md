@@ -26,6 +26,7 @@ UrbanOS is a Cesium 3D digital twin of Pune (React/TypeScript frontend, FastAPI 
 | p17-access / p17-junction / p17-oldcity | 0568d10 / d756529 / b962fdd | the four weak-spot fixes |
 | **p17-all = main** | 852936b | integration of p17 work |
 | p18-pass (pushed, not main) | see git log | harness 50/164 adopted (meter + zip merge); opt-in switches: pockets (POCKET_STREETS), gap delay (P14.priorityGapDelay), unsigned-local gap delay (P14.unsignedLocalGap, MVDR 2017 Reg 7/9); pockets + unsigned-local = 62/164 but D1 +1 / M1 +7 vs adopted, so not adopted; docs/urbanos/P18_PASS.md, run dir /workspace/work/p18-run (STATUS_p18.md, mz.jsonl, pkme.jsonl, classify.md). Branch p18-entry: dropped experiment F (entry give-way, no effect) |
+| p19-demand (pushed, not main) | see git log | demand v4 (congested-time feedback) + V4CC: eligible on hold-out/official but harness 49/164 (hc) and 66/164 with pockets+E (hcpke), M1/D3 worse, not adopted; fix G adopted (ROOM_ANY_LANE + ENTRY_GIVE_WAY default on, harness mzg 51/164, M1 32 -> 20); docs/urbanos/P19_DEMAND.md, run dir /workspace/work/p19-run (STATUS_p19.md, RULE_p19.md, hc/hcpke/mzg.jsonl). Next: pre-register pockets + meter + E on top of G |
 | p16-m1 | e8b4a25 | rejected experiment (JOIN_JUNCTION_M 24 broke 4 tests) |
 
 Other old branches (ug-*, underground-*, geom-*, dr-*, p4–p7 parts) are already merged into c83ccd9.
