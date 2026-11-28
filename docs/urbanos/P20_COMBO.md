@@ -109,3 +109,65 @@ p16_08_flyover 09:00 (seed 42, 306 s: a bus/truck needing 16 m at an uncontrolle
 that feeds a 2 -> 1 lane drop, standing under the 09:00 load), p16_18_midc 09:00 (31 m exit standing full: load),
 p16_05_bridge 19:00 (bridge jam, corridor 30,952 veh/h with 20,169 held upstream: load); fix H has no effect on them.
 Since D3 is assignment-side and fix H is micro-only, C2H (addendum 1) cannot meet the rule; it was stopped unread (addendum 2).
+
+## 4. GH = mzg + fix H (addendum 2), run `gh`
+
+| Run | Pass | D1 | D2 | D3 | M1 | M2 | N2 | R3 | Verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| `mzg` (adopted, p19) | 51 | 33 | 80 | 0 | 20 | 37 | 4 | 56 | reference |
+| `gh` | **51** | 33 | 80 | 0 | **19** | 37 | 4 | 56 | **not adopted** (total 51 is not > 51) |
+
+(rows `p20-run/gh.jsonl`, wt-p20h, `P20_NODETURN=1`, p16 caches, demand v2.) Code-path check passed: every
+assignment-side band (D1/D2/D3/N2/R3) and every assignment field is identical to `mzg`; the micro-simulation output changes
+on a handful of rows (trip speed / delay index / edge queue), so the switch is active. The only band change: p16_29_subarterial
+19:00 no longer fails M1, but that row still fails D1, D2 and M2, so no row flips and the total stays 51. Under the
+pre-registered rule (total > 51 AND no band worse) GH is not adopted: `NODE_TURNS` stays **opt-in (default false)**, no
+default changes in p20. Fix H remains a diagnosed, general correction (unit test `NodeTurns.test.ts`, probe
+p16_17_midc 19:00 seed 42: 425 s stand -> none) available for any later pre-registered candidate.
+
+C1+H was considered and not run (addendum 3, written before any run): C1 fails on D1, which is assignment-side; H is
+micro-only, so C1+H has C1's D1 = 34 by construction (confirmed by `gh`: H leaves D1 unchanged).
+
+## 5. Outcome
+
+| Candidate | Pass | D1 | D2 | D3 | M1 | M2 | N2 | R3 | Verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| `mzg` reference | 51 | 33 | 80 | 0 | 20 | 37 | 4 | 56 | stays adopted |
+| C1 (pockets + E) | 64 | 34 | 74 | 0 | 31 | 33 | 4 | 20 | dropped (D1, M1) |
+| C2 (C1 + V4CC) | 66 | 8 | 76 | 1 | 27 | 37 | 3 | 20 | dropped (M1, D3) |
+| C2H | - | | | | | | | | stopped by construction (D3 assignment-side), 5 rows unread |
+| GH (mzg + H) | 51 | 33 | 80 | 0 | 19 | 37 | 4 | 56 | dropped (total not > 51) |
+| C1+H | - | | | | | | | | not run by construction (D1 assignment-side) |
+
+**Final adopted pass count: 51/164** (defaults unchanged from p19 a13330d / f3d1d07: demand v2, sub-area meter, zip
+merge, fix G). Official 15-site check (1/15, mean GEH 41.4, river +44.0 %) and the project hold-out (JT 7/28, counts 2/16)
+are unchanged because no default changed. Synthetic model stays opt-in. Opt-in switches with recorded evidence: pockets
+(`POCKET_STREETS`), fix E (`P14.unsignedLocalGap`), V4CC demand, fix H (`NODE_TURNS`).
+
+## 6. Honest ceiling of the adopted model (`mzg`, 113 failing area-hours)
+
+Classified from the harness rows with `p18-run/classify2.py` and `p19-run/classify3.py` (output `p20-run/cls_mzg.md`,
+`p20-run/cls3_mzg.md`); bands and thresholds as written in `citywideBands.ts`.
+
+| Band (fails) | Blocked by | Area-hours |
+|---|---|---|
+| D1 (33) | real over-capacity in the model: >= 10 % of vehicle-km above v/c 1.2 (bridges, flyovers, old city, IT park, arterials at 09/19) | 31 |
+| D1 | zero-flow-ratio conflict: p16_22_fringe 09/19, trunk near capacity (median ratio 0.51-0.52) with no over-capacity; the ratio is to the model's own free-flow speed (night p10 35.7 km/h), so any change that models free flow faster (fix E, higher caps) lowers the ratio | 2 |
+| D2 (80) | real over-capacity (>= 10 % vkm above v/c 1.2) | 27 |
+| D2 | zero-flow floor: the same area at 23:00 is already below 8.8 km/h (junction delay on short minor approaches) | 21 |
+| D2 | main roads near capacity (v/c 0.85-1.2, < 10 % vkm above 1.2); lanes follow OSM, capacity Indo-HCM x 1.3, no sourced supply change (P19 §5/§7); needs measured counts / speeds / lane-width survey | 32 |
+| D3 | - | 0 |
+| M1 (20; 19 with H) | load: area assignment >= 10 % vkm above v/c 1.2 | 10 |
+| M1 | partial saturation (5-10 % vkm above v/c 1.2) | 3 |
+| M1 | residual stuck-vehicle cases without area-wide saturation (diagnosed examples: full short exits / spillback, priority stream filling the exit, the p16_11 23:00 signal-box residual); one of them (p16_29 19:00) is removed by opt-in fix H | 7 |
+| M2 (37) | load: corridor inflow above corridor capacity under area over-capacity | 16 |
+| M2 | partial saturation (5-10 %) | 7 |
+| M2 | edge-queue growth without area-wide saturation (corridor bottleneck; held flow stated) | 14 |
+| N2 (4) | zero-flow-ratio conflict at night (no over-capacity): 2 threshold edge (p10 ratio 0.70 / 0.73 needed), 1 tertiary loading, 1 undiagnosed | 4 |
+| R3 (56) | network extent: the trip end's own street exists but is outside the area network; pocket streets (opt-in) fix 36 of these but bring M1/D1 cost (C1) | 52 |
+| R3 | data gap: no mapped OSM street within ~95 m of some trip ends | 4 |
+
+Row view (113 failing rows): R3 alone 24, D2 alone 14, D1+D2 13, D2+R3 10, D2+M2+R3 8, D2+M2 7, the rest mixed. The
+largest blocks are real over-capacity in the synthetic demand (at the 15 official sites: bias +58.5 %, river screenline +44.0 %)
+and main roads near capacity: both need measured counts / speeds, not a model or threshold change. No threshold, band or
+area-specific code was changed in p20.
