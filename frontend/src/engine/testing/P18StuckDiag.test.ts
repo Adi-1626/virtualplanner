@@ -7,11 +7,12 @@
 import { describe, it } from 'vitest';
 import fs from 'fs';
 import v8 from 'v8';
-import { TrafficMicroSim, STEP_S } from '../simulation/TrafficMicroSim';
+import { TrafficMicroSim, STEP_S, NODE_TURNS } from '../simulation/TrafficMicroSim';
 
 const env = process.env;
 describe.skipIf(!env.P18STUCK)('p18 stuck diagnosis', () => {
   it('prints the control of a node', () => {
+    if (env.P20_NODETURN) NODE_TURNS.enabled = env.P20_NODETURN === '1';
     const d = v8.deserialize(fs.readFileSync(env.P18STUCK!)) as { corridor: never; roads: never; simOptions: Record<string, unknown>; watch: string[]; micro: never; desired: Record<string, number> };
     const sim = new TrafficMicroSim(d.corridor, d.roads, { ...d.simOptions, seed: Number(env.P18_SEED ?? 42), watchSegmentKeys: d.watch, demandTrips: d.micro, desiredSpeedKmh: d.desired, pcuSet: 'indo-hcm' } as never);
     sim.setHourFactor(1);

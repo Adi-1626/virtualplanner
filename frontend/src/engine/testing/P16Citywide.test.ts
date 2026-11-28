@@ -15,7 +15,7 @@ import { isSampleObject } from '../objects/sampleObjects';
 import { isDrivable, POCKET_STREETS, type DrivableObject, type StudyArea } from '../simulation/StudyAreaExplorer';
 import { snapDemandPlan, type DemandPlan } from '../simulation/StudyDemand';
 import { assignTraffic, subareaDemand, SUBAREA_METER, type AssignmentResult } from '../simulation/staticAssignment';
-import { TrafficMicroSim, ENTRY_GIVE_WAY, ROOM_ANY_LANE, STEP_S, type MicroSimOptions } from '../simulation/TrafficMicroSim';
+import { TrafficMicroSim, ENTRY_GIVE_WAY, ROOM_ANY_LANE, NODE_TURNS, STEP_S, type MicroSimOptions } from '../simulation/TrafficMicroSim';
 import type { TimePeriod } from '../objects/demandTypes';
 import type { RoadSection } from '../simulation/roadSection';
 import type { BuildingPoint } from '../simulation/indianSupply';
@@ -359,6 +359,8 @@ describe.skipIf(!env.P16)('p16 city-wide robustness harness (opt-in)', () => {
     if (env.P18_ENTRYGW) ENTRY_GIVE_WAY.enabled = env.P18_ENTRYGW === '1';
     // p19: P19_ROOMANY=1 = a vehicle refused room in every exit lane is owed every lane it searched (ROOM_ANY_LANE)
     if (env.P19_ROOMANY) ROOM_ANY_LANE.enabled = env.P19_ROOMANY === '1';
+    // p20: P20_NODETURN=1 = turn-taking for room also at nodes without a junction control (NODE_TURNS)
+    if (env.P20_NODETURN) NODE_TURNS.enabled = env.P20_NODETURN === '1';
     if (env.P18_LOCALGAP) (P14.unsignedLocalGap as { value: boolean }).value = env.P18_LOCALGAP === '1';
     const hoursOnly = env.P16_HOURS ? env.P16_HOURS.split(',').map(Number) : null;
     const set: CandidateSet = env.P16_SET ? JSON.parse(env.P16_SET) : { name: 'recorded', ...SYNTHETIC_PARAMS };

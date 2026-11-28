@@ -216,6 +216,17 @@ export const ENTRY_GIVE_WAY = { enabled: true };
  * On by default since p19 (pre-registered rule: harness `mzg` 51/164 vs 50, M1 32 -> 20, no band worse).
  */
 export const ROOM_ANY_LANE = { enabled: true };
+/**
+ * p20: turn-taking for room (heldFor: merging in turn, zip merging ZIP_MERGE, the room owed by ROOM_ANY_LANE) also at a
+ * node that has no junction control: a two-arm node where one OSM way continues as another, a lane drop or a merge of
+ * two links. Junction controls are built only at nodes with three or more arms, so before, at such a node nothing was
+ * owed to a vehicle waiting for room, and vehicles of the other lane of its own approach, changing lane at the node,
+ * took every opening of its exit lane: a bus or truck needing 16 m stood 425 s on a lightly loaded corridor
+ * (p16_17_midc 19:00, docs/urbanos/P20_COMBO.md). The rule is the existing one (docs/OVERHAUL.md §18 merging in turn;
+ * StVO §7(4) zip merging); only the restriction to controlled nodes, an implementation artefact, is lifted.
+ * There is no signal or priority at such a node, so every waiting lane takes an equal turn.
+ */
+export const NODE_TURNS = { enabled: false };
 const CONFLICT_HOLDS = ['conflict'] as const;
 /** Traffic that must give way is cleared to cross only from this close to the line. */
 const YIELD_LINE_M = 8;
@@ -2458,7 +2469,9 @@ export class TrafficMicroSim {
    */
   private longerWaiting(node: string, mine: Link, veh: Vehicle, holds: readonly string[], each: (f: Vehicle, other: Link, lane: number) => boolean, sameApproach = false, roomCourtesy = false): boolean {
     const c = this.controls.get(node);
-    if (!c) return false;
+    // p20 (NODE_TURNS): turn-taking for room also at a node without a junction control (a way continuation, a lane
+    // drop or a two-arm merge): no signal and no priority there, so every waiting lane is an equal turn
+    if (!c && !(NODE_TURNS.enabled && holds === ROOM_HOLDS)) return false;
     const myNext = mine.to === node && veh.routeIdx < veh.route.length - 1 ? this.links[veh.route[veh.routeIdx + 1]] : null;
     // p19 (ROOM_ANY_LANE): courtesy for room (COURTESY_S): `veh`, crawling in a priority stream, leaves the room in a
     // full exit lane to a vehicle that has stood at its line on a give-way approach for it COURTESY_S or more
@@ -2468,8 +2481,8 @@ export class TrafficMicroSim {
       // merge into one lane beyond the junction, zip merging); otherwise only other approaches
       const own = idx === mine.index;
       if (own && !sameApproach) continue;
-      if (!own && c.kind === 'signal' && this.signalState(idx) !== 'green') continue;
-      const overPriority = !own && c.kind === 'priority' && this.hasPriorityOver(mine, other, c);
+      if (!own && c?.kind === 'signal' && this.signalState(idx) !== 'green') continue;
+      const overPriority = !own && c?.kind === 'priority' && this.hasPriorityOver(mine, other, c);
       if (overPriority && !crawl) continue;
       for (let li = 0; li < other.lanes.length; li++) {
         if (own && li === veh.lane) continue;
@@ -2483,7 +2496,7 @@ export class TrafficMicroSim {
         // Never a turn against priority: a vehicle whose movement gives way to `veh`'s
         // (a right turn across oncoming traffic, at a signal or a priority junction) waits
         // for a gap however long it has waited (unless let in for room by courtesy, above)
-        if (!own && !courtesy && myNext && this.givesWayTo(other, this.links[f.holdNext], mine, myNext, c)) continue;
+        if (!own && !courtesy && myNext && c && this.givesWayTo(other, this.links[f.holdNext], mine, myNext, c)) continue;
         if (each(f, other, li)) return true;
       }
     }
