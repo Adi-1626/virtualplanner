@@ -171,3 +171,7 @@ Row view (113 failing rows): R3 alone 24, D2 alone 14, D1+D2 13, D2+R3 10, D2+M2
 largest blocks are real over-capacity in the synthetic demand (at the 15 official sites: bias +58.5 %, river screenline +44.0 %)
 and main roads near capacity: both need measured counts / speeds, not a model or threshold change. No threshold, band or
 area-specific code was changed in p20.
+
+## 7. Gates (adopted HEAD of p20-combo, code = 04c54d2: defaults unchanged, fix H opt-in; logs `p20-run/gates`)
+tsc -p tsconfig.app.json 0 errors; oxlint 0 errors / 19 warnings; vite build ok; vitest 1432 passed / 20 skipped / 0 failed
+(`--maxWorkers=1`, 10 chunks; +1 passed = NodeTurns.test.ts, +1 skipped = opt-in P20NodeProbe vs p19); pytest 490 passed / 3 skipped.
