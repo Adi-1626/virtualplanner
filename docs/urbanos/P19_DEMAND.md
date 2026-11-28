@@ -136,3 +136,57 @@ Conclusion: the K rows are main roads loaded close to their Indo-HCM capacity by
 lanes/width survey and no counts on those roads, they cannot be called a supply error; the lever is the demand's spatial
 pattern (sections 2–4), which is where p19 acted.
 
+
+## 6. M1 residual: truck starvation at a merge into a full lane (fix G, adopted)
+
+Diagnosis (`P19TruckDiag.test.ts`, opt-in; dump `p18-run/dump/p16_40_local_9.v8`, node 73.84966, 18.56545, a priority
+junction whose 28 m two-lane exit is full in the 09:00 jam). Who takes the room the 8 m truck (needs 12 m with its gap)
+waits for, by seed:
+- seed 42: two-wheeler trips **entering the network at that node** took each opening in lane 0, while the truck, refused
+  room in **both** exit lanes (tryGrant searches every lane when the lane counts differ or the tail stands), was owed only
+  the lane its own lane maps to (`heldFor` / p18 F used `mappedLanes`). That is why p18's F (entry give-way) "had no effect".
+- seed 7: the truck stood on the give-way approach; small vehicles of the priority stream took every opening, because
+  turn-taking never runs against priority and the p17 courtesy covered only gap / crossing holds, not room.
+
+Fix G (two general rules, both micro-sim only, no area-specific code, no threshold touched):
+
+| Rule | Source | Switch |
+|---|---|---|
+| A vehicle held for `room` after MERGE_TURN_S (60 s) is owed **every** exit lane it searched (edited lane maps kept), so room accumulates until it fits (the "reservation" of room for a long vehicle after a bounded wait); trips entering at the junction give way to it (p18 F) | turn-taking §18 (docs/OVERHAUL.md); MVDR 2017 G.S.R. 634(E) Reg. 7(4) (entering vehicles give way to traffic already on the road) | `ROOM_ANY_LANE`, `ENTRY_GIVE_WAY`; harness `P19_ROOMANY`, `P18_ENTRYGW` |
+| At a priority junction a priority-stream vehicle crawling under COURTESY_CRAWL_MS leaves the exit room to a vehicle that has stood COURTESY_S (60 s) at its line waiting for that room | same sources as the p17 courtesy: forced / courtesy merging into a slow queue, Dutta & Ahmed 2017 (doi 10.1007/s40534-017-0151-9), TRR 2020 (doi 10.1177/0361198120925258) | part of `ROOM_ANY_LANE` |
+
+Probe before the run (longest truck wait at the node, seeds 42 / 7 / 13): 199 / 425 / 202 s -> 127 / 156 / 84 s, all under
+GRIDLOCK_S (180 s). Pre-registered (RULE_p19 addendum 2) before the harness run; hold-out and official checks do not run
+the micro-simulation (P14Validation / NetworkValidation import only types/constants from TrafficMicroSim), so they are
+unchanged by construction.
+
+| Run | Pass | D1 | D2 | D3 | M1 | M2 | N2 | R3 | Verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| `mz` (p18 adopted) | 50 | 33 | 80 | 0 | 32 | 37 | 4 | 56 | reference |
+| `mzg` (mz + fix G) | **51** | 33 | 80 | 0 | **20** | 37 | 4 | 56 | **adopted** (total > 50, no band worse) |
+
+M1 fixed on 12 area-hours, new on none; only one row flips to pass (p16_36_local 14:00) because 11 of the 12 also fail
+D1/D2/M2/R3. Remaining M1: 20 (09:00 5, 14:00 6, 19:00 6, 23:00 3); only p16_11_oldcity 23:00 fails on M1 alone (the
+signal-box residual of P18). Fix G is the code default from commit f3d1d07 (`ENTRY_GIVE_WAY` and `ROOM_ANY_LANE` true).
+
+## 7. D2 main-road rows (v/c 0.85-1.2)
+
+Section 5 is the diagnosis: on the K rows the main road runs at speed ratio < 0.6 with < 10 % of vkm above v/c 1.2, lanes
+follow OSM (2,548 / 2,560 tagged ways match), capacities are Indo-HCM 2017 Table 5.4 x 1.3 (already above IRC:106-1990
+design service volumes), and `width` is tagged on < 1 % of ways. No sourced supply change exists, so none was made. The
+demand lever (V4CC) removes most D1 failures but only 3-4 D2 rows (80 -> 77 / 76), i.e. these roads are near capacity
+under every synthetic demand tried. Closing them needs measured data (classified counts or speeds on those roads, a lane
+and width survey), not a parameter change. In `mzg`, D2 fails on 80 rows, 14 of them on D2 alone.
+
+## 8. Outcome and ceiling
+
+- Adopted: fix G (micro-sim, 50 -> 51/164, M1 32 -> 20). Demand stays v2 (V4 not eligible; V4CC eligible but its harness
+  49/164 has M1/D3/R3 worse; `hcpke` 66/164 has M1/D3 worse). Synthetic model stays opt-in: no candidate's hold-out passes
+  the synthetic-model rule (TAG M3.1: >= 85 % of JT within 15 % and counts GEH < 5; best V4CC 8/28 and 3/16).
+- Official 15-site (adopted v2): 1/15, mean GEH 41.4, river +44.0 % (unchanged; fix G does not touch it). V4CC would give
+  2/15, 25.6, +16.4 % (recorded, not adopted).
+- Failing rows in `mzg` (113): R3 alone 24, D2 alone 14, D1+D2 13, D2+R3 10, the rest mixed. The pocket streets
+  (p18 A) remove most R3 failures (56 -> 20) but were blocked by M1 / D2 rows that fix G and fix E now address in part;
+  pockets + meter + E on top of fix G is the obvious next pre-registered candidate (not run in p19, by the rule that no
+  variant is picked after seeing the result). Without measured counts / speeds the D2 main-road rows are the ceiling.
+- Gates on f3d1d07: see STATUS_p19.md / section 9.
